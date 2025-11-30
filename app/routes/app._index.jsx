@@ -5,23 +5,10 @@ export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
 
   try {
-    // Get the app installation ID
-    const appInstallationResponse = await admin.graphql(
-      `#graphql
-        query {
-          currentAppInstallation {
-            id
-          }
-        }`
-    );
-
-    const appInstallationData = await appInstallationResponse.json();
-    const ownerId = appInstallationData.data.currentAppInstallation.id;
-
     const response = await admin.graphql(
       `#graphql
-        query GetDashboard($ownerId: ID!) {
-          appInstallation(id: $ownerId) {
+        query {
+          shop {
             settings: metafield(namespace: "exit_intent", key: "settings") {
               value
             }
@@ -32,16 +19,11 @@ export async function loader({ request }) {
               value
             }
           }
-        }`,
-      {
-        variables: {
-          ownerId
-        }
-      }
+        }`
     );
 
     const data = await response.json();
-    const appData = data.data.appInstallation;
+    const shopData = data.data.shop;
 
     const defaultSettings = {
       modalHeadline: "Wait! Don't leave yet 🎁",
@@ -49,16 +31,16 @@ export async function loader({ request }) {
       ctaButton: "Complete My Order"
     };
 
-    const settings = appData?.settings?.value 
-      ? JSON.parse(appData.settings.value) 
+    const settings = shopData?.settings?.value 
+      ? JSON.parse(shopData.settings.value) 
       : defaultSettings;
 
-    const status = appData?.status?.value 
-      ? JSON.parse(appData.status.value)
+    const status = shopData?.status?.value 
+      ? JSON.parse(shopData.status.value)
       : { enabled: false };
 
-    const metrics = appData?.metrics?.value
-      ? JSON.parse(appData.metrics.value)
+    const metrics = shopData?.metrics?.value
+      ? JSON.parse(shopData.metrics.value)
       : { impressions: 0, clicks: 0, closeouts: 0, conversions: 0 };
 
     return { settings, status, metrics };
@@ -84,19 +66,29 @@ export async function action({ request }) {
   console.log("🔄 Toggling status to:", enabled);
 
   try {
-    // Get the app installation ID
-    const appInstallationResponse = await admin.graphql(
-      `#graphql
-        query {
-          currentAppInstallation {
-            id
-          }
-        }`
-    );
+    // Get shop ID for metafield owner
+    console.log("📍 Step 1: Getting shop ID...");
+    const shopResponse = await admin.graphql(
+  `query {
+    shop {
+      id
+    }
+  }`
+);
+    const shopResponseText = await shopResponse.text();
+    console.log("📍 Shop response:", shopResponseText);
+    
+    const shopData = JSON.parse(shopResponseText);
+    
+    if (shopData.errors) {
+      console.error("❌ Shop query errors:", JSON.stringify(shopData.errors, null, 4));
+      return { success: false, error: "Failed to get shop ID" };
+    }
+    
+    const shopId = shopData.data.shop.id;
+    console.log("📍 Shop ID:", shopId);
 
-    const appInstallationData = await appInstallationResponse.json();
-    const ownerId = appInstallationData.data.currentAppInstallation.id;
-
+    console.log("📍 Step 2: Setting metafield...");
     const result = await admin.graphql(
       `#graphql
         mutation SetStatus($ownerId: ID!, $value: String!) {
@@ -119,14 +111,19 @@ export async function action({ request }) {
         }`,
       {
         variables: {
-          ownerId,
+          ownerId: shopId,
           value: JSON.stringify({ enabled })
         }
       }
     );
 
     const data = await result.json();
-    console.log("✅ GraphQL result:", JSON.stringify(data, null, 2));
+    console.log("✅ Full GraphQL response:", JSON.stringify(data, null, 4));
+
+    if (data.errors) {
+      console.error("❌ GraphQL Errors:", JSON.stringify(data.errors, null, 4));
+      return { success: false, error: data.errors[0].message };
+    }
 
     if (data.data?.metafieldsSet?.userErrors?.length > 0) {
       console.error("❌ User errors:", data.data.metafieldsSet.userErrors);
@@ -137,6 +134,7 @@ export async function action({ request }) {
     return { success: true };
   } catch (error) {
     console.error("❌ Error updating status:", error);
+    console.error("❌ Error details:", error.message);
     return { success: false, error: error.message };
   }
 }

@@ -5,39 +5,20 @@ import { authenticate } from "../shopify.server";
 export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
 
-  // Load settings from metafields
+  // Load settings from shop metafields
   try {
-    // First, get the app installation ID
-    const appInstallationResponse = await admin.graphql(
-      `#graphql
-        query {
-          currentAppInstallation {
-            id
-          }
-        }`
-    );
-
-    const appInstallationData = await appInstallationResponse.json();
-    const ownerId = appInstallationData.data.currentAppInstallation.id;
-
     const response = await admin.graphql(
-      `#graphql
-        query GetSettings($ownerId: ID!) {
-          appInstallation(id: $ownerId) {
-            metafield(namespace: "exit_intent", key: "settings") {
-              value
-            }
+      `query {
+        shop {
+          metafield(namespace: "exit_intent", key: "settings") {
+            value
           }
-        }`,
-      {
-        variables: {
-          ownerId
         }
-      }
+      }`
     );
 
     const data = await response.json();
-    const settingsValue = data.data.appInstallation?.metafield?.value;
+    const settingsValue = data.data.shop?.metafield?.value;
     
     // Default settings if none exist
     const defaultSettings = {
@@ -88,42 +69,39 @@ export async function action({ request }) {
   };
 
   try {
-    // Get the app installation ID
-    const appInstallationResponse = await admin.graphql(
-      `#graphql
-        query {
-          currentAppInstallation {
+    // Get shop ID
+    const shopResponse = await admin.graphql(
+      `query {
+        shop {
+          id
+        }
+      }`
+    );
+    const shopData = await shopResponse.json();
+    const shopId = shopData.data.shop.id;
+
+    // Save to shop metafields
+    await admin.graphql(
+      `mutation SetSettings($ownerId: ID!, $value: String!) {
+        metafieldsSet(metafields: [{
+          ownerId: $ownerId
+          namespace: "exit_intent"
+          key: "settings"
+          value: $value
+          type: "json"
+        }]) {
+          metafields {
             id
           }
-        }`
-    );
-
-    const appInstallationData = await appInstallationResponse.json();
-    const ownerId = appInstallationData.data.currentAppInstallation.id;
-
-    // Save to metafields
-    await admin.graphql(
-      `#graphql
-        mutation SetSettings($ownerId: ID!, $value: String!) {
-          metafieldsSet(metafields: [{
-            ownerId: $ownerId
-            namespace: "exit_intent"
-            key: "settings"
-            value: $value
-            type: "json"
-          }]) {
-            metafields {
-              id
-            }
-            userErrors {
-              field
-              message
-            }
+          userErrors {
+            field
+            message
           }
-        }`,
+        }
+      }`,
       {
         variables: {
-          ownerId,
+          ownerId: shopId,
           value: JSON.stringify(settings)
         }
       }
