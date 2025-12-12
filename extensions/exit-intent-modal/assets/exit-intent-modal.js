@@ -218,9 +218,9 @@
     }
     
     async trackEvent(eventType) {
-      // Send analytics to your app
+      // Send analytics to your app via app proxy
       try {
-        const response = await fetch('/apps/exit-intent-offer/track', {
+        await fetch('/apps/exit-intent/track', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

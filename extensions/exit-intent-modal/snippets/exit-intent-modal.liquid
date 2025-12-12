@@ -2,29 +2,22 @@
   Exit Intent Modal - Loads settings and initializes the modal
 {% endcomment %}
 
-{% assign status_json = shop.metafields.exit_intent.status.value %}
-{% assign settings_json = shop.metafields.exit_intent.settings.value %}
-
 <script>
-  // Parse the JSON settings
-  const statusData = {{ status_json | default: '{"enabled":false}' }};
-  const settingsData = {{ settings_json | default: '{"modalHeadline":"Wait! Don\'t leave yet 🎁","modalBody":"Complete your purchase now and get free shipping on your order!","ctaButton":"Complete My Order","exitIntentEnabled":true,"timeDelayEnabled":false,"timeDelaySeconds":30,"cartValueEnabled":false,"cartValueMin":0,"cartValueMax":1000}' }};
-
   // Pass settings from Shopify to JavaScript
   window.exitIntentSettings = {
-    enabled: statusData.enabled || false,
-    modalHeadline: settingsData.modalHeadline || "Wait! Don't leave yet 🎁",
-    modalBody: settingsData.modalBody || "Complete your purchase now and get free shipping on your order!",
-    ctaButton: settingsData.ctaButton || "Complete My Order",
+    enabled: {{ shop.metafields.exit_intent.status.value.enabled | default: false | json }},
+    modalHeadline: {{ shop.metafields.exit_intent.settings.value.modalHeadline | default: "Wait! Don't leave yet 🎁" | json }},
+    modalBody: {{ shop.metafields.exit_intent.settings.value.modalBody | default: "Complete your purchase now and get free shipping on your order!" | json }},
+    ctaButton: {{ shop.metafields.exit_intent.settings.value.ctaButton | default: "Complete My Order" | json }},
     triggers: {
-      exitIntent: settingsData.exitIntentEnabled !== false,
-      timeDelay: settingsData.timeDelayEnabled || false,
-      timeDelaySeconds: settingsData.timeDelaySeconds || 30,
-      cartValue: settingsData.cartValueEnabled || false,
-      minCartValue: settingsData.cartValueMin || 0,
-      maxCartValue: settingsData.cartValueMax || 999999
+      exitIntent: {{ shop.metafields.exit_intent.settings.value.exitIntentEnabled | default: true | json }},
+      timeDelay: {{ shop.metafields.exit_intent.settings.value.timeDelayEnabled | default: false | json }},
+      timeDelaySeconds: {{ shop.metafields.exit_intent.settings.value.timeDelaySeconds | default: 30 | json }},
+      cartValue: {{ shop.metafields.exit_intent.settings.value.cartValueEnabled | default: false | json }},
+      minCartValue: {{ shop.metafields.exit_intent.settings.value.cartValueMin | default: 0 | json }},
+      maxCartValue: {{ shop.metafields.exit_intent.settings.value.cartValueMax | default: 999999 | json }}
     }
   };
 </script>
 
-{{ 'exit-intent-modal.js' | asset_url | script_tag }}
+<script src="{{ 'exit-intent-modal.js' | asset_url }}" defer></script>
