@@ -10,10 +10,17 @@
       this.settings = settings;
       this.modalShown = false;
       this.modalElement = null;
+      this.sessionKey = 'exitIntentShown';
       
       // Check if modal is enabled
       if (!this.settings.enabled) {
         console.log('Exit intent modal is disabled');
+        return;
+      }
+      
+      // Check if already shown in this session
+      if (sessionStorage.getItem(this.sessionKey)) {
+        console.log('Exit intent modal already shown this session');
         return;
       }
       
@@ -30,6 +37,17 @@
       
       // Set up event listeners
       this.setupEventListeners();
+    }
+    
+    async hasItemsInCart() {
+      try {
+        const response = await fetch('/cart.js');
+        const cart = await response.json();
+        return cart.item_count > 0;
+      } catch (error) {
+        console.error('Error checking cart:', error);
+        return false;
+      }
     }
     
     createModal() {
@@ -128,9 +146,15 @@
       
       // Exit intent trigger
       if (triggers.exitIntent) {
-        document.addEventListener('mouseout', (e) => {
+        document.addEventListener('mouseout', async (e) => {
           if (e.clientY < 0 && !this.modalShown) {
-            this.showModal();
+            // Check if cart has items before showing
+            const hasItems = await this.hasItemsInCart();
+            if (hasItems) {
+              this.showModal();
+            } else {
+              console.log('Cart is empty, not showing exit intent modal');
+            }
           }
         });
       }
@@ -138,9 +162,12 @@
       // Time delay trigger (only on cart page)
       if (triggers.timeDelay && triggers.timeDelaySeconds) {
         if (window.location.pathname.includes('/cart')) {
-          setTimeout(() => {
+          setTimeout(async () => {
             if (!this.modalShown) {
-              this.showModal();
+              const hasItems = await this.hasItemsInCart();
+              if (hasItems) {
+                this.showModal();
+              }
             }
           }, triggers.timeDelaySeconds * 1000);
         }
@@ -195,6 +222,9 @@
       this.modalElement.style.display = 'flex';
       this.modalShown = true;
       
+      // Mark as shown in session storage (won't show again this session)
+      sessionStorage.setItem(this.sessionKey, 'true');
+      
       // Track impression
       this.trackEvent('impression');
     }
@@ -212,9 +242,20 @@
       // Track button click
       this.trackEvent('click');
       
-      // Close modal and go to cart
+      // Close modal
       this.closeModal();
-      window.location.href = '/cart';
+      
+      // Apply discount and redirect to checkout
+      const discountCode = this.settings.discountCode;
+      
+      if (discountCode) {
+        // Redirect to checkout with discount automatically applied
+        console.log(`Applying discount code: ${discountCode}`);
+        window.location.href = `/checkout?discount=${discountCode}`;
+      } else {
+        // No discount - just go to checkout
+        window.location.href = '/checkout';
+      }
     }
     
     async trackEvent(eventType) {

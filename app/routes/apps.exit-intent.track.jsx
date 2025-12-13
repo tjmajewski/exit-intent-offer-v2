@@ -34,35 +34,35 @@ export async function action({ request }) {
     const shopData = await shopResponse.json();
     const shopId = shopData.data.shop.id;
 
-    // Get current metrics
-    const metricsResponse = await admin.graphql(
+    // Get current analytics
+    const analyticsResponse = await admin.graphql(
       `query {
         shop {
-          metafield(namespace: "exit_intent", key: "metrics") {
+          metafield(namespace: "exit_intent", key: "analytics") {
             value
           }
         }
       }`
     );
     
-    const metricsData = await metricsResponse.json();
-    const currentMetrics = metricsData.data.shop?.metafield?.value 
-      ? JSON.parse(metricsData.data.shop.metafield.value)
-      : { impressions: 0, clicks: 0, closeouts: 0, conversions: 0 };
+    const analyticsData = await analyticsResponse.json();
+    const currentAnalytics = analyticsData.data.shop?.metafield?.value 
+      ? JSON.parse(analyticsData.data.shop.metafield.value)
+      : { impressions: 0, clicks: 0, closeouts: 0, conversions: 0, revenue: 0 };
 
     // Increment the appropriate metric
     const metricKey = event + "s";
-    currentMetrics[metricKey] = (currentMetrics[metricKey] || 0) + 1;
+    currentAnalytics[metricKey] = (currentAnalytics[metricKey] || 0) + 1;
     
-    console.log("📊 Updated metrics:", currentMetrics);
+    console.log("📊 Updated analytics:", currentAnalytics);
 
-    // Save updated metrics
+    // Save updated analytics
     await admin.graphql(
-      `mutation SetMetrics($ownerId: ID!, $value: String!) {
+      `mutation SetAnalytics($ownerId: ID!, $value: String!) {
         metafieldsSet(metafields: [{
           ownerId: $ownerId
           namespace: "exit_intent"
-          key: "metrics"
+          key: "analytics"
           value: $value
           type: "json"
         }]) {
@@ -78,7 +78,7 @@ export async function action({ request }) {
       {
         variables: {
           ownerId: shopId,
-          value: JSON.stringify(currentMetrics)
+          value: JSON.stringify(currentAnalytics)
         }
       }
     );

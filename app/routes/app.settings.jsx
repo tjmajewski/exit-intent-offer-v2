@@ -2,6 +2,102 @@ import { useState } from "react";
 import { Form, useLoaderData, useActionData, useNavigation } from "react-router";
 import { authenticate } from "../shopify.server";
 
+async function createDiscountCode(admin, discountPercentage) {
+  const discountCode = `EXIT${discountPercentage}`;
+  
+  console.log(`Creating discount code: ${discountCode}`);
+  
+  // Check if code already exists
+  const checkQuery = `
+    query {
+      codeDiscountNodes(first: 1, query: "title:'Exit Intent Offer'") {
+        nodes {
+          id
+          codeDiscount {
+            ... on DiscountCodeBasic {
+              codes(first: 1) {
+                nodes {
+                  code
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  
+  const checkResponse = await admin.graphql(checkQuery);
+  const checkResult = await checkResponse.json();
+  
+  // If code exists, return it
+  if (checkResult.data.codeDiscountNodes.nodes.length > 0) {
+    const existingCode = checkResult.data.codeDiscountNodes.nodes[0]
+      .codeDiscount.codes.nodes[0].code;
+    console.log(`✓ Using existing discount code: ${existingCode}`);
+    return existingCode;
+  }
+  
+  // Create new discount code
+  const mutation = `
+    mutation discountCodeBasicCreate($basicCodeDiscount: DiscountCodeBasicInput!) {
+      discountCodeBasicCreate(basicCodeDiscount: $basicCodeDiscount) {
+        codeDiscountNode {
+          id
+          codeDiscount {
+            ... on DiscountCodeBasic {
+              codes(first: 1) {
+                nodes {
+                  code
+                }
+              }
+            }
+          }
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+  `;
+
+  const variables = {
+    basicCodeDiscount: {
+      title: "Exit Intent Offer",
+      code: discountCode,
+      startsAt: new Date().toISOString(),
+      customerSelection: {
+        all: true
+      },
+      customerGets: {
+        value: {
+          percentage: discountPercentage / 100
+        },
+        items: {
+          all: true
+        }
+      },
+      appliesOncePerCustomer: false,
+      usageLimit: null
+    }
+  };
+
+  const response = await admin.graphql(mutation, { variables });
+  const result = await response.json();
+  
+  if (result.data.discountCodeBasicCreate.userErrors.length > 0) {
+    console.error("Error creating discount:", result.data.discountCodeBasicCreate.userErrors);
+    throw new Error("Failed to create discount code");
+  }
+  
+  const code = result.data.discountCodeBasicCreate.codeDiscountNode
+    .codeDiscount.codes.nodes[0].code;
+  
+  console.log(`✓ Created new discount code: ${code}`);
+  return code;
+}
+
 export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
 
@@ -30,7 +126,10 @@ export async function loader({ request }) {
       timeDelaySeconds: 30,
       cartValueEnabled: false,
       cartValueMin: 0,
-      cartValueMax: 1000
+      cartValueMax: 1000,
+      discountEnabled: false,
+      discountPercentage: 10,
+      discountCode: null
     };
 
     const settings = settingsValue ? JSON.parse(settingsValue) : defaultSettings;
@@ -47,7 +146,10 @@ export async function loader({ request }) {
       timeDelaySeconds: 30,
       cartValueEnabled: false,
       cartValueMin: 0,
-      cartValueMax: 1000
+      cartValueMax: 1000,
+      discountEnabled: false,
+      discountPercentage: 10,
+      discountCode: null
     }};
   }
 }
@@ -65,10 +167,18 @@ export async function action({ request }) {
     timeDelaySeconds: parseInt(formData.get("timeDelaySeconds") || "30"),
     cartValueEnabled: formData.get("cartValueEnabled") === "on",
     cartValueMin: parseFloat(formData.get("cartValueMin") || "0"),
-    cartValueMax: parseFloat(formData.get("cartValueMax") || "1000")
+    cartValueMax: parseFloat(formData.get("cartValueMax") || "1000"),
+    discountEnabled: formData.get("discountEnabled") === "on",
+    discountPercentage: parseInt(formData.get("discountPercentage") || "10"),
+    discountCode: null
   };
 
   try {
+    // Create discount code if enabled
+    if (settings.discountEnabled && settings.discountPercentage > 0) {
+      settings.discountCode = await createDiscountCode(admin, settings.discountPercentage);
+    }
+
     // Get shop ID
     const shopResponse = await admin.graphql(
       `query {
@@ -107,10 +217,15 @@ export async function action({ request }) {
       }
     );
 
-    return { success: true, message: "Settings saved successfully!" };
+    return { 
+      success: true, 
+      message: settings.discountCode 
+        ? `Settings saved! Discount code ${settings.discountCode} created.`
+        : "Settings saved successfully!" 
+    };
   } catch (error) {
     console.error("Error saving settings:", error);
-    return { success: false, message: "Failed to save settings" };
+    return { success: false, message: "Failed to save settings: " + error.message };
   }
 }
 
@@ -138,6 +253,18 @@ export default function Settings() {
           marginBottom: 24 
         }}>
           ✓ {actionData.message}
+        </div>
+      )}
+
+      {actionData?.success === false && (
+        <div style={{ 
+          padding: 16, 
+          background: "#fee2e2", 
+          color: "#991b1b", 
+          borderRadius: 8,
+          marginBottom: 24 
+        }}>
+          ✗ {actionData.message}
         </div>
       )}
 
@@ -224,6 +351,70 @@ export default function Settings() {
           >
             {showPreview ? "Hide Preview" : "Show Preview"}
           </button>
+        </div>
+
+        {/* Discount Section - NEW */}
+        <div style={{ 
+          background: "white", 
+          padding: 24, 
+          borderRadius: 8, 
+          border: "1px solid #e5e7eb",
+          marginBottom: 24 
+        }}>
+          <h2 style={{ fontSize: 20, marginBottom: 20 }}>Discount Offer</h2>
+
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                name="discountEnabled"
+                defaultChecked={settings.discountEnabled}
+                style={{ marginRight: 12, width: 20, height: 20 }}
+              />
+              <div>
+                <div style={{ fontWeight: 500 }}>Enable Discount Code</div>
+                <div style={{ fontSize: 14, color: "#666" }}>
+                  Automatically apply discount when customer clicks the CTA
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <div style={{ marginLeft: 32 }}>
+            <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
+              Discount Percentage
+            </label>
+            <input
+              type="number"
+              name="discountPercentage"
+              defaultValue={settings.discountPercentage}
+              min="1"
+              max="100"
+              style={{ 
+                padding: "10px 12px", 
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                width: 100,
+                fontSize: 16
+              }}
+            />
+            <span style={{ marginLeft: 8, color: "#666" }}>%</span>
+            
+            {settings.discountCode && (
+              <div style={{ 
+                marginTop: 12, 
+                padding: 12, 
+                background: "#f9fafb", 
+                borderRadius: 6,
+                fontSize: 14
+              }}>
+                <strong>Current code:</strong> {settings.discountCode}
+                <div style={{ color: "#666", marginTop: 4 }}>
+                  This code will be automatically applied at checkout
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Trigger Conditions Section */}
