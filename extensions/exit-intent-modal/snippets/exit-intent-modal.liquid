@@ -10,6 +10,7 @@
     modalBody: {{ shop.metafields.exit_intent.settings.value.modalBody | default: "Complete your purchase now and get free shipping on your order!" | json }},
     ctaButton: {{ shop.metafields.exit_intent.settings.value.ctaButton | default: "Complete My Order" | json }},
     discountCode: {{ shop.metafields.exit_intent.settings.value.discountCode | default: null | json }},
+    redirectDestination: {{ shop.metafields.exit_intent.settings.value.redirectDestination | default: "checkout" | json }},
     triggers: {
       exitIntent: {{ shop.metafields.exit_intent.settings.value.exitIntentEnabled | default: true | json }},
       timeDelay: {{ shop.metafields.exit_intent.settings.value.timeDelayEnabled | default: false | json }},

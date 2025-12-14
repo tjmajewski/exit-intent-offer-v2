@@ -429,52 +429,76 @@ function InfoTooltip({ text }) {
   const [show, setShow] = useState(false);
 
   return (
-    <div 
-      style={{ position: "relative", display: "inline-block" }}
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      <div style={{
-        width: 16,
-        height: 16,
-        borderRadius: "50%",
-        background: "#d1d5db",
-        color: "#6b7280",
-        fontSize: 11,
-        fontWeight: 700,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        cursor: "help",
-        userSelect: "none"
-      }}>
-        i
-      </div>
+    <div style={{ position: "relative", display: "inline-block" }}>
+      <button
+        onClick={() => setShow(!show)}
+        onBlur={() => setTimeout(() => setShow(false), 200)}
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: "50%",
+          background: "#8b5cf6",
+          color: "white",
+          fontSize: 11,
+          fontWeight: 700,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          border: "none",
+          padding: 0,
+          transition: "all 0.2s",
+          boxShadow: show ? "0 0 0 3px rgba(139, 92, 246, 0.2)" : "none"
+        }}
+      >
+        ?
+      </button>
       {show && (
         <div style={{
           position: "absolute",
-          bottom: "calc(100% + 8px)",
-          left: "50%",
-          transform: "translateX(-50%)",
+          bottom: "calc(100% + 12px)",
+          right: 0,
           background: "#1f2937",
           color: "white",
           padding: "12px 16px",
+          paddingRight: "32px",
           borderRadius: 8,
-          fontSize: 13,
+          fontSize: 12,
           lineHeight: 1.5,
-          whiteSpace: "nowrap",
-          maxWidth: 300,
-          whiteSpace: "normal",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+          width: 240,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
           zIndex: 1000,
-          pointerEvents: "none"
+          border: "1px solid rgba(255,255,255,0.1)"
         }}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShow(false);
+            }}
+            style={{
+              position: "absolute",
+              top: 6,
+              right: 6,
+              width: 20,
+              height: 20,
+              background: "transparent",
+              border: "none",
+              color: "rgba(255,255,255,0.6)",
+              fontSize: 16,
+              cursor: "pointer",
+              padding: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            ×
+          </button>
           {text}
           <div style={{
             position: "absolute",
             top: "100%",
-            left: "50%",
-            transform: "translateX(-50%)",
+            right: 12,
             width: 0,
             height: 0,
             borderLeft: "6px solid transparent",

@@ -129,7 +129,8 @@ export async function loader({ request }) {
       cartValueMax: 1000,
       discountEnabled: false,
       discountPercentage: 10,
-      discountCode: null
+      discountCode: null,
+      redirectDestination: "checkout"
     };
 
     const settings = settingsValue ? JSON.parse(settingsValue) : defaultSettings;
@@ -149,7 +150,8 @@ export async function loader({ request }) {
       cartValueMax: 1000,
       discountEnabled: false,
       discountPercentage: 10,
-      discountCode: null
+      discountCode: null,
+      redirectDestination: "checkout"
     }};
   }
 }
@@ -170,7 +172,8 @@ export async function action({ request }) {
     cartValueMax: parseFloat(formData.get("cartValueMax") || "1000"),
     discountEnabled: formData.get("discountEnabled") === "on",
     discountPercentage: parseInt(formData.get("discountPercentage") || "10"),
-    discountCode: null
+    discountCode: null,
+    redirectDestination: formData.get("redirectDestination") || "checkout"
   };
 
   try {
@@ -269,6 +272,18 @@ export default function Settings() {
       )}
 
       <Form method="post">
+        {/* Required Fields Legend */}
+        <div style={{
+          padding: 12,
+          background: "#f3f4f6",
+          borderRadius: 6,
+          marginBottom: 24,
+          fontSize: 14,
+          color: "#4b5563"
+        }}>
+          Fields marked with <span style={{ color: "#dc2626", fontWeight: 600 }}>*</span> are required
+        </div>
+
         {/* Modal Content Section */}
         <div style={{ 
           background: "white", 
@@ -281,7 +296,7 @@ export default function Settings() {
 
           <div style={{ marginBottom: 20 }}>
             <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
-              Headline
+              Headline <span style={{ color: "#dc2626" }}>*</span>
             </label>
             <input
               type="text"
@@ -300,7 +315,7 @@ export default function Settings() {
 
           <div style={{ marginBottom: 20 }}>
             <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
-              Body Text
+              Body Text <span style={{ color: "#dc2626" }}>*</span>
             </label>
             <textarea
               name="modalBody"
@@ -320,7 +335,7 @@ export default function Settings() {
 
           <div style={{ marginBottom: 20 }}>
             <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
-              Button Text
+              Button Text <span style={{ color: "#dc2626" }}>*</span>
             </label>
             <input
               type="text"
@@ -353,7 +368,7 @@ export default function Settings() {
           </button>
         </div>
 
-        {/* Discount Section - NEW */}
+        {/* Discount Section */}
         <div style={{ 
           background: "white", 
           padding: 24, 
@@ -361,7 +376,7 @@ export default function Settings() {
           border: "1px solid #e5e7eb",
           marginBottom: 24 
         }}>
-          <h2 style={{ fontSize: 20, marginBottom: 20 }}>Discount Offer</h2>
+          <h2 style={{ fontSize: 20, marginBottom: 20 }}>Discount Offer <span style={{ fontSize: 14, fontWeight: 400, color: "#6b7280" }}>(Optional)</span></h2>
 
           <div style={{ marginBottom: 20 }}>
             <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
@@ -380,7 +395,7 @@ export default function Settings() {
             </label>
           </div>
 
-          <div style={{ marginLeft: 32 }}>
+          <div style={{ marginLeft: 32, marginBottom: 20 }}>
             <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
               Discount Percentage
             </label>
@@ -415,6 +430,111 @@ export default function Settings() {
               </div>
             )}
           </div>
+
+          <div style={{
+            padding: 12,
+            background: "#eff6ff",
+            border: "1px solid #bfdbfe",
+            borderRadius: 6,
+            fontSize: 14,
+            color: "#1e40af"
+          }}>
+            💡 <strong>Tip:</strong> If discount is disabled, the modal will still show but won't include a discount offer. Great for simple cart reminders or announcements!
+          </div>
+        </div>
+
+        {/* Redirect Destination Section */}
+        <div style={{ 
+          background: "white", 
+          padding: 24, 
+          borderRadius: 8, 
+          border: "1px solid #e5e7eb",
+          marginBottom: 24 
+        }}>
+          <h2 style={{ fontSize: 20, marginBottom: 20 }}>After Click Behavior <span style={{ color: "#dc2626" }}>*</span></h2>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: "block", marginBottom: 12, fontWeight: 500 }}>
+              Where should customers go after clicking the CTA?
+            </label>
+            
+            <label style={{ 
+              display: "flex", 
+              alignItems: "flex-start", 
+              cursor: "pointer",
+              padding: 16,
+              border: "2px solid",
+              borderRadius: 8,
+              marginBottom: 12,
+              background: (settings.redirectDestination === "checkout" || !settings.redirectDestination) ? "#f0fdf4" : "white",
+              borderColor: (settings.redirectDestination === "checkout" || !settings.redirectDestination) ? "#10b981" : "#e5e7eb",
+              transition: "all 0.2s"
+            }}>
+              <input
+                type="radio"
+                name="redirectDestination"
+                value="checkout"
+                defaultChecked={!settings.redirectDestination || settings.redirectDestination === "checkout"}
+                style={{ marginRight: 12, marginTop: 4 }}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+                  Checkout (Recommended)
+                  <span style={{
+                    fontSize: 11,
+                    padding: "2px 8px",
+                    background: "#10b981",
+                    color: "white",
+                    borderRadius: 4,
+                    fontWeight: 600
+                  }}>DEFAULT</span>
+                </div>
+                <div style={{ fontSize: 14, color: "#666" }}>
+                  Send customers directly to checkout. Fewer steps = higher conversion. Discount auto-applies.
+                </div>
+              </div>
+            </label>
+
+            <label style={{ 
+              display: "flex", 
+              alignItems: "flex-start", 
+              cursor: "pointer",
+              padding: 16,
+              border: "2px solid",
+              borderRadius: 8,
+              background: settings.redirectDestination === "cart" ? "#f0fdf4" : "white",
+              borderColor: settings.redirectDestination === "cart" ? "#10b981" : "#e5e7eb",
+              transition: "all 0.2s"
+            }}>
+              <input
+                type="radio"
+                name="redirectDestination"
+                value="cart"
+                defaultChecked={settings.redirectDestination === "cart"}
+                style={{ marginRight: 12, marginTop: 4 }}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                  Cart Page
+                </div>
+                <div style={{ fontSize: 14, color: "#666" }}>
+                  Send customers to cart page first. Gives them a chance to review or add more items before checkout.
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <div style={{
+            padding: 12,
+            background: "#fef3c7",
+            border: "1px solid #fde68a",
+            borderRadius: 6,
+            fontSize: 14,
+            color: "#92400e",
+            marginTop: 16
+          }}>
+            🧪 <strong>A/B Testing Tip:</strong> This is a great variable to test! Try both and see which converts better for your store.
+          </div>
         </div>
 
         {/* Trigger Conditions Section */}
@@ -425,7 +545,7 @@ export default function Settings() {
           border: "1px solid #e5e7eb",
           marginBottom: 24 
         }}>
-          <h2 style={{ fontSize: 20, marginBottom: 20 }}>Trigger Conditions</h2>
+          <h2 style={{ fontSize: 20, marginBottom: 20 }}>Trigger Conditions <span style={{ fontSize: 14, fontWeight: 400, color: "#6b7280" }}>(At least one required)</span></h2>
 
           <div style={{ marginBottom: 20 }}>
             <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>

@@ -245,17 +245,24 @@
       // Close modal
       this.closeModal();
       
-      // Apply discount and redirect to checkout
+      // Get settings
       const discountCode = this.settings.discountCode;
+      const destination = this.settings.redirectDestination || 'checkout';
       
-      if (discountCode) {
-        // Redirect to checkout with discount automatically applied
-        console.log(`Applying discount code: ${discountCode}`);
-        window.location.href = `/checkout?discount=${discountCode}`;
+      // Build redirect URL based on destination
+      let redirectUrl;
+      
+      if (destination === 'cart') {
+        // Redirect to cart
+        redirectUrl = discountCode ? `/cart?discount=${discountCode}` : '/cart';
+        console.log(`Redirecting to cart${discountCode ? ' with discount: ' + discountCode : ''}`);
       } else {
-        // No discount - just go to checkout
-        window.location.href = '/checkout';
+        // Redirect to checkout (default)
+        redirectUrl = discountCode ? `/checkout?discount=${discountCode}` : '/checkout';
+        console.log(`Redirecting to checkout${discountCode ? ' with discount: ' + discountCode : ''}`);
       }
+      
+      window.location.href = redirectUrl;
     }
     
     async trackEvent(eventType) {
