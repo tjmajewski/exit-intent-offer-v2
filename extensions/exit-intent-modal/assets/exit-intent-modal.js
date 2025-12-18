@@ -249,15 +249,18 @@
       const discountCode = this.settings.discountCode;
       const destination = this.settings.redirectDestination || 'checkout';
       
-      // Build redirect URL based on destination
+      // Build redirect URL
       let redirectUrl;
       
       if (destination === 'cart') {
-        // Redirect to cart
-        redirectUrl = discountCode ? `/cart?discount=${discountCode}` : '/cart';
-        console.log(`Redirecting to cart${discountCode ? ' with discount: ' + discountCode : ''}`);
+        // If going to cart with discount, set flag for auto-apply
+        if (discountCode) {
+          sessionStorage.setItem('exitIntentDiscount', discountCode);
+          console.log(`Redirecting to cart - will auto-apply discount: ${discountCode}`);
+        }
+        redirectUrl = '/cart';
       } else {
-        // Redirect to checkout (default)
+        // Checkout - use URL parameter (works natively)
         redirectUrl = discountCode ? `/checkout?discount=${discountCode}` : '/checkout';
         console.log(`Redirecting to checkout${discountCode ? ' with discount: ' + discountCode : ''}`);
       }
@@ -282,6 +285,81 @@
         console.error('Error tracking event:', error);
       }
     }
+  }
+  
+  // Auto-apply discount on cart page if flag is set
+  function autoApplyCartDiscount() {
+    const discountCode = sessionStorage.getItem('exitIntentDiscount');
+    
+    if (!discountCode) return;
+    
+    // Only run on cart page
+    if (!window.location.pathname.includes('/cart')) return;
+    
+    console.log('Attempting to auto-apply discount:', discountCode);
+    
+    // Clear the flag immediately to prevent repeated attempts
+    sessionStorage.removeItem('exitIntentDiscount');
+    
+    // Common discount field selectors across different themes
+    const selectors = [
+      'input[name="discount"]',
+      'input[name="checkout[reduction_code]"]',
+      'input#discount_code',
+      'input#CartDrawer-Discount',
+      'input.discount-code',
+      'input[placeholder*="discount" i]',
+      'input[placeholder*="coupon" i]',
+      'input[placeholder*="promo" i]'
+    ];
+    
+    // Try to find the discount input
+    let discountInput = null;
+    for (const selector of selectors) {
+      discountInput = document.querySelector(selector);
+      if (discountInput) {
+        console.log('Found discount input:', selector);
+        break;
+      }
+    }
+    
+    if (!discountInput) {
+      console.log('No discount input found - redirecting to checkout instead');
+      window.location.href = `/checkout?discount=${discountCode}`;
+      return;
+    }
+    
+    // Fill in the discount code
+    discountInput.value = discountCode;
+    discountInput.dispatchEvent(new Event('input', { bubbles: true }));
+    discountInput.dispatchEvent(new Event('change', { bubbles: true }));
+    
+    // Try to find and click the apply button
+    const applyButton = discountInput.closest('form')?.querySelector('button[type="submit"]') ||
+                        discountInput.closest('form')?.querySelector('button') ||
+                        document.querySelector('button[name="discount_apply"]') ||
+                        document.querySelector('button.discount-apply');
+    
+    if (applyButton) {
+      console.log('Clicking apply button');
+      setTimeout(() => applyButton.click(), 100);
+    } else {
+      // Try to submit the form directly
+      const form = discountInput.closest('form');
+      if (form) {
+        console.log('Submitting discount form');
+        setTimeout(() => form.submit(), 100);
+      } else {
+        console.log('Could not find apply button or form - discount filled in but not applied');
+      }
+    }
+  }
+  
+  // Run auto-apply when page loads
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', autoApplyCartDiscount);
+  } else {
+    autoApplyCartDiscount();
   }
   
   // Initialize when DOM is ready

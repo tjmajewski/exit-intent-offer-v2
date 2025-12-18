@@ -3,18 +3,19 @@ import { Form, useLoaderData, useActionData, useNavigation } from "react-router"
 import { authenticate } from "../shopify.server";
 
 async function createDiscountCode(admin, discountPercentage) {
-  const discountCode = `EXIT${discountPercentage}`;
+  const discountCode = `${discountPercentage}OFF`;  // Changed from EXIT${discountPercentage}
   
   console.log(`Creating discount code: ${discountCode}`);
   
-  // Check if code already exists
+  // Check if THIS SPECIFIC code already exists
   const checkQuery = `
     query {
-      codeDiscountNodes(first: 1, query: "title:'Exit Intent Offer'") {
+      codeDiscountNodes(first: 10, query: "title:'Exit Intent Offer'") {
         nodes {
           id
           codeDiscount {
             ... on DiscountCodeBasic {
+              title
               codes(first: 1) {
                 nodes {
                   code
@@ -30,15 +31,17 @@ async function createDiscountCode(admin, discountPercentage) {
   const checkResponse = await admin.graphql(checkQuery);
   const checkResult = await checkResponse.json();
   
-  // If code exists, return it
-  if (checkResult.data.codeDiscountNodes.nodes.length > 0) {
-    const existingCode = checkResult.data.codeDiscountNodes.nodes[0]
-      .codeDiscount.codes.nodes[0].code;
-    console.log(`✓ Using existing discount code: ${existingCode}`);
-    return existingCode;
+  // Check if the specific code (10OFF, 15OFF, etc) already exists
+  const existingNode = checkResult.data.codeDiscountNodes.nodes.find(node => 
+    node.codeDiscount.codes.nodes[0]?.code === discountCode
+  );
+  
+  if (existingNode) {
+    console.log(`✓ Using existing discount code: ${discountCode}`);
+    return discountCode;
   }
   
-  // Create new discount code
+  // Create new discount code with percentage in title
   const mutation = `
     mutation discountCodeBasicCreate($basicCodeDiscount: DiscountCodeBasicInput!) {
       discountCodeBasicCreate(basicCodeDiscount: $basicCodeDiscount) {
@@ -64,7 +67,7 @@ async function createDiscountCode(admin, discountPercentage) {
 
   const variables = {
     basicCodeDiscount: {
-      title: "Exit Intent Offer",
+      title: `${discountPercentage}% Off - Exit Intent Offer`,  // Updated title format
       code: discountCode,
       startsAt: new Date().toISOString(),
       customerSelection: {
@@ -97,6 +100,8 @@ async function createDiscountCode(admin, discountPercentage) {
   console.log(`✓ Created new discount code: ${code}`);
   return code;
 }
+
+ 
 
 export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
@@ -237,8 +242,20 @@ export default function Settings() {
   const actionData = useActionData();
   const navigation = useNavigation();
   const [showPreview, setShowPreview] = useState(false);
+  const [formChanged, setFormChanged] = useState(false);  // NEW
 
   const isSubmitting = navigation.state === "submitting";
+
+  // NEW - Clear success message when form changes
+  const handleFormChange = () => {
+    if (actionData) {
+      setFormChanged(true);
+    }
+  };
+
+  // NEW - Conditionally show messages
+  const showSuccessMessage = actionData?.success && !formChanged && !isSubmitting;
+  const showErrorMessage = actionData?.success === false && !formChanged && !isSubmitting;
 
   return (
     <div style={{ padding: 40, maxWidth: 1200, margin: "0 auto" }}>
@@ -247,31 +264,7 @@ export default function Settings() {
         Configure your exit intent modal and trigger conditions
       </p>
 
-      {actionData?.success && (
-        <div style={{ 
-          padding: 16, 
-          background: "#d1fae5", 
-          color: "#065f46", 
-          borderRadius: 8,
-          marginBottom: 24 
-        }}>
-          ✓ {actionData.message}
-        </div>
-      )}
-
-      {actionData?.success === false && (
-        <div style={{ 
-          padding: 16, 
-          background: "#fee2e2", 
-          color: "#991b1b", 
-          borderRadius: 8,
-          marginBottom: 24 
-        }}>
-          ✗ {actionData.message}
-        </div>
-      )}
-
-      <Form method="post">
+      <Form method="post" onChange={handleFormChange}>  {/* Added onChange */}
         {/* Required Fields Legend */}
         <div style={{
           padding: 12,
@@ -478,16 +471,8 @@ export default function Settings() {
                 style={{ marginRight: 12, marginTop: 4 }}
               />
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
-                  Checkout (Recommended)
-                  <span style={{
-                    fontSize: 11,
-                    padding: "2px 8px",
-                    background: "#10b981",
-                    color: "white",
-                    borderRadius: 4,
-                    fontWeight: 600
-                  }}>DEFAULT</span>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                  Checkout
                 </div>
                 <div style={{ fontSize: 14, color: "#666" }}>
                   Send customers directly to checkout. Fewer steps = higher conversion. Discount auto-applies.
@@ -515,10 +500,13 @@ export default function Settings() {
               />
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                  Cart Page
+                  Cart Page*
                 </div>
                 <div style={{ fontSize: 14, color: "#666" }}>
                   Send customers to cart page first. Gives them a chance to review or add more items before checkout.
+                </div>
+                <div style={{ fontSize: 13, color: "#f59e0b", marginTop: 8, fontStyle: "italic" }}>
+                  *If discount is enabled and your theme doesn't have a cart discount field, customers will be automatically redirected to checkout to apply the discount.
                 </div>
               </div>
             </label>
@@ -545,7 +533,7 @@ export default function Settings() {
           border: "1px solid #e5e7eb",
           marginBottom: 24 
         }}>
-          <h2 style={{ fontSize: 20, marginBottom: 20 }}>Trigger Conditions <span style={{ fontSize: 14, fontWeight: 400, color: "#6b7280" }}>(At least one required)</span></h2>
+          <h2 style={{ fontSize: 20, marginBottom: 20 }}>When to Show Modal <span style={{ fontSize: 14, fontWeight: 400, color: "#6b7280" }}>(At least one required)</span></h2>
 
           <div style={{ marginBottom: 20 }}>
             <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
@@ -558,7 +546,7 @@ export default function Settings() {
               <div>
                 <div style={{ fontWeight: 500 }}>Exit Intent</div>
                 <div style={{ fontSize: 14, color: "#666" }}>
-                  Show modal when cursor moves towards top of browser
+                  Show modal when cursor moves towards top of browser (customer trying to leave)
                 </div>
               </div>
             </label>
@@ -573,9 +561,9 @@ export default function Settings() {
                 style={{ marginRight: 12, width: 20, height: 20 }}
               />
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 500 }}>Time on Cart Page</div>
+                <div style={{ fontWeight: 500 }}>Time Delay on Cart Page</div>
                 <div style={{ fontSize: 14, color: "#666" }}>
-                  Show modal after customer spends time on cart
+                  Show modal after customer spends time on cart page or has mini cart open
                 </div>
               </div>
             </label>
@@ -598,6 +586,17 @@ export default function Settings() {
               />
             </div>
           </div>
+        </div>
+
+        {/* Cart Value Conditions Section - NEW SEPARATE SECTION */}
+        <div style={{ 
+          background: "white", 
+          padding: 24, 
+          borderRadius: 8, 
+          border: "1px solid #e5e7eb",
+          marginBottom: 24 
+        }}>
+          <h2 style={{ fontSize: 20, marginBottom: 20 }}>Additional Conditions <span style={{ fontSize: 14, fontWeight: 400, color: "#6b7280" }}>(Optional)</span></h2>
 
           <div style={{ marginBottom: 20 }}>
             <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
@@ -608,9 +607,9 @@ export default function Settings() {
                 style={{ marginRight: 12, width: 20, height: 20 }}
               />
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 500 }}>Cart Value Threshold</div>
+                <div style={{ fontWeight: 500 }}>Cart Value Range</div>
                 <div style={{ fontSize: 14, color: "#666" }}>
-                  Only show modal if cart value is within range
+                  Only show modal if cart value falls within a specific range
                 </div>
               </div>
             </label>
@@ -653,24 +652,65 @@ export default function Settings() {
               </div>
             </div>
           </div>
+
+          <div style={{
+            padding: 12,
+            background: "#f0f9ff",
+            border: "1px solid #bae6fd",
+            borderRadius: 6,
+            fontSize: 14,
+            color: "#0c4a6e"
+          }}>
+            💡 <strong>Example:</strong> Set minimum to $100 and maximum to $3000 to only show the modal for mid-range carts. Combine with any trigger above!
+          </div>
         </div>
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          style={{ 
-            padding: "12px 24px", 
-            background: isSubmitting ? "#9ca3af" : "#8B5CF6", 
-            color: "white", 
-            border: "none",
-            borderRadius: 6,
-            cursor: isSubmitting ? "not-allowed" : "pointer",
-            fontSize: 16,
-            fontWeight: 500
-          }}
-        >
-          {isSubmitting ? "Saving..." : "Save Settings"}
-        </button>
+        {/* Save Button with Inline Notification */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            style={{ 
+              padding: "12px 24px", 
+              background: isSubmitting ? "#9ca3af" : "#8B5CF6", 
+              color: "white", 
+              border: "none",
+              borderRadius: 6,
+              cursor: isSubmitting ? "not-allowed" : "pointer",
+              fontSize: 16,
+              fontWeight: 500
+            }}
+          >
+            {isSubmitting ? "Saving..." : "Save Settings"}
+          </button>
+
+          {/* Inline Success/Error Message */}
+          {showSuccessMessage && (
+            <div style={{ 
+              padding: "10px 16px", 
+              background: "#d1fae5", 
+              color: "#065f46", 
+              borderRadius: 6,
+              fontSize: 14,
+              fontWeight: 500
+            }}>
+              ✓ {actionData.message}
+            </div>
+          )}
+
+          {showErrorMessage && (
+            <div style={{ 
+              padding: "10px 16px", 
+              background: "#fee2e2", 
+              color: "#991b1b", 
+              borderRadius: 6,
+              fontSize: 14,
+              fontWeight: 500
+            }}>
+              ✗ {actionData.message}
+            </div>
+          )}
+        </div>
       </Form>
 
       {/* Preview Modal */}
