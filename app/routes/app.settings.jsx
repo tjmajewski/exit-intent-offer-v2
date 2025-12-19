@@ -3,14 +3,14 @@ import { Form, useLoaderData, useActionData, useNavigation } from "react-router"
 import { authenticate } from "../shopify.server";
 
 async function createDiscountCode(admin, discountPercentage) {
-  const discountCode = `${discountPercentage}OFF`;  // Changed from EXIT${discountPercentage}
+  const discountCode = `${discountPercentage}OFF`;
   
   console.log(`Creating discount code: ${discountCode}`);
   
   // Check if THIS SPECIFIC code already exists
   const checkQuery = `
     query {
-      codeDiscountNodes(first: 10, query: "title:'Exit Intent Offer'") {
+      codeDiscountNodes(first: 50, query: "code:'${discountCode}'") {
         nodes {
           id
           codeDiscount {
@@ -31,12 +31,8 @@ async function createDiscountCode(admin, discountPercentage) {
   const checkResponse = await admin.graphql(checkQuery);
   const checkResult = await checkResponse.json();
   
-  // Check if the specific code (10OFF, 15OFF, etc) already exists
-  const existingNode = checkResult.data.codeDiscountNodes.nodes.find(node => 
-    node.codeDiscount.codes.nodes[0]?.code === discountCode
-  );
-  
-  if (existingNode) {
+  // If the code exists anywhere, just use it (even if not created by us)
+  if (checkResult.data.codeDiscountNodes.nodes.length > 0) {
     console.log(`✓ Using existing discount code: ${discountCode}`);
     return discountCode;
   }
@@ -67,7 +63,7 @@ async function createDiscountCode(admin, discountPercentage) {
 
   const variables = {
     basicCodeDiscount: {
-      title: `${discountPercentage}% Off - Exit Intent Offer`,  // Updated title format
+      title: `${discountPercentage}% Off - Exit Intent Offer`,
       code: discountCode,
       startsAt: new Date().toISOString(),
       customerSelection: {
@@ -101,17 +97,18 @@ async function createDiscountCode(admin, discountPercentage) {
   return code;
 }
 
- 
-
 export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
 
-  // Load settings from shop metafields
+  // Load settings AND plan from shop metafields
   try {
     const response = await admin.graphql(
       `query {
         shop {
           metafield(namespace: "exit_intent", key: "settings") {
+            value
+          }
+          plan: metafield(namespace: "exit_intent", key: "plan") {
             value
           }
         }
@@ -120,6 +117,7 @@ export async function loader({ request }) {
 
     const data = await response.json();
     const settingsValue = data.data.shop?.metafield?.value;
+    const planValue = data.data.shop?.plan?.value;
     
     // Default settings if none exist
     const defaultSettings = {
@@ -139,25 +137,29 @@ export async function loader({ request }) {
     };
 
     const settings = settingsValue ? JSON.parse(settingsValue) : defaultSettings;
+    const plan = planValue ? JSON.parse(planValue) : null;
 
-    return { settings };
+    return { settings, plan };
   } catch (error) {
     console.error("Error loading settings:", error);
-    return { settings: {
-      modalHeadline: "Wait! Don't leave yet 🎁",
-      modalBody: "Complete your purchase now and get free shipping on your order!",
-      ctaButton: "Complete My Order",
-      exitIntentEnabled: true,
-      timeDelayEnabled: false,
-      timeDelaySeconds: 30,
-      cartValueEnabled: false,
-      cartValueMin: 0,
-      cartValueMax: 1000,
-      discountEnabled: false,
-      discountPercentage: 10,
-      discountCode: null,
-      redirectDestination: "checkout"
-    }};
+    return { 
+      settings: {
+        modalHeadline: "Wait! Don't leave yet 🎁",
+        modalBody: "Complete your purchase now and get free shipping on your order!",
+        ctaButton: "Complete My Order",
+        exitIntentEnabled: true,
+        timeDelayEnabled: false,
+        timeDelaySeconds: 30,
+        cartValueEnabled: false,
+        cartValueMin: 0,
+        cartValueMax: 1000,
+        discountEnabled: false,
+        discountPercentage: 10,
+        discountCode: null,
+        redirectDestination: "checkout"
+      },
+      plan: null
+    };
   }
 }
 
@@ -238,22 +240,21 @@ export async function action({ request }) {
 }
 
 export default function Settings() {
-  const { settings } = useLoaderData();
+  const { settings, plan } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const [showPreview, setShowPreview] = useState(false);
-  const [formChanged, setFormChanged] = useState(false);  // NEW
+  const [formChanged, setFormChanged] = useState(false);
 
   const isSubmitting = navigation.state === "submitting";
 
-  // NEW - Clear success message when form changes
+  // Clear success message when form changes
   const handleFormChange = () => {
     if (actionData) {
       setFormChanged(true);
     }
   };
 
-  // NEW - Conditionally show messages
   const showSuccessMessage = actionData?.success && !formChanged && !isSubmitting;
   const showErrorMessage = actionData?.success === false && !formChanged && !isSubmitting;
 
@@ -264,7 +265,7 @@ export default function Settings() {
         Configure your exit intent modal and trigger conditions
       </p>
 
-      <Form method="post" onChange={handleFormChange}>  {/* Added onChange */}
+      <Form method="post" onChange={handleFormChange}>
         {/* Required Fields Legend */}
         <div style={{
           padding: 12,
@@ -588,7 +589,7 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Cart Value Conditions Section - NEW SEPARATE SECTION */}
+        {/* Cart Value Conditions Section */}
         <div style={{ 
           background: "white", 
           padding: 24, 

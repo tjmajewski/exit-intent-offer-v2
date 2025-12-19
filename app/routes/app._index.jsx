@@ -1,4 +1,4 @@
-import { Link, useLoaderData, useFetcher } from "react-router";
+import { useLoaderData, Link, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import { useState } from "react";
 
@@ -6,504 +6,190 @@ export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
 
   try {
-    const response = await admin.graphql(
-      `#graphql
-        query {
-          shop {
-            settings: metafield(namespace: "exit_intent", key: "settings") {
-              value
-            }
-            status: metafield(namespace: "exit_intent", key: "status") {
-              value
-            }
-            analytics: metafield(namespace: "exit_intent", key: "analytics") {
-              value
-            }
+    const response = await admin.graphql(`
+      query {
+        shop {
+          settings: metafield(namespace: "exit_intent", key: "settings") {
+            value
           }
-        }`
-    );
+          status: metafield(namespace: "exit_intent", key: "status") {
+            value
+          }
+          plan: metafield(namespace: "exit_intent", key: "plan") {
+            value
+          }
+        }
+      }
+    `);
 
     const data = await response.json();
-    const shopData = data.data.shop;
-
-    const defaultSettings = {
-      modalHeadline: "Wait! Don't leave yet 🎁",
-      modalBody: "Complete your purchase now and get free shipping on your order!",
-      ctaButton: "Complete My Order"
-    };
-
-    const settings = shopData?.settings?.value 
-      ? JSON.parse(shopData.settings.value) 
-      : defaultSettings;
-
-    const status = shopData?.status?.value 
-      ? JSON.parse(shopData.status.value)
+    
+    const settings = data.data.shop?.settings?.value 
+      ? JSON.parse(data.data.shop.settings.value) 
+      : null;
+      
+    const status = data.data.shop?.status?.value 
+      ? JSON.parse(data.data.shop.status.value) 
       : { enabled: false };
+      
+    const plan = data.data.shop?.plan?.value 
+      ? JSON.parse(data.data.shop.plan.value) 
+      : null;
 
-    const analytics = shopData?.analytics?.value
-      ? JSON.parse(shopData.analytics.value)
-      : { impressions: 0, clicks: 0, closeouts: 0, conversions: 0, revenue: 0 };
-
-    return { settings, status, analytics };
+    return { 
+      settings, 
+      status,
+      plan,
+      analytics: {
+        totalRevenue: 0,
+        conversionRate: 0,
+        clickRate: 0,
+        revenuePerView: 0
+      }
+    };
   } catch (error) {
     console.error("Error loading dashboard:", error);
-    return {
-      settings: {
-        modalHeadline: "Wait! Don't leave yet 🎁",
-        modalBody: "Complete your purchase now and get free shipping on your order!",
-        ctaButton: "Complete My Order"
-      },
+    return { 
+      settings: null, 
       status: { enabled: false },
-      analytics: { impressions: 0, clicks: 0, closeouts: 0, conversions: 0, revenue: 0 }
+      plan: null,
+      analytics: {
+        totalRevenue: 0,
+        conversionRate: 0,
+        clickRate: 0,
+        revenuePerView: 0
+      }
     };
   }
 }
 
 export async function action({ request }) {
   const { admin } = await authenticate.admin(request);
-  const formData = await request.formData();
-  const enabled = formData.get("enabled") === "true";
-
+  
   try {
-    const shopResponse = await admin.graphql(
-      `query {
+    const formData = await request.formData();
+    const enabled = formData.get("enabled") === "true";
+
+    // Get shop ID
+    const shopResponse = await admin.graphql(`
+      query {
         shop {
           id
         }
-      }`
-    );
+      }
+    `);
     const shopData = await shopResponse.json();
-    
-    if (shopData.errors) {
-      return { success: false, error: "Failed to get shop ID" };
-    }
-    
     const shopId = shopData.data.shop.id;
 
-    const result = await admin.graphql(
-      `#graphql
-        mutation SetStatus($ownerId: ID!, $value: String!) {
-          metafieldsSet(metafields: [{
-            ownerId: $ownerId
-            namespace: "exit_intent"
-            key: "status"
-            value: $value
-            type: "json"
-          }]) {
-            metafields {
-              id
-              value
-            }
-            userErrors {
-              field
-              message
-            }
+    // Save status
+    await admin.graphql(`
+      mutation SetStatus($ownerId: ID!, $value: String!) {
+        metafieldsSet(metafields: [{
+          ownerId: $ownerId
+          namespace: "exit_intent"
+          key: "status"
+          value: $value
+          type: "json"
+        }]) {
+          metafields {
+            id
           }
-        }`,
-      {
-        variables: {
-          ownerId: shopId,
-          value: JSON.stringify({ enabled })
+          userErrors {
+            field
+            message
+          }
         }
       }
-    );
-
-    const data = await result.json();
-
-    if (data.errors) {
-      return { success: false, error: data.errors[0].message };
-    }
-
-    if (data.data?.metafieldsSet?.userErrors?.length > 0) {
-      return { success: false, errors: data.data.metafieldsSet.userErrors };
-    }
+    `, {
+      variables: {
+        ownerId: shopId,
+        value: JSON.stringify({ enabled })
+      }
+    });
 
     return { success: true };
   } catch (error) {
-    return { success: false, error: error.message };
+    console.error("Error toggling status:", error);
+    return { success: false };
   }
 }
 
-export default function Dashboard() {
-  const { settings, status, analytics } = useLoaderData();
-  const fetcher = useFetcher();
-
-  const currentStatus = fetcher.formData 
-    ? fetcher.formData.get("enabled") === "true"
-    : status.enabled;
-
-  const isToggling = fetcher.state === "submitting" || fetcher.state === "loading";
-
-  const conversionRate = analytics.impressions > 0 
-    ? ((analytics.conversions / analytics.impressions) * 100).toFixed(1)
-    : 0;
-  
-  const clickRate = analytics.impressions > 0
-    ? ((analytics.clicks / analytics.impressions) * 100).toFixed(1)
-    : 0;
-
-  const revenuePerImpression = analytics.impressions > 0
-    ? (analytics.revenue / analytics.impressions).toFixed(2)
-    : "0.00";
-
-  return (
-    <div style={{ 
-      minHeight: "100vh",
-      background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-      padding: "48px 24px"
-    }}>
-      <div style={{ maxWidth: 1400, margin: "0 auto" }}>
-        
-        {/* Header */}
-        <div style={{ 
-          display: "flex", 
-          justifyContent: "space-between", 
-          alignItems: "center",
-          marginBottom: 48
-        }}>
-          <div>
-            <h1 style={{ 
-              fontSize: 42, 
-              fontWeight: 800, 
-              color: "white",
-              marginBottom: 8,
-              letterSpacing: "-0.02em"
-            }}>
-              Exit Intent Dashboard
-            </h1>
-            <p style={{ 
-              fontSize: 18, 
-              color: "rgba(255,255,255,0.8)",
-              margin: 0
-            }}>
-              Track your modal performance and revenue recovery
-            </p>
-          </div>
-
-          {/* Status Toggle */}
-          <fetcher.Form method="post">
-            <input type="hidden" name="enabled" value={currentStatus ? "false" : "true"} />
-            <button
-              type="submit"
-              disabled={isToggling}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "16px 28px",
-                background: "white",
-                border: "none",
-                borderRadius: 12,
-                fontSize: 16,
-                fontWeight: 600,
-                cursor: isToggling ? "not-allowed" : "pointer",
-                opacity: isToggling ? 0.6 : 1,
-                boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-                transition: "all 0.2s",
-                color: "#1f2937"
-              }}
-            >
-              <div style={{
-                width: 52,
-                height: 28,
-                borderRadius: 14,
-                background: currentStatus ? "#10b981" : "#d1d5db",
-                position: "relative",
-                transition: "background 0.3s"
-              }}>
-                <div style={{
-                  position: "absolute",
-                  width: 24,
-                  height: 24,
-                  borderRadius: "50%",
-                  background: "white",
-                  top: 2,
-                  left: currentStatus ? 26 : 2,
-                  transition: "left 0.3s",
-                  boxShadow: "0 2px 4px rgba(0,0,0,0.2)"
-                }} />
-              </div>
-              <span>{currentStatus ? "Active" : "Inactive"}</span>
-            </button>
-          </fetcher.Form>
-        </div>
-
-        {/* Revenue Hero Card */}
-        <div style={{
-          background: "white",
-          borderRadius: 24,
-          padding: 48,
-          marginBottom: 32,
-          boxShadow: "0 20px 60px rgba(0,0,0,0.3)"
-        }}>
-          <div style={{ 
-            display: "grid", 
-            gridTemplateColumns: "2fr 1fr 1fr 1fr",
-            gap: 48,
-            alignItems: "center"
-          }}>
-            <div>
-              <div style={{ 
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 12
-              }}>
-                <div style={{ 
-                  fontSize: 14, 
-                  fontWeight: 600,
-                  color: "#6b7280",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em"
-                }}>
-                  Total Revenue Recovered
-                </div>
-                <InfoTooltip text="Total value of orders that used your exit intent discount code. This is the revenue you recovered from customers who were about to leave." />
-              </div>
-              <div style={{ 
-                fontSize: 64, 
-                fontWeight: 800, 
-                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                backgroundClip: "text",
-                lineHeight: 1,
-                marginBottom: 8
-              }}>
-                ${analytics.revenue.toLocaleString('en-US', { 
-                  minimumFractionDigits: 2, 
-                  maximumFractionDigits: 2 
-                })}
-              </div>
-              <div style={{ fontSize: 14, color: "#9ca3af" }}>
-                from {analytics.conversions} conversions
-              </div>
-            </div>
-
-            <StatPill 
-              label="Conversion Rate"
-              value={`${conversionRate}%`}
-              color="#10b981"
-              tooltip="Conversions ÷ Impressions × 100. Shows what % of people who saw your modal completed a purchase."
-            />
-            <StatPill 
-              label="Click Rate"
-              value={`${clickRate}%`}
-              color="#3b82f6"
-              tooltip="Clicks ÷ Impressions × 100. Shows what % of people who saw your modal clicked the CTA button."
-            />
-            <StatPill 
-              label="RPV"
-              value={`$${revenuePerImpression}`}
-              color="#8b5cf6"
-              tooltip="Revenue Per View (Total Revenue ÷ Impressions). Shows average revenue generated each time someone sees your modal. Higher is better!"
-            />
-          </div>
-        </div>
-
-        {/* Metrics Grid */}
-        <div style={{ 
-          display: "grid", 
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: 24,
-          marginBottom: 32
-        }}>
-          <MetricCard 
-            icon="📊"
-            title="Impressions" 
-            value={analytics.impressions}
-            color="#8b5cf6"
-            bgGradient="linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
-          />
-          <MetricCard 
-            icon="🖱️"
-            title="Clicks" 
-            value={analytics.clicks}
-            color="#3b82f6"
-            bgGradient="linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)"
-            subtitle={`${clickRate}% of impressions`}
-          />
-          <MetricCard 
-            icon="✅"
-            title="Conversions" 
-            value={analytics.conversions}
-            color="#10b981"
-            bgGradient="linear-gradient(135deg, #10b981 0%, #059669 100%)"
-            subtitle={`${conversionRate}% rate`}
-          />
-          <MetricCard 
-            icon="❌"
-            title="Closed" 
-            value={analytics.closeouts}
-            color="#f59e0b"
-            bgGradient="linear-gradient(135deg, #f59e0b 0%, #d97706 100%)"
-          />
-        </div>
-
-        {/* Modal Preview */}
-        <div style={{
-          background: "white",
-          borderRadius: 24,
-          padding: 48,
-          boxShadow: "0 20px 60px rgba(0,0,0,0.3)"
-        }}>
-          <div style={{ 
-            display: "flex", 
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 32
-          }}>
-            <h2 style={{ 
-              fontSize: 24, 
-              fontWeight: 700,
-              color: "#1f2937",
-              margin: 0
-            }}>
-              Current Modal Preview
-            </h2>
-            <Link to="/app/settings" style={{ textDecoration: "none" }}>
-              <button style={{
-                padding: "12px 24px",
-                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                color: "white",
-                border: "none",
-                borderRadius: 10,
-                fontSize: 15,
-                fontWeight: 600,
-                cursor: "pointer",
-                boxShadow: "0 4px 12px rgba(102, 126, 234, 0.4)",
-                transition: "transform 0.2s, box-shadow 0.2s"
-              }}>
-                ⚙️ Configure Modal
-              </button>
-            </Link>
-          </div>
-
-          <div style={{
-            maxWidth: 600,
-            margin: "0 auto",
-            border: "2px solid #e5e7eb",
-            borderRadius: 16,
-            padding: 40,
-            background: "#f9fafb"
-          }}>
-            <h3 style={{ 
-              fontSize: 28, 
-              marginBottom: 16, 
-              fontWeight: 700,
-              color: "#1f2937"
-            }}>
-              {settings.modalHeadline}
-            </h3>
-            <p style={{ 
-              marginBottom: 28, 
-              color: "#6b7280", 
-              lineHeight: 1.6,
-              fontSize: 16
-            }}>
-              {settings.modalBody}
-            </p>
-            <button style={{
-              width: "100%",
-              padding: "16px 32px",
-              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-              color: "white",
-              border: "none",
-              borderRadius: 12,
-              fontSize: 17,
-              fontWeight: 700,
-              cursor: "pointer",
-              boxShadow: "0 4px 16px rgba(102, 126, 234, 0.4)"
-            }}>
-              {settings.ctaButton}
-            </button>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  );
-}
-
-function InfoTooltip({ text }) {
-  const [show, setShow] = useState(false);
+// Info tooltip component
+function InfoTooltip({ content }) {
+  const [isOpen, setIsOpen] = useState(false);
 
   return (
     <div style={{ position: "relative", display: "inline-block" }}>
       <button
-        onClick={() => setShow(!show)}
-        onBlur={() => setTimeout(() => setShow(false), 200)}
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        onBlur={() => setTimeout(() => setIsOpen(false), 200)}
         style={{
-          width: 18,
-          height: 18,
-          borderRadius: "50%",
-          background: "#8b5cf6",
+          background: isOpen ? "#a78bfa" : "#8b5cf6",
           color: "white",
-          fontSize: 11,
-          fontWeight: 700,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          cursor: "pointer",
           border: "none",
-          padding: 0,
-          transition: "all 0.2s",
-          boxShadow: show ? "0 0 0 3px rgba(139, 92, 246, 0.2)" : "none"
+          borderRadius: "50%",
+          width: 20,
+          height: 20,
+          fontSize: 12,
+          fontWeight: "bold",
+          cursor: "pointer",
+          marginLeft: 8,
+          boxShadow: isOpen ? "0 0 0 3px rgba(139, 92, 246, 0.3)" : "none",
+          transition: "all 0.2s"
         }}
       >
         ?
       </button>
-      {show && (
+      
+      {isOpen && (
         <div style={{
           position: "absolute",
-          bottom: "calc(100% + 12px)",
-          right: 0,
-          background: "#1f2937",
-          color: "white",
-          padding: "12px 16px",
-          paddingRight: "32px",
+          bottom: 30,
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "white",
+          border: "1px solid #e5e7eb",
           borderRadius: 8,
-          fontSize: 12,
-          lineHeight: 1.5,
+          padding: 12,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
           width: 240,
-          boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
-          zIndex: 1000,
-          border: "1px solid rgba(255,255,255,0.1)"
+          fontSize: 13,
+          lineHeight: 1.5,
+          color: "#374151",
+          zIndex: 1000
         }}>
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShow(false);
-            }}
+            onClick={() => setIsOpen(false)}
             style={{
               position: "absolute",
-              top: 6,
-              right: 6,
-              width: 20,
-              height: 20,
-              background: "transparent",
+              top: 8,
+              right: 8,
+              background: "none",
               border: "none",
-              color: "rgba(255,255,255,0.6)",
               fontSize: 16,
+              color: "#9ca3af",
               cursor: "pointer",
               padding: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center"
+              lineHeight: 1
             }}
           >
             ×
           </button>
-          {text}
+          <div style={{ paddingRight: 16 }}>
+            {content}
+          </div>
           <div style={{
             position: "absolute",
-            top: "100%",
-            right: 12,
-            width: 0,
-            height: 0,
-            borderLeft: "6px solid transparent",
-            borderRight: "6px solid transparent",
-            borderTop: "6px solid #1f2937"
+            bottom: -6,
+            left: "50%",
+            width: 12,
+            height: 12,
+            background: "white",
+            border: "1px solid #e5e7eb",
+            borderTop: "none",
+            borderRight: "none",
+            transform: "translateX(-50%) rotate(-45deg)"
           }} />
         </div>
       )}
@@ -511,75 +197,280 @@ function InfoTooltip({ text }) {
   );
 }
 
-function MetricCard({ icon, title, value, color, bgGradient, subtitle }) {
+export default function Dashboard() {
+  const { settings, status, plan, analytics } = useLoaderData();
+  const fetcher = useFetcher();
+  const [isEnabled, setIsEnabled] = useState(status.enabled);
+
+  const handleToggle = () => {
+    const newStatus = !isEnabled;
+    setIsEnabled(newStatus);
+
+    fetcher.submit(
+      { enabled: newStatus.toString() },
+      { method: "post" }
+    );
+  };
+
   return (
-    <div style={{
-      background: "white",
-      padding: 28,
-      borderRadius: 20,
-      boxShadow: "0 10px 40px rgba(0,0,0,0.15)",
-      transition: "transform 0.2s, box-shadow 0.2s",
-      cursor: "default",
-      position: "relative",
-      overflow: "hidden"
-    }}>
-      <div style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 4,
-        background: bgGradient
-      }} />
+    <div style={{ padding: 40 }}>
+      {/* Header with Toggle */}
       <div style={{ 
-        fontSize: 32, 
-        marginBottom: 12
+        display: "flex", 
+        justifyContent: "space-between", 
+        alignItems: "center",
+        marginBottom: 40 
       }}>
-        {icon}
+        <div>
+          <h1 style={{ fontSize: 32, margin: 0 }}>Exit Intent Dashboard</h1>
+          <p style={{ color: "#666", marginTop: 8 }}>
+            Track your modal performance and recovered revenue
+          </p>
+        </div>
+        
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ 
+            fontWeight: 500,
+            color: isEnabled ? "#10b981" : "#6b7280"
+          }}>
+            {isEnabled ? "Active" : "Inactive"}
+          </span>
+          <button
+            onClick={handleToggle}
+            style={{
+              position: "relative",
+              width: 56,
+              height: 32,
+              borderRadius: 16,
+              border: "none",
+              cursor: "pointer",
+              background: isEnabled ? "#10b981" : "#d1d5db",
+              transition: "background 0.3s"
+            }}
+          >
+            <div style={{
+              position: "absolute",
+              top: 4,
+              left: isEnabled ? 28 : 4,
+              width: 24,
+              height: 24,
+              borderRadius: "50%",
+              background: "white",
+              transition: "left 0.3s",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.2)"
+            }} />
+          </button>
+        </div>
       </div>
-      <div style={{ fontSize: 14, color: "#6b7280", marginBottom: 8, fontWeight: 600 }}>
-        {title}
+
+      {/* Hero Revenue Card */}
+      <div style={{
+        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        padding: 40,
+        borderRadius: 12,
+        color: "white",
+        marginBottom: 32,
+        boxShadow: "0 10px 30px rgba(102, 126, 234, 0.3)"
+      }}>
+        <div style={{ fontSize: 16, opacity: 0.9, marginBottom: 8 }}>
+          Total Revenue Recovered
+          <InfoTooltip content="Total value of orders that used your exit intent discount code. This is the revenue you recovered from customers who were about to leave." />
+        </div>
+        <div style={{ fontSize: 56, fontWeight: "bold", marginBottom: 8 }}>
+          ${analytics.totalRevenue.toLocaleString()}
+        </div>
+        <div style={{ fontSize: 14, opacity: 0.8 }}>
+          From exit intent conversions
+        </div>
       </div>
-      <div style={{ fontSize: 40, fontWeight: 800, color: "#1f2937", lineHeight: 1 }}>
-        {value.toLocaleString()}
+
+      {/* Key Metrics Grid */}
+      <div style={{ 
+        display: "grid", 
+        gridTemplateColumns: "repeat(3, 1fr)", 
+        gap: 24,
+        marginBottom: 32
+      }}>
+        <div style={{
+          background: "white",
+          padding: 24,
+          borderRadius: 8,
+          border: "1px solid #e5e7eb"
+        }}>
+          <div style={{ 
+            fontSize: 14, 
+            color: "#6b7280", 
+            marginBottom: 8,
+            display: "flex",
+            alignItems: "center"
+          }}>
+            Conversion Rate
+            <InfoTooltip content="Conversions ÷ Impressions × 100. Shows what % of people who saw your modal completed a purchase." />
+          </div>
+          <div style={{ fontSize: 32, fontWeight: "bold", color: "#111827" }}>
+            {analytics.conversionRate}%
+          </div>
+        </div>
+
+        <div style={{
+          background: "white",
+          padding: 24,
+          borderRadius: 8,
+          border: "1px solid #e5e7eb"
+        }}>
+          <div style={{ 
+            fontSize: 14, 
+            color: "#6b7280", 
+            marginBottom: 8,
+            display: "flex",
+            alignItems: "center"
+          }}>
+            Click Rate
+            <InfoTooltip content="Clicks ÷ Impressions × 100. Shows what % of people who saw your modal clicked the CTA button." />
+          </div>
+          <div style={{ fontSize: 32, fontWeight: "bold", color: "#111827" }}>
+            {analytics.clickRate}%
+          </div>
+        </div>
+
+        <div style={{
+          background: "white",
+          padding: 24,
+          borderRadius: 8,
+          border: "1px solid #e5e7eb"
+        }}>
+          <div style={{ 
+            fontSize: 14, 
+            color: "#6b7280", 
+            marginBottom: 8,
+            display: "flex",
+            alignItems: "center"
+          }}>
+            RPV (Revenue Per View)
+            <InfoTooltip content="Revenue Per View (Total Revenue ÷ Impressions). Shows average revenue generated each time someone sees your modal. Higher is better!" />
+          </div>
+          <div style={{ fontSize: 32, fontWeight: "bold", color: "#111827" }}>
+            ${analytics.revenuePerView.toFixed(2)}
+          </div>
+        </div>
       </div>
-      {subtitle && (
-        <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 8 }}>
-          {subtitle}
+
+{/* Configure Button */}
+      <div style={{ marginTop: 32 }}>
+        <Link
+          to="/app/settings"
+          style={{
+            display: "inline-block",
+            padding: "12px 24px",
+            background: "#8B5CF6",
+            color: "white",
+            textDecoration: "none",
+            borderRadius: 6,
+            fontWeight: 500,
+            fontSize: 16
+          }}
+        >
+          Configure Modal
+        </Link>
+      </div>
+
+      {/* Current Modal Preview */}
+      {settings && (
+        <div style={{
+          marginTop: 32,
+          padding: 24,
+          background: "white",
+          border: "1px solid #e5e7eb",
+          borderRadius: 8
+        }}>
+          <h3 style={{ marginTop: 0, marginBottom: 16 }}>
+            Current Modal Preview
+          </h3>
+          <div style={{
+            background: "rgba(0, 0, 0, 0.05)",
+            padding: 40,
+            borderRadius: 8,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center"
+          }}>
+            <div style={{
+              background: "white",
+              padding: 40,
+              borderRadius: 12,
+              maxWidth: 500,
+              width: "100%",
+              boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)"
+            }}>
+              <h2 style={{ fontSize: 24, marginTop: 0, marginBottom: 16 }}>
+                {settings.modalHeadline}
+              </h2>
+              <p style={{ marginBottom: 24, color: "#666", lineHeight: 1.6 }}>
+                {settings.modalBody}
+              </p>
+              <button style={{
+                width: "100%",
+                padding: "12px 24px",
+                background: "#8B5CF6",
+                color: "white",
+                border: "none",
+                borderRadius: 6,
+                fontSize: 16,
+                fontWeight: 500,
+                cursor: "pointer"
+              }}>
+                {settings.ctaButton}
+              </button>
+              {settings.discountCode && (
+                <div style={{
+                  marginTop: 16,
+                  padding: 12,
+                  background: "#f0fdf4",
+                  border: "1px solid #86efac",
+                  borderRadius: 6,
+                  fontSize: 14,
+                  textAlign: "center",
+                  color: "#166534"
+                }}>
+                  💰 Code: <strong>{settings.discountCode}</strong> will be auto-applied
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
-    </div>
-  );
-}
 
-function StatPill({ label, value, color, tooltip }) {
-  return (
-    <div style={{ textAlign: "center" }}>
-      <div style={{ 
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 6,
-        marginBottom: 8
-      }}>
-        <div style={{ 
-          fontSize: 12, 
-          color: "#6b7280",
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.05em"
+      {/* Setup Guide */}
+      {!settings && (
+        <div style={{
+          marginTop: 32,
+          padding: 24,
+          background: "#fef3c7",
+          border: "1px solid #fde68a",
+          borderRadius: 8
         }}>
-          {label}
+          <h3 style={{ marginTop: 0, marginBottom: 12 }}>
+            🚀 Get Started
+          </h3>
+          <p style={{ marginBottom: 16, color: "#92400e" }}>
+            Configure your exit intent modal to start recovering abandoned carts and growing revenue.
+          </p>
+          <Link
+            to="/app/settings"
+            style={{
+              display: "inline-block",
+              padding: "10px 20px",
+              background: "#8B5CF6",
+              color: "white",
+              textDecoration: "none",
+              borderRadius: 6,
+              fontWeight: 500
+            }}
+          >
+            Configure Now →
+          </Link>
         </div>
-        {tooltip && <InfoTooltip text={tooltip} />}
-      </div>
-      <div style={{
-        fontSize: 32,
-        fontWeight: 800,
-        color: color
-      }}>
-        {value}
-      </div>
+      )}
     </div>
   );
 }
