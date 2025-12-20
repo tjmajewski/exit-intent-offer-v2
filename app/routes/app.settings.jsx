@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Form, useLoaderData, useActionData, useNavigation } from "react-router";
 import { authenticate } from "../shopify.server";
+import { hasFeature } from "../utils/featureGates";
 
 async function createDiscountCode(admin, discountPercentage) {
   const discountCode = `${discountPercentage}OFF`;
@@ -248,6 +249,11 @@ export default function Settings() {
 
   const isSubmitting = navigation.state === "submitting";
 
+  // Feature gates
+  const canUseAllTriggers = plan ? hasFeature(plan, 'allTriggers') : false;
+  const canUseCartValue = plan ? hasFeature(plan, 'cartValueTargeting') : false;
+  const canChooseRedirect = plan ? hasFeature(plan, 'redirectChoice') : false;
+
   // Clear success message when form changes
   const handleFormChange = () => {
     if (actionData) {
@@ -443,9 +449,26 @@ export default function Settings() {
           padding: 24, 
           borderRadius: 8, 
           border: "1px solid #e5e7eb",
-          marginBottom: 24 
+          marginBottom: 24,
+          opacity: canChooseRedirect ? 1 : 0.5,
+          position: 'relative'
         }}>
-          <h2 style={{ fontSize: 20, marginBottom: 20 }}>After Click Behavior <span style={{ color: "#dc2626" }}>*</span></h2>
+          <h2 style={{ fontSize: 20, marginBottom: 20 }}>
+            After Click Behavior <span style={{ color: "#dc2626" }}>*</span>
+            {!canChooseRedirect && (
+              <span style={{ 
+                marginLeft: 8, 
+                padding: "2px 8px", 
+                background: "#8B5CF6", 
+                color: "white", 
+                borderRadius: 4, 
+                fontSize: 12,
+                fontWeight: 600 
+              }}>
+                PRO
+              </span>
+            )}
+          </h2>
 
           <div style={{ marginBottom: 12 }}>
             <label style={{ display: "block", marginBottom: 12, fontWeight: 500 }}>
@@ -455,7 +478,7 @@ export default function Settings() {
             <label style={{ 
               display: "flex", 
               alignItems: "flex-start", 
-              cursor: "pointer",
+              cursor: canChooseRedirect ? "pointer" : "not-allowed",
               padding: 16,
               border: "2px solid",
               borderRadius: 8,
@@ -469,11 +492,12 @@ export default function Settings() {
                 name="redirectDestination"
                 value="checkout"
                 defaultChecked={!settings.redirectDestination || settings.redirectDestination === "checkout"}
+                disabled={!canChooseRedirect}
                 style={{ marginRight: 12, marginTop: 4 }}
               />
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                  Checkout
+                  Checkout {!canChooseRedirect && "(Starter Plan Default)"}
                 </div>
                 <div style={{ fontSize: 14, color: "#666" }}>
                   Send customers directly to checkout. Fewer steps = higher conversion. Discount auto-applies.
@@ -484,7 +508,7 @@ export default function Settings() {
             <label style={{ 
               display: "flex", 
               alignItems: "flex-start", 
-              cursor: "pointer",
+              cursor: canChooseRedirect ? "pointer" : "not-allowed",
               padding: 16,
               border: "2px solid",
               borderRadius: 8,
@@ -497,6 +521,7 @@ export default function Settings() {
                 name="redirectDestination"
                 value="cart"
                 defaultChecked={settings.redirectDestination === "cart"}
+                disabled={!canChooseRedirect}
                 style={{ marginRight: 12, marginTop: 4 }}
               />
               <div style={{ flex: 1 }}>
@@ -513,17 +538,34 @@ export default function Settings() {
             </label>
           </div>
 
-          <div style={{
-            padding: 12,
-            background: "#fef3c7",
-            border: "1px solid #fde68a",
-            borderRadius: 6,
-            fontSize: 14,
-            color: "#92400e",
-            marginTop: 16
-          }}>
-            🧪 <strong>A/B Testing Tip:</strong> This is a great variable to test! Try both and see which converts better for your store.
-          </div>
+          {!canChooseRedirect ? (
+            <div style={{
+              padding: 12,
+              background: "#fef3c7",
+              border: "1px solid #fde68a",
+              borderRadius: 6,
+              fontSize: 14,
+              color: "#92400e",
+              marginTop: 16
+            }}>
+              ⭐ <strong>Upgrade to Pro</strong> to choose between cart and checkout redirect and A/B test which converts better.{" "}
+              <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
+                Learn more →
+              </a>
+            </div>
+          ) : (
+            <div style={{
+              padding: 12,
+              background: "#fef3c7",
+              border: "1px solid #fde68a",
+              borderRadius: 6,
+              fontSize: 14,
+              color: "#92400e",
+              marginTop: 16
+            }}>
+              🧪 <strong>A/B Testing Tip:</strong> This is a great variable to test! Try both and see which converts better for your store.
+            </div>
+          )}
         </div>
 
         {/* Trigger Conditions Section */}
@@ -553,16 +595,36 @@ export default function Settings() {
             </label>
           </div>
 
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+          <div style={{ 
+            marginBottom: 20,
+            opacity: canUseAllTriggers ? 1 : 0.5,
+            position: 'relative'
+          }}>
+            <label style={{ display: "flex", alignItems: "center", cursor: canUseAllTriggers ? "pointer" : "not-allowed" }}>
               <input
                 type="checkbox"
                 name="timeDelayEnabled"
                 defaultChecked={settings.timeDelayEnabled}
+                disabled={!canUseAllTriggers}
                 style={{ marginRight: 12, width: 20, height: 20 }}
               />
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 500 }}>Time Delay on Cart Page</div>
+                <div style={{ fontWeight: 500 }}>
+                  Time Delay on Cart Page
+                  {!canUseAllTriggers && (
+                    <span style={{ 
+                      marginLeft: 8, 
+                      padding: "2px 8px", 
+                      background: "#8B5CF6", 
+                      color: "white", 
+                      borderRadius: 4, 
+                      fontSize: 12,
+                      fontWeight: 600 
+                    }}>
+                      PRO
+                    </span>
+                  )}
+                </div>
                 <div style={{ fontSize: 14, color: "#666" }}>
                   Show modal after customer spends time on cart page or has mini cart open
                 </div>
@@ -578,6 +640,7 @@ export default function Settings() {
                 defaultValue={settings.timeDelaySeconds}
                 min="5"
                 max="300"
+                disabled={!canUseAllTriggers}
                 style={{ 
                   padding: "8px 12px", 
                   border: "1px solid #d1d5db",
@@ -586,6 +649,21 @@ export default function Settings() {
                 }}
               />
             </div>
+            
+            {!canUseAllTriggers && (
+              <div style={{ 
+                marginTop: 12, 
+                padding: 12, 
+                background: "#fef3c7", 
+                borderRadius: 6,
+                fontSize: 14 
+              }}>
+                ⭐ <strong>Upgrade to Pro</strong> to unlock time delay triggers and cart value targeting.{" "}
+                <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
+                  Learn more →
+                </a>
+              </div>
+            )}
           </div>
         </div>
 
@@ -599,16 +677,36 @@ export default function Settings() {
         }}>
           <h2 style={{ fontSize: 20, marginBottom: 20 }}>Additional Conditions <span style={{ fontSize: 14, fontWeight: 400, color: "#6b7280" }}>(Optional)</span></h2>
 
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+          <div style={{ 
+            marginBottom: 20,
+            opacity: canUseCartValue ? 1 : 0.5,
+            position: 'relative'
+          }}>
+            <label style={{ display: "flex", alignItems: "center", cursor: canUseCartValue ? "pointer" : "not-allowed" }}>
               <input
                 type="checkbox"
                 name="cartValueEnabled"
                 defaultChecked={settings.cartValueEnabled}
+                disabled={!canUseCartValue}
                 style={{ marginRight: 12, width: 20, height: 20 }}
               />
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 500 }}>Cart Value Range</div>
+                <div style={{ fontWeight: 500 }}>
+                  Cart Value Range
+                  {!canUseCartValue && (
+                    <span style={{ 
+                      marginLeft: 8, 
+                      padding: "2px 8px", 
+                      background: "#8B5CF6", 
+                      color: "white", 
+                      borderRadius: 4, 
+                      fontSize: 12,
+                      fontWeight: 600 
+                    }}>
+                      PRO
+                    </span>
+                  )}
+                </div>
                 <div style={{ fontSize: 14, color: "#666" }}>
                   Only show modal if cart value falls within a specific range
                 </div>
@@ -625,6 +723,7 @@ export default function Settings() {
                   defaultValue={settings.cartValueMin}
                   min="0"
                   step="0.01"
+                  disabled={!canUseCartValue}
                   style={{ 
                     padding: "8px 12px", 
                     border: "1px solid #d1d5db",
@@ -643,6 +742,7 @@ export default function Settings() {
                   defaultValue={settings.cartValueMax}
                   min="0"
                   step="0.01"
+                  disabled={!canUseCartValue}
                   style={{ 
                     padding: "8px 12px", 
                     border: "1px solid #d1d5db",
@@ -652,6 +752,21 @@ export default function Settings() {
                 />
               </div>
             </div>
+            
+            {!canUseCartValue && (
+              <div style={{ 
+                marginTop: 12, 
+                padding: 12, 
+                background: "#fef3c7", 
+                borderRadius: 6,
+                fontSize: 14 
+              }}>
+                ⭐ <strong>Upgrade to Pro</strong> to target specific cart value ranges.{" "}
+                <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
+                  Learn more →
+                </a>
+              </div>
+            )}
           </div>
 
           <div style={{

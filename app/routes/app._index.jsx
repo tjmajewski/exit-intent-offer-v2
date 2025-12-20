@@ -114,48 +114,89 @@ export async function action({ request }) {
   
   try {
     const formData = await request.formData();
-    const enabled = formData.get("enabled") === "true";
+    const actionType = formData.get("actionType");
 
     // Get shop ID
     const shopResponse = await admin.graphql(`
       query {
         shop {
           id
+          plan: metafield(namespace: "exit_intent", key: "plan") {
+            value
+          }
         }
       }
     `);
     const shopData = await shopResponse.json();
     const shopId = shopData.data.shop.id;
 
-    // Save status
-    await admin.graphql(`
-      mutation SetStatus($ownerId: ID!, $value: String!) {
-        metafieldsSet(metafields: [{
-          ownerId: $ownerId
-          namespace: "exit_intent"
-          key: "status"
-          value: $value
-          type: "json"
-        }]) {
-          metafields {
-            id
+    // Handle plan switching
+    if (actionType === "switchPlan") {
+      const newTier = formData.get("tier");
+      const currentPlan = shopData.data.shop?.plan?.value 
+        ? JSON.parse(shopData.data.shop.plan.value)
+        : null;
+
+      if (currentPlan) {
+        currentPlan.tier = newTier;
+
+        await admin.graphql(`
+          mutation UpdatePlan($ownerId: ID!, $value: String!) {
+            metafieldsSet(metafields: [{
+              ownerId: $ownerId
+              namespace: "exit_intent"
+              key: "plan"
+              value: $value
+              type: "json"
+            }]) {
+              metafields { id }
+            }
           }
-          userErrors {
-            field
-            message
+        `, {
+          variables: {
+            ownerId: shopId,
+            value: JSON.stringify(currentPlan)
+          }
+        });
+
+        console.log(`✓ Switched plan to: ${newTier}`);
+        return { success: true, planSwitched: true };
+      }
+    }
+
+    // Handle status toggle
+    if (actionType === "toggleStatus") {
+      const enabled = formData.get("enabled") === "true";
+
+      await admin.graphql(`
+        mutation SetStatus($ownerId: ID!, $value: String!) {
+          metafieldsSet(metafields: [{
+            ownerId: $ownerId
+            namespace: "exit_intent"
+            key: "status"
+            value: $value
+            type: "json"
+          }]) {
+            metafields {
+              id
+            }
+            userErrors {
+              field
+              message
+            }
           }
         }
-      }
-    `, {
-      variables: {
-        ownerId: shopId,
-        value: JSON.stringify({ enabled })
-      }
-    });
+      `, {
+        variables: {
+          ownerId: shopId,
+          value: JSON.stringify({ enabled })
+        }
+      });
+    }
 
     return { success: true };
   } catch (error) {
-    console.error("Error toggling status:", error);
+    console.error("Error in action:", error);
     return { success: false };
   }
 }
@@ -253,7 +294,20 @@ export default function Dashboard() {
     setIsEnabled(newStatus);
 
     fetcher.submit(
-      { enabled: newStatus.toString() },
+      { 
+        actionType: "toggleStatus",
+        enabled: newStatus.toString() 
+      },
+      { method: "post" }
+    );
+  };
+
+  const handlePlanSwitch = (newTier) => {
+    fetcher.submit(
+      { 
+        actionType: "switchPlan",
+        tier: newTier 
+      },
       { method: "post" }
     );
   };
@@ -274,38 +328,68 @@ export default function Dashboard() {
           </p>
         </div>
         
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ 
-            fontWeight: 500,
-            color: isEnabled ? "#10b981" : "#6b7280"
-          }}>
-            {isEnabled ? "Active" : "Inactive"}
-          </span>
-          <button
-            onClick={handleToggle}
-            style={{
-              position: "relative",
-              width: 56,
-              height: 32,
-              borderRadius: 16,
-              border: "none",
-              cursor: "pointer",
-              background: isEnabled ? "#10b981" : "#d1d5db",
-              transition: "background 0.3s"
-            }}
-          >
-            <div style={{
-              position: "absolute",
-              top: 4,
-              left: isEnabled ? 28 : 4,
-              width: 24,
-              height: 24,
-              borderRadius: "50%",
-              background: "white",
-              transition: "left 0.3s",
-              boxShadow: "0 2px 4px rgba(0,0,0,0.2)"
-            }} />
-          </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {/* Plan Switcher (Dev Tool) */}
+          {plan && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+              <label style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
+                🔧 Dev: Switch Plan
+              </label>
+              <select
+                value={plan.tier}
+                onChange={(e) => handlePlanSwitch(e.target.value)}
+                style={{
+                  padding: "8px 12px",
+                  border: "2px solid #8B5CF6",
+                  borderRadius: 6,
+                  background: "white",
+                  color: "#8B5CF6",
+                  fontWeight: 600,
+                  fontSize: 14,
+                  cursor: "pointer"
+                }}
+              >
+                <option value="starter">Starter ($29/mo)</option>
+                <option value="pro">Pro ($79/mo)</option>
+                <option value="enterprise">Enterprise ($299/mo)</option>
+              </select>
+            </div>
+          )}
+
+          {/* Active/Inactive Toggle */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ 
+              fontWeight: 500,
+              color: isEnabled ? "#10b981" : "#6b7280"
+            }}>
+              {isEnabled ? "Active" : "Inactive"}
+            </span>
+            <button
+              onClick={handleToggle}
+              style={{
+                position: "relative",
+                width: 56,
+                height: 32,
+                borderRadius: 16,
+                border: "none",
+                cursor: "pointer",
+                background: isEnabled ? "#10b981" : "#d1d5db",
+                transition: "background 0.3s"
+              }}
+            >
+              <div style={{
+                position: "absolute",
+                top: 4,
+                left: isEnabled ? 28 : 4,
+                width: 24,
+                height: 24,
+                borderRadius: "50%",
+                background: "white",
+                transition: "left 0.3s",
+                boxShadow: "0 2px 4px rgba(0,0,0,0.2)"
+              }} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -319,6 +403,14 @@ export default function Dashboard() {
           const isOverLimit = percentage >= 100;
 
           if (!limit) return null; // Don't show for unlimited plans
+
+          // Format reset date
+          const resetDate = plan.usage.resetDate ? new Date(plan.usage.resetDate) : null;
+          const resetDateFormatted = resetDate ? resetDate.toLocaleDateString('en-US', { 
+            month: 'long', 
+            day: 'numeric', 
+            year: 'numeric' 
+          }) : 'Unknown';
 
           return (
             <div style={{
@@ -350,6 +442,12 @@ export default function Dashboard() {
                   transition: "width 0.3s"
                 }} />
               </div>
+              
+              {/* Reset date - always show */}
+              <div style={{ marginTop: 8, fontSize: 13, color: "#6b7280" }}>
+                📅 Resets on {resetDateFormatted}
+              </div>
+
               {isOverLimit && (
                 <div style={{ marginTop: 8, fontSize: 13, color: "#991b1b" }}>
                   ⚠️ Monthly limit reached. Upgrade to Pro for unlimited impressions.{" "}
