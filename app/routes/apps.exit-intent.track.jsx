@@ -1,4 +1,5 @@
 import { authenticate } from "../shopify.server";
+import { checkUsageLimit, PLAN_FEATURES } from "../utils/featureGates";
 
 export async function action({ request }) {
   // Authenticate the request from the storefront
@@ -23,16 +24,39 @@ export async function action({ request }) {
       });
     }
 
-    // Get shop ID
+    // Get shop ID and plan
     const shopResponse = await admin.graphql(
       `query {
         shop {
           id
+          plan: metafield(namespace: "exit_intent", key: "plan") {
+            value
+          }
         }
       }`
     );
     const shopData = await shopResponse.json();
     const shopId = shopData.data.shop.id;
+    const plan = shopData.data.shop?.plan?.value 
+      ? JSON.parse(shopData.data.shop.plan.value)
+      : null;
+
+    // Check impression limit BEFORE tracking
+    if (event === "impression" && plan) {
+      const usageCheck = checkUsageLimit(plan, "impressionsThisMonth");
+      
+      if (!usageCheck.allowed) {
+        console.log("⚠️ Impression limit reached:", usageCheck);
+        return new Response(JSON.stringify({ 
+          error: "Monthly impression limit reached",
+          limit: usageCheck.limit,
+          usage: usageCheck.usage
+        }), {
+          status: 429,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
 
     // Get current analytics
     const analyticsResponse = await admin.graphql(
@@ -82,6 +106,41 @@ export async function action({ request }) {
         }
       }
     );
+
+    // Increment usage counter for impressions
+    if (event === "impression" && plan) {
+      plan.usage = plan.usage || {};
+      plan.usage.impressionsThisMonth = (plan.usage.impressionsThisMonth || 0) + 1;
+      
+      console.log(`📊 Usage updated: ${plan.usage.impressionsThisMonth}/${PLAN_FEATURES[plan.tier].impressionLimit || '∞'}`);
+      
+      // Save updated plan with usage
+      await admin.graphql(
+        `mutation UpdatePlanUsage($ownerId: ID!, $value: String!) {
+          metafieldsSet(metafields: [{
+            ownerId: $ownerId
+            namespace: "exit_intent"
+            key: "plan"
+            value: $value
+            type: "json"
+          }]) {
+            metafields {
+              id
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }`,
+        {
+          variables: {
+            ownerId: shopId,
+            value: JSON.stringify(plan)
+          }
+        }
+      );
+    }
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,

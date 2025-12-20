@@ -9,6 +9,7 @@ export async function loader({ request }) {
     const response = await admin.graphql(`
       query {
         shop {
+          id
           settings: metafield(namespace: "exit_intent", key: "settings") {
             value
           }
@@ -32,9 +33,54 @@ export async function loader({ request }) {
       ? JSON.parse(data.data.shop.status.value) 
       : { enabled: false };
       
-    const plan = data.data.shop?.plan?.value 
+    let plan = data.data.shop?.plan?.value 
       ? JSON.parse(data.data.shop.plan.value) 
       : null;
+
+    // If no plan exists, create default plan
+    if (!plan) {
+      const now = new Date();
+      const trialEnd = new Date(now);
+      trialEnd.setDate(trialEnd.getDate() + 14);
+      
+      const resetDate = new Date(now);
+      resetDate.setMonth(resetDate.getMonth() + 1);
+      
+      plan = {
+        tier: "starter",
+        status: "trialing",
+        billingCycle: "monthly",
+        startDate: now.toISOString(),
+        trialEndsAt: trialEnd.toISOString(),
+        usage: {
+          impressionsThisMonth: 0,
+          resetDate: resetDate.toISOString()
+        }
+      };
+
+      // Save the plan
+      const shopId = data.data.shop.id;
+      await admin.graphql(`
+        mutation SetDefaultPlan($ownerId: ID!, $value: String!) {
+          metafieldsSet(metafields: [{
+            ownerId: $ownerId
+            namespace: "exit_intent"
+            key: "plan"
+            value: $value
+            type: "json"
+          }]) {
+            metafields { id }
+          }
+        }
+      `, {
+        variables: {
+          ownerId: shopId,
+          value: JSON.stringify(plan)
+        }
+      });
+
+      console.log('✓ Created default plan:', plan.tier);
+    }
 
     return { 
       settings, 
@@ -262,6 +308,65 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      {/* Usage Stats - Only show for plans with limits */}
+      {plan && plan.usage && plan.usage.impressionsThisMonth !== undefined && (
+        (() => {
+          const limit = plan.tier === "starter" ? 1000 : null;
+          const usage = plan.usage.impressionsThisMonth || 0;
+          const percentage = limit ? Math.min((usage / limit) * 100, 100) : 0;
+          const isNearLimit = percentage >= 80;
+          const isOverLimit = percentage >= 100;
+
+          if (!limit) return null; // Don't show for unlimited plans
+
+          return (
+            <div style={{
+              padding: 16,
+              background: isOverLimit ? "#fee2e2" : isNearLimit ? "#fef3c7" : "#f0f9ff",
+              border: `1px solid ${isOverLimit ? "#fca5a5" : isNearLimit ? "#fde68a" : "#bae6fd"}`,
+              borderRadius: 8,
+              marginBottom: 24
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontWeight: 500, color: isOverLimit ? "#991b1b" : isNearLimit ? "#92400e" : "#0c4a6e" }}>
+                  Monthly Impressions
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: isOverLimit ? "#991b1b" : isNearLimit ? "#92400e" : "#0c4a6e" }}>
+                  {usage.toLocaleString()} / {limit.toLocaleString()}
+                </div>
+              </div>
+              <div style={{
+                width: "100%",
+                height: 8,
+                background: "#e5e7eb",
+                borderRadius: 4,
+                overflow: "hidden"
+              }}>
+                <div style={{
+                  width: `${percentage}%`,
+                  height: "100%",
+                  background: isOverLimit ? "#dc2626" : isNearLimit ? "#f59e0b" : "#3b82f6",
+                  transition: "width 0.3s"
+                }} />
+              </div>
+              {isOverLimit && (
+                <div style={{ marginTop: 8, fontSize: 13, color: "#991b1b" }}>
+                  ⚠️ Monthly limit reached. Upgrade to Pro for unlimited impressions.{" "}
+                  <Link to="/app/upgrade" style={{ color: "#7c3aed", textDecoration: "underline" }}>
+                    Upgrade now →
+                  </Link>
+                </div>
+              )}
+              {isNearLimit && !isOverLimit && (
+                <div style={{ marginTop: 8, fontSize: 13, color: "#92400e" }}>
+                  ⚡ You're at {Math.round(percentage)}% of your monthly limit.
+                </div>
+              )}
+            </div>
+          );
+        })()
+      )}
 
       {/* Hero Revenue Card */}
       <div style={{
