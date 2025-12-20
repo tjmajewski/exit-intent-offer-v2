@@ -1,6 +1,7 @@
 import { useLoaderData, Link, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import { useState } from "react";
+import { checkAndResetUsage } from "../utils/featureGates";
 
 export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
@@ -82,16 +83,86 @@ export async function loader({ request }) {
       console.log('✓ Created default plan:', plan.tier);
     }
 
+    // Check if usage needs to be reset
+    if (plan) {
+      const shopId = data.data.shop.id;
+      const resetResult = checkAndResetUsage(plan, shopId, admin);
+      
+      if (resetResult.needsReset) {
+        // Save the updated plan with reset usage
+        await admin.graphql(`
+          mutation UpdatePlanAfterReset($ownerId: ID!, $value: String!) {
+            metafieldsSet(metafields: [{
+              ownerId: $ownerId
+              namespace: "exit_intent"
+              key: "plan"
+              value: $value
+              type: "json"
+            }]) {
+              metafields { id }
+            }
+          }
+        `, {
+          variables: {
+            ownerId: shopId,
+            value: JSON.stringify(resetResult.plan)
+          }
+        });
+
+        plan = resetResult.plan;
+        console.log('✓ Usage reset saved to metafields');
+      }
+    }
+
+    // Load real analytics data
+    const analyticsResponse = await admin.graphql(`
+      query {
+        shop {
+          analytics: metafield(namespace: "exit_intent", key: "analytics") {
+            value
+          }
+        }
+      }
+    `);
+
+    const analyticsData = await analyticsResponse.json();
+    const analyticsRaw = analyticsData.data.shop?.analytics?.value 
+      ? JSON.parse(analyticsData.data.shop.analytics.value)
+      : { impressions: 0, clicks: 0, closeouts: 0, conversions: 0, revenue: 0 };
+
+    // Calculate metrics
+    const impressions = analyticsRaw.impressions || 0;
+    const clicks = analyticsRaw.clicks || 0;
+    const conversions = analyticsRaw.conversions || 0;
+    const revenue = analyticsRaw.revenue || 0;
+
+    const conversionRate = impressions > 0 
+      ? ((conversions / impressions) * 100).toFixed(1) 
+      : 0;
+
+    const clickRate = impressions > 0 
+      ? ((clicks / impressions) * 100).toFixed(1) 
+      : 0;
+
+    const revenuePerView = impressions > 0 
+      ? (revenue / impressions).toFixed(2) 
+      : 0;
+
+    const analytics = {
+      totalRevenue: revenue,
+      conversionRate: parseFloat(conversionRate),
+      clickRate: parseFloat(clickRate),
+      revenuePerView: parseFloat(revenuePerView),
+      impressions,
+      clicks,
+      conversions
+    };
+
     return { 
       settings, 
       status,
       plan,
-      analytics: {
-        totalRevenue: 0,
-        conversionRate: 0,
-        clickRate: 0,
-        revenuePerView: 0
-      }
+      analytics
     };
   } catch (error) {
     console.error("Error loading dashboard:", error);
@@ -103,7 +174,10 @@ export async function loader({ request }) {
         totalRevenue: 0,
         conversionRate: 0,
         clickRate: 0,
-        revenuePerView: 0
+        revenuePerView: 0,
+        impressions: 0,
+        clicks: 0,
+        conversions: 0
       }
     };
   }
@@ -161,6 +235,41 @@ export async function action({ request }) {
 
         console.log(`✓ Switched plan to: ${newTier}`);
         return { success: true, planSwitched: true };
+      }
+    }
+
+    // TEST: Force reset by setting reset date to yesterday
+    if (actionType === "testReset") {
+      const currentPlan = shopData.data.shop?.plan?.value 
+        ? JSON.parse(shopData.data.shop.plan.value)
+        : null;
+
+      if (currentPlan && currentPlan.usage) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        currentPlan.usage.resetDate = yesterday.toISOString();
+
+        await admin.graphql(`
+          mutation UpdatePlan($ownerId: ID!, $value: String!) {
+            metafieldsSet(metafields: [{
+              ownerId: $ownerId
+              namespace: "exit_intent"
+              key: "plan"
+              value: $value
+              type: "json"
+            }]) {
+              metafields { id }
+            }
+          }
+        `, {
+          variables: {
+            ownerId: shopId,
+            value: JSON.stringify(currentPlan)
+          }
+        });
+
+        console.log(`✓ Set reset date to yesterday - refresh page to trigger reset`);
+        return { success: true, testResetReady: true };
       }
     }
 
@@ -329,30 +438,61 @@ export default function Dashboard() {
         </div>
         
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          {/* Plan Switcher (Dev Tool) */}
+          {/* Dev Tools */}
           {plan && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-              <label style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
-                🔧 Dev: Switch Plan
-              </label>
-              <select
-                value={plan.tier}
-                onChange={(e) => handlePlanSwitch(e.target.value)}
-                style={{
-                  padding: "8px 12px",
-                  border: "2px solid #8B5CF6",
-                  borderRadius: 6,
-                  background: "white",
-                  color: "#8B5CF6",
-                  fontWeight: 600,
-                  fontSize: 14,
-                  cursor: "pointer"
-                }}
-              >
-                <option value="starter">Starter ($29/mo)</option>
-                <option value="pro">Pro ($79/mo)</option>
-                <option value="enterprise">Enterprise ($299/mo)</option>
-              </select>
+            <div style={{ display: "flex", gap: 12 }}>
+              {/* Plan Switcher */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                <label style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
+                  🔧 Dev: Switch Plan
+                </label>
+                <select
+                  value={plan.tier}
+                  onChange={(e) => handlePlanSwitch(e.target.value)}
+                  style={{
+                    padding: "8px 12px",
+                    border: "2px solid #8B5CF6",
+                    borderRadius: 6,
+                    background: "white",
+                    color: "#8B5CF6",
+                    fontWeight: 600,
+                    fontSize: 14,
+                    cursor: "pointer"
+                  }}
+                >
+                  <option value="starter">Starter ($29/mo)</option>
+                  <option value="pro">Pro ($79/mo)</option>
+                  <option value="enterprise">Enterprise ($299/mo)</option>
+                </select>
+              </div>
+
+              {/* Test Reset Button */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                <label style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
+                  🔧 Dev: Test Reset
+                </label>
+                <button
+                  onClick={() => {
+                    fetcher.submit(
+                      { actionType: "testReset" },
+                      { method: "post" }
+                    );
+                    setTimeout(() => window.location.reload(), 500);
+                  }}
+                  style={{
+                    padding: "8px 12px",
+                    border: "2px solid #ef4444",
+                    borderRadius: 6,
+                    background: "white",
+                    color: "#ef4444",
+                    fontWeight: 600,
+                    fontSize: 14,
+                    cursor: "pointer"
+                  }}
+                >
+                  Force Reset
+                </button>
+              </div>
             </div>
           )}
 

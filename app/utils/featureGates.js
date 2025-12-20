@@ -96,3 +96,32 @@ export function getDefaultPlan() {
     }
   };
 }
+export function checkAndResetUsage(plan, shopId, admin) {
+  if (!plan || !plan.usage || !plan.usage.resetDate) {
+    return { needsReset: false, plan };
+  }
+
+  const now = new Date();
+  const resetDate = new Date(plan.usage.resetDate);
+
+  // Check if we're past the reset date
+  if (now >= resetDate) {
+    console.log(`🔄 Resetting usage - reset date was ${resetDate.toISOString()}`);
+
+    // Reset usage
+    plan.usage.impressionsThisMonth = 0;
+
+    // Calculate next reset date (30 days from now)
+    const nextReset = new Date(now);
+    nextReset.setDate(nextReset.getDate() + 30);
+    nextReset.setHours(0, 0, 0, 0);
+    
+    plan.usage.resetDate = nextReset.toISOString();
+
+    console.log(`✓ Usage reset complete. Next reset: ${nextReset.toISOString()}`);
+
+    return { needsReset: true, plan };
+  }
+
+  return { needsReset: false, plan };
+}
