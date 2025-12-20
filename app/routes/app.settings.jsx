@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Form, useLoaderData, useActionData, useNavigation } from "react-router";
 import { authenticate } from "../shopify.server";
 import { hasFeature } from "../utils/featureGates";
+import { getAvailableTemplates, MODAL_TEMPLATES } from "../utils/templates";
 
 async function createDiscountCode(admin, discountPercentage) {
   const discountCode = `${discountPercentage}OFF`;
@@ -139,8 +140,9 @@ export async function loader({ request }) {
 
     const settings = settingsValue ? JSON.parse(settingsValue) : defaultSettings;
     const plan = planValue ? JSON.parse(planValue) : null;
+    const availableTemplates = plan ? getAvailableTemplates(plan.tier) : getAvailableTemplates("starter");
 
-    return { settings, plan };
+    return { settings, plan, availableTemplates };
   } catch (error) {
     console.error("Error loading settings:", error);
     return { 
@@ -241,11 +243,12 @@ export async function action({ request }) {
 }
 
 export default function Settings() {
-  const { settings, plan } = useLoaderData();
+  const { settings, plan, availableTemplates } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const [showPreview, setShowPreview] = useState(false);
   const [formChanged, setFormChanged] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState(settings.template || "discount");
 
   const isSubmitting = navigation.state === "submitting";
 
@@ -253,6 +256,20 @@ export default function Settings() {
   const canUseAllTriggers = plan ? hasFeature(plan, 'allTriggers') : false;
   const canUseCartValue = plan ? hasFeature(plan, 'cartValueTargeting') : false;
   const canChooseRedirect = plan ? hasFeature(plan, 'redirectChoice') : false;
+  const canUseMultipleTemplates = plan ? hasFeature(plan, 'multipleTemplates') : false;
+
+  // Apply template to form
+  const applyTemplate = (templateId) => {
+    const template = MODAL_TEMPLATES[templateId];
+    if (!template) return;
+
+    setSelectedTemplate(templateId);
+
+    // Update form fields
+    document.querySelector('input[name="modalHeadline"]').value = template.headline;
+    document.querySelector('textarea[name="modalBody"]').value = template.body;
+    document.querySelector('input[name="ctaButton"]').value = template.ctaButton;
+  };
 
   // Clear success message when form changes
   const handleFormChange = () => {
@@ -282,6 +299,112 @@ export default function Settings() {
           color: "#4b5563"
         }}>
           Fields marked with <span style={{ color: "#dc2626", fontWeight: 600 }}>*</span> are required
+        </div>
+
+        {/* Template Selector */}
+        <div style={{ 
+          background: "white", 
+          padding: 24, 
+          borderRadius: 8, 
+          border: "1px solid #e5e7eb",
+          marginBottom: 24 
+        }}>
+          <h2 style={{ fontSize: 20, marginBottom: 8 }}>
+            Choose a Template
+            {!canUseMultipleTemplates && (
+              <span style={{ 
+                marginLeft: 8, 
+                padding: "2px 8px", 
+                background: "#8B5CF6", 
+                color: "white", 
+                borderRadius: 4, 
+                fontSize: 12,
+                fontWeight: 600 
+              }}>
+                PRO for more
+              </span>
+            )}
+          </h2>
+          <p style={{ fontSize: 14, color: "#666", marginBottom: 20 }}>
+            Start with a pre-made template and customize it to match your brand
+          </p>
+
+          <div style={{ 
+            display: "grid", 
+            gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", 
+            gap: 16 
+          }}>
+            {availableTemplates.map((template) => (
+              <button
+                key={template.id}
+                type="button"
+                onClick={() => applyTemplate(template.id)}
+                style={{
+                  padding: 16,
+                  border: selectedTemplate === template.id ? "2px solid #8B5CF6" : "1px solid #e5e7eb",
+                  borderRadius: 8,
+                  background: selectedTemplate === template.id ? "#f5f3ff" : "white",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  transition: "all 0.2s"
+                }}
+              >
+                <div style={{ fontSize: 32, marginBottom: 8 }}>{template.icon}</div>
+                <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>{template.name}</div>
+                <div style={{ fontSize: 12, color: "#666" }}>{template.description}</div>
+              </button>
+            ))}
+
+            {/* Locked templates preview for Starter */}
+            {!canUseMultipleTemplates && Object.values(MODAL_TEMPLATES).filter(t => t.tier === "pro").slice(0, 3).map((template) => (
+              <div
+                key={template.id}
+                style={{
+                  padding: 16,
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 8,
+                  background: "white",
+                  opacity: 0.5,
+                  position: "relative",
+                  textAlign: "left"
+                }}
+              >
+                <div style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 8,
+                  background: "#8B5CF6",
+                  color: "white",
+                  padding: "2px 6px",
+                  borderRadius: 4,
+                  fontSize: 10,
+                  fontWeight: 600
+                }}>
+                  PRO
+                </div>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>{template.icon}</div>
+                <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>{template.name}</div>
+                <div style={{ fontSize: 12, color: "#666" }}>{template.description}</div>
+              </div>
+            ))}
+          </div>
+
+          {!canUseMultipleTemplates && (
+            <div style={{ 
+              marginTop: 16, 
+              padding: 12, 
+              background: "#fef3c7", 
+              borderRadius: 6,
+              fontSize: 14 
+            }}>
+              ⭐ <strong>Upgrade to Pro</strong> to unlock 4 additional templates including Free Shipping, Urgency, and more.{" "}
+              <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
+                Learn more →
+              </a>
+            </div>
+          )}
+
+          <input type="hidden" name="template" value={selectedTemplate} />
         </div>
 
         {/* Modal Content Section */}
