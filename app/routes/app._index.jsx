@@ -393,6 +393,54 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Plan Badge */}
+      {plan && (
+        <div style={{
+          background: "white",
+          border: "1px solid #e5e7eb",
+          borderRadius: 8,
+          padding: 16,
+          marginBottom: 24,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{
+              padding: "6px 12px",
+              background: plan.tier === "starter" ? "#dbeafe" : plan.tier === "pro" ? "#8B5CF6" : "#fbbf24",
+              color: plan.tier === "starter" ? "#1e40af" : "white",
+              borderRadius: 6,
+              fontWeight: 600,
+              fontSize: 14,
+              textTransform: "uppercase"
+            }}>
+              {plan.tier} Plan
+            </div>
+          </div>
+
+          {/* Only show upgrade CTA if trialing OR Pro wanting to upgrade to Enterprise */}
+          {(plan.status === "trialing" || plan.tier === "pro") && plan.tier !== "enterprise" && (
+            <Link
+              to="/app/upgrade"
+              style={{
+                padding: "8px 16px",
+                background: "#8B5CF6",
+                color: "white",
+                textDecoration: "none",
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 500
+              }}
+            >
+              {plan.tier === "starter" 
+                ? "🚀 Unlock unlimited impressions - Upgrade to Pro" 
+                : "⚡ Get A/B testing & AI - Upgrade to Enterprise"}
+            </Link>
+          )}
+        </div>
+      )}
+
       {/* Usage Stats - Only show for plans with limits */}
       {plan && plan.usage && plan.usage.impressionsThisMonth !== undefined && (
         (() => {
