@@ -1,7 +1,110 @@
-import { useLoaderData, Link } from "react-router";
+import { useLoaderData, Link, Form } from "react-router";
 import { authenticate } from "../shopify.server";
 import { hasFeature } from "../utils/featureGates";
 import { getDefaultModalLibrary } from "../utils/modalHash";
+
+export async function action({ request }) {
+  const { admin } = await authenticate.admin(request);
+  
+  try {
+    const formData = await request.formData();
+    const action = formData.get("action");
+    
+    if (action === "testConversion") {
+      const revenue = parseFloat(formData.get("testRevenue") || "100");
+      
+      // Get shop ID
+      const shopResponse = await admin.graphql(`
+        query {
+          shop {
+            id
+            analytics: metafield(namespace: "exit_intent", key: "analytics") {
+              value
+            }
+            modalLibrary: metafield(namespace: "exit_intent", key: "modal_library") {
+              value
+            }
+          }
+        }
+      `);
+      
+      const shopData = await shopResponse.json();
+      const shopId = shopData.data.shop.id;
+      
+      // Update analytics
+      const analytics = shopData.data.shop?.analytics?.value
+        ? JSON.parse(shopData.data.shop.analytics.value)
+        : { impressions: 0, clicks: 0, closeouts: 0, conversions: 0, revenue: 0, events: [] };
+      
+      analytics.conversions += 1;
+      analytics.revenue += revenue;
+      
+      if (!analytics.events) analytics.events = [];
+      analytics.events.push({
+        type: "conversion",
+        timestamp: new Date().toISOString(),
+        revenue: revenue
+      });
+      
+      await admin.graphql(`
+        mutation SetAnalytics($ownerId: ID!, $value: String!) {
+          metafieldsSet(metafields: [{
+            ownerId: $ownerId
+            namespace: "exit_intent"
+            key: "analytics"
+            value: $value
+            type: "json"
+          }]) {
+            metafields { id }
+          }
+        }
+      `, {
+        variables: {
+          ownerId: shopId,
+          value: JSON.stringify(analytics)
+        }
+      });
+      
+      // Update modal library
+      if (shopData.data.shop?.modalLibrary?.value) {
+        const modalLibrary = JSON.parse(shopData.data.shop.modalLibrary.value);
+        const currentModal = modalLibrary.modals?.find(m => m.modalId === modalLibrary.currentModalId);
+        
+        if (currentModal) {
+          currentModal.stats.conversions = (currentModal.stats.conversions || 0) + 1;
+          currentModal.stats.revenue = (currentModal.stats.revenue || 0) + revenue;
+          
+          await admin.graphql(`
+            mutation UpdateModalLibrary($ownerId: ID!, $value: String!) {
+              metafieldsSet(metafields: [{
+                ownerId: $ownerId
+                namespace: "exit_intent"
+                key: "modal_library"
+                value: $value
+                type: "json"
+              }]) {
+                metafields { id }
+              }
+            }
+          `, {
+            variables: {
+              ownerId: shopId,
+              value: JSON.stringify(modalLibrary)
+            }
+          });
+        }
+      }
+      
+      console.log(`✓ Test conversion added: $${revenue}`);
+      return { success: true };
+    }
+    
+    return { success: false };
+  } catch (error) {
+    console.error("Error in action:", error);
+    return { success: false };
+  }
+}
 
 export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
@@ -255,7 +358,53 @@ export default function Analytics() {
         </table>
       </div>
 
-      <div style={{ marginTop: 32, textAlign: "center" }}>
+      {/* Test Conversion Button */}
+      <div style={{ marginTop: 32, padding: 24, background: "#fef3c7", borderRadius: 8, border: "1px solid #fde68a" }}>
+        <h3 style={{ fontSize: 16, marginBottom: 8, color: "#92400e" }}>🧪 Test Mode</h3>
+        <p style={{ fontSize: 14, color: "#92400e", marginBottom: 16 }}>
+          Simulate a conversion for testing. In production, conversions are tracked via order webhooks.
+        </p>
+        <Form method="post">
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+            <div>
+              <label style={{ display: "block", fontSize: 14, marginBottom: 4, color: "#92400e" }}>
+                Order Value ($):
+              </label>
+              <input
+                type="number"
+                name="testRevenue"
+                defaultValue="100"
+                min="1"
+                step="0.01"
+                style={{
+                  padding: "8px 12px",
+                  border: "1px solid #fde68a",
+                  borderRadius: 6,
+                  width: 120
+                }}
+              />
+            </div>
+            <button
+              type="submit"
+              name="action"
+              value="testConversion"
+              style={{
+                padding: "8px 16px",
+                background: "#8B5CF6",
+                color: "white",
+                border: "none",
+                borderRadius: 6,
+                cursor: "pointer",
+                fontWeight: 500
+              }}
+            >
+              Add Test Conversion
+            </button>
+          </div>
+        </Form>
+      </div>
+
+      <div style={{ marginTop: 24, textAlign: "center" }}>
         <Link
           to="/app"
           style={{

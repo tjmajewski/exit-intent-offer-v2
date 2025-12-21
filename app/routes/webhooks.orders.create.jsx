@@ -9,14 +9,14 @@ export const action = async ({ request }) => {
     console.log("Order ID:", payload.id);
     console.log("Order total:", payload.total_price);
 
-    // Check if our discount code was used
+    // Check if our discount code was used (10OFF, 15OFF format)
     const discountCodes = payload.discount_codes || [];
     const exitDiscountUsed = discountCodes.find(dc => 
-      dc.code && dc.code.startsWith("EXIT")
+      dc.code && /^\d+OFF$/i.test(dc.code) // Matches 10OFF, 15OFF, etc
     );
 
     if (!exitDiscountUsed) {
-      console.log("No EXIT discount used, skipping analytics update");
+      console.log("No exit intent discount used, skipping analytics update");
       return new Response(null, { status: 200 });
     }
 
@@ -24,7 +24,7 @@ export const action = async ({ request }) => {
     console.log(`🎉 Exit intent discount redeemed: ${exitDiscountUsed.code}`);
     console.log(`💰 Order value: $${orderValue}`);
     
-    // Update analytics
+    // Update analytics and modal library
     await updateAnalytics(session, orderValue);
     console.log("✓ Analytics updated with conversion and revenue");
 
@@ -39,12 +39,15 @@ async function updateAnalytics(session, revenue) {
   // Use the session to make GraphQL requests
   const { admin } = await authenticate.admin({ session });
   
-  // Query current analytics
+  // Query current analytics and modal library
   const query = `
     query {
       shop {
         id
-        metafield(namespace: "exit_intent", key: "analytics") {
+        analytics: metafield(namespace: "exit_intent", key: "analytics") {
+          value
+        }
+        modalLibrary: metafield(namespace: "exit_intent", key: "modal_library") {
           value
         }
       }
@@ -54,26 +57,35 @@ async function updateAnalytics(session, revenue) {
   const response = await admin.graphql(query);
   const result = await response.json();
 
+  const shopId = result.data.shop.id;
+
   // Parse current analytics or use defaults
-  const currentValue = result.data.shop?.metafield?.value;
+  const currentValue = result.data.shop?.analytics?.value;
   const analytics = currentValue ? JSON.parse(currentValue) : {
     impressions: 0,
     clicks: 0,
     closeouts: 0,
     conversions: 0,
-    revenue: 0
+    revenue: 0,
+    events: []
   };
 
   // Increment conversions and add revenue
   analytics.conversions += 1;
   analytics.revenue += revenue;
 
+  // Add timestamped conversion event
+  if (!analytics.events) analytics.events = [];
+  analytics.events.push({
+    type: "conversion",
+    timestamp: new Date().toISOString(),
+    revenue: revenue
+  });
+
   console.log("📊 New analytics:", analytics);
 
-  const shopId = result.data.shop.id;
-
   // Save updated analytics
-  const mutation = `
+  const analyticsMutation = `
     mutation SetAnalytics($ownerId: ID!, $value: String!) {
       metafieldsSet(metafields: [{
         ownerId: $ownerId
@@ -93,10 +105,48 @@ async function updateAnalytics(session, revenue) {
     }
   `;
 
-  await admin.graphql(mutation, {
+  await admin.graphql(analyticsMutation, {
     variables: {
       ownerId: shopId,
       value: JSON.stringify(analytics)
     }
   });
+
+  // Update modal library stats
+  const modalLibraryValue = result.data.shop?.modalLibrary?.value;
+  if (modalLibraryValue) {
+    const modalLibrary = JSON.parse(modalLibraryValue);
+    const currentModal = modalLibrary.modals?.find(m => m.modalId === modalLibrary.currentModalId);
+    
+    if (currentModal) {
+      currentModal.stats.conversions = (currentModal.stats.conversions || 0) + 1;
+      currentModal.stats.revenue = (currentModal.stats.revenue || 0) + revenue;
+      
+      console.log(`📊 Updated ${currentModal.modalName} stats:`, currentModal.stats);
+      
+      // Save updated modal library
+      const modalLibraryMutation = `
+        mutation UpdateModalLibrary($ownerId: ID!, $value: String!) {
+          metafieldsSet(metafields: [{
+            ownerId: $ownerId
+            namespace: "exit_intent"
+            key: "modal_library"
+            value: $value
+            type: "json"
+          }]) {
+            metafields {
+              id
+            }
+          }
+        }
+      `;
+
+      await admin.graphql(modalLibraryMutation, {
+        variables: {
+          ownerId: shopId,
+          value: JSON.stringify(modalLibrary)
+        }
+      });
+    }
+  }
 }

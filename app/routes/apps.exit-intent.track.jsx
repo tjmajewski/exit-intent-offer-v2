@@ -128,6 +128,54 @@ export async function action({ request }) {
       }
     );
 
+    // Update modal library stats
+    const modalLibraryResponse = await admin.graphql(
+      `query {
+        shop {
+          modalLibrary: metafield(namespace: "exit_intent", key: "modal_library") {
+            value
+          }
+        }
+      }`
+    );
+    
+    const modalLibraryData = await modalLibraryResponse.json();
+    if (modalLibraryData.data.shop?.modalLibrary?.value) {
+      const modalLibrary = JSON.parse(modalLibraryData.data.shop.modalLibrary.value);
+      const currentModal = modalLibrary.modals?.find(m => m.modalId === modalLibrary.currentModalId);
+      
+      if (currentModal) {
+        // Increment the stat for current modal
+        const statKey = event + "s";
+        currentModal.stats[statKey] = (currentModal.stats[statKey] || 0) + 1;
+        
+        console.log(`📊 Updated ${currentModal.modalName} stats:`, currentModal.stats);
+        
+        // Save updated modal library
+        await admin.graphql(
+          `mutation UpdateModalLibrary($ownerId: ID!, $value: String!) {
+            metafieldsSet(metafields: [{
+              ownerId: $ownerId
+              namespace: "exit_intent"
+              key: "modal_library"
+              value: $value
+              type: "json"
+            }]) {
+              metafields {
+                id
+              }
+            }
+          }`,
+          {
+            variables: {
+              ownerId: shopId,
+              value: JSON.stringify(modalLibrary)
+            }
+          }
+        );
+      }
+    }
+
     // Increment usage counter for impressions
     if (event === "impression" && plan) {
       plan.usage = plan.usage || {};
