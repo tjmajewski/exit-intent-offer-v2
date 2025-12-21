@@ -72,11 +72,32 @@ export async function action({ request }) {
     const analyticsData = await analyticsResponse.json();
     const currentAnalytics = analyticsData.data.shop?.metafield?.value 
       ? JSON.parse(analyticsData.data.shop.metafield.value)
-      : { impressions: 0, clicks: 0, closeouts: 0, conversions: 0, revenue: 0 };
+      : { 
+          impressions: 0, 
+          clicks: 0, 
+          closeouts: 0, 
+          conversions: 0, 
+          revenue: 0,
+          events: [] // New: array of timestamped events
+        };
 
     // Increment the appropriate metric
     const metricKey = event + "s";
     currentAnalytics[metricKey] = (currentAnalytics[metricKey] || 0) + 1;
+
+    // Add timestamped event
+    if (!currentAnalytics.events) currentAnalytics.events = [];
+    currentAnalytics.events.push({
+      type: event,
+      timestamp: new Date().toISOString()
+    });
+
+    // Keep only last 90 days of events (to prevent unlimited growth)
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    currentAnalytics.events = currentAnalytics.events.filter(e => 
+      new Date(e.timestamp) > ninetyDaysAgo
+    );
     
     console.log("📊 Updated analytics:", currentAnalytics);
 

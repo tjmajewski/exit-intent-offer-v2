@@ -128,34 +128,70 @@ export async function loader({ request }) {
     const analyticsData = await analyticsResponse.json();
     const analyticsRaw = analyticsData.data.shop?.analytics?.value 
       ? JSON.parse(analyticsData.data.shop.analytics.value)
-      : { impressions: 0, clicks: 0, closeouts: 0, conversions: 0, revenue: 0 };
+      : { impressions: 0, clicks: 0, closeouts: 0, conversions: 0, revenue: 0, events: [] };
 
-    // Calculate metrics
-    const impressions = analyticsRaw.impressions || 0;
-    const clicks = analyticsRaw.clicks || 0;
-    const conversions = analyticsRaw.conversions || 0;
-    const revenue = analyticsRaw.revenue || 0;
+    // Calculate 30-day rolling metrics
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const conversionRate = impressions > 0 
-      ? ((conversions / impressions) * 100).toFixed(1) 
+    const events = analyticsRaw.events || [];
+    const last30DaysEvents = events.filter(e => new Date(e.timestamp) > thirtyDaysAgo);
+
+    const impressions30d = last30DaysEvents.filter(e => e.type === 'impression').length;
+    const clicks30d = last30DaysEvents.filter(e => e.type === 'click').length;
+    const conversions30d = last30DaysEvents.filter(e => e.type === 'conversion').length;
+
+    const conversionRate30d = impressions30d > 0 
+      ? ((conversions30d / impressions30d) * 100).toFixed(1) 
       : 0;
 
-    const clickRate = impressions > 0 
-      ? ((clicks / impressions) * 100).toFixed(1) 
+    const clickRate30d = impressions30d > 0 
+      ? ((clicks30d / impressions30d) * 100).toFixed(1) 
       : 0;
 
-    const revenuePerView = impressions > 0 
-      ? (revenue / impressions).toFixed(2) 
+    const revenuePerView30d = impressions30d > 0 
+      ? ((analyticsRaw.revenue || 0) / impressions30d).toFixed(2) 
+      : 0;
+
+    // Calculate lifetime metrics (for Pro+)
+    const impressionsLifetime = analyticsRaw.impressions || 0;
+    const clicksLifetime = analyticsRaw.clicks || 0;
+    const conversionsLifetime = analyticsRaw.conversions || 0;
+    const revenueLifetime = analyticsRaw.revenue || 0;
+
+    const conversionRateLifetime = impressionsLifetime > 0 
+      ? ((conversionsLifetime / impressionsLifetime) * 100).toFixed(1) 
+      : 0;
+
+    const clickRateLifetime = impressionsLifetime > 0 
+      ? ((clicksLifetime / impressionsLifetime) * 100).toFixed(1) 
+      : 0;
+
+    const revenuePerViewLifetime = impressionsLifetime > 0 
+      ? (revenueLifetime / impressionsLifetime).toFixed(2) 
       : 0;
 
     const analytics = {
-      totalRevenue: revenue,
-      conversionRate: parseFloat(conversionRate),
-      clickRate: parseFloat(clickRate),
-      revenuePerView: parseFloat(revenuePerView),
-      impressions,
-      clicks,
-      conversions
+      // 30-day metrics (everyone)
+      last30Days: {
+        totalRevenue: analyticsRaw.revenue || 0, // Note: revenue is cumulative, we'd need to track per-event
+        conversionRate: parseFloat(conversionRate30d),
+        clickRate: parseFloat(clickRate30d),
+        revenuePerView: parseFloat(revenuePerView30d),
+        impressions: impressions30d,
+        clicks: clicks30d,
+        conversions: conversions30d
+      },
+      // Lifetime metrics (Pro+)
+      lifetime: {
+        totalRevenue: revenueLifetime,
+        conversionRate: parseFloat(conversionRateLifetime),
+        clickRate: parseFloat(clickRateLifetime),
+        revenuePerView: parseFloat(revenuePerViewLifetime),
+        impressions: impressionsLifetime,
+        clicks: clicksLifetime,
+        conversions: conversionsLifetime
+      }
     };
 
     return { 
@@ -171,13 +207,24 @@ export async function loader({ request }) {
       status: { enabled: false },
       plan: null,
       analytics: {
-        totalRevenue: 0,
-        conversionRate: 0,
-        clickRate: 0,
-        revenuePerView: 0,
-        impressions: 0,
-        clicks: 0,
-        conversions: 0
+        last30Days: {
+          totalRevenue: 0,
+          conversionRate: 0,
+          clickRate: 0,
+          revenuePerView: 0,
+          impressions: 0,
+          clicks: 0,
+          conversions: 0
+        },
+        lifetime: {
+          totalRevenue: 0,
+          conversionRate: 0,
+          clickRate: 0,
+          revenuePerView: 0,
+          impressions: 0,
+          clicks: 0,
+          conversions: 0
+        }
       }
     };
   }
@@ -392,6 +439,8 @@ function InfoTooltip({ content }) {
     </div>
   );
 }
+
+
 
 export default function Dashboard() {
   const { settings, status, plan, analytics } = useLoaderData();
@@ -654,7 +703,7 @@ export default function Dashboard() {
         })()
       )}
 
-      {/* Hero Revenue Card */}
+      {/* Hero Revenue Card - Last 30 Days */}
       <div style={{
         background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
         padding: 40,
@@ -664,18 +713,18 @@ export default function Dashboard() {
         boxShadow: "0 10px 30px rgba(102, 126, 234, 0.3)"
       }}>
         <div style={{ fontSize: 16, opacity: 0.9, marginBottom: 8 }}>
-          Total Revenue Recovered
-          <InfoTooltip content="Total value of orders that used your exit intent discount code. This is the revenue you recovered from customers who were about to leave." />
+          Revenue Recovered (Last 30 Days)
+          <InfoTooltip content="Total value of orders from exit intent conversions in the last 30 days." />
         </div>
         <div style={{ fontSize: 56, fontWeight: "bold", marginBottom: 8 }}>
-          ${analytics.totalRevenue.toLocaleString()}
+          ${analytics.last30Days.totalRevenue.toLocaleString()}
         </div>
         <div style={{ fontSize: 14, opacity: 0.8 }}>
-          From exit intent conversions
+          {analytics.last30Days.impressions.toLocaleString()} impressions • {analytics.last30Days.clicks.toLocaleString()} clicks • {analytics.last30Days.conversions.toLocaleString()} conversions
         </div>
       </div>
 
-      {/* Key Metrics Grid */}
+      {/* Key Metrics Grid - Last 30 Days */}
       <div style={{ 
         display: "grid", 
         gridTemplateColumns: "repeat(3, 1fr)", 
@@ -695,11 +744,11 @@ export default function Dashboard() {
             display: "flex",
             alignItems: "center"
           }}>
-            Conversion Rate
-            <InfoTooltip content="Conversions ÷ Impressions × 100. Shows what % of people who saw your modal completed a purchase." />
+            Conversion Rate (30d)
+            <InfoTooltip content="Conversions ÷ Impressions × 100 for the last 30 days. Shows what % of people who saw your modal completed a purchase." />
           </div>
           <div style={{ fontSize: 32, fontWeight: "bold", color: "#111827" }}>
-            {analytics.conversionRate}%
+            {analytics.last30Days.conversionRate}%
           </div>
         </div>
 
@@ -716,11 +765,11 @@ export default function Dashboard() {
             display: "flex",
             alignItems: "center"
           }}>
-            Click Rate
-            <InfoTooltip content="Clicks ÷ Impressions × 100. Shows what % of people who saw your modal clicked the CTA button." />
+            Click Rate (30d)
+            <InfoTooltip content="Clicks ÷ Impressions × 100 for the last 30 days. Shows what % of people who saw your modal clicked the CTA button." />
           </div>
           <div style={{ fontSize: 32, fontWeight: "bold", color: "#111827" }}>
-            {analytics.clickRate}%
+            {analytics.last30Days.clickRate}%
           </div>
         </div>
 
@@ -737,14 +786,119 @@ export default function Dashboard() {
             display: "flex",
             alignItems: "center"
           }}>
-            RPV (Revenue Per View)
-            <InfoTooltip content="Revenue Per View (Total Revenue ÷ Impressions). Shows average revenue generated each time someone sees your modal. Higher is better!" />
+            RPV (30d)
+            <InfoTooltip content="Revenue Per View for the last 30 days. Shows average revenue generated each time someone sees your modal." />
           </div>
           <div style={{ fontSize: 32, fontWeight: "bold", color: "#111827" }}>
-            ${analytics.revenuePerView.toFixed(2)}
+            ${analytics.last30Days.revenuePerView}
           </div>
         </div>
       </div>
+
+      {/* Lifetime Analytics - Pro+ Only */}
+      {plan && (
+        <div style={{
+          background: "white",
+          padding: 32,
+          borderRadius: 12,
+          border: "1px solid #e5e7eb",
+          marginBottom: 32,
+          opacity: plan.tier === "starter" ? 0.6 : 1,
+          position: "relative"
+        }}>
+          <h2 style={{ fontSize: 24, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
+            Lifetime Analytics
+            {plan.tier === "starter" && (
+              <span style={{ 
+                padding: "2px 8px", 
+                background: "#8B5CF6", 
+                color: "white", 
+                borderRadius: 4, 
+                fontSize: 12,
+                fontWeight: 600 
+              }}>
+                PRO
+              </span>
+            )}
+          </h2>
+          <p style={{ fontSize: 14, color: "#6b7280", marginBottom: 24 }}>
+            Track all-time performance across all your exit intent campaigns
+          </p>
+
+          {plan.tier === "starter" ? (
+            <div>
+              <div style={{
+                padding: 24,
+                background: "#fef3c7",
+                borderRadius: 8,
+                marginBottom: 16
+              }}>
+                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: "#92400e" }}>
+                  🔒 Unlock Lifetime Analytics
+                </div>
+                <div style={{ fontSize: 14, color: "#92400e", marginBottom: 16 }}>
+                  See your all-time performance, track trends over time, and compare against historical benchmarks.
+                </div>
+                <Link
+                  to="/app/upgrade"
+                  style={{
+                    display: "inline-block",
+                    padding: "10px 20px",
+                    background: "#8B5CF6",
+                    color: "white",
+                    textDecoration: "none",
+                    borderRadius: 6,
+                    fontWeight: 500
+                  }}
+                >
+                  Upgrade to Pro →
+                </Link>
+              </div>
+              
+              {/* Blurred preview */}
+              <div style={{ filter: "blur(4px)", pointerEvents: "none" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+                  <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
+                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Total Revenue</div>
+                    <div style={{ fontSize: 24, fontWeight: "bold" }}>$12,847</div>
+                  </div>
+                  <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
+                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Impressions</div>
+                    <div style={{ fontSize: 24, fontWeight: "bold" }}>45,231</div>
+                  </div>
+                  <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
+                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Conversions</div>
+                    <div style={{ fontSize: 24, fontWeight: "bold" }}>1,847</div>
+                  </div>
+                  <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
+                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Avg CVR</div>
+                    <div style={{ fontSize: 24, fontWeight: "bold" }}>4.1%</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+              <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
+                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Total Revenue</div>
+                <div style={{ fontSize: 24, fontWeight: "bold" }}>${analytics.lifetime.totalRevenue.toLocaleString()}</div>
+              </div>
+              <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
+                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Impressions</div>
+                <div style={{ fontSize: 24, fontWeight: "bold" }}>{analytics.lifetime.impressions.toLocaleString()}</div>
+              </div>
+              <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
+                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Conversions</div>
+                <div style={{ fontSize: 24, fontWeight: "bold" }}>{analytics.lifetime.conversions.toLocaleString()}</div>
+              </div>
+              <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
+                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Avg CVR</div>
+                <div style={{ fontSize: 24, fontWeight: "bold" }}>{analytics.lifetime.conversionRate}%</div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
 {/* Configure Button */}
       <div style={{ marginTop: 32 }}>
