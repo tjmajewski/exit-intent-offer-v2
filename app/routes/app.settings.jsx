@@ -3,6 +3,7 @@ import { Form, useLoaderData, useActionData, useNavigation } from "react-router"
 import { authenticate } from "../shopify.server";
 import { hasFeature } from "../utils/featureGates";
 import { getAvailableTemplates, MODAL_TEMPLATES } from "../utils/templates";
+import { generateModalHash, getDefaultModalLibrary, findModalByHash, getNextModalName } from "../utils/modalHash";
 
 async function createDiscountCode(admin, discountPercentage) {
   const discountCode = `${discountPercentage}OFF`;
@@ -142,7 +143,22 @@ export async function loader({ request }) {
     const plan = planValue ? JSON.parse(planValue) : null;
     const availableTemplates = plan ? getAvailableTemplates(plan.tier) : getAvailableTemplates("starter");
 
-    return { settings, plan, availableTemplates };
+    // Load modal library
+    const modalLibraryResponse = await admin.graphql(`
+      query {
+        shop {
+          modalLibrary: metafield(namespace: "exit_intent", key: "modal_library") {
+            value
+          }
+        }
+      }
+    `);
+    const modalLibraryData = await modalLibraryResponse.json();
+    const modalLibrary = modalLibraryData.data.shop?.modalLibrary?.value
+      ? JSON.parse(modalLibraryData.data.shop.modalLibrary.value)
+      : getDefaultModalLibrary();
+
+    return { settings, plan, availableTemplates, modalLibrary };
   } catch (error) {
     console.error("Error loading settings:", error);
     return { 
@@ -171,6 +187,7 @@ export async function action({ request }) {
   const formData = await request.formData();
 
   const settings = {
+    template: formData.get("template") || "discount",
     modalHeadline: formData.get("modalHeadline"),
     modalBody: formData.get("modalBody"),
     ctaButton: formData.get("ctaButton"),
@@ -197,13 +214,53 @@ export async function action({ request }) {
       `query {
         shop {
           id
+          currentSettings: metafield(namespace: "exit_intent", key: "settings") {
+            value
+          }
+          modalLibrary: metafield(namespace: "exit_intent", key: "modal_library") {
+            value
+          }
         }
       }`
     );
     const shopData = await shopResponse.json();
     const shopId = shopData.data.shop.id;
 
-    // Save to shop metafields
+    // Load current settings and modal library
+    const currentSettings = shopData.data.shop?.currentSettings?.value
+      ? JSON.parse(shopData.data.shop.currentSettings.value)
+      : null;
+
+    const modalLibrary = shopData.data.shop?.modalLibrary?.value
+      ? JSON.parse(shopData.data.shop.modalLibrary.value)
+      : getDefaultModalLibrary();
+
+    // Generate hash for new settings
+    const newHash = generateModalHash(settings);
+    const currentHash = currentSettings ? generateModalHash(currentSettings) : null;
+
+    // Check if this is a new modal or confirmation with modal name
+    const modalName = formData.get("modalName");
+    const confirmSave = formData.get("confirmSave") === "true";
+
+    // If settings changed and no confirmation yet, prompt for modal name
+    if (newHash !== currentHash && !confirmSave) {
+      const existingModal = findModalByHash(modalLibrary, newHash);
+      const suggestedName = existingModal 
+        ? existingModal.modalName 
+        : getNextModalName(modalLibrary);
+
+      return {
+        success: false,
+        needsConfirmation: true,
+        suggestedName,
+        existingModal,
+        currentSettings,
+        newSettings: settings
+      };
+    }
+
+    // Save settings
     await admin.graphql(
       `mutation SetSettings($ownerId: ID!, $value: String!) {
         metafieldsSet(metafields: [{
@@ -230,6 +287,70 @@ export async function action({ request }) {
       }
     );
 
+    // If confirmed, update modal library
+    if (confirmSave && modalName) {
+      const existingModal = findModalByHash(modalLibrary, newHash);
+      
+      if (existingModal) {
+        // Reactivating existing modal
+        modalLibrary.modals = modalLibrary.modals.map(m => ({
+          ...m,
+          active: m.modalId === existingModal.modalId,
+          lastActiveAt: m.modalId === existingModal.modalId ? new Date().toISOString() : m.lastActiveAt
+        }));
+        modalLibrary.currentModalId = existingModal.modalId;
+      } else {
+        // Create new modal
+        const newModalId = `modal_${Date.now()}`;
+        
+        // Deactivate all existing modals
+        modalLibrary.modals = modalLibrary.modals.map(m => ({ ...m, active: false }));
+        
+        // Add new modal
+        modalLibrary.modals.push({
+          modalId: newModalId,
+          modalName: modalName,
+          hash: newHash,
+          active: true,
+          createdAt: new Date().toISOString(),
+          lastActiveAt: new Date().toISOString(),
+          config: settings,
+          stats: {
+            impressions: 0,
+            clicks: 0,
+            conversions: 0,
+            revenue: 0
+          }
+        });
+
+        modalLibrary.currentModalId = newModalId;
+        modalLibrary.nextModalNumber = modalLibrary.nextModalNumber + 1;
+      }
+
+      // Save modal library
+      await admin.graphql(
+        `mutation SetModalLibrary($ownerId: ID!, $value: String!) {
+          metafieldsSet(metafields: [{
+            ownerId: $ownerId
+            namespace: "exit_intent"
+            key: "modal_library"
+            value: $value
+            type: "json"
+          }]) {
+            metafields {
+              id
+            }
+          }
+        }`,
+        {
+          variables: {
+            ownerId: shopId,
+            value: JSON.stringify(modalLibrary)
+          }
+        }
+      );
+    }
+
     return { 
       success: true, 
       message: settings.discountCode 
@@ -243,14 +364,27 @@ export async function action({ request }) {
 }
 
 export default function Settings() {
-  const { settings, plan, availableTemplates } = useLoaderData();
+  const { settings, plan, availableTemplates, modalLibrary } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const [showPreview, setShowPreview] = useState(false);
   const [formChanged, setFormChanged] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState(settings.template || "discount");
+  const [showModalNaming, setShowModalNaming] = useState(false);
+  const [modalName, setModalName] = useState("");
 
   const isSubmitting = navigation.state === "submitting";
+
+  // Show modal naming popup if confirmation needed
+  if (actionData?.needsConfirmation && !showModalNaming) {
+    setShowModalNaming(true);
+    setModalName(actionData.suggestedName);
+  }
+
+  // Close modal naming popup after successful save
+  if (actionData?.success && showModalNaming) {
+    setShowModalNaming(false);
+  }
 
   // Feature gates
   const canUseAllTriggers = plan ? hasFeature(plan, 'allTriggers') : false;
@@ -283,7 +417,22 @@ export default function Settings() {
 
   return (
     <div style={{ padding: 40, maxWidth: 1200, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 32, marginBottom: 8 }}>Exit Intent Settings</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <h1 style={{ fontSize: 32, margin: 0 }}>Exit Intent Settings</h1>
+        {modalLibrary?.currentModalId && (
+          <div style={{
+            padding: "8px 16px",
+            background: "#f0f9ff",
+            border: "1px solid #bae6fd",
+            borderRadius: 6,
+            color: "#0c4a6e",
+            fontWeight: 500,
+            fontSize: 14
+          }}>
+            Current Modal: <strong>{modalLibrary.modals.find(m => m.modalId === modalLibrary.currentModalId)?.modalName || "Unknown"}</strong>
+          </div>
+        )}
+      </div>
       <p style={{ color: "#666", marginBottom: 40 }}>
         Configure your exit intent modal and trigger conditions
       </p>
@@ -951,6 +1100,230 @@ export default function Settings() {
           )}
         </div>
       </Form>
+
+{/* Modal Naming Popup */}
+      {showModalNaming && actionData?.needsConfirmation && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0, 0, 0, 0.5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 2000
+        }}>
+          <div style={{
+            background: "white",
+            padding: 40,
+            borderRadius: 12,
+            maxWidth: 900,
+            width: "90%",
+            maxHeight: "90vh",
+            overflow: "auto"
+          }}>
+            <h2 style={{ fontSize: 24, marginBottom: 16 }}>New Modal Version Detected</h2>
+            
+            {/* Side-by-side comparison */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 24 }}>
+              {/* Current Modal */}
+              <div>
+                <h3 style={{ fontSize: 16, marginBottom: 12, color: "#6b7280" }}>
+                  Current Modal {actionData.currentSettings && `(${modalLibrary?.modals?.find(m => m.active)?.modalName || "Unsaved"})`}
+                </h3>
+                <div style={{
+                  background: "rgba(0, 0, 0, 0.05)",
+                  padding: 24,
+                  borderRadius: 8,
+                  border: "2px solid #e5e7eb"
+                }}>
+                  <div style={{ background: "white", padding: 24, borderRadius: 8 }}>
+                    <h4 style={{ fontSize: 18, marginBottom: 12 }}>
+                      {actionData.currentSettings?.modalHeadline || "No current modal"}
+                    </h4>
+                    <p style={{ marginBottom: 16, color: "#666" }}>
+                      {actionData.currentSettings?.modalBody || ""}
+                    </p>
+                    <button style={{
+                      width: "100%",
+                      padding: "10px",
+                      background: "#8B5CF6",
+                      color: "white",
+                      border: "none",
+                      borderRadius: 6,
+                      fontSize: 14,
+                      fontWeight: 500
+                    }}>
+                      {actionData.currentSettings?.ctaButton || ""}
+                    </button>
+                    {actionData.currentSettings?.discountEnabled && (
+                      <div style={{ marginTop: 12, fontSize: 14, color: "#6b7280" }}>
+                        💰 Discount: {actionData.currentSettings.discountPercentage}%
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* New Modal */}
+              <div>
+                <h3 style={{ fontSize: 16, marginBottom: 12, color: "#10b981" }}>New Changes</h3>
+                <div style={{
+                  background: "rgba(16, 185, 129, 0.1)",
+                  padding: 24,
+                  borderRadius: 8,
+                  border: "2px solid #10b981"
+                }}>
+                  <div style={{ background: "white", padding: 24, borderRadius: 8 }}>
+                    <h4 style={{ 
+                      fontSize: 18, 
+                      marginBottom: 12,
+                      background: actionData.newSettings?.modalHeadline !== actionData.currentSettings?.modalHeadline ? "#fef3c7" : "transparent"
+                    }}>
+                      {actionData.newSettings?.modalHeadline}
+                    </h4>
+                    <p style={{ 
+                      marginBottom: 16, 
+                      color: "#666",
+                      background: actionData.newSettings?.modalBody !== actionData.currentSettings?.modalBody ? "#fef3c7" : "transparent"
+                    }}>
+                      {actionData.newSettings?.modalBody}
+                    </p>
+                    <button style={{
+                      width: "100%",
+                      padding: "10px",
+                      background: "#8B5CF6",
+                      color: "white",
+                      border: "none",
+                      borderRadius: 6,
+                      fontSize: 14,
+                      fontWeight: 500,
+                      outline: actionData.newSettings?.ctaButton !== actionData.currentSettings?.ctaButton ? "3px solid #fbbf24" : "none"
+                    }}>
+                      {actionData.newSettings?.ctaButton}
+                    </button>
+                    {actionData.newSettings?.discountEnabled && (
+                      <div style={{ 
+                        marginTop: 12, 
+                        fontSize: 14, 
+                        color: "#6b7280",
+                        background: actionData.newSettings?.discountPercentage !== actionData.currentSettings?.discountPercentage ? "#fef3c7" : "transparent"
+                      }}>
+                        💰 Discount: {actionData.newSettings.discountPercentage}%
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal naming */}
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
+                Name this modal:
+              </label>
+              <input
+                type="text"
+                value={modalName}
+                onChange={(e) => setModalName(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: 6,
+                  fontSize: 16
+                }}
+              />
+            </div>
+
+            {/* Warning */}
+            {actionData.existingModal ? (
+              <div style={{
+                padding: 16,
+                background: "#fef3c7",
+                borderRadius: 8,
+                marginBottom: 24,
+                border: "1px solid #fde68a"
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: 4, color: "#92400e" }}>
+                  ⚠️ Reverting to Existing Modal
+                </div>
+                <div style={{ fontSize: 14, color: "#92400e" }}>
+                  This configuration matches "{actionData.existingModal.modalName}". 
+                  Saving will reactivate that modal and continue tracking its performance.
+                </div>
+              </div>
+            ) : (
+              <div style={{
+                padding: 16,
+                background: "#dbeafe",
+                borderRadius: 8,
+                marginBottom: 24,
+                border: "1px solid #93c5fd"
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: 4, color: "#1e40af" }}>
+                  📊 New Modal Campaign
+                </div>
+                <div style={{ fontSize: 14, color: "#1e40af" }}>
+                  This will create a new modal and start tracking its performance separately. 
+                  Your previous modal will be deactivated.
+                </div>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setShowModalNaming(false)}
+                style={{
+                  padding: "10px 20px",
+                  background: "#f3f4f6",
+                  border: "1px solid #d1d5db",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  fontSize: 16
+                }}
+              >
+                Cancel
+              </button>
+              <Form method="post" style={{ display: "inline" }}>
+                <input type="hidden" name="modalName" value={modalName} />
+                <input type="hidden" name="confirmSave" value="true" />
+                <input type="hidden" name="template" value={actionData.newSettings?.template} />
+                <input type="hidden" name="modalHeadline" value={actionData.newSettings?.modalHeadline} />
+                <input type="hidden" name="modalBody" value={actionData.newSettings?.modalBody} />
+                <input type="hidden" name="ctaButton" value={actionData.newSettings?.ctaButton} />
+                <input type="hidden" name="exitIntentEnabled" value={actionData.newSettings?.exitIntentEnabled ? "on" : "off"} />
+                <input type="hidden" name="timeDelayEnabled" value={actionData.newSettings?.timeDelayEnabled ? "on" : "off"} />
+                <input type="hidden" name="timeDelaySeconds" value={actionData.newSettings?.timeDelaySeconds} />
+                <input type="hidden" name="cartValueEnabled" value={actionData.newSettings?.cartValueEnabled ? "on" : "off"} />
+                <input type="hidden" name="cartValueMin" value={actionData.newSettings?.cartValueMin} />
+                <input type="hidden" name="cartValueMax" value={actionData.newSettings?.cartValueMax} />
+                <input type="hidden" name="discountEnabled" value={actionData.newSettings?.discountEnabled ? "on" : "off"} />
+                <input type="hidden" name="discountPercentage" value={actionData.newSettings?.discountPercentage} />
+                <input type="hidden" name="redirectDestination" value={actionData.newSettings?.redirectDestination} />
+                <button
+                  type="submit"
+                  style={{
+                    padding: "10px 20px",
+                    background: "#8B5CF6",
+                    color: "white",
+                    border: "none",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    fontSize: 16,
+                    fontWeight: 500
+                  }}
+                >
+                  Save as New Modal
+                </button>
+              </Form>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Preview Modal */}
       {showPreview && (

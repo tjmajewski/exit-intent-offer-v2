@@ -11,6 +11,7 @@ export const PLAN_FEATURES = {
     cartValueTargeting: false,
     redirectChoice: false,
     revenueTracking: true,
+    perModalAnalytics: false,
     impressionLimit: 1000,
     templates: ["discount"]
   },
@@ -25,6 +26,7 @@ export const PLAN_FEATURES = {
     cartValueTargeting: true,
     redirectChoice: true,
     revenueTracking: true,
+    perModalAnalytics: false,
     impressionLimit: null, // unlimited
     templates: ["discount", "free-shipping", "urgency", "welcome", "reminder"]
   },
@@ -39,6 +41,7 @@ export const PLAN_FEATURES = {
     cartValueTargeting: true,
     redirectChoice: true,
     revenueTracking: true,
+    perModalAnalytics: true,
     impressionLimit: null,
     templates: ["discount", "free-shipping", "urgency", "welcome", "reminder", "custom"]
   }
