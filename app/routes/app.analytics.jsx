@@ -2,6 +2,7 @@ import { useLoaderData, Link, Form } from "react-router";
 import { authenticate } from "../shopify.server";
 import { hasFeature } from "../utils/featureGates";
 import { getDefaultModalLibrary } from "../utils/modalHash";
+import AppLayout from "../components/AppLayout";
 
 export async function action({ request }) {
   const { admin } = await authenticate.admin(request);
@@ -150,7 +151,8 @@ export default function Analytics() {
 
   if (!canAccessAnalytics) {
     return (
-      <div style={{ padding: 40, maxWidth: 1200, margin: "0 auto" }}>
+      <AppLayout plan={plan}>
+        <div style={{ padding: 40, maxWidth: 1200, margin: "0 auto" }}>
         <h1 style={{ fontSize: 32, marginBottom: 16 }}>Per-Modal Analytics</h1>
         
         <div style={{
@@ -228,6 +230,7 @@ export default function Analytics() {
           </Link>
         </div>
       </div>
+      </AppLayout>
     );
   }
 
@@ -236,7 +239,8 @@ export default function Analytics() {
   const activeModal = modals.find(m => m.modalId === modalLibrary.currentModalId);
 
   return (
-    <div style={{ padding: 40, maxWidth: 1400, margin: "0 auto" }}>
+    <AppLayout plan={plan}>
+      <div style={{ padding: 40, maxWidth: 1400, margin: "0 auto" }}>
       <div style={{ marginBottom: 32 }}>
         <h1 style={{ fontSize: 32, marginBottom: 8 }}>Per-Modal Analytics</h1>
         <p style={{ color: "#666" }}>
@@ -417,5 +421,6 @@ export default function Analytics() {
         </Link>
       </div>
     </div>
+    </AppLayout>
   );
 }

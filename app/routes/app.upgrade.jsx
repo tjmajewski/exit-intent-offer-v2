@@ -1,6 +1,7 @@
 import { useLoaderData, Link } from "react-router";
 import { authenticate } from "../shopify.server";
 import { PLAN_FEATURES } from "../utils/featureGates";
+import AppLayout from "../components/AppLayout";
 
 export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
@@ -94,7 +95,8 @@ export default function Upgrade() {
   ];
 
   return (
-    <div style={{ padding: 40, maxWidth: 1400, margin: "0 auto" }}>
+    <AppLayout plan={plan}>
+      <div style={{ padding: 40, maxWidth: 1400, margin: "0 auto" }}>
       {/* Header */}
       <div style={{ textAlign: "center", marginBottom: 48 }}>
         <h1 style={{ fontSize: 36, marginBottom: 12 }}>Choose Your Plan</h1>
@@ -285,5 +287,6 @@ export default function Upgrade() {
         </div>
       </div>
     </div>
+    </AppLayout>
   );
 }

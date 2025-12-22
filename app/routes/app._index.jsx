@@ -2,6 +2,7 @@ import { useLoaderData, Link, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import { useState } from "react";
 import { checkAndResetUsage } from "../utils/featureGates";
+import AppLayout from "../components/AppLayout";
 
 export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
@@ -471,7 +472,8 @@ export default function Dashboard() {
   };
 
   return (
-    <div style={{ padding: 40 }}>
+    <AppLayout plan={plan}>
+      <div style={{ padding: 40 }}>
       {/* Header with Toggle */}
       <div style={{ 
         display: "flex", 
@@ -1016,6 +1018,7 @@ export default function Dashboard() {
           </Link>
         </div>
       )}
-    </div>
+      </div>
+    </AppLayout>
   );
 }

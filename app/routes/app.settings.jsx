@@ -4,6 +4,7 @@ import { authenticate } from "../shopify.server";
 import { hasFeature } from "../utils/featureGates";
 import { getAvailableTemplates, MODAL_TEMPLATES } from "../utils/templates";
 import { generateModalHash, getDefaultModalLibrary, findModalByHash, getNextModalName } from "../utils/modalHash";
+import AppLayout from "../components/AppLayout";
 
 async function createDiscountCode(admin, discountPercentage) {
   const discountCode = `${discountPercentage}OFF`;
@@ -416,7 +417,8 @@ export default function Settings() {
   const showErrorMessage = actionData?.success === false && !formChanged && !isSubmitting;
 
   return (
-    <div style={{ padding: 40, maxWidth: 1200, margin: "0 auto" }}>
+    <AppLayout plan={plan}>
+      <div style={{ padding: 40, maxWidth: 1200, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <h1 style={{ fontSize: 32, margin: 0 }}>Exit Intent Settings</h1>
         {modalLibrary?.currentModalId && (
@@ -1385,5 +1387,6 @@ export default function Settings() {
         </div>
       )}
     </div>
+    </AppLayout>
   );
 }
