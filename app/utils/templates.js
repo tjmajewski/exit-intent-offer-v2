@@ -9,16 +9,6 @@ export const MODAL_TEMPLATES = {
     ctaButton: "Complete My Order",
     description: "Classic exit intent offer with discount code"
   },
-  freeShipping: {
-    id: "freeShipping",
-    name: "Free Shipping",
-    tier: "pro",
-    icon: "🚚",
-    headline: "Free Shipping on Your Order! 🚚",
-    body: "Complete your purchase in the next few minutes and we'll cover the shipping cost!",
-    ctaButton: "Get Free Shipping",
-    description: "Offer free shipping as the main incentive"
-  },
   urgency: {
     id: "urgency",
     name: "Urgency & Scarcity",
@@ -48,6 +38,16 @@ export const MODAL_TEMPLATES = {
     body: "You have items waiting in your cart! Finish your purchase now and we'll add an extra discount just for you.",
     ctaButton: "Complete My Purchase",
     description: "Gentle reminder with added incentive"
+  },
+  giftCard: {
+    id: "giftCard",
+    name: "Gift Card Offer",
+    tier: "enterprise",
+    icon: "🎟️",
+    headline: "Come Back & Get $10 Off! 🎟️",
+    body: "We'll send you a $10 gift card to use on your next purchase. Complete your email below to claim your gift!",
+    ctaButton: "Send Me My Gift Card",
+    description: "Encourage return visits with gift card incentive"
   }
 };
 

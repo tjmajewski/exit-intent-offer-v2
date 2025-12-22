@@ -42,18 +42,15 @@ export async function loader({ request }) {
     // If no plan exists, create default plan
     if (!plan) {
       const now = new Date();
-      const trialEnd = new Date(now);
-      trialEnd.setDate(trialEnd.getDate() + 14);
       
       const resetDate = new Date(now);
       resetDate.setMonth(resetDate.getMonth() + 1);
       
       plan = {
         tier: "starter",
-        status: "trialing",
+        status: "active",
         billingCycle: "monthly",
         startDate: now.toISOString(),
-        trialEndsAt: trialEnd.toISOString(),
         usage: {
           impressionsThisMonth: 0,
           resetDate: resetDate.toISOString()

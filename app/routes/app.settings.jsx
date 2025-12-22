@@ -101,6 +101,104 @@ async function createDiscountCode(admin, discountPercentage) {
   return code;
 }
 
+async function createFixedAmountDiscountCode(admin, discountAmount, currencyCode = 'USD') {
+  const discountCode = `${discountAmount}DOLLARSOFF`;
+  
+  console.log(`Creating fixed amount discount code: ${discountCode}`);
+  
+  // Check if THIS SPECIFIC code already exists
+  const checkQuery = `
+    query {
+      codeDiscountNodes(first: 50, query: "code:'${discountCode}'") {
+        nodes {
+          id
+          codeDiscount {
+            ... on DiscountCodeBasic {
+              title
+              codes(first: 1) {
+                nodes {
+                  code
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  
+  const checkResponse = await admin.graphql(checkQuery);
+  const checkResult = await checkResponse.json();
+  
+  // If the code exists anywhere, just use it
+  if (checkResult.data.codeDiscountNodes.nodes.length > 0) {
+    console.log(`✓ Using existing discount code: ${discountCode}`);
+    return discountCode;
+  }
+  
+  // Create new fixed amount discount code
+  const mutation = `
+    mutation discountCodeBasicCreate($basicCodeDiscount: DiscountCodeBasicInput!) {
+      discountCodeBasicCreate(basicCodeDiscount: $basicCodeDiscount) {
+        codeDiscountNode {
+          id
+          codeDiscount {
+            ... on DiscountCodeBasic {
+              codes(first: 1) {
+                nodes {
+                  code
+                }
+              }
+            }
+          }
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+  `;
+
+  const variables = {
+    basicCodeDiscount: {
+      title: `$${discountAmount} Off - Exit Intent Offer`,
+      code: discountCode,
+      startsAt: new Date().toISOString(),
+      customerSelection: {
+        all: true
+      },
+      customerGets: {
+        value: {
+          discountAmount: {
+            amount: discountAmount,
+            appliesOnEachItem: false
+          }
+        },
+        items: {
+          all: true
+        }
+      },
+      appliesOncePerCustomer: false,
+      usageLimit: null
+    }
+  };
+
+  const response = await admin.graphql(mutation, { variables });
+  const result = await response.json();
+  
+  if (result.data.discountCodeBasicCreate.userErrors.length > 0) {
+    console.error("Error creating discount:", result.data.discountCodeBasicCreate.userErrors);
+    throw new Error("Failed to create discount code");
+  }
+  
+  const code = result.data.discountCodeBasicCreate.codeDiscountNode
+    .codeDiscount.codes.nodes[0].code;
+  
+  console.log(`✓ Created new fixed amount discount code: ${code}`);
+  return code;
+}
+
 export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
 
@@ -126,7 +224,7 @@ export async function loader({ request }) {
     // Default settings if none exist
     const defaultSettings = {
       modalHeadline: "Wait! Don't leave yet 🎁",
-      modalBody: "Complete your purchase now and get free shipping on your order!",
+      modalBody: "Complete your purchase now and get an exclusive discount on your order!",
       ctaButton: "Complete My Order",
       exitIntentEnabled: true,
       timeDelayEnabled: false,
@@ -135,7 +233,9 @@ export async function loader({ request }) {
       cartValueMin: 0,
       cartValueMax: 1000,
       discountEnabled: false,
+      offerType: "percentage", // "percentage", "fixed", or "giftcard"
       discountPercentage: 10,
+      discountAmount: 10,
       discountCode: null,
       redirectDestination: "checkout"
     };
@@ -165,7 +265,7 @@ export async function loader({ request }) {
     return { 
       settings: {
         modalHeadline: "Wait! Don't leave yet 🎁",
-        modalBody: "Complete your purchase now and get free shipping on your order!",
+        modalBody: "Complete your purchase now and get an exclusive discount on your order!",
         ctaButton: "Complete My Order",
         exitIntentEnabled: true,
         timeDelayEnabled: false,
@@ -174,11 +274,14 @@ export async function loader({ request }) {
         cartValueMin: 0,
         cartValueMax: 1000,
         discountEnabled: false,
+        offerType: "percentage",
         discountPercentage: 10,
+        discountAmount: 10,
         discountCode: null,
         redirectDestination: "checkout"
       },
-      plan: null
+      plan: null,
+      availableTemplates: getAvailableTemplates("starter")
     };
   }
 }
@@ -188,7 +291,6 @@ export async function action({ request }) {
   const formData = await request.formData();
 
   const settings = {
-    template: formData.get("template") || "discount",
     modalHeadline: formData.get("modalHeadline"),
     modalBody: formData.get("modalBody"),
     ctaButton: formData.get("ctaButton"),
@@ -199,15 +301,25 @@ export async function action({ request }) {
     cartValueMin: parseFloat(formData.get("cartValueMin") || "0"),
     cartValueMax: parseFloat(formData.get("cartValueMax") || "1000"),
     discountEnabled: formData.get("discountEnabled") === "on",
+    offerType: formData.get("offerType") || "percentage",
     discountPercentage: parseInt(formData.get("discountPercentage") || "10"),
+    discountAmount: parseFloat(formData.get("discountAmount") || "10"),
     discountCode: null,
-    redirectDestination: formData.get("redirectDestination") || "checkout"
+    redirectDestination: formData.get("redirectDestination") || "checkout",
+    template: formData.get("template") || "discount"
   };
 
   try {
-    // Create discount code if enabled
-    if (settings.discountEnabled && settings.discountPercentage > 0) {
-      settings.discountCode = await createDiscountCode(admin, settings.discountPercentage);
+    // Create discount code based on offer type
+    if (settings.discountEnabled) {
+      if (settings.offerType === "percentage" && settings.discountPercentage > 0) {
+        settings.discountCode = await createDiscountCode(admin, settings.discountPercentage);
+      } else if (settings.offerType === "fixed" && settings.discountAmount > 0) {
+        settings.discountCode = await createFixedAmountDiscountCode(admin, settings.discountAmount);
+      } else if (settings.offerType === "giftcard") {
+        // For gift cards, we'll create a fixed amount code that can be used later
+        settings.discountCode = await createFixedAmountDiscountCode(admin, settings.discountAmount);
+      }
     }
 
     // Get shop ID
@@ -548,7 +660,7 @@ export default function Settings() {
               borderRadius: 6,
               fontSize: 14 
             }}>
-              ⭐ <strong>Upgrade to Pro</strong> to unlock 4 additional templates including Free Shipping, Urgency, and more.{" "}
+              ⭐ <strong>Upgrade to Pro</strong> to unlock 3 additional templates including Urgency, Cart Abandonment, and more. Upgrade to Enterprise for Gift Card offers.{" "}
               <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
                 Learn more →
               </a>
@@ -661,7 +773,7 @@ export default function Settings() {
                 style={{ marginRight: 12, width: 20, height: 20 }}
               />
               <div>
-                <div style={{ fontWeight: 500 }}>Enable Discount Code</div>
+                <div style={{ fontWeight: 500 }}>Enable Discount Offer</div>
                 <div style={{ fontSize: 14, color: "#666" }}>
                   Automatically apply discount when customer clicks the CTA
                 </div>
@@ -670,28 +782,137 @@ export default function Settings() {
           </div>
 
           <div style={{ marginLeft: 32, marginBottom: 20 }}>
-            <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
-              Discount Percentage
+            <label style={{ display: "block", marginBottom: 12, fontWeight: 500 }}>
+              Offer Type
             </label>
-            <input
-              type="number"
-              name="discountPercentage"
-              defaultValue={settings.discountPercentage}
-              min="1"
-              max="100"
-              style={{ 
-                padding: "10px 12px", 
-                border: "1px solid #d1d5db",
-                borderRadius: 6,
-                width: 100,
-                fontSize: 16
-              }}
-            />
-            <span style={{ marginLeft: 8, color: "#666" }}>%</span>
+            
+            {/* Percentage Discount */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "flex", alignItems: "flex-start", cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  name="offerType"
+                  value="percentage"
+                  defaultChecked={settings.offerType === "percentage" || !settings.offerType}
+                  style={{ marginRight: 12, marginTop: 4 }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 500, marginBottom: 4 }}>Percentage Off</div>
+                  <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
+                    e.g., "10OFF" for 10% discount
+                  </div>
+                  <input
+                    type="number"
+                    name="discountPercentage"
+                    defaultValue={settings.discountPercentage || 10}
+                    min="1"
+                    max="100"
+                    style={{ 
+                      padding: "8px 12px", 
+                      border: "1px solid #d1d5db",
+                      borderRadius: 6,
+                      width: 100,
+                      fontSize: 16
+                    }}
+                  />
+                  <span style={{ marginLeft: 8, color: "#666" }}>%</span>
+                </div>
+              </label>
+            </div>
+
+            {/* Fixed Dollar Amount */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "flex", alignItems: "flex-start", cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  name="offerType"
+                  value="fixed"
+                  defaultChecked={settings.offerType === "fixed"}
+                  style={{ marginRight: 12, marginTop: 4 }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 500, marginBottom: 4 }}>Dollar Amount Off</div>
+                  <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
+                    e.g., "10DOLLARSOFF" for $10 discount
+                  </div>
+                  <span style={{ marginRight: 8, color: "#666" }}>$</span>
+                  <input
+                    type="number"
+                    name="discountAmount"
+                    defaultValue={settings.discountAmount || 10}
+                    min="1"
+                    step="1"
+                    style={{ 
+                      padding: "8px 12px", 
+                      border: "1px solid #d1d5db",
+                      borderRadius: 6,
+                      width: 100,
+                      fontSize: 16
+                    }}
+                  />
+                </div>
+              </label>
+            </div>
+
+            {/* Gift Card Offer */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "flex", alignItems: "flex-start", cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  name="offerType"
+                  value="giftcard"
+                  defaultChecked={settings.offerType === "giftcard"}
+                  style={{ marginRight: 12, marginTop: 4 }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ 
+                    fontWeight: 500, 
+                    marginBottom: 4,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8
+                  }}>
+                    Gift Card Offer
+                    {plan && plan.tier !== "enterprise" && (
+                      <span style={{ 
+                        padding: "2px 8px", 
+                        background: "#f59e0b", 
+                        color: "white", 
+                        borderRadius: 4, 
+                        fontSize: 11,
+                        fontWeight: 600 
+                      }}>
+                        ENTERPRISE
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
+                    Prompt users to return with a gift card code via email
+                  </div>
+                  <span style={{ marginRight: 8, color: "#666" }}>$</span>
+                  <input
+                    type="number"
+                    name="discountAmount"
+                    defaultValue={settings.discountAmount || 10}
+                    min="1"
+                    step="1"
+                    disabled={plan && plan.tier !== "enterprise"}
+                    style={{ 
+                      padding: "8px 12px", 
+                      border: "1px solid #d1d5db",
+                      borderRadius: 6,
+                      width: 100,
+                      fontSize: 16,
+                      opacity: plan && plan.tier !== "enterprise" ? 0.5 : 1
+                    }}
+                  />
+                </div>
+              </label>
+            </div>
             
             {settings.discountCode && (
               <div style={{ 
-                marginTop: 12, 
+                marginTop: 16, 
                 padding: 12, 
                 background: "#f9fafb", 
                 borderRadius: 6,
