@@ -9,15 +9,84 @@ export const action = async ({ request }) => {
     console.log("Order ID:", payload.id);
     console.log("Order total:", payload.total_price);
 
-    // Check if our discount code was used (10OFF, 15OFF format)
+    // Check if our discount code was used
     const discountCodes = payload.discount_codes || [];
     const exitDiscountUsed = discountCodes.find(dc => 
-      dc.code && /^\d+OFF$/i.test(dc.code) // Matches 10OFF, 15OFF, etc
+      dc.code && /^\d+(OFF|DOLLARSOFF|GIFT)$/i.test(dc.code)
     );
 
-    if (!exitDiscountUsed) {
-      console.log("No exit intent discount used, skipping analytics update");
+    // Check if gift card voucher product is in the order
+    const lineItems = payload.line_items || [];
+    const giftCardVoucher = lineItems.find(item => 
+      item.product_id === 7790476951630
+    );
+
+    // If neither discount nor voucher, skip
+    if (!exitDiscountUsed && !giftCardVoucher) {
+      console.log("No exit intent offer used, skipping");
       return new Response(null, { status: 200 });
+    }
+
+    // If gift card voucher found, create real gift card
+    if (giftCardVoucher) {
+      console.log("🎁 Gift card voucher found in order!");
+      
+      // Get gift card amount from settings (we'll need to query this)
+      const settingsQuery = `
+        query {
+          shop {
+            metafield(namespace: "exit_intent", key: "settings") {
+              value
+            }
+          }
+        }
+      `;
+      
+      const { admin } = await authenticate.admin({ session });
+      const settingsResponse = await admin.graphql(settingsQuery);
+      const settingsResult = await settingsResponse.json();
+      const settings = JSON.parse(settingsResult.data.shop?.metafield?.value || '{}');
+      
+      const giftCardAmount = settings.discountAmount || 15;
+      
+      // Create real gift card
+      console.log(`Creating $${giftCardAmount} gift card for customer...`);
+      
+      const giftCardMutation = `
+        mutation giftCardCreate($input: GiftCardCreateInput!) {
+          giftCardCreate(input: $input) {
+            giftCard {
+              id
+              initialValue {
+                amount
+              }
+              maskedCode
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `;
+      
+      const giftCardResponse = await admin.graphql(giftCardMutation, {
+        variables: {
+          input: {
+            initialValue: parseFloat(giftCardAmount),
+            note: `Exit Intent Offer - Order #${payload.order_number}`,
+            customerId: payload.customer?.id ? payload.customer.id.toString().split('/').pop() : null
+          }
+        }
+      });
+      
+      const giftCardResult = await giftCardResponse.json();
+      
+      if (giftCardResult.data.giftCardCreate.giftCard) {
+        console.log("✓ Gift card created:", giftCardResult.data.giftCardCreate.giftCard.maskedCode);
+      } else {
+        console.error("Gift card creation failed:", giftCardResult.data.giftCardCreate.userErrors);
+      }
     }
 
     const orderValue = parseFloat(payload.total_price);

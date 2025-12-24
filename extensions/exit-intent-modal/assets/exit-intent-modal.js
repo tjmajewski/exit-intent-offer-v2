@@ -238,7 +238,7 @@
       this.trackEvent('closeout');
     }
     
-    handleCTAClick() {
+ async handleCTAClick() {
       // Track button click
       this.trackEvent('click');
       
@@ -247,9 +247,34 @@
       
       // Get settings
       const discountCode = this.settings.discountCode;
+      const offerType = this.settings.offerType || 'percentage';
       const destination = this.settings.redirectDestination || 'checkout';
       
-      // Build redirect URL
+      // Handle gift card offer - add product to cart
+      if (offerType === 'giftcard') {
+        try {
+          console.log('Adding gift card voucher to cart...');
+          await fetch('/cart/add.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              items: [{
+                id: 7790476951630,
+                quantity: 1
+              }]
+            })
+          });
+          console.log('Gift card voucher added to cart');
+        } catch (error) {
+          console.error('Error adding gift card to cart:', error);
+        }
+        
+        // Redirect to cart or checkout
+        window.location.href = destination === 'cart' ? '/cart' : '/checkout';
+        return;
+      }
+      
+      // Handle discount codes (percentage or fixed)
       let redirectUrl;
       
       if (destination === 'cart') {

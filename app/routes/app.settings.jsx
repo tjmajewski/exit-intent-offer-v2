@@ -130,8 +130,16 @@ async function createFixedAmountDiscountCode(admin, discountAmount, currencyCode
   const checkResponse = await admin.graphql(checkQuery);
   const checkResult = await checkResponse.json();
   
-  // If the code exists anywhere, just use it
-  if (checkResult.data.codeDiscountNodes.nodes.length > 0) {
+  console.log('=== CHECK QUERY RESULT ===');
+  console.log('Query result:', JSON.stringify(checkResult, null, 2));
+  console.log('Nodes found:', checkResult.data?.codeDiscountNodes?.nodes?.length || 0);
+  
+  // Check if the SPECIFIC code exists in the results
+  const codeExists = checkResult.data.codeDiscountNodes.nodes.some(node => 
+    node.codeDiscount?.codes?.nodes?.some(c => c.code === discountCode)
+  );
+  
+  if (codeExists) {
     console.log(`✓ Using existing discount code: ${discountCode}`);
     return discountCode;
   }
@@ -171,7 +179,7 @@ async function createFixedAmountDiscountCode(admin, discountAmount, currencyCode
       customerGets: {
         value: {
           discountAmount: {
-            amount: discountAmount,
+            amount: discountAmount.toString(),
             appliesOnEachItem: false
           }
         },
@@ -189,7 +197,7 @@ async function createFixedAmountDiscountCode(admin, discountAmount, currencyCode
   
   if (result.data.discountCodeBasicCreate.userErrors.length > 0) {
     console.error("Error creating discount:", result.data.discountCodeBasicCreate.userErrors);
-    throw new Error("Failed to create discount code");
+    throw new Error("Failed to create discount code: " + JSON.stringify(result.data.discountCodeBasicCreate.userErrors));
   }
   
   const code = result.data.discountCodeBasicCreate.codeDiscountNode
@@ -197,6 +205,49 @@ async function createFixedAmountDiscountCode(admin, discountAmount, currencyCode
   
   console.log(`✓ Created new fixed amount discount code: ${code}`);
   return code;
+}
+async function createGiftCard(admin, giftCardAmount) {
+  const giftCardValue = parseFloat(giftCardAmount);
+  
+  console.log(`Creating $${giftCardValue} gift card`);
+  
+  const mutation = `
+    mutation giftCardCreate($input: GiftCardCreateInput!) {
+      giftCardCreate(input: $input) {
+        giftCard {
+          id
+          initialValue {
+            amount
+          }
+          maskedCode
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+  `;
+
+  const variables = {
+    input: {
+      initialValue: giftCardValue,
+      note: "Exit Intent Offer"
+    }
+  };
+
+  const response = await admin.graphql(mutation, { variables });
+  const result = await response.json();
+  
+  if (result.data.giftCardCreate.userErrors.length > 0) {
+    console.error("Error creating gift card:", result.data.giftCardCreate.userErrors);
+    throw new Error("Failed to create gift card: " + JSON.stringify(result.data.giftCardCreate.userErrors));
+  }
+  
+  const giftCardCode = result.data.giftCardCreate.giftCard.id;
+  console.log(`✓ Created gift card: ${giftCardCode}`);
+  
+  return giftCardCode;
 }
 
 export async function loader({ request }) {
@@ -310,16 +361,34 @@ export async function action({ request }) {
   };
 
   try {
+    // Debug logging
+    console.log('=== DISCOUNT DEBUG ===');
+    console.log('Discount enabled:', settings.discountEnabled);
+    console.log('Offer type:', settings.offerType);
+    console.log('Discount percentage:', settings.discountPercentage);
+    console.log('Discount amount:', settings.discountAmount);
+    
     // Create discount code based on offer type
     if (settings.discountEnabled) {
+      console.log('Creating discount code...');
+      
       if (settings.offerType === "percentage" && settings.discountPercentage > 0) {
+        console.log('Creating percentage discount:', settings.discountPercentage);
         settings.discountCode = await createDiscountCode(admin, settings.discountPercentage);
+        console.log('Created code:', settings.discountCode);
       } else if (settings.offerType === "fixed" && settings.discountAmount > 0) {
+        console.log('Creating fixed amount discount:', settings.discountAmount);
         settings.discountCode = await createFixedAmountDiscountCode(admin, settings.discountAmount);
-      } else if (settings.offerType === "giftcard") {
-        // For gift cards, we'll create a fixed amount code that can be used later
-        settings.discountCode = await createFixedAmountDiscountCode(admin, settings.discountAmount);
+        console.log('Created code:', settings.discountCode);
+ } else if (settings.offerType === "giftcard" && settings.discountAmount > 0) {
+        console.log('Creating gift card:', settings.discountAmount);
+        settings.discountCode = await createGiftCard(admin, settings.discountAmount);
+        console.log('Created gift card code:', settings.discountCode);
+      } else {
+        console.log('No discount code created - conditions not met');
       }
+    } else {
+      console.log('Discount not enabled');
     }
 
     // Get shop ID
@@ -486,6 +555,27 @@ export default function Settings() {
   const [showModalNaming, setShowModalNaming] = useState(false);
   const [modalName, setModalName] = useState("");
 
+
+
+  // Helper function to display discount text
+  const getDiscountDisplay = (settings) => {
+    if (!settings?.discountEnabled) return null;
+    
+    const offerType = settings.offerType || "percentage";
+    
+    if (offerType === "percentage") {
+      return `${settings.discountPercentage}%`;
+    } else if (offerType === "fixed") {
+      return `$${settings.discountAmount}`;
+    } else if (offerType === "giftcard") {
+      return `$${settings.discountAmount} gift card`;
+    }
+    
+    return `${settings.discountPercentage}%`;
+  };
+
+
+
   const isSubmitting = navigation.state === "submitting";
 
   // Show modal naming popup if confirmation needed
@@ -518,11 +608,9 @@ export default function Settings() {
     document.querySelector('input[name="ctaButton"]').value = template.ctaButton;
   };
 
-  // Clear success message when form changes
+  // Keep success message visible
   const handleFormChange = () => {
-    if (actionData) {
-      setFormChanged(true);
-    }
+    // Message will stay visible now
   };
 
   const showSuccessMessage = actionData?.success && !formChanged && !isSubmitting;
@@ -551,7 +639,7 @@ export default function Settings() {
         Configure your exit intent modal and trigger conditions
       </p>
 
-      <Form method="post" onChange={handleFormChange}>
+      <Form method="post">
         {/* Required Fields Legend */}
         <div style={{
           padding: 12,
@@ -1383,7 +1471,7 @@ export default function Settings() {
                     </button>
                     {actionData.currentSettings?.discountEnabled && (
                       <div style={{ marginTop: 12, fontSize: 14, color: "#6b7280" }}>
-                        💰 Discount: {actionData.currentSettings.discountPercentage}%
+                        💰 Discount: {getDiscountDisplay(actionData.currentSettings)}
                       </div>
                     )}
                   </div>
@@ -1432,9 +1520,11 @@ export default function Settings() {
                         marginTop: 12, 
                         fontSize: 14, 
                         color: "#6b7280",
-                        background: actionData.newSettings?.discountPercentage !== actionData.currentSettings?.discountPercentage ? "#fef3c7" : "transparent"
+                        background: (actionData.newSettings?.offerType !== actionData.currentSettings?.offerType || 
+                                    actionData.newSettings?.discountPercentage !== actionData.currentSettings?.discountPercentage ||
+                                    actionData.newSettings?.discountAmount !== actionData.currentSettings?.discountAmount) ? "#fef3c7" : "transparent"
                       }}>
-                        💰 Discount: {actionData.newSettings.discountPercentage}%
+                        💰 Discount: {getDiscountDisplay(actionData.newSettings)}
                       </div>
                     )}
                   </div>
@@ -1525,7 +1615,9 @@ export default function Settings() {
                 <input type="hidden" name="cartValueMin" value={actionData.newSettings?.cartValueMin} />
                 <input type="hidden" name="cartValueMax" value={actionData.newSettings?.cartValueMax} />
                 <input type="hidden" name="discountEnabled" value={actionData.newSettings?.discountEnabled ? "on" : "off"} />
+                <input type="hidden" name="offerType" value={actionData.newSettings?.offerType} />
                 <input type="hidden" name="discountPercentage" value={actionData.newSettings?.discountPercentage} />
+                <input type="hidden" name="discountAmount" value={actionData.newSettings?.discountAmount} />
                 <input type="hidden" name="redirectDestination" value={actionData.newSettings?.redirectDestination} />
                 <button
                   type="submit"
