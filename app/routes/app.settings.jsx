@@ -380,6 +380,9 @@ export async function action({ request }) {
     discountCode: null,
     redirectDestination: formData.get("redirectDestination") || "checkout",
     template: formData.get("template") || "discount",
+    mode: formData.get("mode") || "manual",
+    aiGoal: formData.get("aiGoal") || "revenue",
+    aggression: parseInt(formData.get("aggression") || "5"),
     triggers: {
       exitIntent: formData.get("exitIntentEnabled") === "on",
       timeDelay: formData.get("timeDelayEnabled") === "on",
@@ -584,7 +587,8 @@ export default function Settings() {
   const [selectedTemplate, setSelectedTemplate] = useState(settings.template || "discount");
   const [showModalNaming, setShowModalNaming] = useState(false);
   const [modalName, setModalName] = useState("");
-
+  const [optimizationMode, setOptimizationMode] = useState(settings.mode || "manual");
+  const [aggressionLevel, setAggressionLevel] = useState(settings.aggression || 5);
 
 
   // Helper function to display discount text
@@ -624,6 +628,7 @@ export default function Settings() {
   const canUseCartValue = plan ? hasFeature(plan, 'cartValueTargeting') : false;
   const canChooseRedirect = plan ? hasFeature(plan, 'redirectChoice') : false;
   const canUseMultipleTemplates = plan ? hasFeature(plan, 'multipleTemplates') : false;
+  const canUseAIMode = plan && (plan.tier === "pro" || plan.tier === "enterprise");
 
   // Apply template to form
   const applyTemplate = (templateId) => {
@@ -682,7 +687,7 @@ export default function Settings() {
           Fields marked with <span style={{ color: "#dc2626", fontWeight: 600 }}>*</span> are required
         </div>
 
-        {/* Template Selector */}
+        {/* Optimization Mode */}
         <div style={{ 
           background: "white", 
           padding: 24, 
@@ -690,38 +695,250 @@ export default function Settings() {
           border: "1px solid #e5e7eb",
           marginBottom: 24 
         }}>
-          <h2 style={{ fontSize: 20, marginBottom: 8 }}>
+          <h2 style={{ fontSize: 20, marginBottom: 8 }}>Optimization Mode</h2>
+          <p style={{ fontSize: 14, color: "#666", marginBottom: 20 }}>
+            Choose how you want to manage your exit intent offers
+          </p>
+
+          {/* Manual Mode */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ 
+              display: "flex", 
+              alignItems: "flex-start", 
+              cursor: "pointer",
+              padding: 16,
+              border: optimizationMode === "manual" ? "2px solid #8B5CF6" : "1px solid #e5e7eb",
+              borderRadius: 8,
+              background: optimizationMode === "manual" ? "#f5f3ff" : "white"
+            }}>
+              <input
+                type="radio"
+                name="mode"
+                value="manual"
+                checked={optimizationMode === "manual"}
+                onChange={(e) => setOptimizationMode(e.target.value)}
+                style={{ marginRight: 12, marginTop: 4 }}
+              />
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>Manual Mode</div>
+                <div style={{ fontSize: 14, color: "#666" }}>
+                  Full control over templates, copy, and triggers
+                </div>
+              </div>
+            </label>
+          </div>
+
+          {/* AI Mode */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ 
+              display: "flex", 
+              alignItems: "flex-start", 
+              cursor: canUseAIMode ? "pointer" : "not-allowed",
+              padding: 16,
+              border: optimizationMode === "ai" ? "2px solid #8B5CF6" : "1px solid #e5e7eb",
+              borderRadius: 8,
+              background: optimizationMode === "ai" ? "#f5f3ff" : "white",
+              opacity: canUseAIMode ? 1 : 0.6
+            }}>
+              <input
+                type="radio"
+                name="mode"
+                value="ai"
+                checked={optimizationMode === "ai"}
+                onChange={(e) => setOptimizationMode(e.target.value)}
+                disabled={!canUseAIMode}
+                style={{ marginRight: 12, marginTop: 4 }}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+                  AI Mode - Optimized Offers
+                  {!canUseAIMode && (
+                    <span style={{ 
+                      padding: "2px 8px", 
+                      background: "#8B5CF6", 
+                      color: "white", 
+                      borderRadius: 4, 
+                      fontSize: 12,
+                      fontWeight: 600 
+                    }}>
+                      PRO
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 14, color: "#666" }}>
+                  AI automatically tests and optimizes offers to maximize results
+                </div>
+              </div>
+            </label>
+          </div>
+
+          {/* AI Mode Settings */}
+          {optimizationMode === "ai" && canUseAIMode && (
+            <div style={{ 
+              marginLeft: 32, 
+              padding: 16, 
+              background: "#f9fafb", 
+              borderRadius: 8,
+              border: "1px solid #e5e7eb" 
+            }}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
+                  Optimization Goal
+                </label>
+                <select
+                  name="aiGoal"
+                  defaultValue={settings.aiGoal || "revenue"}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    border: "1px solid #d1d5db",
+                    borderRadius: 6,
+                    fontSize: 16
+                  }}
+                >
+                  <option value="revenue">Maximize Revenue</option>
+                  <option value="conversions">Maximize Conversions</option>
+                </select>
+                <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
+                  AI will optimize offers based on this goal
+                </div>
+              </div>
+
+             <div>
+                <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
+                  Discount Aggression: {aggressionLevel}
+                </label>
+                <input
+                  type="range"
+                  name="aggression"
+                  min="0"
+                  max="10"
+                  value={aggressionLevel}
+                  onChange={(e) => setAggressionLevel(parseInt(e.target.value))}
+                  style={{ width: "100%" }}
+                />
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#666", marginTop: 4 }}>
+                  <span>0 = No discounts (announcement only)</span>
+                  <span>10 = Maximum discounts</span>
+                </div>
+                {aggressionLevel === 0 && (
+                  <div style={{ 
+                    marginTop: 8, 
+                    padding: 8, 
+                    background: "#e0f2fe", 
+                    borderRadius: 4,
+                    fontSize: 13,
+                    color: "#075985"
+                  }}>
+                    ℹ️ At level 0, modals will show without discount offers - great for announcements or cart reminders
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Upgrade Prompt for Entry Users */}
+          {!canUseAIMode && (
+            <div style={{ 
+              marginTop: 12, 
+              padding: 12, 
+              background: "#fef3c7", 
+              borderRadius: 6,
+              fontSize: 14 
+            }}>
+              ⭐ <strong>Upgrade to Pro</strong> to unlock AI Mode with automatic offer optimization.{" "}
+              <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
+                Learn more →
+              </a>
+            </div>
+          )}
+        </div>
+
+       {/* Template Selector */}
+       {/* AI Mode Active - Everything Disabled */}
+        {optimizationMode === "ai" && (
+          <div style={{ 
+            background: "white", 
+            padding: 32, 
+            borderRadius: 8, 
+            border: "2px solid #8B5CF6",
+            marginBottom: 24,
+            textAlign: "center"
+          }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🤖</div>
+            <h2 style={{ fontSize: 24, marginBottom: 12, color: "#8B5CF6" }}>AI Mode Active</h2>
+            <p style={{ fontSize: 16, color: "#666", marginBottom: 8 }}>
+              The AI is now controlling your exit intent offers. It will automatically:
+            </p>
+            <ul style={{ 
+              textAlign: "left", 
+              maxWidth: 500, 
+              margin: "16px auto 24px", 
+              fontSize: 15, 
+              color: "#666",
+              lineHeight: 1.8
+            }}>
+              <li>Choose and test different templates</li>
+              <li>Optimize modal copy and messaging</li>
+              <li>Adjust discount offers based on performance</li>
+              <li>Select the best triggers for each visitor</li>
+            </ul>
+            <p style={{ fontSize: 14, color: "#666" }}>
+              View performance and results in{" "}
+              <a href="/app/analytics" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
+                Analytics →
+              </a>
+            </p>
+          </div>
+        )}
+
+        {/* Manual Mode - Show All Settings */}
+        {optimizationMode === "manual" && (
+          <>
+            {/* Template Selector */}
+        <div style={{ 
+          background: "white", 
+          padding: 24, 
+          borderRadius: 8, 
+          border: "1px solid #e5e7eb",
+          marginBottom: 24 
+        }}>
+          <h2 style={{ fontSize: 20, marginBottom: 8, opacity: optimizationMode === "ai" ? 0.5 : 1 }}>
             Choose a Template
           </h2>
           <p style={{ fontSize: 14, color: "#666", marginBottom: 20 }}>
-            Start with a pre-made template and customize it to match your brand
+            {optimizationMode === "ai" 
+              ? "🤖 AI will automatically choose and test the best templates" 
+              : "Start with a pre-made template and customize it to match your brand"}
           </p>
 
-          <div style={{ 
-            display: "grid", 
-            gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", 
-            gap: 16 
-          }}>
-            {availableTemplates.map((template) => (
-              <button
-                key={template.id}
-                type="button"
-                onClick={() => applyTemplate(template.id)}
-                style={{
-                  padding: 16,
-                  border: selectedTemplate === template.id ? "2px solid #8B5CF6" : "1px solid #e5e7eb",
-                  borderRadius: 8,
-                  background: selectedTemplate === template.id ? "#f5f3ff" : "white",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  transition: "all 0.2s"
-                }}
-              >
-                <div style={{ fontSize: 32, marginBottom: 8 }}>{template.icon}</div>
-                <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>{template.name}</div>
-                <div style={{ fontSize: 12, color: "#666" }}>{template.description}</div>
-              </button>
-            ))}
+          <div style={{ opacity: optimizationMode === "ai" ? 0.5 : 1, pointerEvents: optimizationMode === "ai" ? "none" : "auto" }}>
+            <div style={{ 
+              display: "grid", 
+              gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", 
+              gap: 16 
+            }}>
+              {availableTemplates.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => applyTemplate(template.id)}
+                  style={{
+                    padding: 16,
+                    border: selectedTemplate === template.id ? "2px solid #8B5CF6" : "1px solid #e5e7eb",
+                    borderRadius: 8,
+                    background: selectedTemplate === template.id ? "#f5f3ff" : "white",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    transition: "all 0.2s"
+                  }}
+                >
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>{template.icon}</div>
+                  <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>{template.name}</div>
+                  <div style={{ fontSize: 12, color: "#666" }}>{template.description}</div>
+                </button>
+              ))}
+            </div>
           </div>
 
           <input type="hidden" name="template" value={selectedTemplate} />
@@ -735,82 +952,102 @@ export default function Settings() {
           border: "1px solid #e5e7eb",
           marginBottom: 24 
         }}>
-          <h2 style={{ fontSize: 20, marginBottom: 20 }}>Modal Content</h2>
-
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
-              Headline <span style={{ color: "#dc2626" }}>*</span>
-            </label>
-            <input
-              type="text"
-              name="modalHeadline"
-              defaultValue={settings.modalHeadline}
-              style={{ 
-                width: "100%", 
-                padding: "10px 12px", 
-                border: "1px solid #d1d5db",
-                borderRadius: 6,
-                fontSize: 16
-              }}
-              required
-            />
-          </div>
-
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
-              Body Text <span style={{ color: "#dc2626" }}>*</span>
-            </label>
-            <textarea
-              name="modalBody"
-              defaultValue={settings.modalBody}
-              rows={4}
-              style={{ 
-                width: "100%", 
-                padding: "10px 12px", 
-                border: "1px solid #d1d5db",
-                borderRadius: 6,
-                fontSize: 16,
-                fontFamily: "inherit"
-              }}
-              required
-            />
-          </div>
-
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
-              Button Text <span style={{ color: "#dc2626" }}>*</span>
-            </label>
-            <input
-              type="text"
-              name="ctaButton"
-              defaultValue={settings.ctaButton}
-              style={{ 
-                width: "100%", 
-                padding: "10px 12px", 
-                border: "1px solid #d1d5db",
-                borderRadius: 6,
-                fontSize: 16
-              }}
-              required
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setShowPreview(!showPreview)}
-            style={{ 
-              padding: "10px 20px", 
-              background: "#f3f4f6", 
-              border: "1px solid #d1d5db",
+          <h2 style={{ fontSize: 20, marginBottom: 8, opacity: optimizationMode === "ai" ? 0.5 : 1 }}>
+            Modal Content
+          </h2>
+          
+          {optimizationMode === "ai" && (
+            <div style={{ 
+              marginBottom: 16, 
+              padding: 12, 
+              background: "#e0f2fe", 
               borderRadius: 6,
-              cursor: "pointer",
-              fontSize: 16
-            }}
-          >
-            {showPreview ? "Hide Preview" : "Show Preview"}
-          </button>
-        </div>
+              fontSize: 14,
+              color: "#075985"
+            }}>
+              ℹ️ AI Mode is controlling modal content. Copy will be automatically optimized based on performance.
+            </div>
+          )}
 
+          <div style={{ opacity: optimizationMode === "ai" ? 0.5 : 1, pointerEvents: optimizationMode === "ai" ? "none" : "auto" }}>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
+                Headline <span style={{ color: "#dc2626" }}>*</span>
+              </label>
+              <input
+                type="text"
+                name="modalHeadline"
+                defaultValue={settings.modalHeadline}
+                disabled={optimizationMode === "ai"}
+                style={{ 
+                  width: "100%", 
+                  padding: "10px 12px", 
+                  border: "1px solid #d1d5db",
+                  borderRadius: 6,
+                  fontSize: 16
+                }}
+                required
+              />
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
+                Body Text <span style={{ color: "#dc2626" }}>*</span>
+              </label>
+              <textarea
+                name="modalBody"
+                defaultValue={settings.modalBody}
+                rows={4}
+                disabled={optimizationMode === "ai"}
+                style={{ 
+                  width: "100%", 
+                  padding: "10px 12px", 
+                  border: "1px solid #d1d5db",
+                  borderRadius: 6,
+                  fontSize: 16,
+                  fontFamily: "inherit"
+                }}
+                required
+              />
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
+                Button Text <span style={{ color: "#dc2626" }}>*</span>
+              </label>
+              <input
+                type="text"
+                name="ctaButton"
+                defaultValue={settings.ctaButton}
+                disabled={optimizationMode === "ai"}
+                style={{ 
+                  width: "100%", 
+                  padding: "10px 12px", 
+                  border: "1px solid #d1d5db",
+                  borderRadius: 6,
+                  fontSize: 16
+                }}
+                required
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowPreview(!showPreview)}
+              disabled={optimizationMode === "ai"}
+              style={{ 
+                padding: "10px 20px", 
+                background: "#f3f4f6", 
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                cursor: optimizationMode === "ai" ? "not-allowed" : "pointer",
+                fontSize: 16
+              }}
+            >
+              {showPreview ? "Hide Preview" : "Show Preview"}
+            </button>
+          </div>
+        </div>
         {/* Discount Section */}
         <div style={{ 
           background: "white", 
@@ -1276,8 +1513,11 @@ export default function Settings() {
             💡 <strong>Example:</strong> Set minimum to $100 and maximum to $3000 to only show the modal for mid-range carts. Combine with any trigger above!
           </div>
         </div>
+          </>
+        )}
 
-        {/* Save Button with Inline Notification */}
+        
+      {/* Save Button with Inline Notification */}
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <button
             type="submit"
@@ -1400,69 +1640,111 @@ export default function Settings() {
                   borderRadius: 8,
                   border: "2px solid #10b981"
                 }}>
-                  <div style={{ background: "white", padding: 24, borderRadius: 8 }}>
-                    <h4 style={{ 
-                      fontSize: 18, 
-                      marginBottom: 12,
-                      background: actionData.newSettings?.modalHeadline !== actionData.currentSettings?.modalHeadline ? "#fef3c7" : "transparent"
-                    }}>
-                      {actionData.newSettings?.modalHeadline}
-                    </h4>
-                    <p style={{ 
-                      marginBottom: 16, 
-                      color: "#666",
-                      background: actionData.newSettings?.modalBody !== actionData.currentSettings?.modalBody ? "#fef3c7" : "transparent"
-                    }}>
-                      {actionData.newSettings?.modalBody}
-                    </p>
-                    <button style={{
-                      width: "100%",
-                      padding: "10px",
-                      background: "#8B5CF6",
-                      color: "white",
-                      border: "none",
-                      borderRadius: 6,
-                      fontSize: 14,
-                      fontWeight: 500,
-                      outline: actionData.newSettings?.ctaButton !== actionData.currentSettings?.ctaButton ? "3px solid #fbbf24" : "none"
-                    }}>
-                      {actionData.newSettings?.ctaButton}
-                    </button>
-                    {actionData.newSettings?.discountEnabled && (
+                  {actionData.newSettings?.mode === "ai" ? (
+                    // AI Mode Display
+                    <div style={{ background: "white", padding: 24, borderRadius: 8, textAlign: "center" }}>
+                      <div style={{ fontSize: 32, marginBottom: 12 }}>🤖</div>
+                      <h4 style={{ fontSize: 18, marginBottom: 12, color: "#8B5CF6" }}>AI Mode Active</h4>
+                      <div style={{ 
+                        marginTop: 16,
+                        padding: 12,
+                        background: (actionData.newSettings?.aiGoal !== actionData.currentSettings?.aiGoal) ? "#fef3c7" : "#f9fafb",
+                        borderRadius: 6,
+                        fontSize: 14
+                      }}>
+                        🎯 Goal: {actionData.newSettings?.aiGoal === "revenue" ? "Maximize Revenue" : "Maximize Conversions"}
+                      </div>
+                      <div style={{ 
+                        marginTop: 8,
+                        padding: 12,
+                        background: (actionData.newSettings?.aggression !== actionData.currentSettings?.aggression) ? "#fef3c7" : "#f9fafb",
+                        borderRadius: 6,
+                        fontSize: 14
+                      }}>
+                        🎚️ Aggression: {actionData.newSettings?.aggression}/10
+                      </div>
+                      <div style={{ 
+                        marginTop: 8,
+                        padding: 12,
+                        background: (
+                          actionData.newSettings?.triggers?.exitIntent !== actionData.currentSettings?.triggers?.exitIntent ||
+                          actionData.newSettings?.triggers?.timeDelay !== actionData.currentSettings?.triggers?.timeDelay ||
+                          actionData.newSettings?.triggers?.timeDelaySeconds !== actionData.currentSettings?.triggers?.timeDelaySeconds
+                        ) ? "#fef3c7" : "#f9fafb",
+                        borderRadius: 6,
+                        fontSize: 14
+                      }}>
+                        ⚡ Trigger: {getTriggerDisplay(actionData.newSettings)}
+                      </div>
+                    </div>
+                  ) : (
+                    // Manual Mode Display
+                    <div style={{ background: "white", padding: 24, borderRadius: 8 }}>
+                      <h4 style={{ 
+                        fontSize: 18, 
+                        marginBottom: 12,
+                        background: actionData.newSettings?.modalHeadline !== actionData.currentSettings?.modalHeadline ? "#fef3c7" : "transparent"
+                      }}>
+                        {actionData.newSettings?.modalHeadline}
+                      </h4>
+                      <p style={{ 
+                        marginBottom: 16, 
+                        color: "#666",
+                        background: actionData.newSettings?.modalBody !== actionData.currentSettings?.modalBody ? "#fef3c7" : "transparent"
+                      }}>
+                        {actionData.newSettings?.modalBody}
+                      </p>
+                      <button style={{
+                        width: "100%",
+                        padding: "10px",
+                        background: "#8B5CF6",
+                        color: "white",
+                        border: "none",
+                        borderRadius: 6,
+                        fontSize: 14,
+                        fontWeight: 500,
+                        outline: actionData.newSettings?.ctaButton !== actionData.currentSettings?.ctaButton ? "3px solid #fbbf24" : "none"
+                      }}>
+                        {actionData.newSettings?.ctaButton}
+                      </button>
+                      {actionData.newSettings?.discountEnabled && (
+                        <div style={{ 
+                          marginTop: 12, 
+                          fontSize: 14, 
+                          color: "#6b7280",
+                          background: (actionData.newSettings?.offerType !== actionData.currentSettings?.offerType || 
+                                      actionData.newSettings?.discountPercentage !== actionData.currentSettings?.discountPercentage ||
+                                      actionData.newSettings?.discountAmount !== actionData.currentSettings?.discountAmount) ? "#fef3c7" : "transparent",
+                          padding: "8px"
+                        }}>
+                          💰 Discount: {getDiscountDisplay(actionData.newSettings)}
+                        </div>
+                      )}
+                      
+                      {/* Trigger Display */}
                       <div style={{ 
                         marginTop: 12, 
                         fontSize: 14, 
                         color: "#6b7280",
-                        background: (actionData.newSettings?.offerType !== actionData.currentSettings?.offerType || 
-                                    actionData.newSettings?.discountPercentage !== actionData.currentSettings?.discountPercentage ||
-                                    actionData.newSettings?.discountAmount !== actionData.currentSettings?.discountAmount) ? "#fef3c7" : "transparent",
+                        background: (
+                          actionData.newSettings?.triggers?.exitIntent !== actionData.currentSettings?.triggers?.exitIntent ||
+                          actionData.newSettings?.triggers?.timeDelay !== actionData.currentSettings?.triggers?.timeDelay ||
+                          actionData.newSettings?.triggers?.timeDelaySeconds !== actionData.currentSettings?.triggers?.timeDelaySeconds ||
+                          actionData.newSettings?.triggers?.cartValue !== actionData.currentSettings?.triggers?.cartValue ||
+                          actionData.newSettings?.triggers?.minCartValue !== actionData.currentSettings?.triggers?.minCartValue ||
+                          actionData.newSettings?.triggers?.maxCartValue !== actionData.currentSettings?.triggers?.maxCartValue
+                        ) ? "#fef3c7" : "transparent",
                         padding: "8px"
                       }}>
-                        💰 Discount: {getDiscountDisplay(actionData.newSettings)}
+                        ⚡ Trigger: {getTriggerDisplay(actionData.newSettings)}
                       </div>
-                    )}
-                    
-                    {/* Trigger Display */}
-                    <div style={{ 
-                      marginTop: 12, 
-                      fontSize: 14, 
-                      color: "#6b7280",
-                      background: (
-                        actionData.newSettings?.triggers?.exitIntent !== actionData.currentSettings?.triggers?.exitIntent ||
-                        actionData.newSettings?.triggers?.timeDelay !== actionData.currentSettings?.triggers?.timeDelay ||
-                        actionData.newSettings?.triggers?.timeDelaySeconds !== actionData.currentSettings?.triggers?.timeDelaySeconds ||
-                        actionData.newSettings?.triggers?.cartValue !== actionData.currentSettings?.triggers?.cartValue ||
-                        actionData.newSettings?.triggers?.minCartValue !== actionData.currentSettings?.triggers?.minCartValue ||
-                        actionData.newSettings?.triggers?.maxCartValue !== actionData.currentSettings?.triggers?.maxCartValue
-                      ) ? "#fef3c7" : "transparent",
-                      padding: "8px"
-                    }}>
-                      ⚡ Trigger: {getTriggerDisplay(actionData.newSettings)}
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             </div>
+
+             
 
             {/* Modal naming */}
             <div style={{ marginBottom: 24 }}>
@@ -1521,7 +1803,12 @@ export default function Settings() {
             {/* Actions */}
             <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
               <button
-                onClick={() => setShowModalNaming(false)}
+               type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowModalNaming(false);
+                }}
                 style={{
                   padding: "10px 20px",
                   background: "#f3f4f6",
@@ -1551,6 +1838,9 @@ export default function Settings() {
                 <input type="hidden" name="discountPercentage" value={actionData.newSettings?.discountPercentage} />
                 <input type="hidden" name="discountAmount" value={actionData.newSettings?.discountAmount} />
                 <input type="hidden" name="redirectDestination" value={actionData.newSettings?.redirectDestination} />
+                <input type="hidden" name="mode" value={actionData.newSettings?.mode} />
+                <input type="hidden" name="aiGoal" value={actionData.newSettings?.aiGoal} />
+                <input type="hidden" name="aggression" value={actionData.newSettings?.aggression} />
                 <button
                   type="submit"
                   style={{
