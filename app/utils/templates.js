@@ -2,7 +2,7 @@ export const MODAL_TEMPLATES = {
   discount: {
     id: "discount",
     name: "Discount Offer",
-    tier: "starter", // Available on all plans
+    tier: "starter",
     icon: "🎁",
     headline: "Wait! Don't leave yet 🎁",
     body: "Complete your purchase now and get an exclusive discount on your order!",
@@ -11,43 +11,33 @@ export const MODAL_TEMPLATES = {
   },
   urgency: {
     id: "urgency",
-    name: "Urgency & Scarcity",
-    tier: "pro",
+    name: "Limited Time Offer",
+    tier: "starter",
     icon: "⚡",
-    headline: "Items Selling Fast! ⚡",
-    body: "These items are in high demand and stock is running low. Complete your order now before they're gone!",
-    ctaButton: "Secure My Order",
-    description: "Create FOMO with urgency and scarcity"
+    headline: "Don't Miss Out! ⚡",
+    body: "This exclusive offer won't last forever. Complete your order now and save!",
+    ctaButton: "Claim My Offer",
+    description: "Create urgency without requiring stock/timer data"
   },
   welcome: {
     id: "welcome",
-    name: "New Customer Welcome",
-    tier: "pro",
-    icon: "👋",
-    headline: "Welcome! Here's a Special Offer 👋",
-    body: "We noticed this is your first visit! Complete your order now and get a special first-time customer discount.",
-    ctaButton: "Claim My Offer",
-    description: "Welcome first-time visitors with special offer"
+    name: "Special Offer",
+    tier: "starter",
+    icon: "✨",
+    headline: "Special Offer Just For You! ✨",
+    body: "We're offering an exclusive discount on your order. Complete your purchase now to save!",
+    ctaButton: "Get My Discount",
+    description: "Generic special offer messaging"
   },
   cartReminder: {
     id: "cartReminder",
-    name: "Cart Abandonment",
-    tier: "pro",
-    icon: "💰",
-    headline: "Complete Your Order & Save! 💰",
-    body: "You have items waiting in your cart! Finish your purchase now and we'll add an extra discount just for you.",
-    ctaButton: "Complete My Purchase",
-    description: "Gentle reminder with added incentive"
-  },
-  giftCard: {
-    id: "giftCard",
-    name: "Gift Card Offer",
-    tier: "enterprise",
-    icon: "🎟️",
-    headline: "Come Back & Get $10 Off! 🎟️",
-    body: "We'll send you a $10 gift card to use on your next purchase. Complete your email below to claim your gift!",
-    ctaButton: "Send Me My Gift Card",
-    description: "Encourage return visits with gift card incentive"
+    name: "Cart Reminder",
+    tier: "starter",
+    icon: "🛒",
+    headline: "Complete Your Order! 🛒",
+    body: "You have items in your cart. Finish your purchase now and get an exclusive discount!",
+    ctaButton: "Complete My Order",
+    description: "Cart abandonment reminder with incentive"
   }
 };
 
@@ -58,6 +48,6 @@ export function getAvailableTemplates(planTier) {
     return templates.filter(t => t.tier === "starter");
   }
   
-  // Pro and Enterprise get all templates
+  // Pro and Enterprise get all templates (currently all are starter tier anyway)
   return templates;
 }

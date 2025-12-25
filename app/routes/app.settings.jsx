@@ -692,19 +692,6 @@ export default function Settings() {
         }}>
           <h2 style={{ fontSize: 20, marginBottom: 8 }}>
             Choose a Template
-            {!canUseMultipleTemplates && (
-              <span style={{ 
-                marginLeft: 8, 
-                padding: "2px 8px", 
-                background: "#8B5CF6", 
-                color: "white", 
-                borderRadius: 4, 
-                fontSize: 12,
-                fontWeight: 600 
-              }}>
-                PRO for more
-              </span>
-            )}
           </h2>
           <p style={{ fontSize: 14, color: "#666", marginBottom: 20 }}>
             Start with a pre-made template and customize it to match your brand
@@ -735,55 +722,7 @@ export default function Settings() {
                 <div style={{ fontSize: 12, color: "#666" }}>{template.description}</div>
               </button>
             ))}
-
-            {/* Locked templates preview for Starter */}
-            {!canUseMultipleTemplates && Object.values(MODAL_TEMPLATES).filter(t => t.tier === "pro").slice(0, 3).map((template) => (
-              <div
-                key={template.id}
-                style={{
-                  padding: 16,
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 8,
-                  background: "white",
-                  opacity: 0.5,
-                  position: "relative",
-                  textAlign: "left"
-                }}
-              >
-                <div style={{
-                  position: "absolute",
-                  top: 8,
-                  right: 8,
-                  background: "#8B5CF6",
-                  color: "white",
-                  padding: "2px 6px",
-                  borderRadius: 4,
-                  fontSize: 10,
-                  fontWeight: 600
-                }}>
-                  PRO
-                </div>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>{template.icon}</div>
-                <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>{template.name}</div>
-                <div style={{ fontSize: 12, color: "#666" }}>{template.description}</div>
-              </div>
-            ))}
           </div>
-
-          {!canUseMultipleTemplates && (
-            <div style={{ 
-              marginTop: 16, 
-              padding: 12, 
-              background: "#fef3c7", 
-              borderRadius: 6,
-              fontSize: 14 
-            }}>
-              ⭐ <strong>Upgrade to Pro</strong> to unlock 3 additional templates including Urgency, Cart Abandonment, and more. Upgrade to Enterprise for Gift Card offers.{" "}
-              <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
-                Learn more →
-              </a>
-            </div>
-          )}
 
           <input type="hidden" name="template" value={selectedTemplate} />
         </div>
@@ -966,62 +905,6 @@ export default function Settings() {
                       borderRadius: 6,
                       width: 100,
                       fontSize: 16
-                    }}
-                  />
-                </div>
-              </label>
-            </div>
-
-            {/* Gift Card Offer */}
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ display: "flex", alignItems: "flex-start", cursor: "pointer" }}>
-                <input
-                  type="radio"
-                  name="offerType"
-                  value="giftcard"
-                  defaultChecked={settings.offerType === "giftcard"}
-                  style={{ marginRight: 12, marginTop: 4 }}
-                />
-                <div style={{ flex: 1 }}>
-                  <div style={{ 
-                    fontWeight: 500, 
-                    marginBottom: 4,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8
-                  }}>
-                    Gift Card Offer
-                    {plan && plan.tier !== "enterprise" && (
-                      <span style={{ 
-                        padding: "2px 8px", 
-                        background: "#f59e0b", 
-                        color: "white", 
-                        borderRadius: 4, 
-                        fontSize: 11,
-                        fontWeight: 600 
-                      }}>
-                        ENTERPRISE
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
-                    Prompt users to return with a gift card code via email
-                  </div>
-                  <span style={{ marginRight: 8, color: "#666" }}>$</span>
-                  <input
-                    type="number"
-                    name="discountAmount"
-                    defaultValue={settings.discountAmount || 10}
-                    min="1"
-                    step="1"
-                    disabled={plan && plan.tier !== "enterprise"}
-                    style={{ 
-                      padding: "8px 12px", 
-                      border: "1px solid #d1d5db",
-                      borderRadius: 6,
-                      width: 100,
-                      fontSize: 16,
-                      opacity: plan && plan.tier !== "enterprise" ? 0.5 : 1
                     }}
                   />
                 </div>
