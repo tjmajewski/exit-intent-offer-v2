@@ -7,13 +7,19 @@
   // Exit intent modal manager
   class ExitIntentModal {
     constructor() {
-      this.settings = settings;
-      this.modalShown = false;
-      this.modalElement = null;
-      this.sessionKey = 'exitIntentShown';
-      
-      // Check if modal is enabled
-      if (!this.settings.enabled) {
+  this.settings = settings;
+  this.modalShown = false;
+  this.modalElement = null;
+  this.sessionKey = 'exitIntentShown';
+  this.cartItemCount = 0;
+  this.cartTimerStarted = false;
+  this.cartTimerTimeout = null;
+  this.cartItemCount = 0;
+  this.cartTimerStarted = false;
+  this.cartTimerTimeout = null;
+  
+  // Check if modal is enabled
+  if (!this.settings.enabled) {
         console.log('Exit intent modal is disabled');
         return;
       }
@@ -49,6 +55,76 @@
         return false;
       }
     }
+
+      // Cart monitoring for add-to-cart timer trigger
+  initCartMonitoring(delaySeconds) {
+    // Get initial cart count
+    fetch('/cart.js')
+      .then(response => response.json())
+      .then(cart => {
+        this.cartItemCount = cart.item_count;
+        console.log('[Exit Intent] Initial cart count:', this.cartItemCount);
+      })
+      .catch(err => console.error('[Exit Intent] Error fetching initial cart:', err));
+
+    // Listen for Shopify cart updates
+    document.addEventListener('cart:updated', () => this.handleCartUpdate(delaySeconds));
+    
+    // Poll cart as fallback (some themes don't fire cart:updated)
+    setInterval(() => this.pollCart(delaySeconds), 2000);
+    
+    // Listen for add-to-cart button clicks as additional trigger
+    document.addEventListener('click', (e) => {
+      const addToCartBtn = e.target.closest('[name="add"], [type="submit"][name="add"], .product-form__submit, button[name="add"]');
+      if (addToCartBtn) {
+        console.log('[Exit Intent] Add to cart button clicked');
+        setTimeout(() => this.pollCart(delaySeconds), 500);
+      }
+    });
+  }
+
+  handleCartUpdate(delaySeconds) {
+    console.log('[Exit Intent] Cart updated event fired');
+    this.pollCart(delaySeconds);
+  }
+
+  pollCart(delaySeconds) {
+    fetch('/cart.js')
+      .then(response => response.json())
+      .then(cart => {
+        const newItemCount = cart.item_count;
+        
+        // Cart increased - item was added
+        if (newItemCount > this.cartItemCount && !this.cartTimerStarted) {
+          console.log('[Exit Intent] Item added to cart! Starting timer...');
+          this.cartItemCount = newItemCount;
+          this.cartTimerStarted = true;
+          
+          // Clear any existing timer
+          if (this.cartTimerTimeout) {
+            clearTimeout(this.cartTimerTimeout);
+          }
+          
+          // Start countdown
+          const delay = delaySeconds * 1000;
+          console.log(`[Exit Intent] Timer will fire in ${delaySeconds} seconds`);
+          
+          this.cartTimerTimeout = setTimeout(async () => {
+            if (!this.modalShown) {
+              const hasItems = await this.hasItemsInCart();
+              if (hasItems) {
+                console.log('[Exit Intent] Timer completed - showing modal');
+                this.showModal();
+              }
+            }
+          }, delay);
+        }
+        
+        // Update count for next check
+        this.cartItemCount = newItemCount;
+      })
+      .catch(err => console.error('[Exit Intent] Error polling cart:', err));
+  }
     
     createModal() {
       // Create modal overlay
@@ -159,18 +235,9 @@
         });
       }
       
-      // Time delay trigger (only on cart page)
+      // Time delay trigger (after add-to-cart)
       if (triggers.timeDelay && triggers.timeDelaySeconds) {
-        if (window.location.pathname.includes('/cart')) {
-          setTimeout(async () => {
-            if (!this.modalShown) {
-              const hasItems = await this.hasItemsInCart();
-              if (hasItems) {
-                this.showModal();
-              }
-            }
-          }, triggers.timeDelaySeconds * 1000);
-        }
+        this.initCartMonitoring(triggers.timeDelaySeconds);
       }
       
       // Cart value trigger

@@ -6,6 +6,28 @@ import { getAvailableTemplates, MODAL_TEMPLATES } from "../utils/templates";
 import { generateModalHash, getDefaultModalLibrary, findModalByHash, getNextModalName } from "../utils/modalHash";
 import AppLayout from "../components/AppLayout";
 
+function getTriggerDisplay(settings) {
+  const triggers = settings?.triggers || {};
+  const activeTriggers = [];
+  
+  if (triggers.exitIntent) {
+    activeTriggers.push("Exit Intent");
+  }
+  
+  if (triggers.timeDelay && triggers.timeDelaySeconds) {
+    activeTriggers.push(`Timer (${triggers.timeDelaySeconds}s after add-to-cart)`);
+  }
+  
+  if (triggers.cartValue) {
+    const conditions = [];
+    if (triggers.minCartValue) conditions.push(`min $${triggers.minCartValue}`);
+    if (triggers.maxCartValue) conditions.push(`max $${triggers.maxCartValue}`);
+    activeTriggers.push(`Cart Value (${conditions.join(', ')})`);
+  }
+  
+  return activeTriggers.length > 0 ? activeTriggers.join(" + ") : "None";
+}
+
 async function createDiscountCode(admin, discountPercentage) {
   const discountCode = `${discountPercentage}OFF`;
   
@@ -357,7 +379,15 @@ export async function action({ request }) {
     discountAmount: parseFloat(formData.get("discountAmount") || "10"),
     discountCode: null,
     redirectDestination: formData.get("redirectDestination") || "checkout",
-    template: formData.get("template") || "discount"
+    template: formData.get("template") || "discount",
+    triggers: {
+      exitIntent: formData.get("exitIntentEnabled") === "on",
+      timeDelay: formData.get("timeDelayEnabled") === "on",
+      timeDelaySeconds: parseInt(formData.get("timeDelaySeconds") || "30"),
+      cartValue: formData.get("cartValueEnabled") === "on",
+      minCartValue: parseFloat(formData.get("cartValueMin") || "0"),
+      maxCartValue: parseFloat(formData.get("cartValueMax") || "1000")
+    }
   };
 
   try {
@@ -1478,7 +1508,7 @@ export default function Settings() {
                 </div>
               </div>
 
-              {/* New Modal */}
+             {/* New Modal */}
               <div>
                 <h3 style={{ fontSize: 16, marginBottom: 12, color: "#10b981" }}>New Changes</h3>
                 <div style={{
@@ -1522,11 +1552,30 @@ export default function Settings() {
                         color: "#6b7280",
                         background: (actionData.newSettings?.offerType !== actionData.currentSettings?.offerType || 
                                     actionData.newSettings?.discountPercentage !== actionData.currentSettings?.discountPercentage ||
-                                    actionData.newSettings?.discountAmount !== actionData.currentSettings?.discountAmount) ? "#fef3c7" : "transparent"
+                                    actionData.newSettings?.discountAmount !== actionData.currentSettings?.discountAmount) ? "#fef3c7" : "transparent",
+                        padding: "8px"
                       }}>
                         💰 Discount: {getDiscountDisplay(actionData.newSettings)}
                       </div>
                     )}
+                    
+                    {/* Trigger Display */}
+                    <div style={{ 
+                      marginTop: 12, 
+                      fontSize: 14, 
+                      color: "#6b7280",
+                      background: (
+                        actionData.newSettings?.triggers?.exitIntent !== actionData.currentSettings?.triggers?.exitIntent ||
+                        actionData.newSettings?.triggers?.timeDelay !== actionData.currentSettings?.triggers?.timeDelay ||
+                        actionData.newSettings?.triggers?.timeDelaySeconds !== actionData.currentSettings?.triggers?.timeDelaySeconds ||
+                        actionData.newSettings?.triggers?.cartValue !== actionData.currentSettings?.triggers?.cartValue ||
+                        actionData.newSettings?.triggers?.minCartValue !== actionData.currentSettings?.triggers?.minCartValue ||
+                        actionData.newSettings?.triggers?.maxCartValue !== actionData.currentSettings?.triggers?.maxCartValue
+                      ) ? "#fef3c7" : "transparent",
+                      padding: "8px"
+                    }}>
+                      ⚡ Trigger: {getTriggerDisplay(actionData.newSettings)}
+                    </div>
                   </div>
                 </div>
               </div>
