@@ -840,6 +840,7 @@ export default function Settings() {
           )}
 
           {/* Promotion Budget - Pro/Enterprise Only */}
+              {optimizationMode === "ai" && (
               <div style={{ 
                 marginTop: 16,
                 padding: 16, 
@@ -924,6 +925,7 @@ export default function Settings() {
                   💡 <strong>Example:</strong> $500/month means AI will stop offering discounts once $500 in total discounts have been given out this month. Resets at the start of each period.
                 </div>
               </div>
+              )}
 
           {/* Upgrade Prompt for Entry Users */}
           {!canUseAIMode && (
