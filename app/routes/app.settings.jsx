@@ -393,6 +393,12 @@ export async function action({ request }) {
     }
   };
 
+  console.log('=== SETTINGS BEING SAVED ===');
+  console.log('Mode:', settings.mode);
+  console.log('AI Goal:', settings.aiGoal);
+  console.log('Aggression:', settings.aggression);
+  console.log('Full settings:', settings);
+
   try {
     // Debug logging
     console.log('=== DISCOUNT DEBUG ===');
@@ -466,7 +472,6 @@ export async function action({ request }) {
         : getNextModalName(modalLibrary);
 
       return {
-        success: false,
         needsConfirmation: true,
         suggestedName,
         existingModal,
@@ -589,6 +594,7 @@ export default function Settings() {
   const [modalName, setModalName] = useState("");
   const [optimizationMode, setOptimizationMode] = useState(settings.mode || "manual");
   const [aggressionLevel, setAggressionLevel] = useState(settings.aggression || 5);
+     
 
 
   // Helper function to display discount text
@@ -612,16 +618,7 @@ export default function Settings() {
 
   const isSubmitting = navigation.state === "submitting";
 
-  // Show modal naming popup if confirmation needed
-  if (actionData?.needsConfirmation && !showModalNaming) {
-    setShowModalNaming(true);
-    setModalName(actionData.suggestedName);
-  }
-
-  // Close modal naming popup after successful save
-  if (actionData?.success && showModalNaming) {
-    setShowModalNaming(false);
-  }
+   
 
   // Feature gates
   const canUseAllTriggers = plan ? hasFeature(plan, 'allTriggers') : false;
@@ -649,8 +646,10 @@ export default function Settings() {
   };
 
   const showSuccessMessage = actionData?.success && !formChanged && !isSubmitting;
-  const showErrorMessage = actionData?.success === false && !formChanged && !isSubmitting;
+  const showErrorMessage = actionData?.success === false && !actionData?.needsConfirmation && !formChanged && !isSubmitting;
 
+     
+  
   return (
     <AppLayout plan={plan}>
       <div style={{ padding: 40, maxWidth: 1200, margin: "0 auto" }}>
@@ -1565,302 +1564,317 @@ export default function Settings() {
         </div>
       </Form>
 
-{/* Modal Naming Popup */}
-      {showModalNaming && actionData?.needsConfirmation && (
+      {/* Modal Naming Popup */}
+      {actionData?.needsConfirmation && (
         <div style={{
           position: "fixed",
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          background: "rgba(0, 0, 0, 0.5)",
+          background: "rgba(0, 0, 0, 0.7)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          zIndex: 2000
+          zIndex: 2000,
+          padding: 20
         }}>
           <div style={{
             background: "white",
-            padding: 40,
             borderRadius: 12,
-            maxWidth: 900,
-            width: "90%",
+            maxWidth: 1000,
+            width: "100%",
             maxHeight: "90vh",
-            overflow: "auto"
-          }}>
-            <h2 style={{ fontSize: 24, marginBottom: 16 }}>New Modal Version Detected</h2>
-            
-            {/* Side-by-side comparison */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 24 }}>
-              {/* Current Modal */}
-              <div>
-                <h3 style={{ fontSize: 16, marginBottom: 12, color: "#6b7280" }}>
-                  Current Modal {actionData.currentSettings && `(${modalLibrary?.modals?.find(m => m.active)?.modalName || "Unsaved"})`}
-                </h3>
-                <div style={{
-                  background: "rgba(0, 0, 0, 0.05)",
-                  padding: 24,
-                  borderRadius: 8,
-                  border: "2px solid #e5e7eb"
-                }}>
-                  <div style={{ background: "white", padding: 24, borderRadius: 8 }}>
-                    <h4 style={{ fontSize: 18, marginBottom: 12 }}>
-                      {actionData.currentSettings?.modalHeadline || "No current modal"}
-                    </h4>
-                    <p style={{ marginBottom: 16, color: "#666" }}>
-                      {actionData.currentSettings?.modalBody || ""}
-                    </p>
-                    <button style={{
-                      width: "100%",
-                      padding: "10px",
-                      background: "#8B5CF6",
-                      color: "white",
-                      border: "none",
-                      borderRadius: 6,
-                      fontSize: 14,
-                      fontWeight: 500
-                    }}>
-                      {actionData.currentSettings?.ctaButton || ""}
-                    </button>
-                    {actionData.currentSettings?.discountEnabled && (
-                      <div style={{ marginTop: 12, fontSize: 14, color: "#6b7280" }}>
-                        💰 Discount: {getDiscountDisplay(actionData.currentSettings)}
+            overflow: "auto",
+            position: "relative"
+          }}
+          onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close X Button */}
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              style={{
+                position: "absolute",
+                top: 20,
+                right: 20,
+                background: "#f3f4f6",
+                border: "none",
+                fontSize: 28,
+                cursor: "pointer",
+                color: "#666",
+                lineHeight: 1,
+                width: 36,
+                height: 36,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 10,
+                borderRadius: 6,
+                transition: "background 0.2s"
+              }}
+              onMouseEnter={(e) => e.target.style.background = "#e5e7eb"}
+              onMouseLeave={(e) => e.target.style.background = "#f3f4f6"}
+            >
+              ×
+            </button>
+
+            <div style={{ padding: 40 }}>
+              <h2 style={{ fontSize: 28, marginBottom: 24 }}>New Modal Version Detected</h2>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 32 }}>
+                {/* Current Modal */}
+                <div>
+                  <h3 style={{ fontSize: 18, marginBottom: 16, color: "#6b7280" }}>
+                    Current Modal ({modalLibrary.modals.find(m => m.modalId === modalLibrary.currentModalId)?.modalName || "modal10"})
+                  </h3>
+                  <div style={{ 
+                    padding: 24, 
+                    background: "#f9fafb", 
+                    borderRadius: 8,
+                    border: "1px solid #e5e7eb"
+                  }}>
+                    {actionData.currentSettings ? (
+                      actionData.currentSettings.mode === "ai" ? (
+                        <>
+                          <div style={{ textAlign: "center", marginBottom: 16 }}>
+                            <div style={{ fontSize: 48 }}>🤖</div>
+                            <h4 style={{ fontSize: 20, marginBottom: 8, color: "#8B5CF6" }}>AI Mode Active</h4>
+                          </div>
+                          <div style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>
+                            <div style={{ marginBottom: 8 }}>
+                              <span style={{ fontSize: 18, marginRight: 8 }}>🎯</span>
+                              <strong>Goal:</strong> {actionData.currentSettings.aiGoal === "revenue" ? "Maximize Revenue" : "Maximize Conversions"}
+                            </div>
+                            <div style={{ 
+                              padding: 12, 
+                              background: "#fef3c7", 
+                              borderRadius: 6,
+                              marginBottom: 8
+                            }}>
+                              <span style={{ fontSize: 18, marginRight: 8 }}>💪</span>
+                              <strong>Aggression:</strong> {actionData.currentSettings.aggression}/10
+                            </div>
+                            <div style={{ fontSize: 13, color: "#6b7280" }}>
+                              <span style={{ fontSize: 18, marginRight: 8 }}>⚡</span>
+                              <strong>Trigger:</strong> {getTriggerDisplay(actionData.currentSettings)}
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <h4 style={{ fontSize: 20, marginBottom: 12 }}>
+                            {actionData.currentSettings.modalHeadline}
+                          </h4>
+                          <p style={{ marginBottom: 16, color: "#666" }}>
+                            {actionData.currentSettings.modalBody}
+                          </p>
+                          <button style={{
+                            width: "100%",
+                            padding: "10px",
+                            background: "#8B5CF6",
+                            color: "white",
+                            border: "none",
+                            borderRadius: 6,
+                            fontSize: 14,
+                            fontWeight: 500
+                          }}>
+                            {actionData.currentSettings.ctaButton}
+                          </button>
+                          {actionData.currentSettings.discountEnabled && (
+                            <div style={{ marginTop: 12, fontSize: 14, color: "#6b7280" }}>
+                              {getDiscountDisplay(actionData.currentSettings)} discount
+                            </div>
+                          )}
+                          <div style={{ marginTop: 16, fontSize: 13, color: "#6b7280" }}>
+                            <div><strong>Triggers:</strong> {getTriggerDisplay(actionData.currentSettings)}</div>
+                          </div>
+                        </>
+                      )
+                    ) : (
+                      <div style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>
+                        <h4 style={{ fontSize: 18, marginBottom: 8 }}>No current modal</h4>
+                        <div style={{ height: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <div style={{ 
+                            width: "100%", 
+                            height: 40, 
+                            background: "#8B5CF6", 
+                            borderRadius: 6,
+                            opacity: 0.3
+                          }} />
+                        </div>
                       </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* New Changes */}
+                <div>
+                  <h3 style={{ fontSize: 18, marginBottom: 16, color: "#10b981", fontWeight: 600 }}>
+                    New Changes
+                  </h3>
+                  <div style={{ 
+                    padding: 24, 
+                    background: "#f0fdf4", 
+                    borderRadius: 8,
+                    border: "2px solid #10b981"
+                  }}>
+                    {actionData.newSettings?.mode === "ai" ? (
+                      <>
+                        <div style={{ textAlign: "center", marginBottom: 16 }}>
+                          <div style={{ fontSize: 48 }}>🤖</div>
+                          <h4 style={{ fontSize: 20, marginBottom: 8, color: "#8B5CF6" }}>AI Mode Active</h4>
+                        </div>
+                        <div style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>
+                          <div style={{ marginBottom: 8 }}>
+                            <span style={{ fontSize: 18, marginRight: 8 }}>🎯</span>
+                            <strong>Goal:</strong> {actionData.newSettings.aiGoal === "revenue" ? "Maximize Revenue" : "Maximize Conversions"}
+                          </div>
+                          <div style={{ 
+                            padding: 12, 
+                            background: "#fef3c7", 
+                            borderRadius: 6,
+                            marginBottom: 8
+                          }}>
+                            <span style={{ fontSize: 18, marginRight: 8 }}>💪</span>
+                            <strong>Aggression:</strong> {actionData.newSettings.aggression}/10
+                          </div>
+                          <div style={{ fontSize: 13, color: "#6b7280" }}>
+                            <span style={{ fontSize: 18, marginRight: 8 }}>⚡</span>
+                            <strong>Trigger:</strong> {getTriggerDisplay(actionData.newSettings)}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <h4 style={{ fontSize: 20, marginBottom: 12 }}>
+                          {actionData.newSettings?.modalHeadline}
+                        </h4>
+                        <p style={{ marginBottom: 16, color: "#666" }}>
+                          {actionData.newSettings?.modalBody}
+                        </p>
+                        <button style={{
+                          width: "100%",
+                          padding: "10px",
+                          background: "#8B5CF6",
+                          color: "white",
+                          border: "none",
+                          borderRadius: 6,
+                          fontSize: 14,
+                          fontWeight: 500
+                        }}>
+                          {actionData.newSettings?.ctaButton}
+                        </button>
+                        {actionData.newSettings?.discountEnabled && (
+                          <div style={{ marginTop: 12, fontSize: 14, color: "#6b7280" }}>
+                            {getDiscountDisplay(actionData.newSettings)} discount
+                          </div>
+                        )}
+                        <div style={{ marginTop: 16, fontSize: 13, color: "#6b7280" }}>
+                          <div><strong>Triggers:</strong> {getTriggerDisplay(actionData.newSettings)}</div>
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
               </div>
 
-             {/* New Modal */}
-              <div>
-                <h3 style={{ fontSize: 16, marginBottom: 12, color: "#10b981" }}>New Changes</h3>
-                <div style={{
-                  background: "rgba(16, 185, 129, 0.1)",
-                  padding: 24,
-                  borderRadius: 8,
-                  border: "2px solid #10b981"
-                }}>
-                  {actionData.newSettings?.mode === "ai" ? (
-                    // AI Mode Display
-                    <div style={{ background: "white", padding: 24, borderRadius: 8, textAlign: "center" }}>
-                      <div style={{ fontSize: 32, marginBottom: 12 }}>🤖</div>
-                      <h4 style={{ fontSize: 18, marginBottom: 12, color: "#8B5CF6" }}>AI Mode Active</h4>
-                      <div style={{ 
-                        marginTop: 16,
-                        padding: 12,
-                        background: (actionData.newSettings?.aiGoal !== actionData.currentSettings?.aiGoal) ? "#fef3c7" : "#f9fafb",
-                        borderRadius: 6,
-                        fontSize: 14
-                      }}>
-                        🎯 Goal: {actionData.newSettings?.aiGoal === "revenue" ? "Maximize Revenue" : "Maximize Conversions"}
-                      </div>
-                      <div style={{ 
-                        marginTop: 8,
-                        padding: 12,
-                        background: (actionData.newSettings?.aggression !== actionData.currentSettings?.aggression) ? "#fef3c7" : "#f9fafb",
-                        borderRadius: 6,
-                        fontSize: 14
-                      }}>
-                        🎚️ Aggression: {actionData.newSettings?.aggression}/10
-                      </div>
-                      <div style={{ 
-                        marginTop: 8,
-                        padding: 12,
-                        background: (
-                          actionData.newSettings?.triggers?.exitIntent !== actionData.currentSettings?.triggers?.exitIntent ||
-                          actionData.newSettings?.triggers?.timeDelay !== actionData.currentSettings?.triggers?.timeDelay ||
-                          actionData.newSettings?.triggers?.timeDelaySeconds !== actionData.currentSettings?.triggers?.timeDelaySeconds
-                        ) ? "#fef3c7" : "#f9fafb",
-                        borderRadius: 6,
-                        fontSize: 14
-                      }}>
-                        ⚡ Trigger: {getTriggerDisplay(actionData.newSettings)}
-                      </div>
-                    </div>
-                  ) : (
-                    // Manual Mode Display
-                    <div style={{ background: "white", padding: 24, borderRadius: 8 }}>
-                      <h4 style={{ 
-                        fontSize: 18, 
-                        marginBottom: 12,
-                        background: actionData.newSettings?.modalHeadline !== actionData.currentSettings?.modalHeadline ? "#fef3c7" : "transparent"
-                      }}>
-                        {actionData.newSettings?.modalHeadline}
-                      </h4>
-                      <p style={{ 
-                        marginBottom: 16, 
-                        color: "#666",
-                        background: actionData.newSettings?.modalBody !== actionData.currentSettings?.modalBody ? "#fef3c7" : "transparent"
-                      }}>
-                        {actionData.newSettings?.modalBody}
-                      </p>
-                      <button style={{
-                        width: "100%",
-                        padding: "10px",
-                        background: "#8B5CF6",
-                        color: "white",
-                        border: "none",
-                        borderRadius: 6,
-                        fontSize: 14,
-                        fontWeight: 500,
-                        outline: actionData.newSettings?.ctaButton !== actionData.currentSettings?.ctaButton ? "3px solid #fbbf24" : "none"
-                      }}>
-                        {actionData.newSettings?.ctaButton}
-                      </button>
-                      {actionData.newSettings?.discountEnabled && (
-                        <div style={{ 
-                          marginTop: 12, 
-                          fontSize: 14, 
-                          color: "#6b7280",
-                          background: (actionData.newSettings?.offerType !== actionData.currentSettings?.offerType || 
-                                      actionData.newSettings?.discountPercentage !== actionData.currentSettings?.discountPercentage ||
-                                      actionData.newSettings?.discountAmount !== actionData.currentSettings?.discountAmount) ? "#fef3c7" : "transparent",
-                          padding: "8px"
-                        }}>
-                          💰 Discount: {getDiscountDisplay(actionData.newSettings)}
-                        </div>
-                      )}
-                      
-                      {/* Trigger Display */}
-                      <div style={{ 
-                        marginTop: 12, 
-                        fontSize: 14, 
-                        color: "#6b7280",
-                        background: (
-                          actionData.newSettings?.triggers?.exitIntent !== actionData.currentSettings?.triggers?.exitIntent ||
-                          actionData.newSettings?.triggers?.timeDelay !== actionData.currentSettings?.triggers?.timeDelay ||
-                          actionData.newSettings?.triggers?.timeDelaySeconds !== actionData.currentSettings?.triggers?.timeDelaySeconds ||
-                          actionData.newSettings?.triggers?.cartValue !== actionData.currentSettings?.triggers?.cartValue ||
-                          actionData.newSettings?.triggers?.minCartValue !== actionData.currentSettings?.triggers?.minCartValue ||
-                          actionData.newSettings?.triggers?.maxCartValue !== actionData.currentSettings?.triggers?.maxCartValue
-                        ) ? "#fef3c7" : "transparent",
-                        padding: "8px"
-                      }}>
-                        ⚡ Trigger: {getTriggerDisplay(actionData.newSettings)}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-             
-
-            {/* Modal naming */}
-            <div style={{ marginBottom: 24 }}>
-              <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
-                Name this modal:
-              </label>
-              <input
-                type="text"
-                value={modalName}
-                onChange={(e) => setModalName(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  border: "1px solid #d1d5db",
-                  borderRadius: 6,
-                  fontSize: 16
-                }}
-              />
-            </div>
-
-            {/* Warning */}
-            {actionData.existingModal ? (
-              <div style={{
-                padding: 16,
-                background: "#fef3c7",
-                borderRadius: 8,
-                marginBottom: 24,
-                border: "1px solid #fde68a"
-              }}>
-                <div style={{ fontWeight: 600, marginBottom: 4, color: "#92400e" }}>
-                  ⚠️ Reverting to Existing Modal
-                </div>
-                <div style={{ fontSize: 14, color: "#92400e" }}>
-                  This configuration matches "{actionData.existingModal.modalName}". 
-                  Saving will reactivate that modal and continue tracking its performance.
-                </div>
-              </div>
-            ) : (
-              <div style={{
-                padding: 16,
-                background: "#dbeafe",
-                borderRadius: 8,
-                marginBottom: 24,
-                border: "1px solid #93c5fd"
-              }}>
-                <div style={{ fontWeight: 600, marginBottom: 4, color: "#1e40af" }}>
-                  📊 New Modal Campaign
-                </div>
-                <div style={{ fontSize: 14, color: "#1e40af" }}>
-                  This will create a new modal and start tracking its performance separately. 
-                  Your previous modal will be deactivated.
-                </div>
-              </div>
-            )}
-
-            {/* Actions */}
-            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-              <button
-               type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setShowModalNaming(false);
-                }}
-                style={{
-                  padding: "10px 20px",
-                  background: "#f3f4f6",
-                  border: "1px solid #d1d5db",
-                  borderRadius: 6,
-                  cursor: "pointer",
-                  fontSize: 16
-                }}
-              >
-                Cancel
-              </button>
-              <Form method="post" style={{ display: "inline" }}>
-                <input type="hidden" name="modalName" value={modalName} />
-                <input type="hidden" name="confirmSave" value="true" />
-                <input type="hidden" name="template" value={actionData.newSettings?.template} />
-                <input type="hidden" name="modalHeadline" value={actionData.newSettings?.modalHeadline} />
-                <input type="hidden" name="modalBody" value={actionData.newSettings?.modalBody} />
-                <input type="hidden" name="ctaButton" value={actionData.newSettings?.ctaButton} />
-                <input type="hidden" name="exitIntentEnabled" value={actionData.newSettings?.exitIntentEnabled ? "on" : "off"} />
-                <input type="hidden" name="timeDelayEnabled" value={actionData.newSettings?.timeDelayEnabled ? "on" : "off"} />
-                <input type="hidden" name="timeDelaySeconds" value={actionData.newSettings?.timeDelaySeconds} />
-                <input type="hidden" name="cartValueEnabled" value={actionData.newSettings?.cartValueEnabled ? "on" : "off"} />
-                <input type="hidden" name="cartValueMin" value={actionData.newSettings?.cartValueMin} />
-                <input type="hidden" name="cartValueMax" value={actionData.newSettings?.cartValueMax} />
-                <input type="hidden" name="discountEnabled" value={actionData.newSettings?.discountEnabled ? "on" : "off"} />
-                <input type="hidden" name="offerType" value={actionData.newSettings?.offerType} />
-                <input type="hidden" name="discountPercentage" value={actionData.newSettings?.discountPercentage} />
-                <input type="hidden" name="discountAmount" value={actionData.newSettings?.discountAmount} />
-                <input type="hidden" name="redirectDestination" value={actionData.newSettings?.redirectDestination} />
-                <input type="hidden" name="mode" value={actionData.newSettings?.mode} />
-                <input type="hidden" name="aiGoal" value={actionData.newSettings?.aiGoal} />
-                <input type="hidden" name="aggression" value={actionData.newSettings?.aggression} />
-                <button
-                  type="submit"
+              {/* Modal Name Input */}
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: "block", marginBottom: 8, fontWeight: 600, fontSize: 16 }}>
+                  Name this modal:
+                </label>
+                <input
+                  type="text"
+                  value={modalName || actionData.suggestedName}
+                  onChange={(e) => setModalName(e.target.value)}
                   style={{
-                    padding: "10px 20px",
-                    background: "#8B5CF6",
-                    color: "white",
-                    border: "none",
+                    width: "100%",
+                    padding: "12px",
+                    border: "2px solid #d1d5db",
+                    borderRadius: 6,
+                    fontSize: 16
+                  }}
+                  placeholder={actionData.suggestedName}
+                />
+              </div>
+
+              {/* Info Box */}
+              <div style={{
+                padding: 16,
+                background: "#eff6ff",
+                border: "1px solid #bfdbfe",
+                borderRadius: 6,
+                marginBottom: 24,
+                fontSize: 14,
+                color: "#1e40af"
+              }}>
+                📊 <strong>New Modal Campaign</strong>
+                <div style={{ marginTop: 4 }}>
+                  This will create a new modal and start tracking its performance separately. Your previous modal will be deactivated.
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: "flex", gap: 16, justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  style={{
+                    padding: "12px 24px",
+                    background: "white",
+                    color: "#374151",
+                    border: "2px solid #d1d5db",
                     borderRadius: 6,
                     cursor: "pointer",
                     fontSize: 16,
                     fontWeight: 500
                   }}
                 >
-                  Save as New Modal
+                  Cancel
                 </button>
-              </Form>
+                <Form method="post">
+                  <input type="hidden" name="confirmSave" value="true" />
+                  <input type="hidden" name="modalName" value={modalName || actionData.suggestedName} />
+                  <input type="hidden" name="modalHeadline" value={actionData.newSettings?.modalHeadline} />
+                  <input type="hidden" name="modalBody" value={actionData.newSettings?.modalBody} />
+                  <input type="hidden" name="ctaButton" value={actionData.newSettings?.ctaButton} />
+                  <input type="hidden" name="exitIntentEnabled" value={actionData.newSettings?.exitIntentEnabled ? "on" : "off"} />
+                  <input type="hidden" name="timeDelayEnabled" value={actionData.newSettings?.timeDelayEnabled ? "on" : "off"} />
+                  <input type="hidden" name="timeDelaySeconds" value={actionData.newSettings?.timeDelaySeconds} />
+                  <input type="hidden" name="cartValueEnabled" value={actionData.newSettings?.cartValueEnabled ? "on" : "off"} />
+                  <input type="hidden" name="cartValueMin" value={actionData.newSettings?.cartValueMin} />
+                  <input type="hidden" name="cartValueMax" value={actionData.newSettings?.cartValueMax} />
+                  <input type="hidden" name="discountEnabled" value={actionData.newSettings?.discountEnabled ? "on" : "off"} />
+                  <input type="hidden" name="offerType" value={actionData.newSettings?.offerType} />
+                  <input type="hidden" name="discountPercentage" value={actionData.newSettings?.discountPercentage} />
+                  <input type="hidden" name="discountAmount" value={actionData.newSettings?.discountAmount} />
+                  <input type="hidden" name="redirectDestination" value={actionData.newSettings?.redirectDestination} />
+                  <input type="hidden" name="template" value={actionData.newSettings?.template} />
+                  <input type="hidden" name="mode" value={actionData.newSettings?.mode} />
+                  <input type="hidden" name="aiGoal" value={actionData.newSettings?.aiGoal} />
+                  <input type="hidden" name="aggression" value={actionData.newSettings?.aggression} />
+                  <button
+                    type="submit"
+                    style={{
+                      padding: "12px 24px",
+                      background: "#8B5CF6",
+                      color: "white",
+                      border: "none",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      fontSize: 16,
+                      fontWeight: 500
+                    }}
+                  >
+                    Save as New Modal
+                  </button>
+                </Form>
+              </div>
             </div>
           </div>
         </div>
-      )}
+      )}       
 
       {/* Preview Modal */}
       {showPreview && (
@@ -1885,17 +1899,29 @@ export default function Settings() {
             position: "relative"
           }}>
             <button
+              type="button"
               onClick={() => setShowPreview(false)}
               style={{
                 position: "absolute",
                 top: 16,
                 right: 16,
-                background: "none",
+                background: "#f3f4f6",
                 border: "none",
-                fontSize: 24,
+                fontSize: 28,
                 cursor: "pointer",
-                color: "#666"
+                color: "#666",
+                lineHeight: 1,
+                width: 36,
+                height: 36,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 9999,
+                borderRadius: 6,
+                transition: "background 0.2s"
               }}
+              onMouseEnter={(e) => e.target.style.background = "#e5e7eb"}
+              onMouseLeave={(e) => e.target.style.background = "#f3f4f6"}
             >
               ×
             </button>
@@ -1923,5 +1949,7 @@ export default function Settings() {
       )}
     </div>
     </AppLayout>
+
+      
   );
 }
