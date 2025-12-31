@@ -383,6 +383,9 @@ export async function action({ request }) {
     mode: formData.get("mode") || "manual",
     aiGoal: formData.get("aiGoal") || "revenue",
     aggression: parseInt(formData.get("aggression") || "5"),
+    budgetEnabled: formData.get("budgetEnabled") === "on",
+    budgetAmount: parseFloat(formData.get("budgetAmount") || "500"),
+    budgetPeriod: formData.get("budgetPeriod") || "month",
     triggers: {
       exitIntent: formData.get("exitIntentEnabled") === "on",
       timeDelay: formData.get("timeDelayEnabled") === "on",
@@ -835,6 +838,92 @@ export default function Settings() {
               </div>
             </div>
           )}
+
+          {/* Promotion Budget - Pro/Enterprise Only */}
+              <div style={{ 
+                marginTop: 16,
+                padding: 16, 
+                background: "#fff7ed", 
+                borderRadius: 8,
+                border: "1px solid #fed7aa" 
+              }}>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
+                    💰 Promotion Budget (Optional)
+                  </label>
+                  <div style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
+                    Limit how much the AI can discount per time period to control costs
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      name="budgetEnabled"
+                      defaultChecked={settings.budgetEnabled}
+                      style={{ marginRight: 12, width: 18, height: 18 }}
+                    />
+                    <span style={{ fontWeight: 500 }}>Enable Budget Cap</span>
+                  </label>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={{ display: "block", marginBottom: 6, fontSize: 14, fontWeight: 500 }}>
+                      Budget Amount
+                    </label>
+                    <div style={{ display: "flex", alignItems: "center" }}>
+                      <span style={{ marginRight: 8, color: "#666" }}>$</span>
+                      <input
+                        type="number"
+                        name="budgetAmount"
+                        defaultValue={settings.budgetAmount || 500}
+                        min="0"
+                        step="50"
+                        style={{ 
+                          padding: "8px 12px", 
+                          border: "1px solid #d1d5db",
+                          borderRadius: 6,
+                          width: "100%",
+                          fontSize: 16
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", marginBottom: 6, fontSize: 14, fontWeight: 500 }}>
+                      Time Period
+                    </label>
+                    <select
+                      name="budgetPeriod"
+                      defaultValue={settings.budgetPeriod || "month"}
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        border: "1px solid #d1d5db",
+                        borderRadius: 6,
+                        fontSize: 16
+                      }}
+                    >
+                      <option value="week">Per Week</option>
+                      <option value="month">Per Month</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ 
+                  marginTop: 12, 
+                  padding: 10, 
+                  background: "#eff6ff", 
+                  borderRadius: 4,
+                  fontSize: 13,
+                  color: "#1e40af"
+                }}>
+                  💡 <strong>Example:</strong> $500/month means AI will stop offering discounts once $500 in total discounts have been given out this month. Resets at the start of each period.
+                </div>
+              </div>
 
           {/* Upgrade Prompt for Entry Users */}
           {!canUseAIMode && (
@@ -1854,6 +1943,9 @@ export default function Settings() {
                   <input type="hidden" name="mode" value={actionData.newSettings?.mode} />
                   <input type="hidden" name="aiGoal" value={actionData.newSettings?.aiGoal} />
                   <input type="hidden" name="aggression" value={actionData.newSettings?.aggression} />
+                  <input type="hidden" name="budgetEnabled" value={actionData.newSettings?.budgetEnabled ? "on" : "off"} />
+                  <input type="hidden" name="budgetAmount" value={actionData.newSettings?.budgetAmount} />
+                  <input type="hidden" name="budgetPeriod" value={actionData.newSettings?.budgetPeriod} />
                   <button
                     type="submit"
                     style={{
