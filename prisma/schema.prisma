@@ -30,3 +30,49 @@ model Session {
   collaborator  Boolean?  @default(false)
   emailVerified Boolean?  @default(false)
 }
+
+model Shop {
+  id                String   @id @default(uuid())
+  shopifyDomain     String   @unique
+  mode              String   @default("manual")
+  aiGoal            String   @default("revenue")
+  aggression        Int      @default(5)
+  budgetEnabled     Boolean  @default(false)
+  budgetAmount      Float    @default(500)
+  budgetPeriod      String   @default("month")
+  budgetStartDate   DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  discountOffers    DiscountOffer[]
+  aiDecisions       AIDecision[]
+}
+
+model DiscountOffer {
+  id              String    @id @default(uuid())
+  shopId          String
+  shop            Shop      @relation(fields: [shopId], references: [id])
+  discountCode    String
+  offerType       String
+  amount          Float
+  cartValue       Float?
+  expiresAt       DateTime
+  redeemed        Boolean   @default(false)
+  redeemedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  
+  @@index([shopId, expiresAt])
+  @@index([shopId, redeemed])
+}
+
+model AIDecision {
+  id          String   @id @default(uuid())
+  shopId      String
+  shop        Shop     @relation(fields: [shopId], references: [id])
+  signals     String
+  decision    String
+  offerId     String?
+  createdAt   DateTime @default(now())
+  
+  @@index([shopId, createdAt])
+}

@@ -56,6 +56,56 @@
       }
     }
 
+    async collectCustomerSignals() {
+      // 1. Visit frequency
+      const visits = parseInt(localStorage.getItem('exitIntentVisits') || '0') + 1;
+      localStorage.setItem('exitIntentVisits', visits);
+      
+      // 2. Cart value
+      const cart = await fetch('/cart.js').then(r => r.json());
+      const cartValue = cart.total_price / 100;
+      
+      // 3. Device type
+      const deviceType = /mobile/i.test(navigator.userAgent) ? 'mobile' : 'desktop';
+      
+      // 4. Account status
+      const accountStatus = window.Shopify?.customer ? 'logged_in' : 'guest';
+      
+      // 5. Traffic source
+      const trafficSource = this.getTrafficSource();
+      
+      // 6. Time on site
+      if (!window.sessionStartTime) window.sessionStartTime = Date.now();
+      const timeOnSite = (Date.now() - window.sessionStartTime) / 1000;
+      
+      // 7. Page views
+      const pageViews = parseInt(sessionStorage.getItem('pageViews') || '0') + 1;
+      sessionStorage.setItem('pageViews', pageViews);
+      
+      // 8. Abandoned before
+      const hasAbandonedBefore = document.cookie.includes('abandonedCart=true');
+      
+      return {
+        visitFrequency: visits,
+        cartValue,
+        deviceType,
+        accountStatus,
+        trafficSource,
+        timeOnSite,
+        pageViews,
+        hasAbandonedBefore
+      };
+    }
+    
+    getTrafficSource() {
+      const ref = document.referrer;
+      if (!ref || ref.includes(window.location.hostname)) return 'direct';
+      if (ref.match(/google|bing|yahoo/i)) return 'organic';
+      if (ref.match(/facebook|instagram|twitter|linkedin|tiktok/i)) return 'social';
+      if (ref.match(/gclid|fbclid|utm_source=paid/i)) return 'paid';
+      return 'referral';
+    }
+
       // Cart monitoring for add-to-cart timer trigger
   initCartMonitoring(delaySeconds) {
     // Get initial cart count
@@ -283,8 +333,13 @@
       });
     }
     
-    showModal() {
+    async showModal() {
       if (this.modalShown || !this.modalElement) return;
+      
+      // If AI mode is enabled, get AI decision first
+      if (this.settings.mode === 'ai') {
+        await this.getAIDecision();
+      }
       
       this.modalElement.style.display = 'flex';
       this.modalShown = true;
@@ -294,6 +349,69 @@
       
       // Track impression
       this.trackEvent('impression');
+    }
+    
+    async getAIDecision() {
+      try {
+        // Collect customer signals
+        const signals = await this.collectCustomerSignals();
+        
+        console.log('[AI Mode] Collected signals:', signals);
+        
+        // Call AI decision API
+        const response = await fetch('/apps/exit-intent/api/ai-decision', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            shop: window.Shopify.shop,
+            signals 
+          })
+        });
+        
+        const result = await response.json();
+        
+        console.log('[AI Mode] AI decision:', result);
+        
+        if (result.decision) {
+          // Update modal with AI decision
+          this.updateModalWithAI(result.decision);
+        }
+      } catch (error) {
+        console.error('[AI Mode] Error getting AI decision:', error);
+        // Fall back to manual settings if AI fails
+      }
+    }
+    
+    updateModalWithAI(decision) {
+      const modal = this.modalElement.querySelector('#exit-intent-modal');
+      const headline = modal.querySelector('h2');
+      const body = modal.querySelector('p');
+      const button = modal.querySelector('button[onclick]');
+      
+      // Update based on decision type
+      if (decision.type === 'no-discount') {
+        // No discount - just announcement
+        headline.textContent = this.settings.modalHeadline || "Don't forget your cart!";
+        body.textContent = this.settings.modalBody || "Your items are waiting for you. Complete your purchase now!";
+        this.settings.discountCode = null;
+      } else if (decision.type === 'percentage') {
+        headline.textContent = `Get ${decision.amount}% Off Your Order! 🎁`;
+        body.textContent = 'Complete your purchase now and save!';
+        this.settings.discountCode = decision.code;
+        this.settings.offerType = 'percentage';
+      } else if (decision.type === 'fixed') {
+        headline.textContent = `Get $${decision.amount} Off Your Order! 🎁`;
+        body.textContent = 'Complete your purchase now and save!';
+        this.settings.discountCode = decision.code;
+        this.settings.offerType = 'fixed';
+      } else if (decision.type === 'threshold') {
+        headline.textContent = `Special Offer for You! 💰`;
+        body.textContent = `Spend $${decision.threshold} and get $${decision.amount} off your order!`;
+        this.settings.discountCode = decision.code;
+        this.settings.offerType = 'threshold';
+      }
+      
+      console.log(`[AI Mode] Updated modal with ${decision.type} offer`);
     }
     
     closeModal() {

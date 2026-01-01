@@ -403,6 +403,38 @@ export async function action({ request }) {
   console.log('Full settings:', settings);
 
   try {
+    // Import database client
+    const { PrismaClient } = await import("@prisma/client");
+    const db = new PrismaClient();
+    
+    // Get shop domain
+    const shopDomain = session.shop;
+    
+    // Update or create shop record in database
+    await db.shop.upsert({
+      where: { shopifyDomain: shopDomain },
+      update: {
+        mode: settings.mode,
+        aiGoal: settings.aiGoal,
+        aggression: settings.aggression,
+        budgetEnabled: settings.budgetEnabled,
+        budgetAmount: settings.budgetAmount,
+        budgetPeriod: settings.budgetPeriod,
+        updatedAt: new Date()
+      },
+      create: {
+        shopifyDomain: shopDomain,
+        mode: settings.mode,
+        aiGoal: settings.aiGoal,
+        aggression: settings.aggression,
+        budgetEnabled: settings.budgetEnabled,
+        budgetAmount: settings.budgetAmount,
+        budgetPeriod: settings.budgetPeriod
+      }
+    });
+    
+    console.log(`✓ Shop settings saved to database for ${shopDomain}`);
+    
     // Debug logging
     console.log('=== DISCOUNT DEBUG ===');
     console.log('Discount enabled:', settings.discountEnabled);
