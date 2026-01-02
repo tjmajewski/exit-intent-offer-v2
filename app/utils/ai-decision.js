@@ -21,24 +21,19 @@ export function determineOffer(signals, aggression, aiGoal, cartValue) {
     };
   }
   
-  // REVENUE MODE: Threshold offers to increase cart size
+  // REVENUE MODE: For now, use fixed discount (threshold coming in Phase 3B)
   if (aiGoal === 'revenue') {
     const currentCart = cartValue || signals.cartValue || 0;
     
-    // Calculate ideal threshold (20-30% above current cart)
-    const thresholdMultiplier = 1.25 + (score / 500); // 1.25x to 1.45x
-    const targetThreshold = Math.round(currentCart * thresholdMultiplier / 5) * 5; // Round to nearest $5
-    
-    // Calculate discount amount based on aggression (5-15% of threshold)
-    const discountPercent = 5 + (aggression * 1);
-    const discountAmount = Math.round(targetThreshold * (discountPercent / 100));
+    // Give a fixed discount based on cart value and aggression
+    const baseDiscount = Math.round(currentCart * 0.10); // 10% of cart as dollar amount
+    const finalDiscount = Math.round(baseDiscount * (aggression / 5));
     
     return {
-      type: 'threshold',
-      threshold: Math.max(targetThreshold, currentCart + 10), // At least $10 more
-      amount: Math.max(discountAmount, 5), // Minimum $5 off
+      type: 'fixed',
+      amount: Math.min(Math.max(finalDiscount, 5), 50), // $5-$50 range
       confidence: score > 60 ? 'high' : 'medium',
-      reasoning: `Revenue mode: Encouraging cart increase from $${currentCart} to $${targetThreshold}`
+      reasoning: `Revenue mode: Offering $${finalDiscount} to complete high-value cart`
     };
   }
   

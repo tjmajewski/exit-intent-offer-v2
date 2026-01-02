@@ -6,10 +6,12 @@
   // Pass settings from Shopify to JavaScript
   window.exitIntentSettings = {
     enabled: {{ shop.metafields.exit_intent.status.value.enabled | default: false | json }},
+    mode: {{ shop.metafields.exit_intent.settings.value.mode | default: "manual" | json }},
     modalHeadline: {{ shop.metafields.exit_intent.settings.value.modalHeadline | default: "Wait! Don't leave yet 🎁" | json }},
     modalBody: {{ shop.metafields.exit_intent.settings.value.modalBody | default: "Complete your purchase now and get free shipping on your order!" | json }},
     ctaButton: {{ shop.metafields.exit_intent.settings.value.ctaButton | default: "Complete My Order" | json }},
     discountCode: {{ shop.metafields.exit_intent.settings.value.discountCode | default: null | json }},
+    offerType: {{ shop.metafields.exit_intent.settings.value.offerType | default: "percentage" | json }},
     redirectDestination: {{ shop.metafields.exit_intent.settings.value.redirectDestination | default: "checkout" | json }},
     triggers: {
       exitIntent: {{ shop.metafields.exit_intent.settings.value.exitIntentEnabled | default: true | json }},

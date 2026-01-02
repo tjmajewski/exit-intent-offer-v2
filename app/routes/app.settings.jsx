@@ -360,15 +360,17 @@ export async function loader({ request }) {
 }
 
 export async function action({ request }) {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
 
+  const mode = formData.get("mode") || "manual";
+  
   const settings = {
     modalHeadline: formData.get("modalHeadline"),
     modalBody: formData.get("modalBody"),
     ctaButton: formData.get("ctaButton"),
-    exitIntentEnabled: formData.get("exitIntentEnabled") === "on",
-    timeDelayEnabled: formData.get("timeDelayEnabled") === "on",
+    exitIntentEnabled: mode === "ai" ? true : formData.get("exitIntentEnabled") === "on",
+    timeDelayEnabled: mode === "ai" ? true : formData.get("timeDelayEnabled") === "on",
     timeDelaySeconds: parseInt(formData.get("timeDelaySeconds") || "30"),
     cartValueEnabled: formData.get("cartValueEnabled") === "on",
     cartValueMin: parseFloat(formData.get("cartValueMin") || "0"),
