@@ -194,7 +194,7 @@ export async function createThresholdDiscount(admin, threshold, discountAmount) 
       },
       minimumRequirement: {
         subtotal: {
-          greaterThanOrEqualTo: threshold.toString()
+          greaterThanOrEqualToSubtotal: threshold.toString()
         }
       },
       customerGets: {
