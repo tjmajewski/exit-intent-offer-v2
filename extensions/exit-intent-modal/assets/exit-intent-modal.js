@@ -1,6 +1,14 @@
 (function() {
   'use strict';
 
+  // IMMEDIATELY check if we should redirect to checkout with discount
+  const discountCode = sessionStorage.getItem('exitIntentDiscount');
+  if (discountCode && window.location.pathname === '/cart') {
+    console.log('[Exit Intent] Redirecting from cart to checkout with discount');
+    window.location.replace(`/checkout?discount=${discountCode}`);
+    return; // Stop execution
+  }
+
   // Get settings from the snippet (will be injected by Liquid)
   const settings = window.exitIntentSettings || {};
   
@@ -241,6 +249,7 @@
       `;
       
       const ctaButton = document.createElement('button');
+      ctaButton.id = 'modal-primary-cta';
       ctaButton.textContent = this.settings.ctaButton || 'Complete My Order';
       ctaButton.style.cssText = `
         background: #000;
@@ -255,11 +264,31 @@
       `;
       ctaButton.onclick = () => this.handleCTAClick();
       
+      // Secondary button (will be shown for threshold offers)
+      const secondaryButton = document.createElement('button');
+      secondaryButton.id = 'modal-secondary-cta';
+      secondaryButton.textContent = 'Keep Shopping';
+      secondaryButton.style.cssText = `
+        background: transparent;
+        color: #666;
+        border: 2px solid #ddd;
+        padding: 15px 40px;
+        font-size: 16px;
+        font-weight: bold;
+        border-radius: 4px;
+        cursor: pointer;
+        width: 100%;
+        margin-top: 12px;
+        display: none;
+      `;
+      secondaryButton.onclick = () => this.closeModal();
+      
       // Assemble modal
       modal.appendChild(closeBtn);
       modal.appendChild(headline);
       modal.appendChild(body);
       modal.appendChild(ctaButton);
+      modal.appendChild(secondaryButton);
       overlay.appendChild(modal);
       
       // Add to page
@@ -409,6 +438,27 @@
         body.textContent = `Spend $${decision.threshold} and get $${decision.amount} off your order!`;
         this.settings.discountCode = decision.code;
         this.settings.offerType = 'threshold';
+        
+        // Show "Keep Shopping" button for threshold offers
+        const secondaryBtn = modal.querySelector('#modal-secondary-cta');
+        if (secondaryBtn) {
+          secondaryBtn.style.display = 'block';
+        }
+        
+        // Update primary button text
+        const primaryBtn = modal.querySelector('#modal-primary-cta');
+        if (primaryBtn) {
+          primaryBtn.textContent = 'View My Cart';
+        }
+        
+        // 🆕 STORE THRESHOLD INFO FOR CART MONITORING
+        sessionStorage.setItem('exitIntentThresholdOffer', JSON.stringify({
+          code: decision.code,
+          threshold: decision.threshold,
+          discount: decision.amount,
+          timestamp: Date.now()
+        }));
+        console.log(`[Threshold Offer] Stored in sessionStorage: Spend $${decision.threshold}, save $${decision.amount}`);
       }
       
       console.log(`[AI Mode] Updated modal with ${decision.type} offer`);
@@ -417,7 +467,9 @@
     closeModal() {
       if (!this.modalElement) return;
       
-      this.modalElement.style.display = 'none';
+      // Remove from DOM instead of just hiding
+      this.modalElement.remove();
+      this.modalElement = null;
       
       // Track close
       this.trackEvent('closeout');
@@ -497,6 +549,28 @@
     }
   }
   
+  // Intercept mini-cart checkout to apply discount
+  function interceptMiniCartCheckout() {
+    console.log('[Exit Intent] Setting up checkout interception');
+
+    // Use event delegation - listen on document for ALL clicks
+    document.addEventListener('click', (e) => {
+      // Check if clicked element is the checkout button (or inside it)
+      const checkoutButton = e.target.closest('#CartDrawer-Checkout, button[name="checkout"]');
+      
+      if (checkoutButton) {
+        const code = sessionStorage.getItem('exitIntentDiscount');
+        if (code) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          console.log(`[Exit Intent] Intercepted checkout click! Redirecting with discount: ${code}`);
+          window.location.href = `/checkout?discount=${code}`;
+        }
+      }
+    }, true); // Use capture phase
+  }
+
   // Auto-apply discount on cart page if flag is set
   function autoApplyCartDiscount() {
     const discountCode = sessionStorage.getItem('exitIntentDiscount');
@@ -567,17 +641,42 @@
   
   // Run auto-apply when page loads
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', autoApplyCartDiscount);
+    document.addEventListener('DOMContentLoaded', () => {
+      autoApplyCartDiscount();
+      interceptMiniCartCheckout();
+    });
   } else {
     autoApplyCartDiscount();
+    interceptMiniCartCheckout();
   }
   
+  // Fix Shopify preview bar blocking clicks
+  function fixPreviewBar() {
+    // Need to check multiple times because preview bar loads after page
+    const checkInterval = setInterval(() => {
+      const previewBar = document.getElementById('PBarNextFrame');
+      const previewWrapper = document.getElementById('PBarNextFrameWrapper');
+      
+      if (previewBar || previewWrapper) {
+        if (previewBar) previewBar.style.pointerEvents = 'none';
+        if (previewWrapper) previewWrapper.style.pointerEvents = 'none';
+        console.log('[Exit Intent] Fixed Shopify preview bar blocking clicks');
+        clearInterval(checkInterval);
+      }
+    }, 100);
+    
+    // Stop checking after 5 seconds
+    setTimeout(() => clearInterval(checkInterval), 5000);
+  }
+
   // Initialize when DOM is ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
+      fixPreviewBar();
       new ExitIntentModal();
     });
   } else {
+    fixPreviewBar();
     new ExitIntentModal();
   }
 })();
