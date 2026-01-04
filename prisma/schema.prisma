@@ -35,6 +35,7 @@ model Shop {
   id                String   @id @default(uuid())
   shopifyDomain     String   @unique
   mode              String   @default("manual")
+  plan              String   @default("pro")
   aiGoal            String   @default("revenue")
   aggression        Int      @default(5)
   budgetEnabled     Boolean  @default(false)
@@ -43,6 +44,13 @@ model Shop {
   budgetStartDate   DateTime @default(now())
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  
+  // Copy Optimization
+  copyVariants      String?  @default("{\"variants\":[],\"segmentBestVariants\":{}}")
+  lastVariantUpdate DateTime? @default(now())
+  
+  // Meta-Learning
+  contributeToMetaLearning Boolean @default(true)
   
   discountOffers    DiscountOffer[]
   aiDecisions       AIDecision[]
@@ -75,4 +83,18 @@ model AIDecision {
   createdAt   DateTime @default(now())
   
   @@index([shopId, createdAt])
+}
+
+model MetaLearningInsights {
+  id              String   @id @default(uuid())
+  insightType     String   // "signal_correlation" | "copy_pattern" | "benchmark"
+  segment         String   // "mobile_paid", "desktop_organic", etc.
+  data            String   // JSON blob of aggregated insights
+  sampleSize      Int      // Number of data points used
+  confidenceLevel Float    // Statistical confidence (0-1)
+  lastUpdated     DateTime @default(now())
+  version         Int      @default(1)
+  
+  @@index([segment, insightType])
+  @@index([lastUpdated])
 }

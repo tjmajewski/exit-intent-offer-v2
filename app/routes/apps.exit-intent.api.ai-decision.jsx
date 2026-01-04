@@ -3,6 +3,7 @@ import { authenticate } from "../shopify.server";
 import { PrismaClient } from "@prisma/client";
 import { determineOffer, checkBudget } from "../utils/ai-decision";
 import { createPercentageDiscount, createFixedDiscount, createThresholdDiscount } from "../utils/discount-codes";
+import { getMetaInsight, shouldUseMetaLearning } from "../utils/meta-learning.js";
 
 const db = new PrismaClient();
 
@@ -61,6 +62,11 @@ export async function action({ request }) {
           budgetPeriod: budgetPeriod || 'month'
         }
       });
+      
+      // Initialize copy variants for new shop
+      const { initializeCopyVariants } = await import('../utils/copy-variants.js');
+      await initializeCopyVariants(db, shopRecord.id);
+      console.log('[AI Decision] Initialized copy variants for new shop');
     }
     
     // Check budget if enabled
@@ -161,7 +167,32 @@ export async function action({ request }) {
     
     console.log(`✓ AI offer created: ${discountResult.code} (${decision.type}, $${offerAmount})`);
     
-    return json({
+    // Select copy variant for this customer segment
+    const { getSegment, selectVariant } = await import('../utils/copy-variants.js');
+    const segment = getSegment(signals);
+    
+    // Check if we should use meta-learning for this store/segment
+    const useMeta = await shouldUseMetaLearning(db, shopRecord.id, segment);
+    let variant = selectVariant(shopRecord, segment);
+    
+    // If using meta-learning and we have insights, bias selection
+    if (useMeta) {
+      const metaInsight = await getMetaInsight(db, segment, 'signal_correlation');
+      if (metaInsight) {
+        console.log(`[AI Decision] New store - using meta-learning for ${segment} (${metaInsight.storeCount} stores, ${metaInsight.sampleSize} samples)`);
+        // Variant already selected, but log that we're in meta-learning mode
+        // Future: Could use metaInsight to influence decision type/amount
+      }
+    }
+    
+    console.log(`[AI Decision] Selected variant ${variant.id} for segment ${segment} (meta-learning: ${useMeta})`);
+    
+    // Check if shop has Enterprise plan (copy optimization enabled)
+    // Use database plan, not metafield
+    const isEnterprise = shopRecord.plan === 'enterprise' || settings.copyOptimization === true;
+    
+    // Build response - only include variant for Enterprise users
+    const response = {
       shouldShow: true,
       decision: {
         type: decision.type,
@@ -169,9 +200,28 @@ export async function action({ request }) {
         threshold: decision.threshold || null,
         code: discountResult.code,
         confidence: decision.confidence,
-        expiresAt: discountResult.expiresAt
+        expiresAt: discountResult.expiresAt,
+        segment: segment // Always include segment for tracking
       }
-    });
+    };
+    
+    // Only add variant copy for Enterprise users
+    if (isEnterprise) {
+      response.decision.variant = {
+        id: variant.id,
+        headline: variant.headline,
+        body: variant.body,
+        cta: variant.cta,
+        segment: segment
+      };
+      console.log(`[AI Decision] Enterprise user - using variant copy`);
+    } else {
+      // Pro users still get variant ID for tracking, but no custom copy
+      response.decision.variantId = variant.id;
+      console.log(`[AI Decision] Pro user - using default copy, tracking variant ${variant.id}`);
+    }
+    
+    return json(response);
     
   } catch (error) {
     console.error("AI decision error:", error);

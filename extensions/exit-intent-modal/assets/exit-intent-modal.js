@@ -25,6 +25,8 @@
   this.cartItemCount = 0;
   this.cartTimerStarted = false;
   this.cartTimerTimeout = null;
+  this.currentVariantId = null;
+  this.currentSegment = null;
   
   // Check if modal is enabled
   if (!this.settings.enabled) {
@@ -378,6 +380,9 @@
       
       // Track impression
       this.trackEvent('impression');
+      
+      // Track variant impression (both Pro and Enterprise)
+      this.trackVariant('impression');
     }
     
     async getAIDecision() {
@@ -415,7 +420,44 @@
       const modal = this.modalElement.querySelector('#exit-intent-modal');
       const headline = modal.querySelector('h2');
       const body = modal.querySelector('p');
-      const button = modal.querySelector('button[onclick]');
+      const button = modal.querySelector('#modal-primary-cta');
+      
+      // Store variant info for tracking (both Pro and Enterprise)
+      this.currentVariantId = decision.variantId || decision.variant?.id || null;
+      this.currentSegment = decision.segment || null;
+      
+      // Use variant copy if provided (Enterprise only)
+      if (decision.variant) {
+        headline.textContent = decision.variant.headline;
+        body.textContent = decision.variant.body;
+        button.textContent = decision.variant.cta;
+        
+        this.settings.discountCode = decision.code;
+        this.settings.offerType = decision.type;
+        
+        console.log(`[Modal] Enterprise - Using variant ${decision.variant.id} for segment ${decision.variant.segment}`);
+        
+        // Show secondary button for threshold offers
+        if (decision.type === 'threshold') {
+          const secondaryBtn = modal.querySelector('#modal-secondary-cta');
+          if (secondaryBtn) {
+            secondaryBtn.style.display = 'block';
+          }
+          
+          // Store threshold offer for cart monitor
+          sessionStorage.setItem('exitIntentThresholdOffer', JSON.stringify({
+            code: decision.code,
+            threshold: decision.threshold,
+            discount: decision.amount,
+            timestamp: Date.now()
+          }));
+        }
+        
+        return; // Skip default copy logic below
+      }
+      
+      // Pro users get default copy below
+      console.log(`[Modal] Pro - Using default copy, tracking variant ${this.currentVariantId}`);
       
       // Update based on decision type
       if (decision.type === 'no-discount') {
@@ -478,6 +520,9 @@
  async handleCTAClick() {
       // Track button click
       this.trackEvent('click');
+      
+      // Track variant click (both Pro and Enterprise)
+      this.trackVariant('click');
       
       // Close modal
       this.closeModal();
@@ -545,6 +590,31 @@
         });
       } catch (error) {
         console.error('Error tracking event:', error);
+      }
+    }
+    
+    async trackVariant(event, revenue = 0) {
+      // Track variant performance (both Pro and Enterprise contribute to learning)
+      if (!this.currentVariantId) {
+        console.log('[Exit Intent] No variant ID to track');
+        return;
+      }
+      
+      try {
+        await fetch('/apps/exit-intent/api/track-variant', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shop: window.Shopify.shop,
+            variantId: this.currentVariantId,
+            event: event,
+            revenue: revenue
+          })
+        });
+        
+        console.log(`[Exit Intent] Tracked ${event} for variant ${this.currentVariantId} (segment: ${this.currentSegment})`);
+      } catch (error) {
+        console.error('[Exit Intent] Variant tracking error:', error);
       }
     }
   }
