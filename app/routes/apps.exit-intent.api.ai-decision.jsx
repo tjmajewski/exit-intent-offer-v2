@@ -1,7 +1,7 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { PrismaClient } from "@prisma/client";
-import { determineOffer, checkBudget } from "../utils/ai-decision";
+import { determineOffer, checkBudget, enterpriseAI } from "../utils/ai-decision";
 import { createPercentageDiscount, createFixedDiscount, createThresholdDiscount } from "../utils/discount-codes";
 import { getMetaInsight, shouldUseMetaLearning } from "../utils/meta-learning.js";
 
@@ -103,10 +103,42 @@ export async function action({ request }) {
       console.log(`✓ Budget check passed. Remaining: $${budgetCheck.remaining}`);
     }
     
-    // Make AI decision
-    const decision = determineOffer(signals, aggression, aiGoal, signals.cartValue);
+    // Make AI decision - use Enterprise AI if enabled
+    let decision;
     
-    console.log('AI Decision:', decision);
+    if (shopRecord.plan === 'enterprise' && settings.mode === 'ai') {
+      // Import enterpriseAI function
+      const { enterpriseAI } = await import('../utils/ai-decision.js');
+      decision = enterpriseAI(signals, aggression);
+      
+      console.log('[Enterprise AI] Decision:', decision);
+      
+      // Enterprise AI can return null (don't show modal at all)
+      if (decision === null) {
+        console.log('[Enterprise AI] AI decided not to show modal');
+        
+        // Log the AI decision to skip
+        await db.aIDecision.create({
+          data: {
+            shopId: shopRecord.id,
+            signals: JSON.stringify(signals),
+            decision: JSON.stringify({
+              type: 'no-show',
+              reasoning: 'Enterprise AI decided not to show modal'
+            })
+          }
+        });
+        
+        return json({
+          shouldShow: false,
+          decision: null
+        });
+      }
+    } else {
+      // Standard Pro tier AI
+      decision = determineOffer(signals, aggression, aiGoal, signals.cartValue);
+      console.log('[Pro AI] Decision:', decision);
+    }
     
     // If no discount needed, return early
     if (decision.type === 'no-discount') {
@@ -198,6 +230,7 @@ export async function action({ request }) {
         type: decision.type,
         amount: decision.amount,
         threshold: decision.threshold || null,
+        timing: decision.timing || null, // Enterprise AI timing control
         code: discountResult.code,
         confidence: decision.confidence,
         expiresAt: discountResult.expiresAt,

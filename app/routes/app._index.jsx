@@ -259,22 +259,49 @@ export async function action({ request }) {
       if (currentPlan) {
         currentPlan.tier = newTier;
 
+        // Also update settings to include plan tier
+        const settingsResponse = await admin.graphql(`
+          query {
+            shop {
+              settings: metafield(namespace: "exit_intent", key: "settings") {
+                value
+              }
+            }
+          }
+        `);
+        const settingsData = await settingsResponse.json();
+        const currentSettings = settingsData.data.shop?.settings?.value 
+          ? JSON.parse(settingsData.data.shop.settings.value)
+          : {};
+        
+        currentSettings.plan = newTier;
+
         await admin.graphql(`
-          mutation UpdatePlan($ownerId: ID!, $value: String!) {
-            metafieldsSet(metafields: [{
-              ownerId: $ownerId
-              namespace: "exit_intent"
-              key: "plan"
-              value: $value
-              type: "json"
-            }]) {
+          mutation UpdatePlanAndSettings($ownerId: ID!, $planValue: String!, $settingsValue: String!) {
+            metafieldsSet(metafields: [
+              {
+                ownerId: $ownerId
+                namespace: "exit_intent"
+                key: "plan"
+                value: $planValue
+                type: "json"
+              },
+              {
+                ownerId: $ownerId
+                namespace: "exit_intent"
+                key: "settings"
+                value: $settingsValue
+                type: "json"
+              }
+            ]) {
               metafields { id }
             }
           }
         `, {
           variables: {
             ownerId: shopId,
-            value: JSON.stringify(currentPlan)
+            planValue: JSON.stringify(currentPlan),
+            settingsValue: JSON.stringify(currentSettings)
           }
         });
 

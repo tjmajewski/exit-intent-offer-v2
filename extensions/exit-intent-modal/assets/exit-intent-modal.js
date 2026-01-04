@@ -44,12 +44,29 @@
       this.init();
     }
     
-    init() {
+    async init() {
       // Create modal HTML
       this.createModal();
       
-      // Set up triggers
-      this.setupTriggers();
+      // Track cart hesitation (Enterprise signal)
+      this.trackCartHesitation();
+      
+      // Track product dwell time (Enterprise signal)
+      this.trackProductDwellTime();
+      
+      // Enterprise AI evaluation (decides if/when to show)
+      if (this.settings.mode === 'ai' && this.settings.plan === 'enterprise') {
+        await this.evaluateEnterpriseCustomer();
+        
+        // Set up cart monitoring for add-to-cart triggers
+        const triggers = this.settings.triggers || {};
+        if (triggers.timeDelay && triggers.timeDelaySeconds) {
+          this.initCartMonitoring(triggers.timeDelaySeconds);
+        }
+      } else {
+        // Standard triggers for non-Enterprise tiers
+        this.setupTriggers();
+      }
       
       // Set up event listeners
       this.setupEventListeners();
@@ -95,6 +112,18 @@
       // 8. Abandoned before
       const hasAbandonedBefore = document.cookie.includes('abandonedCart=true');
       
+      // 9. Scroll depth (NEW - Enterprise signal)
+      const scrollDepth = this.getScrollDepth();
+      
+      // 10. Cart abandonment history (NEW - Enterprise signal)
+      const abandonmentCount = parseInt(localStorage.getItem('exitIntentAbandonments') || '0');
+      
+      // 11. Add-to-cart hesitation (NEW - Enterprise signal)
+      const cartHesitation = this.getCartHesitation();
+      
+      // 12. Product page dwell time (NEW - Enterprise signal)
+      const productDwellTime = this.getProductDwellTime();
+      
       return {
         visitFrequency: visits,
         cartValue,
@@ -103,7 +132,11 @@
         trafficSource,
         timeOnSite,
         pageViews,
-        hasAbandonedBefore
+        hasAbandonedBefore,
+        scrollDepth,
+        abandonmentCount,
+        cartHesitation,
+        productDwellTime
       };
     }
     
@@ -115,9 +148,109 @@
       if (ref.match(/gclid|fbclid|utm_source=paid/i)) return 'paid';
       return 'referral';
     }
+    
+    getScrollDepth() {
+      // Calculate how far down the page user has scrolled (0-100%)
+      const windowHeight = window.innerHeight;
+      const documentHeight = document.documentElement.scrollHeight;
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      
+      const maxScroll = documentHeight - windowHeight;
+      const scrollPercent = maxScroll > 0 ? Math.round((scrollTop / maxScroll) * 100) : 100;
+      
+      // Track max scroll depth in session
+      const currentMax = parseInt(sessionStorage.getItem('maxScrollDepth') || '0');
+      const newMax = Math.max(currentMax, scrollPercent);
+      sessionStorage.setItem('maxScrollDepth', newMax);
+      
+      return newMax;
+    }
+    
+    getCartHesitation() {
+      // Track add/remove events in session
+      // Returns number of times items were added then removed
+      const hesitations = parseInt(sessionStorage.getItem('cartHesitations') || '0');
+      return hesitations;
+    }
+    
+    getProductDwellTime() {
+      // Track time spent on product pages
+      const currentPath = window.location.pathname;
+      
+      // Check if on a product page
+      if (currentPath.includes('/products/')) {
+        const dwellStart = sessionStorage.getItem('productPageStart');
+        
+        if (!dwellStart) {
+          // First product page of session
+          sessionStorage.setItem('productPageStart', Date.now());
+          return 0;
+        }
+        
+        // Calculate total dwell time across all product pages
+        const totalDwell = parseInt(sessionStorage.getItem('totalProductDwell') || '0');
+        return totalDwell;
+      }
+      
+      return 0;
+    }
+    
+    trackCartHesitation() {
+      // Listen for cart changes
+      let lastCartItemCount = 0;
+      
+      const checkCart = async () => {
+        try {
+          const cart = await fetch('/cart.js').then(r => r.json());
+          const currentCount = cart.item_count;
+          
+          // If items decreased, that's a removal (hesitation)
+          if (lastCartItemCount > 0 && currentCount < lastCartItemCount) {
+            const hesitations = parseInt(sessionStorage.getItem('cartHesitations') || '0');
+            sessionStorage.setItem('cartHesitations', hesitations + 1);
+            console.log('[Cart Hesitation] Item removed, count:', hesitations + 1);
+          }
+          
+          lastCartItemCount = currentCount;
+        } catch (error) {
+          console.error('Error tracking cart hesitation:', error);
+        }
+      };
+      
+      // Check cart every 2 seconds
+      setInterval(checkCart, 2000);
+    }
+    
+    trackProductDwellTime() {
+      const currentPath = window.location.pathname;
+      
+      // Only track on product pages
+      if (!currentPath.includes('/products/')) {
+        return;
+      }
+      
+      // Start timer when page loads
+      const pageStart = Date.now();
+      sessionStorage.setItem('productPageStart', pageStart);
+      
+      // Update total dwell time every 5 seconds
+      const dwellInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - pageStart) / 1000);
+        const previousTotal = parseInt(sessionStorage.getItem('totalProductDwell') || '0');
+        sessionStorage.setItem('totalProductDwell', previousTotal + 5);
+      }, 5000);
+      
+      // Clean up on page unload
+      window.addEventListener('beforeunload', () => {
+        clearInterval(dwellInterval);
+        const elapsed = Math.floor((Date.now() - pageStart) / 1000);
+        const previousTotal = parseInt(sessionStorage.getItem('totalProductDwell') || '0');
+        sessionStorage.setItem('totalProductDwell', previousTotal + elapsed);
+      });
+    }
 
-      // Cart monitoring for add-to-cart timer trigger
-  initCartMonitoring(delaySeconds) {
+    // Cart monitoring for add-to-cart timer trigger
+    initCartMonitoring(delaySeconds) {
     // Get initial cart count
     fetch('/cart.js')
       .then(response => response.json())
@@ -173,8 +306,16 @@
             if (!this.modalShown) {
               const hasItems = await this.hasItemsInCart();
               if (hasItems) {
-                console.log('[Exit Intent] Timer completed - showing modal');
-                this.showModal();
+                console.log('[Exit Intent] Timer completed');
+                
+                // Enterprise AI decides if/when/what to show
+                if (this.settings.mode === 'ai' && this.settings.plan === 'enterprise') {
+                  console.log('[Exit Intent] Triggering Enterprise AI evaluation');
+                  await this.evaluateEnterpriseCustomer();
+                } else {
+                  console.log('[Exit Intent] Showing modal (Pro/Entry tier)');
+                  this.showModal();
+                }
               }
             }
           }, delay);
@@ -298,6 +439,102 @@
       this.modalElement = overlay;
     }
     
+    async evaluateEnterpriseCustomer() {
+      console.log('[Enterprise AI] Evaluating customer...');
+      
+      // Check if cart has items first
+      const hasItems = await this.hasItemsInCart();
+      if (!hasItems) {
+        console.log('[Enterprise AI] Cart is empty, not evaluating');
+        return;
+      }
+      
+      // Collect basic signals
+      const basicSignals = await this.collectCustomerSignals();
+      
+      // Enrich signals with backend data
+      const enrichedSignals = await this.enrichSignals(basicSignals);
+      
+      console.log('[Enterprise AI] Propensity score:', enrichedSignals.propensityScore);
+      
+      // Get Enterprise AI decision
+      const decision = await this.getEnterpriseDecision(enrichedSignals);
+      
+      if (!decision) {
+        console.log('[Enterprise AI] AI decided not to show modal');
+        return;
+      }
+      
+      console.log('[Enterprise AI] Decision:', decision);
+      
+      // AI controls when to show
+      if (decision.timing === 'immediate') {
+        // Show right away
+        setTimeout(() => this.showModalWithOffer(decision), 1000);
+      } else if (decision.timing === 'exit_intent') {
+        // Wait for exit intent
+        document.addEventListener('mouseout', (e) => {
+          if (e.clientY < 0 && !this.modalShown) {
+            this.showModalWithOffer(decision);
+          }
+        });
+      } else if (decision.timing === 'delayed' && decision.delay) {
+        // Delayed show
+        setTimeout(() => this.showModalWithOffer(decision), decision.delay * 1000);
+      }
+    }
+    
+    async enrichSignals(basicSignals) {
+      try {
+        const cart = await fetch('/cart.js').then(r => r.json());
+        
+        const response = await fetch('/apps/exit-intent/api/enrich-signals', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            customerId: window.Shopify?.customer?.id,
+            cart: cart,
+            basicSignals: basicSignals
+          })
+        });
+        
+        return await response.json();
+      } catch (error) {
+        console.error('[Enterprise AI] Error enriching signals:', error);
+        return basicSignals; // Fallback to basic signals
+      }
+    }
+    
+    async getEnterpriseDecision(enrichedSignals) {
+      try {
+        const response = await fetch('/apps/exit-intent/api/ai-decision', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            shop: window.Shopify.shop,
+            signals: enrichedSignals,
+            mode: 'enterprise' // Tell backend to use Enterprise AI
+          })
+        });
+        
+        const data = await response.json();
+        return data.decision || null; // Return decision object or null
+      } catch (error) {
+        console.error('[Enterprise AI] Error getting decision:', error);
+        return null; // Don't show on error
+      }
+    }
+    
+    showModalWithOffer(decision) {
+      // Store the AI decision for the modal to use
+      this.enterpriseOffer = decision;
+      this.showModal();
+    }
+
     setupTriggers() {
       const triggers = this.settings.triggers || {};
       

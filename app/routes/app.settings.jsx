@@ -517,16 +517,25 @@ export async function action({ request }) {
       };
     }
 
-    // Save settings
+    // Save settings and plan
     await admin.graphql(
-      `mutation SetSettings($ownerId: ID!, $value: String!) {
-        metafieldsSet(metafields: [{
-          ownerId: $ownerId
-          namespace: "exit_intent"
-          key: "settings"
-          value: $value
-          type: "json"
-        }]) {
+      `mutation SetSettings($ownerId: ID!, $settingsValue: String!, $planValue: String!) {
+        metafieldsSet(metafields: [
+          {
+            ownerId: $ownerId
+            namespace: "exit_intent"
+            key: "settings"
+            value: $settingsValue
+            type: "json"
+          },
+          {
+            ownerId: $ownerId
+            namespace: "exit_intent"
+            key: "plan"
+            value: $planValue
+            type: "json"
+          }
+        ]) {
           metafields {
             id
           }
@@ -539,7 +548,11 @@ export async function action({ request }) {
       {
         variables: {
           ownerId: shopId,
-          value: JSON.stringify(settings)
+          settingsValue: JSON.stringify(settings),
+          planValue: JSON.stringify({
+            tier: formData.get("tier") || "pro",
+            billingCycle: formData.get("billingCycle") || "monthly"
+          })
         }
       }
     );

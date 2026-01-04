@@ -71,6 +71,52 @@ export function determineOffer(signals, aggression, aiGoal, cartValue) {
   }
 }
 
+export function enterpriseAI(signals, aggression) {
+  const propensity = signals.propensityScore;
+  
+  // High propensity (>75) = likely to buy anyway
+  if (propensity > 75) {
+    // Don't show discount if high-value customer
+    if (signals.customerLifetimeValue > 500) {
+      return null; // Don't show modal at all
+    }
+    // Show small discount - they're already likely to convert
+    return {
+      type: 'percentage',
+      amount: 5,
+      timing: 'exit_intent',
+      confidence: 'high',
+      reasoning: 'High propensity - minimal discount needed'
+    };
+  }
+  
+  // Medium propensity (40-75) = needs incentive
+  if (propensity > 40) {
+    const offer = 10 + (aggression * 1.5);
+    return {
+      type: 'percentage',
+      amount: Math.round(offer),
+      timing: 'exit_intent',
+      confidence: 'medium',
+      reasoning: 'Medium propensity - standard offer'
+    };
+  }
+  
+  // Low propensity (<40) = aggressive offer or don't waste discount
+  if (signals.cartValue < 30) {
+    return null; // Don't show - unlikely to convert
+  }
+  
+  // Low propensity but decent cart value - go aggressive immediately
+  return {
+    type: 'percentage',
+    amount: 20 + aggression,
+    timing: 'immediate', // Show right away, don't wait for exit
+    confidence: 'low',
+    reasoning: 'Low propensity but high cart - aggressive immediate offer'
+  };
+}
+
 export async function checkBudget(db, shopId, budgetPeriod) {
   const shop = await db.shop.findUnique({
     where: { id: shopId }

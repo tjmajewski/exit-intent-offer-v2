@@ -7,6 +7,7 @@
   window.exitIntentSettings = {
     enabled: {{ shop.metafields.exit_intent.status.value.enabled | default: false | json }},
     mode: {{ shop.metafields.exit_intent.settings.value.mode | default: "manual" | json }},
+    plan: {{ shop.metafields.exit_intent.settings.value.plan | default: "pro" | json }},
     modalHeadline: {{ shop.metafields.exit_intent.settings.value.modalHeadline | default: "Wait! Don't leave yet 🎁" | json }},
     modalBody: {{ shop.metafields.exit_intent.settings.value.modalBody | default: "Complete your purchase now and get free shipping on your order!" | json }},
     ctaButton: {{ shop.metafields.exit_intent.settings.value.ctaButton | default: "Complete My Order" | json }},
