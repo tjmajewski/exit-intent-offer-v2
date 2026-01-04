@@ -1,4 +1,5 @@
 import { authenticate } from "../shopify.server";
+import db from "../db.server";
 
 export const action = async ({ request }) => {
   try {
@@ -14,6 +15,46 @@ export const action = async ({ request }) => {
     const exitDiscountUsed = discountCodes.find(dc => 
       dc.code && /^\d+(OFF|DOLLARSOFF|GIFT)$/i.test(dc.code)
     );
+
+    // PHASE 5: Track ALL discount usage for promotional intelligence
+    const shopRecord = await db.shop.findUnique({
+      where: { shopifyDomain: shop }
+    });
+
+    if (shopRecord && discountCodes.length > 0) {
+      for (const dc of discountCodes) {
+        if (!dc.code) continue;
+        
+        // Find promotion in database
+        const promo = await db.promotion.findFirst({
+          where: {
+            shopId: shopRecord.id,
+            code: dc.code
+          }
+        });
+
+        if (promo) {
+          // Update usage stats
+          const stats = JSON.parse(promo.usageStats);
+          stats.total += 1;
+          stats.last24h = (stats.last24h || 0) + 1;
+
+          await db.promotion.update({
+            where: { id: promo.id },
+            data: {
+              usageStats: JSON.stringify(stats)
+            }
+          });
+
+          console.log(`📊 Promotion usage tracked: ${dc.code} (Total: ${stats.total})`);
+
+          // Classify promotion if not yet classified
+          if (!promo.classification) {
+            await classifyPromotion(promo.id);
+          }
+        }
+      }
+    }
 
     // Check if gift card voucher product is in the order
     const lineItems = payload.line_items || [];
@@ -218,4 +259,56 @@ async function updateAnalytics(session, revenue) {
       });
     }
   }
+}
+
+async function classifyPromotion(promoId) {
+  const promo = await db.promotion.findUnique({
+    where: { id: promoId }
+  });
+
+  if (!promo) return;
+
+  const hoursSince = (Date.now() - promo.detectedAt.getTime()) / (1000 * 60 * 60);
+  
+  // Wait at least 4 hours before classifying
+  if (hoursSince < 4) {
+    console.log(`⏳ Waiting to classify ${promo.code} (only ${hoursSince.toFixed(1)} hours old)`);
+    return;
+  }
+
+  const stats = JSON.parse(promo.usageStats);
+  const usagePerHour = stats.total / hoursSince;
+
+  let classification, aiStrategy, reason;
+
+  // High usage = site-wide promotion
+  if (usagePerHour > 10) {
+    classification = "site_wide";
+    aiStrategy = promo.amount >= 25 ? "pause" : "increase";
+    reason = `${promo.amount}% site-wide promo detected (${stats.total} uses in ${hoursSince.toFixed(1)} hours)`;
+  } 
+  // Medium usage = targeted campaign
+  else if (usagePerHour > 2) {
+    classification = "targeted";
+    aiStrategy = "continue";
+    reason = `Targeted promo (${usagePerHour.toFixed(1)} uses/hour)`;
+  } 
+  // Low usage = customer service code
+  else {
+    classification = "customer_service";
+    aiStrategy = "ignore";
+    reason = `Low usage - likely customer service code (${stats.total} total uses)`;
+  }
+
+  await db.promotion.update({
+    where: { id: promo.id },
+    data: {
+      classification,
+      aiStrategy,
+      aiStrategyReason: reason,
+      status: "active"
+    }
+  });
+
+  console.log(`✅ Promotion classified: ${promo.code} → ${classification} (${aiStrategy})`);
 }

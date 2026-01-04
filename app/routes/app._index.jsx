@@ -3,6 +3,7 @@ import { authenticate } from "../shopify.server";
 import { useState } from "react";
 import { checkAndResetUsage } from "../utils/featureGates";
 import AppLayout from "../components/AppLayout";
+import db from "../db.server";
 
 export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
@@ -21,6 +22,9 @@ export async function loader({ request }) {
           plan: metafield(namespace: "exit_intent", key: "plan") {
             value
           }
+          modalLibrary: metafield(namespace: "exit_intent", key: "modal_library") {
+            value
+          }
         }
       }
     `);
@@ -37,6 +41,10 @@ export async function loader({ request }) {
       
     let plan = data.data.shop?.plan?.value 
       ? JSON.parse(data.data.shop.plan.value) 
+      : null;
+
+    const modalLibrary = data.data.shop?.modalLibrary?.value 
+      ? JSON.parse(data.data.shop.modalLibrary.value) 
       : null;
 
     // If no plan exists, create default plan
@@ -192,11 +200,47 @@ export async function loader({ request }) {
       }
     };
 
+    // PHASE 5: Check for active site-wide promotions (Pro tier upsell)
+    let promoWarning = null;
+    
+    if (plan && plan.tier === 'pro') {
+      const shopDomain = new URL(request.url).searchParams.get('shop') || request.headers.get('host');
+      
+      const shopRecord = await db.shop.findUnique({
+        where: { shopifyDomain: shopDomain }
+      });
+      
+      if (shopRecord) {
+        const activePromo = await db.promotion.findFirst({
+          where: {
+            shopId: shopRecord.id,
+            status: "active",
+            classification: "site_wide"
+          },
+          orderBy: {
+            amount: 'desc'
+          }
+        });
+        
+        if (activePromo) {
+          promoWarning = {
+            code: activePromo.code,
+            amount: activePromo.amount,
+            type: activePromo.type,
+            aiStrategy: activePromo.aiStrategy,
+            message: `Your AI is still offering discounts during your ${activePromo.amount}${activePromo.type === 'percentage' ? '%' : '$'} ${activePromo.code} promotion, potentially wasting budget.`
+          };
+        }
+      }
+    }
+
     return { 
       settings, 
       status,
       plan,
-      analytics
+      analytics,
+      promoWarning,
+      modalLibrary
     };
   } catch (error) {
     console.error("Error loading dashboard:", error);
@@ -468,7 +512,7 @@ function InfoTooltip({ content }) {
 
 
 export default function Dashboard() {
-  const { settings, status, plan, analytics } = useLoaderData();
+  const { settings, status, plan, analytics, promoWarning, modalLibrary } = useLoaderData();
   const fetcher = useFetcher();
   const [isEnabled, setIsEnabled] = useState(status.enabled);
 
@@ -498,6 +542,88 @@ export default function Dashboard() {
   return (
     <AppLayout plan={plan}>
       <div style={{ padding: 40 }}>
+      
+      {/* PHASE 5: Promotional Intelligence Warning (Pro Tier Upsell) */}
+      {promoWarning && (
+        <div style={{
+          background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)",
+          border: "2px solid #f59e0b",
+          borderRadius: 12,
+          padding: 24,
+          marginBottom: 32,
+          boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
+        }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+            <div style={{ fontSize: 32 }}>⚠️</div>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ 
+                margin: 0, 
+                fontSize: 20, 
+                fontWeight: 600,
+                color: "#92400e",
+                marginBottom: 8 
+              }}>
+                Site-Wide Promotion Detected: {promoWarning.code}
+              </h3>
+              <p style={{ 
+                margin: 0, 
+                fontSize: 16, 
+                color: "#78350f",
+                marginBottom: 16,
+                lineHeight: 1.5
+              }}>
+                {promoWarning.message}
+              </p>
+              <div style={{
+                background: "white",
+                padding: 16,
+                borderRadius: 8,
+                marginBottom: 16
+              }}>
+                <p style={{ margin: 0, fontSize: 14, color: "#92400e", marginBottom: 12 }}>
+                  <strong>💡 What Enterprise AI would do automatically:</strong>
+                </p>
+                <ul style={{ margin: 0, paddingLeft: 20, color: "#78350f", fontSize: 14 }}>
+                  {promoWarning.aiStrategy === 'pause' && (
+                    <li><strong>Pause exit modals</strong> during your {promoWarning.amount}% sale to avoid double-discounting</li>
+                  )}
+                  {promoWarning.aiStrategy === 'increase' && (
+                    <li><strong>Increase exit offers to {promoWarning.amount + 5}%</strong> to beat your site-wide promotion</li>
+                  )}
+                  <li>Save you money by not showing discounts to customers who would buy anyway</li>
+                  <li>Email you when promotions are detected with recommended actions</li>
+                  <li>Let you set announcement mode (0% offers) with one click</li>
+                </ul>
+              </div>
+              <Link 
+                to="/app/upgrade" 
+                style={{
+                  display: "inline-block",
+                  background: "#f59e0b",
+                  color: "white",
+                  padding: "12px 24px",
+                  borderRadius: 8,
+                  textDecoration: "none",
+                  fontWeight: 600,
+                  fontSize: 16,
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
+                }}
+              >
+                Upgrade to Enterprise - $249/mo →
+              </Link>
+              <p style={{ 
+                margin: 0, 
+                marginTop: 12,
+                fontSize: 13, 
+                color: "#92400e" 
+              }}>
+                Save $600/year with annual billing
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Header with Toggle */}
       <div style={{ 
         display: "flex", 
@@ -954,9 +1080,23 @@ export default function Dashboard() {
           border: "1px solid #e5e7eb",
           borderRadius: 8
         }}>
-          <h3 style={{ marginTop: 0, marginBottom: 16 }}>
-            Current Modal Preview
-          </h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 0 }}>
+              Current Modal Preview
+            </h3>
+            {settings.mode === 'ai' && modalLibrary && modalLibrary.currentModalId && (
+              <span style={{
+                padding: "4px 12px",
+                background: "#8B5CF6",
+                color: "white",
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 600
+              }}>
+                AI-Generated Copy
+              </span>
+            )}
+          </div>
           <div style={{
             background: "rgba(0, 0, 0, 0.05)",
             padding: 40,
@@ -973,39 +1113,88 @@ export default function Dashboard() {
               width: "100%",
               boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)"
             }}>
-              <h2 style={{ fontSize: 24, marginTop: 0, marginBottom: 16 }}>
-                {settings.modalHeadline}
-              </h2>
-              <p style={{ marginBottom: 24, color: "#666", lineHeight: 1.6 }}>
-                {settings.modalBody}
-              </p>
-              <button style={{
-                width: "100%",
-                padding: "12px 24px",
-                background: "#8B5CF6",
-                color: "white",
-                border: "none",
-                borderRadius: 6,
-                fontSize: 16,
-                fontWeight: 500,
-                cursor: "pointer"
-              }}>
-                {settings.ctaButton}
-              </button>
-              {settings.discountCode && (
-                <div style={{
-                  marginTop: 16,
-                  padding: 12,
-                  background: "#f0fdf4",
-                  border: "1px solid #86efac",
-                  borderRadius: 6,
-                  fontSize: 14,
-                  textAlign: "center",
-                  color: "#166534"
-                }}>
-                  💰 Code: <strong>{settings.discountCode}</strong> will be auto-applied
-                </div>
-              )}
+              {(() => {
+                // If AI mode and modal library exists, show AI-generated copy
+                if (settings.mode === 'ai' && modalLibrary && modalLibrary.currentModalId) {
+                  const currentModal = modalLibrary.modals?.find(m => m.modalId === modalLibrary.currentModalId);
+                  if (currentModal) {
+                    return (
+                      <>
+                        <h2 style={{ fontSize: 24, marginTop: 0, marginBottom: 16 }}>
+                          {currentModal.headline}
+                        </h2>
+                        <p style={{ marginBottom: 24, color: "#666", lineHeight: 1.6 }}>
+                          {currentModal.body}
+                        </p>
+                        <button style={{
+                          width: "100%",
+                          padding: "12px 24px",
+                          background: "#8B5CF6",
+                          color: "white",
+                          border: "none",
+                          borderRadius: 6,
+                          fontSize: 16,
+                          fontWeight: 500,
+                          cursor: "pointer"
+                        }}>
+                          {currentModal.cta}
+                        </button>
+                        <div style={{
+                          marginTop: 16,
+                          padding: 12,
+                          background: "#f0fdf4",
+                          border: "1px solid #86efac",
+                          borderRadius: 6,
+                          fontSize: 14,
+                          textAlign: "center",
+                          color: "#166534"
+                        }}>
+                          Discount code will be auto-applied at checkout
+                        </div>
+                      </>
+                    );
+                  }
+                }
+                
+                // Fallback to manual settings
+                return (
+                  <>
+                    <h2 style={{ fontSize: 24, marginTop: 0, marginBottom: 16 }}>
+                      {settings.modalHeadline}
+                    </h2>
+                    <p style={{ marginBottom: 24, color: "#666", lineHeight: 1.6 }}>
+                      {settings.modalBody}
+                    </p>
+                    <button style={{
+                      width: "100%",
+                      padding: "12px 24px",
+                      background: "#8B5CF6",
+                      color: "white",
+                      border: "none",
+                      borderRadius: 6,
+                      fontSize: 16,
+                      fontWeight: 500,
+                      cursor: "pointer"
+                    }}>
+                      {settings.ctaButton}
+                    </button>
+                    {settings.discountCode && (
+                      <div style={{
+                        marginTop: 16,
+                        padding: 12,
+                        background: "#f0fdf4",
+                        border: "1px solid #86efac",
+                        borderRadius: 6,
+                        fontSize: 14,
+                        textAlign: "center",
+                        color: "#166534"
+                      }}>
+                        Code: <strong>{settings.discountCode}</strong> will be auto-applied
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>

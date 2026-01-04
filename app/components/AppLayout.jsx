@@ -5,16 +5,59 @@ export default function AppLayout({ children, plan }) {
   
   const isActive = (path) => location.pathname === path;
   
+  const getIcon = (iconName) => {
+    const icons = {
+      dashboard: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
+      ),
+      settings: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M12 1v6m0 6v6m5.2-13.2l-4.2 4.2m0 6l4.2 4.2M23 12h-6m-6 0H1m18.8 5.2l-4.2-4.2m0-6l4.2-4.2"></path>
+        </svg>
+      ),
+      analytics: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="12" y1="20" x2="12" y2="10"></line>
+          <line x1="18" y1="20" x2="18" y2="4"></line>
+          <line x1="6" y1="20" x2="6" y2="16"></line>
+        </svg>
+      ),
+      promotions: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M12 6v6l4 2"></path>
+        </svg>
+      ),
+      upgrade: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M5 12h14"></path>
+          <path d="M12 5l7 7-7 7"></path>
+        </svg>
+      )
+    };
+    return icons[iconName];
+  };
+
   const navItems = [
-    { path: "/app", label: "Dashboard", icon: "🏠" },
-    { path: "/app/settings", label: "Settings", icon: "⚙️" },
+    { path: "/app", label: "Dashboard", icon: "dashboard" },
+    { path: "/app/settings", label: "Settings", icon: "settings" },
     { 
       path: "/app/analytics", 
       label: "Analytics", 
-      icon: "📊",
+      icon: "analytics",
       badge: plan?.tier !== "enterprise" ? "ENTERPRISE" : null
     },
-    ...(plan?.tier !== "enterprise" ? [{ path: "/app/upgrade", label: "Upgrade", icon: "🚀", highlight: true }] : [])
+    { 
+      path: "/app/promotions", 
+      label: "Promotions", 
+      icon: "promotions",
+      badge: plan?.tier !== "enterprise" ? "ENTERPRISE" : null
+    },
+    ...(plan?.tier !== "enterprise" ? [{ path: "/app/upgrade", label: "Upgrade", icon: "upgrade", highlight: true }] : [])
   ];
 
   return (
@@ -64,7 +107,7 @@ export default function AppLayout({ children, plan }) {
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{ fontSize: 18 }}>{item.icon}</span>
+                {getIcon(item.icon)}
                 <span style={{ fontSize: 14, fontWeight: isActive(item.path) ? 600 : 400 }}>
                   {item.label}
                 </span>

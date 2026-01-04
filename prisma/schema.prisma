@@ -54,6 +54,7 @@ model Shop {
   
   discountOffers    DiscountOffer[]
   aiDecisions       AIDecision[]
+  promotions        Promotion[]
 }
 
 model DiscountOffer {
@@ -97,4 +98,28 @@ model MetaLearningInsights {
   
   @@index([segment, insightType])
   @@index([lastUpdated])
+}
+
+model Promotion {
+  id                String    @id @default(uuid())
+  shopId            String
+  shop              Shop      @relation(fields: [shopId], references: [id])
+  code              String
+  amount            Float
+  type              String    // "percentage" | "fixed_amount"
+  detectedVia       String    // "webhook" | "usage_spike" | "manual"
+  status            String    @default("monitoring") // "monitoring" | "active" | "ended"
+  validFrom         DateTime?
+  validUntil        DateTime?
+  usageStats        String    @default("{\"total\":0,\"last24h\":0}") // JSON
+  classification    String?   // "site_wide" | "targeted" | "customer_service"
+  aiStrategy        String?   // "pause" | "increase" | "continue" | "ignore"
+  aiStrategyReason  String?
+  merchantOverride  String?
+  detectedAt        DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  
+  @@index([shopId, status])
+  @@index([shopId, code])
+  @@index([detectedAt])
 }

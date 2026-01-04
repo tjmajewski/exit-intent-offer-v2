@@ -136,7 +136,7 @@ export async function action({ request }) {
       }
     } else {
       // Standard Pro tier AI
-      decision = determineOffer(signals, aggression, aiGoal, signals.cartValue);
+      decision = await determineOffer(signals, aggression, aiGoal, signals.cartValue, shopRecord.id, shopRecord.plan);
       console.log('[Pro AI] Decision:', decision);
     }
     

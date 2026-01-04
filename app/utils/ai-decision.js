@@ -1,4 +1,76 @@
-export function determineOffer(signals, aggression, aiGoal, cartValue) {
+export async function determineOffer(signals, aggression, aiGoal, cartValue, shopId = null, plan = 'pro') {
+  // PHASE 5: Promotional intelligence (detection for all, control for Enterprise only)
+  let activePromoWarning = null;
+  
+  if (shopId) {
+    const { default: db } = await import('../db.server.js');
+    
+    const activePromo = await db.promotion.findFirst({
+      where: {
+        shopId: shopId,
+        status: "active",
+        classification: "site_wide",
+        aiStrategy: { not: "ignore" }
+      },
+      orderBy: {
+        amount: 'desc' // Get highest promo if multiple active
+      }
+    });
+
+    if (activePromo) {
+      // PRO TIER: Detect but don't act (upsell opportunity)
+      if (plan === 'pro') {
+        console.log(`⚠️ [Pro] Site-wide promo detected but no action taken: ${activePromo.code} - ${activePromo.amount}%`);
+        activePromoWarning = {
+          code: activePromo.code,
+          amount: activePromo.amount,
+          message: `Site-wide ${activePromo.amount}% promo active - upgrade to Enterprise for automatic optimization`
+        };
+        // Continue with normal AI logic (no adjustments)
+      }
+      
+      // ENTERPRISE TIER: Detect and auto-optimize
+      if (plan === 'enterprise') {
+        console.log(`🎯 [Enterprise] Active site-wide promo: ${activePromo.code} - ${activePromo.amount}%`);
+        
+        // Check if merchant has manually overridden
+        if (activePromo.merchantOverride) {
+          const override = JSON.parse(activePromo.merchantOverride);
+          console.log(`🔧 Merchant override active: ${override.type}`);
+          
+          if (override.type === 'pause') {
+            return null; // Don't show modal
+          }
+          
+          if (override.type === 'force_zero') {
+            return {
+              type: 'no-discount',
+              amount: 0,
+              confidence: 'high',
+              reasoning: `Merchant override: announcement mode during ${activePromo.code}`
+            };
+          }
+          
+          // Use merchant's custom aggression
+          aggression = override.customAggression || aggression;
+        } else {
+          // Use AI's automatic strategy
+          if (activePromo.aiStrategy === "pause") {
+            console.log("AI paused due to site-wide promotion");
+            return null; // Don't show modal at all
+          }
+          
+          if (activePromo.aiStrategy === "increase") {
+            // Force minimum offer to beat the promo by 5%
+            const minOffer = activePromo.amount + 5;
+            aggression = Math.max(aggression, Math.ceil(minOffer / 2.5)); // Convert to 1-10 scale
+            console.log(`AI auto-increased aggression to beat ${activePromo.amount}% promo`);
+          }
+        }
+      }
+    }
+  }
+
   let score = 0;
   
   // Score each signal (0-100 scale)
