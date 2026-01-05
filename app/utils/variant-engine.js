@@ -2,6 +2,7 @@
 
 import { genePools, getRandomGene, getAllBaselines } from './gene-pools.js';
 import { PrismaClient } from '@prisma/client';
+import jStat from 'jstat';
 
 const db = new PrismaClient();
 
@@ -256,6 +257,175 @@ export async function initializeShopVariants(shopId, segment = 'all') {
   console.log(`✅ Initialized ${totalVariants} variants across ${baselines.length} baselines`);
   
   return results;
+}
+
+/**
+ * Sample from beta distribution (for Thompson Sampling)
+ * Uses jstat library
+ */
+function betaSample(alpha, beta) {
+  return jStat.beta.sample(alpha, beta);
+}
+
+/**
+ * Thompson Sampling: Select variant for next impression
+ * 
+ * Champion gets 70% of traffic, remaining 30% uses Thompson Sampling
+ * among contenders. This balances exploitation (use winner) with
+ * exploration (try new variants).
+ */
+export async function selectVariantForImpression(shopId, baseline, segment = 'all') {
+  // Get all live variants
+  const liveVariants = await getLiveVariants(shopId, baseline, segment);
+  
+  if (liveVariants.length === 0) {
+    throw new Error(`No live variants found for shop ${shopId}, baseline ${baseline}, segment ${segment}`);
+  }
+  
+  // If only one variant, return it
+  if (liveVariants.length === 1) {
+    return liveVariants[0];
+  }
+  
+  // Check if there's a champion
+  const champion = liveVariants.find(v => v.status === 'champion');
+  
+  // Champion gets 70% of traffic
+  if (champion && Math.random() < 0.7) {
+    console.log(`👑 Champion ${champion.variantId} selected (70% traffic)`);
+    return champion;
+  }
+  
+  // Remaining 30% (or 100% if no champion): Thompson Sampling
+  const contenders = liveVariants.filter(v => v.status !== 'champion');
+  
+  if (contenders.length === 0) {
+    // Edge case: champion is the only variant
+    return champion;
+  }
+  
+  // Thompson Sampling: Sample from beta distribution for each variant
+  const samples = contenders.map(variant => {
+    // Beta distribution parameters
+    // alpha = successes + 1 (prior of 1)
+    // beta = failures + 1 (prior of 1)
+    const alpha = variant.conversions + 1;
+    const beta_param = (variant.impressions - variant.conversions) + 1;
+    
+    // Sample from beta(alpha, beta)
+    const sample = betaSample(alpha, beta_param);
+    
+    return {
+      variant: variant,
+      sample: sample
+    };
+  });
+  
+  // Sort by sample value (highest wins this "tournament")
+  samples.sort((a, b) => b.sample - a.sample);
+  
+  const winner = samples[0].variant;
+  console.log(`🎲 Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)})`);
+  
+  return winner;
+}
+
+/**
+ * Record an impression for a variant
+ */
+export async function recordImpression(variantId, shopId, context = {}) {
+  // Update variant impression count
+  await db.variant.update({
+    where: { id: variantId },
+    data: {
+      impressions: { increment: 1 }
+    }
+  });
+  
+  // Create impression record
+  const impression = await db.variantImpression.create({
+    data: {
+      variantId: variantId,
+      shopId: shopId,
+      segment: context.segment || 'all',
+      deviceType: context.deviceType || null,
+      trafficSource: context.trafficSource || null,
+      cartValue: context.cartValue || null,
+      clicked: false,
+      converted: false
+    }
+  });
+  
+  console.log(`📊 Recorded impression for variant ${variantId}`);
+  
+  return impression;
+}
+
+/**
+ * Record a click on a variant
+ */
+export async function recordClick(impressionId) {
+  const impression = await db.variantImpression.update({
+    where: { id: impressionId },
+    data: { clicked: true }
+  });
+  
+  // Update variant click count
+  await db.variant.update({
+    where: { id: impression.variantId },
+    data: {
+      clicks: { increment: 1 }
+    }
+  });
+  
+  console.log(`👆 Recorded click for impression ${impressionId}`);
+  
+  return impression;
+}
+
+/**
+ * Record a conversion for a variant
+ */
+export async function recordConversion(impressionId, revenue, discountAmount = 0) {
+  const profit = revenue - discountAmount;
+  
+  const impression = await db.variantImpression.update({
+    where: { id: impressionId },
+    data: {
+      converted: true,
+      revenue: revenue,
+      discountAmount: discountAmount,
+      profit: profit
+    }
+  });
+  
+  // Update variant performance
+  const variant = await db.variant.findUnique({
+    where: { id: impression.variantId }
+  });
+  
+  const newConversions = variant.conversions + 1;
+  const newRevenue = variant.revenue + revenue;
+  const newImpressions = variant.impressions;
+  
+  // Calculate profit per impression
+  const cvr = newConversions / newImpressions;
+  const aov = newRevenue / newConversions;
+  const profitPerConversion = aov - (discountAmount / newConversions);
+  const profitPerImpression = profitPerConversion * cvr;
+  
+  await db.variant.update({
+    where: { id: impression.variantId },
+    data: {
+      conversions: newConversions,
+      revenue: newRevenue,
+      profitPerImpression: profitPerImpression
+    }
+  });
+  
+  console.log(`💰 Recorded conversion for impression ${impressionId}: $${revenue} revenue, $${discountAmount} discount`);
+  
+  return impression;
 }
 
 /**
