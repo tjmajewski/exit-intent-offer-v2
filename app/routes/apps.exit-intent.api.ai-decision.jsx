@@ -103,42 +103,52 @@ export async function action({ request }) {
       console.log(`✓ Budget check passed. Remaining: $${budgetCheck.remaining}`);
     }
     
-    // Make AI decision - use Enterprise AI if enabled
-    let decision;
+    // NEW: Use variant-based evolution system
+    const { selectBaseline } = await import('../utils/baseline-selector.js');
+    const { selectVariantForImpression, getLiveVariants, seedInitialPopulation, recordImpression } = 
+      await import('../utils/variant-engine.js');
     
-    if (shopRecord.plan === 'enterprise' && settings.mode === 'ai') {
-      // Import enterpriseAI function
-      const { enterpriseAI } = await import('../utils/ai-decision.js');
-      decision = enterpriseAI(signals, aggression, aiGoal);
-      
-      console.log('[Enterprise AI] Decision:', decision);
-      
-      // Enterprise AI can return null (don't show modal at all)
-      if (decision === null) {
-        console.log('[Enterprise AI] AI decided not to show modal');
-        
-        // Log the AI decision to skip
-        await db.aIDecision.create({
-          data: {
-            shopId: shopRecord.id,
-            signals: JSON.stringify(signals),
-            decision: JSON.stringify({
-              type: 'no-show',
-              reasoning: 'Enterprise AI decided not to show modal'
-            })
-          }
-        });
-        
-        return json({
-          shouldShow: false,
-          decision: null
-        });
-      }
-    } else {
-      // Standard Pro tier AI
-      decision = await determineOffer(signals, aggression, aiGoal, signals.cartValue, shopRecord.id, shopRecord.plan);
-      console.log('[Pro AI] Decision:', decision);
+    // Step 1: Determine which baseline to use (revenue/conversion × discount/no-discount)
+    const baseline = selectBaseline(signals, aiGoal);
+    console.log(`[Variant Selection] Baseline: ${baseline}`);
+    
+    // Step 2: Check if variants exist for this baseline, if not seed them
+    const existingVariants = await getLiveVariants(shopRecord.id, baseline, 'all');
+    
+    if (existingVariants.length === 0) {
+      console.log(`[Variant Selection] No variants found. Seeding initial population...`);
+      await seedInitialPopulation(shopRecord.id, baseline, 'all');
     }
+    
+    // Step 3: Use Thompson Sampling to select variant
+    const selectedVariant = await selectVariantForImpression(shopRecord.id, baseline, 'all');
+    console.log(`[Variant Selection] Selected ${selectedVariant.variantId} (Gen ${selectedVariant.generation})`);
+    
+    // Step 4: Build decision from variant genes
+    const decision = {
+      type: baseline.includes('revenue') ? 'threshold' : 'percentage',
+      amount: selectedVariant.offerAmount,
+      threshold: baseline.includes('revenue') ? Math.round(signals.cartValue * 1.3) : null,
+      headline: selectedVariant.headline,
+      subhead: selectedVariant.subhead,
+      cta: selectedVariant.cta,
+      redirect: selectedVariant.redirect,
+      urgency: selectedVariant.urgency,
+      variantId: selectedVariant.id,
+      variantPublicId: selectedVariant.variantId,
+      baseline: baseline,
+      confidence: selectedVariant.impressions > 100 ? 0.8 : 0.5
+    };
+    
+    console.log('[Variant Engine] Decision:', decision);
+    
+    // Step 5: Record impression (for evolution tracking)
+    const impressionRecord = await recordImpression(selectedVariant.id, shopRecord.id, {
+      segment: 'all',
+      deviceType: signals.deviceType || 'unknown',
+      trafficSource: signals.trafficSource || 'unknown',
+      cartValue: signals.cartValue
+    });
     
     // If no discount needed, return early
     if (decision.type === 'no-discount') {
@@ -199,25 +209,8 @@ export async function action({ request }) {
     
     console.log(`✓ AI offer created: ${discountResult.code} (${decision.type}, $${offerAmount})`);
     
-    // Select copy variant for this customer segment
-    const { getSegment, selectVariant } = await import('../utils/copy-variants.js');
-    const segment = getSegment(signals);
-    
-    // Check if we should use meta-learning for this store/segment
-    const useMeta = await shouldUseMetaLearning(db, shopRecord.id, segment);
-    let variant = selectVariant(shopRecord, segment);
-    
-    // If using meta-learning and we have insights, bias selection
-    if (useMeta) {
-      const metaInsight = await getMetaInsight(db, segment, 'signal_correlation');
-      if (metaInsight) {
-        console.log(`[AI Decision] New store - using meta-learning for ${segment} (${metaInsight.storeCount} stores, ${metaInsight.sampleSize} samples)`);
-        // Variant already selected, but log that we're in meta-learning mode
-        // Future: Could use metaInsight to influence decision type/amount
-      }
-    }
-    
-    console.log(`[AI Decision] Selected variant ${variant.id} for segment ${segment} (meta-learning: ${useMeta})`);
+    // Variant copy is already in decision object from variant genes
+    // No need for separate copy variant selection
     
     // Check if shop has Enterprise plan (copy optimization enabled)
     // Use database plan, not metafield
@@ -238,21 +231,19 @@ export async function action({ request }) {
       }
     };
     
-    // Only add variant copy for Enterprise users
-    if (isEnterprise) {
-      response.decision.variant = {
-        id: variant.id,
-        headline: variant.headline,
-        body: variant.body,
-        cta: variant.cta,
-        segment: segment
-      };
-      console.log(`[AI Decision] Enterprise user - using variant copy`);
-    } else {
-      // Pro users still get variant ID for tracking, but no custom copy
-      response.decision.variantId = variant.id;
-      console.log(`[AI Decision] Pro user - using default copy, tracking variant ${variant.id}`);
-    }
+    // Add variant copy and genes to response
+    response.decision.variant = {
+      headline: decision.headline,
+      subhead: decision.subhead,
+      cta: decision.cta,
+      redirect: decision.redirect,
+      urgency: decision.urgency
+    };
+    response.decision.variantId = decision.variantId;
+    response.decision.variantPublicId = decision.variantPublicId;
+    response.decision.impressionId = impressionRecord.id; // For tracking clicks/conversions
+    
+    console.log(`[Variant Engine] Returning variant ${decision.variantPublicId} (Gen ${selectedVariant.generation})`);
     
     return json(response);
     
