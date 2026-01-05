@@ -109,7 +109,7 @@ export async function action({ request }) {
     if (shopRecord.plan === 'enterprise' && settings.mode === 'ai') {
       // Import enterpriseAI function
       const { enterpriseAI } = await import('../utils/ai-decision.js');
-      decision = enterpriseAI(signals, aggression);
+      decision = enterpriseAI(signals, aggression, aiGoal);
       
       console.log('[Enterprise AI] Decision:', decision);
       

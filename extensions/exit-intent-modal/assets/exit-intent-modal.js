@@ -20,11 +20,10 @@
   this.modalElement = null;
   this.sessionKey = 'exitIntentShown';
   this.cartItemCount = 0;
+  this.lastCartValue = 0;
   this.cartTimerStarted = false;
   this.cartTimerTimeout = null;
-  this.cartItemCount = 0;
-  this.cartTimerStarted = false;
-  this.cartTimerTimeout = null;
+  this.aiDecisionInProgress = false;
   this.currentVariantId = null;
   this.currentSegment = null;
   
@@ -88,9 +87,10 @@
       const visits = parseInt(localStorage.getItem('exitIntentVisits') || '0') + 1;
       localStorage.setItem('exitIntentVisits', visits);
       
-      // 2. Cart value
+      // 2. Cart value and item count
       const cart = await fetch('/cart.js').then(r => r.json());
       const cartValue = cart.total_price / 100;
+      const itemCount = cart.item_count;
       
       // 3. Device type
       const deviceType = /mobile/i.test(navigator.userAgent) ? 'mobile' : 'desktop';
@@ -127,6 +127,7 @@
       return {
         visitFrequency: visits,
         cartValue,
+        itemCount,
         deviceType,
         accountStatus,
         trafficSource,
@@ -286,27 +287,24 @@
       .then(response => response.json())
       .then(cart => {
         const newItemCount = cart.item_count;
+        const newCartValue = cart.total_price / 100;
         
-        // Cart increased - item was added
-        if (newItemCount > this.cartItemCount && !this.cartTimerStarted) {
-          console.log('[Exit Intent] Item added to cart! Starting timer...');
+        // Cart increased - item was added OR cart value changed significantly
+        const itemCountIncreased = newItemCount > this.cartItemCount;
+        const cartValueChanged = this.lastCartValue && Math.abs(newCartValue - this.lastCartValue) > 5;
+        
+        if ((itemCountIncreased || cartValueChanged) && !this.aiDecisionInProgress) {
+          console.log('[Exit Intent] Cart changed! Items:', newItemCount, 'Value:', newCartValue);
           this.cartItemCount = newItemCount;
-          this.cartTimerStarted = true;
+          this.lastCartValue = newCartValue;
+          this.aiDecisionInProgress = true; // Prevent race conditions
           
-          // Clear any existing timer
-          if (this.cartTimerTimeout) {
-            clearTimeout(this.cartTimerTimeout);
-          }
-          
-          // Start countdown
-          const delay = delaySeconds * 1000;
-          console.log(`[Exit Intent] Timer will fire in ${delaySeconds} seconds`);
-          
-          this.cartTimerTimeout = setTimeout(async () => {
-            if (!this.modalShown) {
+          // Trigger immediately (no delay)
+          (async () => {
+            try {
               const hasItems = await this.hasItemsInCart();
-              if (hasItems) {
-                console.log('[Exit Intent] Timer completed');
+              if (hasItems && !this.modalShown) {
+                console.log('[Exit Intent] Cart has items, getting new AI decision...');
                 
                 // Enterprise AI decides if/when/what to show
                 if (this.settings.mode === 'ai' && this.settings.plan === 'enterprise') {
@@ -317,12 +315,17 @@
                   this.showModal();
                 }
               }
+            } catch (error) {
+              console.error('[Exit Intent] Error in AI decision:', error);
+            } finally {
+              this.aiDecisionInProgress = false;
             }
-          }, delay);
+          })();
         }
         
-        // Update count for next check
+        // Always update tracking values
         this.cartItemCount = newItemCount;
+        this.lastCartValue = newCartValue;
       })
       .catch(err => console.error('[Exit Intent] Error polling cart:', err));
   }
