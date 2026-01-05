@@ -123,7 +123,7 @@ export async function createFixedDiscount(admin, amount) {
       customerGets: {
         value: {
           discountAmount: {
-            amount: amount.toString(),
+            amount: Math.round(amount).toString(),
             appliesOnEachItem: false
           }
         },
@@ -200,7 +200,7 @@ export async function createThresholdDiscount(admin, threshold, discountAmount) 
       customerGets: {
         value: {
           discountAmount: {
-            amount: discountAmount.toString(),
+            amount: Math.round(discountAmount).toString(),
             appliesOnEachItem: false
           }
         },

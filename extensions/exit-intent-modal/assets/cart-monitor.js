@@ -322,7 +322,7 @@
               background: rgba(255,255,255,0.3);
             }
           </style>
-          <span>💰 Add $${remaining.toFixed(2)} more to get $${offer.discount} off!</span>
+          <span>💰 Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!</span>
           <button class="close-banner" onclick="this.parentElement.remove()">×</button>
         `;
         
@@ -330,7 +330,7 @@
         console.log('[Cart Monitor] Progress banner displayed');
       } else {
         // Update existing banner
-        banner.querySelector('span').textContent = `💰 Add $${remaining.toFixed(2)} more to get $${offer.discount} off!`;
+        banner.querySelector('span').textContent = `💰 Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!`;
       }
     }
 
@@ -386,7 +386,7 @@
               background: rgba(255,255,255,0.3);
             }
           </style>
-          <span>💰 Add $${remaining.toFixed(2)} more to get $${offer.discount} off!</span>
+          <span>💰 Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!</span>
           <button class="close-banner" onclick="this.parentElement.remove()">×</button>
         `;
         
@@ -394,7 +394,7 @@
         console.log('[Cart Monitor] Progress banner displayed');
       } else {
         // Update existing banner
-        banner.querySelector('span').textContent = `💰 Add $${remaining.toFixed(2)} more to get $${offer.discount} off!`;
+        banner.querySelector('span').textContent = `💰 Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!`;
       }
     }
 
@@ -450,7 +450,7 @@
               background: rgba(255,255,255,0.3);
             }
           </style>
-          <span>💰 Add $${remaining.toFixed(2)} more to get $${offer.discount} off!</span>
+          <span>💰 Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!</span>
           <button class="close-banner" onclick="this.parentElement.remove()">×</button>
         `;
         
@@ -458,7 +458,7 @@
         console.log('[Cart Monitor] Progress banner displayed');
       } else {
         // Update existing banner
-        banner.querySelector('span').textContent = `💰 Add $${remaining.toFixed(2)} more to get $${offer.discount} off!`;
+        banner.querySelector('span').textContent = `💰 Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!`;
       }
     }
 
@@ -514,7 +514,7 @@
         existingCTA.innerHTML = `
           <div style="text-align: center; padding: 12px;">
             <div style="font-size: 16px; font-weight: 600; margin-bottom: 4px;">
-              Add $${remaining.toFixed(2)} more to get $${offer.discount} off! 🎁
+              Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off! 🎁
             </div>
             <div style="font-size: 13px; opacity: 0.9;">
               ${this.getProgressBar(currentTotal, offer.threshold)}
