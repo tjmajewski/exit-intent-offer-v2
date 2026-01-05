@@ -428,6 +428,303 @@ export async function recordConversion(impressionId, revenue, discountAmount = 0
   return impression;
 }
 
+
+
+/**
+ * Bayesian A/B Test: Compare two variants
+ * Returns probability that variantA beats variantB
+ * Uses Monte Carlo simulation with beta distributions
+ */
+function bayesianCompare(variantA, variantB) {
+  const samplesA = [];
+  const samplesB = [];
+  const numSamples = 10000;
+  
+  // Sample from beta distributions
+  for (let i = 0; i < numSamples; i++) {
+    const sampleA = betaSample(variantA.conversions + 1, variantA.impressions - variantA.conversions + 1);
+    const sampleB = betaSample(variantB.conversions + 1, variantB.impressions - variantB.conversions + 1);
+    
+    samplesA.push(sampleA);
+    samplesB.push(sampleB);
+  }
+  
+  // Calculate probability that A beats B
+  let aWins = 0;
+  for (let i = 0; i < numSamples; i++) {
+    if (samplesA[i] > samplesB[i]) {
+      aWins++;
+    }
+  }
+  
+  const probability = aWins / numSamples;
+  
+  // Calculate lift (how much better is A than B)
+  const avgA = samplesA.reduce((sum, v) => sum + v, 0) / numSamples;
+  const avgB = samplesB.reduce((sum, v) => sum + v, 0) / numSamples;
+  const lift = avgB > 0 ? (avgA - avgB) / avgB : 0;
+  
+  return {
+    probability: probability,
+    lift: lift,
+    avgCVR_A: avgA,
+    avgCVR_B: avgB
+  };
+}
+
+/**
+ * Weighted random selection (for parent selection in breeding)
+ * Higher weight = higher chance of selection
+ */
+function weightedRandomSelection(variants, weightFn) {
+  const weights = variants.map(v => Math.max(weightFn(v), 0.001)); // Prevent zero weights
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+  
+  let random = Math.random() * totalWeight;
+  
+  for (let i = 0; i < variants.length; i++) {
+    random -= weights[i];
+    if (random <= 0) {
+      return variants[i];
+    }
+  }
+  
+  return variants[variants.length - 1]; // Fallback
+}
+
+/**
+ * Breed a new variant from two parents using genetic algorithm
+ */
+function breedNewVariant(parents, baseline, segment = 'all') {
+  const pool = genePools[baseline];
+  
+  // Select two parents weighted by profit per impression
+  const parent1 = weightedRandomSelection(parents, v => v.profitPerImpression + 1);
+  const parent2 = weightedRandomSelection(parents, v => v.profitPerImpression + 1);
+  
+  console.log(`🧬 Breeding from parents: ${parent1.variantId} (Gen ${parent1.generation}) + ${parent2.variantId} (Gen ${parent2.generation})`);
+  
+  // Crossover: Inherit genes from both parents (50/50 chance each gene)
+  const childGenes = {
+    offerAmount: Math.random() < 0.5 ? parent1.offerAmount : parent2.offerAmount,
+    headline: Math.random() < 0.5 ? parent1.headline : parent2.headline,
+    subhead: Math.random() < 0.5 ? parent1.subhead : parent2.subhead,
+    cta: Math.random() < 0.5 ? parent1.cta : parent2.cta,
+    redirect: Math.random() < 0.5 ? parent1.redirect : parent2.redirect,
+    urgency: Math.random() < 0.5 ? parent1.urgency : parent2.urgency
+  };
+  
+  // Mutation: 10% chance to randomize each gene
+  const mutations = [];
+  Object.keys(childGenes).forEach(gene => {
+    if (Math.random() < 0.1) {
+      const geneKey = gene === 'offerAmount' ? 'offerAmounts' : 
+                      gene === 'urgency' ? 'urgency' :
+                      gene + 's';
+      const options = pool[geneKey];
+      childGenes[gene] = options[Math.floor(Math.random() * options.length)];
+      mutations.push(gene);
+    }
+  });
+  
+  if (mutations.length > 0) {
+    console.log(`  ⚡ Mutations in: ${mutations.join(', ')}`);
+  }
+  
+  const newGeneration = Math.max(parent1.generation, parent2.generation) + 1;
+  
+  return {
+    variantId: generateVariantId(),
+    baseline: baseline,
+    segment: segment,
+    status: 'alive',
+    generation: newGeneration,
+    parents: JSON.stringify([parent1.variantId, parent2.variantId]),
+    
+    ...childGenes,
+    
+    impressions: 0,
+    clicks: 0,
+    conversions: 0,
+    revenue: 0,
+    profitPerImpression: 0,
+    
+    birthDate: new Date(),
+    deathDate: null,
+    championDate: null
+  };
+}
+
+/**
+ * Check if a variant should be declared champion
+ * Must beat all others with 95% confidence + 500 impressions + 7 days alive
+ */
+function detectChampion(liveVariants) {
+  // High bar for championship
+  const candidates = liveVariants.filter(v => {
+    if (v.impressions < 500) return false;  // Need data
+    
+    const ageDays = (new Date() - v.birthDate) / (1000 * 60 * 60 * 24);
+    if (ageDays < 7) return false;  // Need time (7 days minimum)
+    
+    return true;
+  });
+  
+  if (candidates.length === 0) return null;
+  
+  const topPerformer = candidates
+    .sort((a, b) => b.profitPerImpression - a.profitPerImpression)[0];
+  
+  // Must beat ALL others with 95% confidence
+  const beatsAll = liveVariants
+    .filter(v => v.id !== topPerformer.id)
+    .every(v => {
+      if (v.impressions < 50) return true; // Too early to compare
+      
+      const test = bayesianCompare(topPerformer, v);
+      return test.probability > 0.95;  // 95% confident we're better
+    });
+  
+  if (beatsAll) {
+    console.log(`👑 New champion detected: ${topPerformer.variantId} (Gen ${topPerformer.generation})`);
+    return topPerformer;
+  }
+  
+  return null;
+}
+
+/**
+ * Evolution Cycle: Kill poor performers, breed replacements
+ * Runs every 100 impressions
+ */
+export async function evolutionCycle(shopId, baseline, segment = 'all') {
+  console.log(`\n🧬 EVOLUTION CYCLE: Shop ${shopId}, Baseline ${baseline}, Segment ${segment}`);
+  console.log('='.repeat(80));
+  
+  let liveVariants = await getLiveVariants(shopId, baseline, segment);
+  
+  if (liveVariants.length === 0) {
+    console.log('⚠️ No live variants found. Skipping evolution.');
+    return;
+  }
+  
+  console.log(`📊 Current population: ${liveVariants.length} live variants`);
+  
+  // Step 1: Calculate profit/impression for all variants
+  liveVariants.forEach(v => {
+    if (v.impressions > 0 && v.conversions > 0) {
+      const cvr = v.conversions / v.impressions;
+      const aov = v.revenue / v.conversions;
+      const avgDiscountCost = (v.offerAmount / 100) * aov; // Assume percentage discount
+      const profitPerConversion = aov - avgDiscountCost;
+      v.profitPerImpression = profitPerConversion * cvr;
+    }
+    console.log(`  ${v.variantId}: ${v.impressions} imp, ${v.conversions} conv (${(v.conversions/v.impressions*100).toFixed(1)}%), $${v.profitPerImpression.toFixed(2)}/imp`);
+  });
+  
+  // Step 2: Identify dying variants (Bayesian confidence)
+  const dying = [];
+  const champion = liveVariants.find(v => v.status === 'champion');
+  
+  const contenders = liveVariants
+    .filter(v => v.status !== 'champion')
+    .sort((a, b) => b.profitPerImpression - a.profitPerImpression);
+  
+  if (contenders.length > 1) {
+    const topPerformer = contenders[0];
+    
+    contenders.forEach(variant => {
+      if (variant.impressions < 50) return; // Too early
+      if (variant.id === topPerformer.id) return; // Can't kill the top performer
+      
+      // Bayesian A/B test: Are we 95% confident this variant is worse?
+      const test = bayesianCompare(topPerformer, variant);
+      
+      if (test.probability > 0.95) { // Top performer beats this variant with 95% confidence
+        console.log(`💀 Marking for death: ${variant.variantId} (${test.probability.toFixed(3)} confidence it's worse)`);
+        dying.push(variant);
+      }
+    });
+  }
+  
+  // Step 3: Kill variants
+  if (dying.length > 0) {
+    console.log(`\n💀 Killing ${dying.length} variant(s)`);
+    
+    for (const variant of dying) {
+      await db.variant.update({
+        where: { id: variant.id },
+        data: {
+          status: 'dead',
+          deathDate: new Date()
+        }
+      });
+    }
+    
+    // Remove from live pool
+    liveVariants = liveVariants.filter(v => !dying.includes(v));
+  }
+  
+  // Step 4: Breed replacements
+  const targetPopulation = 10;
+  const needToBreed = targetPopulation - liveVariants.length;
+  
+  if (needToBreed > 0 && liveVariants.length >= 2) {
+    console.log(`\n🧬 Breeding ${needToBreed} new variant(s)`);
+    
+    for (let i = 0; i < needToBreed; i++) {
+      const childData = breedNewVariant(liveVariants, baseline, segment);
+      
+      const newVariant = await db.variant.create({
+        data: {
+          shopId: shopId,
+          ...childData
+        }
+      });
+      
+      console.log(`  ✅ Born: ${newVariant.variantId} (Gen ${newVariant.generation})`);
+      liveVariants.push(newVariant);
+    }
+  }
+  
+  // Step 5: Check for new champion
+  const newChampion = detectChampion(liveVariants);
+  
+  if (newChampion) {
+    // Dethrone old champion if exists
+    if (champion && champion.id !== newChampion.id) {
+      await db.variant.update({
+        where: { id: champion.id },
+        data: { status: 'alive', championDate: null }
+      });
+      console.log(`  👑 Dethroned: ${champion.variantId}`);
+    }
+    
+    // Crown new champion
+    await db.variant.update({
+      where: { id: newChampion.id },
+      data: { status: 'champion', championDate: new Date() }
+    });
+    console.log(`  👑 Crowned: ${newChampion.variantId}`);
+  }
+  
+  // Step 6: Update shop's last evolution cycle timestamp
+  await db.shop.update({
+    where: { id: shopId },
+    data: { lastEvolutionCycle: new Date() }
+  });
+  
+  console.log(`\n✅ Evolution cycle complete. Population: ${liveVariants.length}`);
+  console.log('='.repeat(80) + '\n');
+  
+  return {
+    killed: dying.length,
+    bred: needToBreed,
+    champion: newChampion?.variantId || null,
+    population: liveVariants.length
+  };
+}
+
 /**
  * Test variant creation (for development)
  */
