@@ -52,9 +52,15 @@ model Shop {
   // Meta-Learning
   contributeToMetaLearning Boolean @default(true)
   
+  // Evolution System
+  lastEvolutionCycle DateTime?
+  
   discountOffers    DiscountOffer[]
   aiDecisions       AIDecision[]
   promotions        Promotion[]
+  variants          Variant[]       @relation("ShopVariants")
+  seasonalPatterns  SeasonalPattern[] @relation("ShopSeasonalPatterns")
+  brandSafetyRule   BrandSafetyRule? @relation("ShopBrandSafetyRules")
 }
 
 model DiscountOffer {
@@ -98,6 +104,141 @@ model MetaLearningInsights {
   
   @@index([segment, insightType])
   @@index([lastUpdated])
+}
+
+model Variant {
+  id                String   @id @default(uuid())
+  shopId            String
+  shop              Shop     @relation(fields: [shopId], references: [id], name: "ShopVariants")
+  
+  // Identity
+  variantId         String   @unique
+  baseline          String   // revenue_with_discount, conversion_with_discount, etc
+  segment           String   @default("all") // mobile, desktop, mobile_paid, etc
+  status            String   @default("alive") // alive, dying, dead, champion
+  generation        Int      @default(0)
+  parents           String?  // JSON array ['VAR_ABC', 'VAR_DEF']
+  
+  // Genes (the DNA)
+  offerAmount       Int
+  headline          String
+  subhead           String
+  cta               String
+  redirect          String   // cart | checkout
+  urgency           Boolean
+  
+  // Performance
+  impressions       Int      @default(0)
+  clicks            Int      @default(0)
+  conversions       Int      @default(0)
+  revenue           Float    @default(0)
+  profitPerImpression Float  @default(0)
+  
+  // Lifecycle
+  birthDate         DateTime @default(now())
+  deathDate         DateTime?
+  championDate      DateTime?
+  
+  // Relations
+  impressionRecords VariantImpression[]
+  
+  @@index([shopId, status])
+  @@index([shopId, baseline, segment])
+  @@index([status, profitPerImpression])
+}
+
+model VariantImpression {
+  id                String   @id @default(uuid())
+  variantId         String
+  variant           Variant  @relation(fields: [variantId], references: [id])
+  shopId            String
+  
+  // Outcome
+  clicked           Boolean  @default(false)
+  converted         Boolean  @default(false)
+  revenue           Float?
+  discountAmount    Float?
+  profit            Float?   // revenue - discountAmount
+  
+  // Context
+  segment           String   @default("all")
+  deviceType        String?
+  trafficSource     String?
+  cartValue         Float?
+  timestamp         DateTime @default(now())
+  
+  @@index([variantId, converted])
+  @@index([shopId, timestamp])
+  @@index([segment, timestamp])
+}
+
+model MetaLearningGene {
+  id                String   @id @default(uuid())
+  
+  // Gene identity
+  baseline          String
+  geneType          String   // offerAmount, headline, subhead, cta, redirect, urgency
+  geneValue         String   // The actual gene
+  
+  // Aggregated performance (across ALL stores)
+  totalImpressions  Int      @default(0)
+  totalConversions  Int      @default(0)
+  totalRevenue      Float    @default(0)
+  avgCVR            Float    @default(0)
+  avgProfitPerImpression Float @default(0)
+  confidenceLevel   Float    @default(0) // 0-1 (0.95 = 95% confidence)
+  
+  // Segmentation
+  industry          String?  // fashion, sports, home, etc
+  avgOrderValue     String?  // low (<$50), medium ($50-150), high (>$150)
+  deviceType        String?  // mobile, desktop, all
+  
+  // Metadata
+  sampleSize        Int      @default(0) // Number of stores this gene appeared in
+  lastUpdated       DateTime @updatedAt
+  
+  @@index([baseline, avgProfitPerImpression])
+  @@index([baseline, geneType, confidenceLevel])
+}
+
+model SeasonalPattern {
+  id                String   @id @default(uuid())
+  shopId            String
+  shop              Shop     @relation(fields: [shopId], references: [id], name: "ShopSeasonalPatterns")
+  
+  // Season identification
+  season            String   // blackFriday, holidaySeason, backToSchool, etc
+  startDate         DateTime
+  endDate           DateTime
+  
+  // Performance during this season (historical)
+  avgCVR            Float    @default(0)
+  avgAOV            Float    @default(0)
+  avgProfitPerImpression Float @default(0)
+  trafficMultiplier Float    @default(1) // e.g., 2.3x normal traffic
+  
+  // Recommended genes for this season
+  recommendedOfferAmounts String  @default("[]") // JSON array [20, 25, 30]
+  recommendedUrgency      Boolean @default(true)
+  recommendedHeadlines    String  @default("[]") // JSON array of headline templates
+  
+  @@index([shopId, season])
+}
+
+model BrandSafetyRule {
+  id                String   @id @default(uuid())
+  shopId            String
+  shop              Shop     @relation(fields: [shopId], references: [id], name: "ShopBrandSafetyRules")
+  
+  // Rules (Enterprise only)
+  prohibitedWords   String   @default("[]") // JSON array ["cheap", "discount"]
+  requiredPhrases   String   @default("[]") // JSON array ["premium quality"]
+  maxDiscountPercent Int     @default(100) // e.g., 25
+  tone              String   @default("casual") // luxury, casual, urgent, professional
+  
+  enabled           Boolean  @default(true)
+  
+  @@unique([shopId])
 }
 
 model Promotion {
