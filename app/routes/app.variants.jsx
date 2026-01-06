@@ -1,7 +1,8 @@
 import { json } from "@remix-run/node";
-import { useLoaderData } from "react-router";
+import { useLoaderData, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import { PrismaClient } from "@prisma/client";
+import { useEffect, useState } from "react";
 
 const db = new PrismaClient();
 
@@ -39,17 +40,79 @@ export async function loader({ request }) {
     return acc;
   }, {});
   
+  // Get recent impressions for activity feed
+  const recentImpressions = await db.variantImpression.findMany({
+    where: { shopId: shop.id },
+    orderBy: { timestamp: 'desc' },
+    take: 10,
+    include: {
+      variant: {
+        select: {
+          variantId: true,
+          headline: true
+        }
+      }
+    }
+  });
+  
+  // Calculate evolution cycle status
+  const impressionsSinceLastCycle = await db.variantImpression.count({
+    where: {
+      shopId: shop.id,
+      timestamp: {
+        gte: shop.lastEvolutionCycle || new Date(0)
+      }
+    }
+  });
+  
+  const needsEvolution = impressionsSinceLastCycle >= 100;
+  const progressToNextCycle = Math.min((impressionsSinceLastCycle / 100) * 100, 100);
+  
+  // Generation stats
+  const maxGeneration = variants.length > 0 ? Math.max(...variants.map(v => v.generation)) : 0;
+  const avgGeneration = variants.length > 0 
+    ? (variants.reduce((sum, v) => sum + v.generation, 0) / variants.length).toFixed(1)
+    : 0;
+  
   return json({ 
     shop,
     variantsByBaseline,
     totalVariants: variants.length,
     aliveCount: variants.filter(v => v.status === 'alive' || v.status === 'champion').length,
-    deadCount: variants.filter(v => v.status === 'dead').length
+    deadCount: variants.filter(v => v.status === 'dead').length,
+    recentImpressions,
+    evolutionStatus: {
+      impressionsSinceLastCycle,
+      needsEvolution,
+      progressToNextCycle,
+      lastCycle: shop.lastEvolutionCycle
+    },
+    generationStats: {
+      max: maxGeneration,
+      avg: avgGeneration
+    }
   });
 }
 
 export default function Variants() {
-  const { shop, variantsByBaseline, totalVariants, aliveCount, deadCount } = useLoaderData();
+  const data = useLoaderData();
+  const { shop, variantsByBaseline, totalVariants, aliveCount, deadCount, recentImpressions, evolutionStatus, generationStats } = data;
+  const fetcher = useFetcher();
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    if (!autoRefresh) return;
+    
+    const interval = setInterval(() => {
+      fetcher.load('/app/variants');
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, [autoRefresh, fetcher]);
+  
+  // Use fetcher data if available, otherwise use initial data
+  const displayData = fetcher.data || data;
   
   if (!shop) {
     return (
@@ -60,14 +123,101 @@ export default function Variants() {
     );
   }
   
-  const baselines = Object.keys(variantsByBaseline);
+  const baselines = Object.keys(displayData.variantsByBaseline);
   
   return (
     <div style={{ padding: '20px', maxWidth: '1200px' }}>
       <h1>🧬 Variant Evolution Dashboard</h1>
       <p style={{ color: '#666', marginBottom: '30px' }}>Watch your variants evolve in real-time</p>
       
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '30px' }}>
+      {/* Auto-refresh toggle */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
+        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+          <input 
+            type="checkbox" 
+            checked={autoRefresh} 
+            onChange={(e) => setAutoRefresh(e.target.checked)}
+            style={{ marginRight: '8px' }}
+          />
+          <span style={{ fontSize: '14px' }}>Auto-refresh (30s)</span>
+        </label>
+      </div>
+      
+      {/* Stats Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '20px', marginBottom: '30px' }}>
+        <div style={{ background: '#f6f6f7', padding: '20px', borderRadius: '8px' }}>
+          <div style={{ fontSize: '14px', color: '#666' }}>Total Variants</div>
+          <div style={{ fontSize: '32px', fontWeight: 'bold' }}>{totalVariants}</div>
+        </div>
+        <div style={{ background: '#f6f6f7', padding: '20px', borderRadius: '8px' }}>
+          <div style={{ fontSize: '14px', color: '#666' }}>🧬 Alive</div>
+          <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#008060' }}>{aliveCount}</div>
+        </div>
+        <div style={{ background: '#f6f6f7', padding: '20px', borderRadius: '8px' }}>
+          <div style={{ fontSize: '14px', color: '#666' }}>💀 Dead</div>
+          <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#bf0711' }}>{deadCount}</div>
+        </div>
+        <div style={{ background: '#f6f6f7', padding: '20px', borderRadius: '8px' }}>
+          <div style={{ fontSize: '14px', color: '#666' }}>Max Generation</div>
+          <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#7c3aed' }}>Gen {generationStats.max}</div>
+        </div>
+      </div>
+      
+      {/* Evolution Cycle Status */}
+      <div style={{ background: evolutionStatus.needsEvolution ? '#fef3c7' : '#f0fdf4', padding: '20px', borderRadius: '8px', marginBottom: '30px', border: `2px solid ${evolutionStatus.needsEvolution ? '#f59e0b' : '#22c55e'}` }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h3 style={{ margin: 0 }}>
+            {evolutionStatus.needsEvolution ? '⚡ Evolution Ready' : '🔄 Evolution Cycle'}
+          </h3>
+          <span style={{ fontSize: '14px', color: '#666' }}>
+            {evolutionStatus.impressionsSinceLastCycle} / 100 impressions
+          </span>
+        </div>
+        <div style={{ background: '#fff', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
+          <div style={{ 
+            background: evolutionStatus.needsEvolution ? '#f59e0b' : '#22c55e',
+            height: '100%',
+            width: `${evolutionStatus.progressToNextCycle}%`,
+            transition: 'width 0.3s ease'
+          }} />
+        </div>
+        <div style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
+          {evolutionStatus.needsEvolution 
+            ? 'Evolution cycle will run soon - poor variants will die, winners will breed'
+            : `${100 - evolutionStatus.impressionsSinceLastCycle} more impressions until next evolution`
+          }
+        </div>
+      </div>
+      
+      {/* Recent Activity Feed */}
+      {recentImpressions.length > 0 && (
+        <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', border: '1px solid #e1e3e5', marginBottom: '30px' }}>
+          <h3 style={{ marginBottom: '15px' }}>📊 Recent Activity</h3>
+          <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+            {recentImpressions.map((imp, i) => (
+              <div key={imp.id} style={{ 
+                padding: '10px',
+                borderBottom: i < recentImpressions.length - 1 ? '1px solid #f0f0f0' : 'none',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontSize: '14px', fontWeight: '500' }}>{imp.variant.variantId}</span>
+                  <span style={{ fontSize: '12px', color: '#666', marginLeft: '10px' }}>
+                    {imp.converted ? '✅ Converted' : imp.clicked ? '👆 Clicked' : '👁️ Impression'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '12px', color: '#999' }}>
+                  {new Date(imp.timestamp).toLocaleTimeString()}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '30px', display: 'none' }}>
         <div style={{ background: '#f6f6f7', padding: '20px', borderRadius: '8px' }}>
           <div style={{ fontSize: '14px', color: '#666' }}>Total Variants</div>
           <div style={{ fontSize: '32px', fontWeight: 'bold' }}>{totalVariants}</div>
@@ -90,7 +240,7 @@ export default function Variants() {
       )}
       
       {baselines.map(baseline => {
-        const { alive, dead } = variantsByBaseline[baseline];
+        const { alive, dead } = displayData.variantsByBaseline[baseline];
         const champion = alive.find(v => v.status === 'champion');
         
         return (
