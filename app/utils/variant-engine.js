@@ -1,6 +1,7 @@
 // Variant Engine: Core evolution system for creating, managing, and evolving variants
 
 import { genePools, getRandomGene, getAllBaselines } from './gene-pools.js';
+import { validateVariantCopy } from './brand-safety.js';
 import { PrismaClient } from '@prisma/client';
 import jStat from 'jstat';
 
@@ -495,7 +496,7 @@ function weightedRandomSelection(variants, weightFn) {
 /**
  * Breed a new variant from two parents using genetic algorithm
  */
-function breedNewVariant(parents, baseline, segment = 'all') {
+async function breedNewVariant(parents, baseline, segment = 'all', shopId = null) {
   const pool = genePools[baseline];
   
   // Select two parents weighted by profit per impression
@@ -533,7 +534,7 @@ function breedNewVariant(parents, baseline, segment = 'all') {
   
   const newGeneration = Math.max(parent1.generation, parent2.generation) + 1;
   
-  return {
+  const newVariant = {
     variantId: generateVariantId(),
     baseline: baseline,
     segment: segment,
@@ -553,6 +554,26 @@ function breedNewVariant(parents, baseline, segment = 'all') {
     deathDate: null,
     championDate: null
   };
+  
+  // Brand Safety: Validate variant copy (Enterprise only)
+  if (shopId) {
+    const validation = await validateVariantCopy(
+      shopId,
+      childGenes.headline,
+      childGenes.subhead,
+      childGenes.cta,
+      childGenes.offerAmount
+    );
+    
+    if (!validation.valid) {
+      console.log(`  ⚠️ Brand safety violation, re-breeding...`);
+      console.log(`     ${validation.violations.join(', ')}`);
+      // Recursively breed again until valid
+      return await breedNewVariant(parents, baseline, segment, shopId);
+    }
+  }
+  
+  return newVariant;
 }
 
 /**
@@ -673,7 +694,7 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
     console.log(`\n🧬 Breeding ${needToBreed} new variant(s)`);
     
     for (let i = 0; i < needToBreed; i++) {
-      const childData = breedNewVariant(liveVariants, baseline, segment);
+      const childData = await breedNewVariant(liveVariants, baseline, segment, shopId);
       
       const newVariant = await db.variant.create({
         data: {
