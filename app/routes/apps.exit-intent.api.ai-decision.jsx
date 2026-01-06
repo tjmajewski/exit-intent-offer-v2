@@ -227,7 +227,7 @@ export async function action({ request }) {
         code: discountResult.code,
         confidence: decision.confidence,
         expiresAt: discountResult.expiresAt,
-        segment: segment // Always include segment for tracking
+        baseline: decision.baseline // Include baseline for tracking
       }
     };
     
