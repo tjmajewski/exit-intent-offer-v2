@@ -438,7 +438,7 @@
         margin-top: 12px;
         display: none;
       `;
-      secondaryButton.onclick = () => this.closeModal();
+      secondaryButton.onclick = () => this.handleSecondaryClick();
       
       // Assemble modal
       modal.appendChild(closeBtn);
@@ -681,6 +681,8 @@
       // Store variant info for tracking (both Pro and Enterprise)
       this.currentVariantId = decision.variantId || decision.variant?.id || null;
       this.currentSegment = decision.segment || null;
+      this.currentImpressionId = decision.impressionId || null;
+      this.currentImpressionId = decision.impressionId || null;
       
       // Use variant copy if provided (from evolution system)
       if (decision.variant) {
@@ -806,6 +808,23 @@
       // Track variant click (both Pro and Enterprise)
       this.trackVariant('click');
       
+      // Track click for evolution system
+      if (this.currentImpressionId) {
+        try {
+          await fetch('/apps/exit-intent/api/track-click', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              impressionId: this.currentImpressionId,
+              buttonType: 'primary'
+            })
+          });
+          console.log('[Click Tracking] Primary button click recorded');
+        } catch (error) {
+          console.error('[Click Tracking] Error:', error);
+        }
+      }
+      
       // Close modal
       this.closeModal();
       
@@ -855,6 +874,28 @@
       }
       
       window.location.href = redirectUrl;
+    }
+    
+    async handleSecondaryClick() {
+      // Track secondary button click for evolution system
+      if (this.currentImpressionId) {
+        try {
+          await fetch('/apps/exit-intent/api/track-click', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              impressionId: this.currentImpressionId,
+              buttonType: 'secondary'
+            })
+          });
+          console.log('[Click Tracking] Secondary button click recorded');
+        } catch (error) {
+          console.error('[Click Tracking] Error:', error);
+        }
+      }
+      
+      // Close modal
+      this.closeModal();
     }
     
     async trackEvent(eventType) {
