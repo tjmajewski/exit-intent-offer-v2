@@ -112,16 +112,22 @@ export async function action({ request }) {
     const baseline = selectBaseline(signals, aiGoal);
     console.log(`[Variant Selection] Baseline: ${baseline}`);
     
+    // Step 1.5: Determine segment (device-specific evolution)
+    const deviceType = signals.deviceType || 'unknown';
+    const segment = deviceType === 'mobile' ? 'mobile' : 
+                    deviceType === 'desktop' ? 'desktop' : 'all';
+    console.log(`[Variant Selection] Segment: ${segment}`);
+    
     // Step 2: Check if variants exist for this baseline, if not seed them
-    const existingVariants = await getLiveVariants(shopRecord.id, baseline, 'all');
+    const existingVariants = await getLiveVariants(shopRecord.id, baseline, segment);
     
     if (existingVariants.length === 0) {
       console.log(`[Variant Selection] No variants found. Seeding initial population...`);
-      await seedInitialPopulation(shopRecord.id, baseline, 'all');
+      await seedInitialPopulation(shopRecord.id, baseline, segment);
     }
     
     // Step 3: Use Thompson Sampling to select variant
-    const selectedVariant = await selectVariantForImpression(shopRecord.id, baseline, 'all');
+    const selectedVariant = await selectVariantForImpression(shopRecord.id, baseline, segment);
     console.log(`[Variant Selection] Selected ${selectedVariant.variantId} (Gen ${selectedVariant.generation})`);
     
     // Step 4: Build decision from variant genes
@@ -144,7 +150,7 @@ export async function action({ request }) {
     
     // Step 5: Record impression (for evolution tracking)
     const impressionRecord = await recordImpression(selectedVariant.id, shopRecord.id, {
-      segment: 'all',
+      segment: segment,
       deviceType: signals.deviceType || 'unknown',
       trafficSource: signals.trafficSource || 'unknown',
       cartValue: signals.cartValue
