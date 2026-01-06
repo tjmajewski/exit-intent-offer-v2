@@ -16,6 +16,44 @@ export const action = async ({ request }) => {
       dc.code && /^\d+(OFF|DOLLARSOFF|GIFT)$/i.test(dc.code)
     );
 
+    // EVOLUTION SYSTEM: Track conversion for variant performance
+    const exitIntentDiscount = discountCodes.find(dc => 
+      dc.code && dc.code.startsWith('EXIT')
+    );
+
+    if (exitIntentDiscount) {
+      console.log(`[Evolution] Exit intent discount found: ${exitIntentDiscount.code}`);
+      
+      const shopRecord = await db.shop.findUnique({
+        where: { shopifyDomain: shop }
+      });
+
+      if (shopRecord) {
+        // Find the most recent impression that hasn't been converted yet
+        const impression = await db.variantImpression.findFirst({
+          where: {
+            shopId: shopRecord.id,
+            converted: false,
+            clicked: true // Only count if they clicked the modal
+          },
+          orderBy: { timestamp: 'desc' }
+        });
+
+        if (impression) {
+          const { recordConversion } = await import('../utils/variant-engine.js');
+          const revenue = parseFloat(payload.total_price);
+          const discountAmount = parseFloat(payload.total_discounts);
+          
+          await recordConversion(impression.id, revenue, discountAmount);
+          
+          console.log(`[Evolution] Conversion recorded for impression ${impression.id}`);
+          console.log(`[Evolution] Revenue: $${revenue}, Discount: $${discountAmount}`);
+        } else {
+          console.log('[Evolution] No matching impression found for conversion');
+        }
+      }
+    }
+
     // PHASE 5: Track ALL discount usage for promotional intelligence
     const shopRecord = await db.shop.findUnique({
       where: { shopifyDomain: shop }
