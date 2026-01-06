@@ -5,6 +5,7 @@
     "build": "react-router build",
     "dev": "shopify app dev",
     "evolution": "node app/cron/evolution-cycle.js",
+    "aggregate-genes": "node app/cron/aggregate-gene-performance.js",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",
     "deploy": "shopify app deploy",
