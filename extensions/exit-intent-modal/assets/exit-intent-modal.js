@@ -167,6 +167,17 @@
       return newMax;
     }
     
+    async getCartValue() {
+      try {
+        const response = await fetch('/cart.js');
+        const cart = await response.json();
+        return cart.total_price / 100; // Convert cents to dollars
+      } catch (error) {
+        console.error('[Cart Value] Error fetching cart:', error);
+        return 0;
+      }
+    }
+
     getCartHesitation() {
       // Track add/remove events in session
       // Returns number of times items were added then removed
@@ -470,8 +481,8 @@
       
       console.log('[Enterprise AI] Decision:', decision);
       
-      // AI controls when to show
-      if (decision.timing === 'immediate') {
+      // AI controls when to show (default to immediate if timing not specified)
+      if (!decision.timing || decision.timing === 'immediate') {
         // Show right away
         setTimeout(() => this.showModalWithOffer(decision), 1000);
       } else if (decision.timing === 'exit_intent') {
@@ -533,6 +544,7 @@
     }
     
     showModalWithOffer(decision) {
+      console.log('[Modal] showModalWithOffer called with decision:', decision);
       // Store the AI decision for the modal to use
       this.enterpriseOffer = decision;
       this.showModal();
@@ -607,8 +619,12 @@
     async showModal() {
       if (this.modalShown || !this.modalElement) return;
       
-      // If AI mode is enabled, get AI decision first
-      if (this.settings.mode === 'ai') {
+      // If we have an enterprise offer stored, use it
+      if (this.enterpriseOffer) {
+        this.updateModalWithAI(this.enterpriseOffer);
+      }
+      // Otherwise if AI mode is enabled, get AI decision
+      else if (this.settings.mode === 'ai') {
         await this.getAIDecision();
       }
       
@@ -656,7 +672,7 @@
       }
     }
     
-    updateModalWithAI(decision) {
+    async updateModalWithAI(decision) {
       const modal = this.modalElement.querySelector('#exit-intent-modal');
       const headline = modal.querySelector('h2');
       const body = modal.querySelector('p');
@@ -666,11 +682,37 @@
       this.currentVariantId = decision.variantId || decision.variant?.id || null;
       this.currentSegment = decision.segment || null;
       
-      // Use variant copy if provided (Enterprise only)
+      // Use variant copy if provided (from evolution system)
       if (decision.variant) {
-        headline.textContent = decision.variant.headline;
-        body.textContent = decision.variant.body;
-        button.textContent = decision.variant.cta;
+        // Get current cart value
+        const cartValue = await this.getCartValue();
+        
+        // Calculate threshold remaining (rounded up to nearest $5)
+        const thresholdRemaining = decision.threshold ? Math.ceil((decision.threshold - cartValue) / 5) * 5 : 0;
+        const percentToGoal = decision.threshold ? Math.round((cartValue / decision.threshold) * 100) : 0;
+        
+        // Replace placeholders in variant genes
+        const replacements = {
+          '{{amount}}': decision.amount,
+          '{{threshold}}': decision.threshold || 0,
+          '{{threshold_remaining}}': `$${thresholdRemaining}`,
+          '{{percent_to_goal}}': percentToGoal
+        };
+        
+        let headlineText = decision.variant.headline;
+        let subheadText = decision.variant.subhead;
+        let ctaText = decision.variant.cta;
+        
+        // Replace all placeholders
+        Object.keys(replacements).forEach(placeholder => {
+          headlineText = headlineText.replace(new RegExp(placeholder, 'g'), replacements[placeholder]);
+          subheadText = subheadText.replace(new RegExp(placeholder, 'g'), replacements[placeholder]);
+          ctaText = ctaText.replace(new RegExp(placeholder, 'g'), replacements[placeholder]);
+        });
+        
+        headline.textContent = headlineText;
+        body.textContent = subheadText;
+        button.textContent = ctaText;
         
         this.settings.discountCode = decision.code;
         this.settings.offerType = decision.type;
