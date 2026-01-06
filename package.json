@@ -6,6 +6,7 @@
     "dev": "shopify app dev",
     "evolution": "node app/cron/evolution-cycle.js",
     "aggregate-genes": "node app/cron/aggregate-gene-performance.js",
+    "track-seasonal": "node app/cron/track-seasonal-patterns.js",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",
     "deploy": "shopify app deploy",
