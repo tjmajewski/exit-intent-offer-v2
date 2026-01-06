@@ -1,6 +1,7 @@
 // Variant Engine: Core evolution system for creating, managing, and evolving variants
 
 import { genePools, getRandomGene, getAllBaselines } from './gene-pools.js';
+import { generateVisualGenes } from './visual-gene-pools.js';
 import { validateVariantCopy } from './brand-safety.js';
 import { PrismaClient } from '@prisma/client';
 import jStat from 'jstat';

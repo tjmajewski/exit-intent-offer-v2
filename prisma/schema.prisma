@@ -55,6 +55,14 @@ model Shop {
   // Evolution System
   lastEvolutionCycle DateTime?
   
+  // Brand Customization (Enterprise)
+  brandPrimaryColor   String?  @default("#000000")
+  brandSecondaryColor String?  @default("#ffffff")
+  brandAccentColor    String?  @default("#f59e0b")
+  brandFont           String?  @default("system")
+  brandLogoUrl        String?
+  customCSS           String?  // For advanced customization
+  
   discountOffers    DiscountOffer[]
   aiDecisions       AIDecision[]
   promotions        Promotion[]
@@ -126,6 +134,13 @@ model Variant {
   cta               String
   redirect          String   // cart | checkout
   urgency           Boolean
+  
+  // Visual Genes (Design DNA)
+  colorScheme       String   @default("classic")
+  layout            String   @default("centered")
+  buttonStyle       String   @default("solid")
+  animation         String   @default("fade")
+  typography        String   @default("modern")
   
   // Performance
   impressions       Int      @default(0)
