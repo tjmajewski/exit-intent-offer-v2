@@ -1,4 +1,54 @@
-import { Link, useLocation } from "react-router";
+import { Link, useLocation, useFetcher } from "react-router";
+
+function DevPlanSwitcher({ plan }) {
+  const fetcher = useFetcher();
+  
+  if (process.env.NODE_ENV !== 'development' || !plan) {
+    return null;
+  }
+  
+  return (
+    <div style={{
+      position: "absolute",
+      bottom: 100,
+      left: 24,
+      right: 24,
+      padding: 12,
+      background: "rgba(251, 191, 36, 0.2)",
+      border: "1px solid rgba(251, 191, 36, 0.4)",
+      borderRadius: 6,
+      fontSize: 11
+    }}>
+      <div style={{ fontWeight: 600, marginBottom: 8, color: "#fbbf24" }}>
+        🔧 DEV MODE
+      </div>
+      <fetcher.Form method="post" action="/app/dev-update-plan">
+        <select
+          name="tier"
+          defaultValue={plan.tier}
+          onChange={(e) => {
+            e.target.form.requestSubmit();
+          }}
+          style={{
+            width: '100%',
+            padding: '6px 8px',
+            background: 'rgba(255, 255, 255, 0.9)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: 4,
+            color: '#1f2937',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+        >
+          <option value="starter">Starter</option>
+          <option value="pro">Pro</option>
+          <option value="enterprise">Enterprise</option>
+        </select>
+      </fetcher.Form>
+    </div>
+  );
+}
 
 export default function AppLayout({ children, plan }) {
   const location = useLocation();
@@ -129,6 +179,9 @@ export default function AppLayout({ children, plan }) {
             </Link>
           ))}
         </nav>
+
+        {/* DEV: Plan Switcher */}
+        <DevPlanSwitcher plan={plan} />
 
         {/* Plan Badge at Bottom */}
         {plan && (

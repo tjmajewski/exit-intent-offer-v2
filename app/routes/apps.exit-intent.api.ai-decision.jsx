@@ -67,6 +67,30 @@ export async function action({ request }) {
       const { initializeCopyVariants } = await import('../utils/copy-variants.js');
       await initializeCopyVariants(db, shopRecord.id);
       console.log('[AI Decision] Initialized copy variants for new shop');
+      
+      // Auto-detect brand colors for Enterprise customers
+      if (shopRecord.plan === 'enterprise') {
+        try {
+          const { detectBrandColors } = await import('../utils/brand-detection.js');
+          const brandColors = await detectBrandColors(admin);
+          
+          if (brandColors) {
+            await db.shop.update({
+              where: { id: shopRecord.id },
+              data: {
+                brandPrimaryColor: brandColors.primary,
+                brandSecondaryColor: brandColors.secondary,
+                brandAccentColor: brandColors.accent,
+                brandFont: brandColors.font
+              }
+            });
+            console.log('[Brand Detection] Auto-detected colors:', brandColors);
+          }
+        } catch (error) {
+          console.error('[Brand Detection] Failed to auto-detect:', error);
+          // Don't fail shop creation if brand detection fails
+        }
+      }
     }
     
     // Check budget if enabled

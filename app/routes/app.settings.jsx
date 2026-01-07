@@ -273,10 +273,26 @@ async function createGiftCard(admin, giftCardAmount) {
 }
 
 export async function loader({ request }) {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
   // Load settings AND plan from shop metafields
   try {
+    // Import database client
+    const { PrismaClient } = await import("@prisma/client");
+    const db = new PrismaClient();
+    
+    // Load brand settings from database
+    const shopRecord = await db.shop.findUnique({
+      where: { shopifyDomain: session.shop },
+      select: {
+        brandPrimaryColor: true,
+        brandSecondaryColor: true,
+        brandAccentColor: true,
+        brandFont: true,
+        plan: true
+      }
+    });
+    
     const response = await admin.graphql(
       `query {
         shop {
@@ -314,7 +330,13 @@ export async function loader({ request }) {
     };
 
     const settings = settingsValue ? JSON.parse(settingsValue) : defaultSettings;
-    const plan = planValue ? JSON.parse(planValue) : null;
+    
+    // Use plan from database if available, fallback to metafield
+    let plan = planValue ? JSON.parse(planValue) : null;
+    if (shopRecord && shopRecord.plan) {
+      plan = { tier: shopRecord.plan, billingCycle: "monthly" };
+    }
+    
     const availableTemplates = plan ? getAvailableTemplates(plan.tier) : getAvailableTemplates("starter");
 
     // Load modal library
@@ -331,6 +353,19 @@ export async function loader({ request }) {
     const modalLibrary = modalLibraryData.data.shop?.modalLibrary?.value
       ? JSON.parse(modalLibraryData.data.shop.modalLibrary.value)
       : getDefaultModalLibrary();
+
+    // Add brand settings to settings object and override plan from database
+    if (shopRecord) {
+      settings.brandPrimaryColor = shopRecord.brandPrimaryColor;
+      settings.brandSecondaryColor = shopRecord.brandSecondaryColor;
+      settings.brandAccentColor = shopRecord.brandAccentColor;
+      settings.brandFont = shopRecord.brandFont;
+      
+      // Override plan with database value (more reliable than metafields)
+      if (shopRecord.plan) {
+        plan = { tier: shopRecord.plan, billingCycle: "monthly" };
+      }
+    }
 
     return { settings, plan, availableTemplates, modalLibrary };
   } catch (error) {
@@ -395,7 +430,11 @@ export async function action({ request }) {
       cartValue: formData.get("cartValueEnabled") === "on",
       minCartValue: parseFloat(formData.get("cartValueMin") || "0"),
       maxCartValue: parseFloat(formData.get("cartValueMax") || "1000")
-    }
+    },
+    brandPrimaryColor: formData.get("brandPrimaryColor") || "#000000",
+    brandSecondaryColor: formData.get("brandSecondaryColor") || "#ffffff",
+    brandAccentColor: formData.get("brandAccentColor") || "#f59e0b",
+    brandFont: formData.get("brandFont") || "system"
   };
 
   console.log('=== SETTINGS BEING SAVED ===');
@@ -422,6 +461,10 @@ export async function action({ request }) {
         budgetEnabled: settings.budgetEnabled,
         budgetAmount: settings.budgetAmount,
         budgetPeriod: settings.budgetPeriod,
+        brandPrimaryColor: formData.get("brandPrimaryColor") || undefined,
+        brandSecondaryColor: formData.get("brandSecondaryColor") || undefined,
+        brandAccentColor: formData.get("brandAccentColor") || undefined,
+        brandFont: formData.get("brandFont") || undefined,
         updatedAt: new Date()
       },
       create: {
@@ -431,7 +474,11 @@ export async function action({ request }) {
         aggression: settings.aggression,
         budgetEnabled: settings.budgetEnabled,
         budgetAmount: settings.budgetAmount,
-        budgetPeriod: settings.budgetPeriod
+        budgetPeriod: settings.budgetPeriod,
+        brandPrimaryColor: formData.get("brandPrimaryColor") || "#000000",
+        brandSecondaryColor: formData.get("brandSecondaryColor") || "#ffffff",
+        brandAccentColor: formData.get("brandAccentColor") || "#f59e0b",
+        brandFont: formData.get("brandFont") || "system"
       }
     });
     
@@ -644,6 +691,11 @@ export default function Settings() {
   const [modalName, setModalName] = useState("");
   const [optimizationMode, setOptimizationMode] = useState(settings.mode || "manual");
   const [aggressionLevel, setAggressionLevel] = useState(settings.aggression || 5);
+  const [brandPrimaryColor, setBrandPrimaryColor] = useState(settings.brandPrimaryColor || "#000000");
+  const [brandSecondaryColor, setBrandSecondaryColor] = useState(settings.brandSecondaryColor || "#ffffff");
+  const [brandAccentColor, setBrandAccentColor] = useState(settings.brandAccentColor || "#f59e0b");
+  const [brandFont, setBrandFont] = useState(settings.brandFont || "system");
+  const [autoDetecting, setAutoDetecting] = useState(false);
      
 
 
@@ -1653,6 +1705,206 @@ export default function Settings() {
           </>
         )}
 
+        
+      {/* Brand Customization (Enterprise Only) */}
+        {plan?.tier === 'enterprise' && (
+          <div style={{ 
+            background: "white", 
+            padding: 24, 
+            borderRadius: 8, 
+            border: "1px solid #e5e7eb",
+            marginBottom: 24 
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div>
+                <h2 style={{ fontSize: 20, marginBottom: 4 }}>Brand Customization</h2>
+                <p style={{ fontSize: 14, color: "#666", margin: 0 }}>
+                  Customize the modal to match your brand
+                </p>
+              </div>
+              <span style={{ 
+                padding: "4px 12px", 
+                background: "#8B5CF6", 
+                color: "white", 
+                borderRadius: 4, 
+                fontSize: 12,
+                fontWeight: 600 
+              }}>
+                ENTERPRISE
+              </span>
+            </div>
+
+            {/* Auto-Detect Button */}
+            <div style={{ marginBottom: 24 }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  setAutoDetecting(true);
+                  try {
+                    const response = await fetch('/apps/exit-intent/api/detect-brand', {
+                      method: 'POST'
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                      setBrandPrimaryColor(data.colors.primary);
+                      setBrandSecondaryColor(data.colors.secondary);
+                      setBrandAccentColor(data.colors.accent);
+                      setBrandFont(data.colors.font);
+                    }
+                  } catch (error) {
+                    console.error('Auto-detect failed:', error);
+                  } finally {
+                    setAutoDetecting(false);
+                  }
+                }}
+                disabled={autoDetecting}
+                style={{
+                  padding: "10px 20px",
+                  background: autoDetecting ? "#9ca3af" : "#10b981",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 6,
+                  cursor: autoDetecting ? "not-allowed" : "pointer",
+                  fontSize: 14,
+                  fontWeight: 500
+                }}
+              >
+                {autoDetecting ? "Detecting..." : "🎨 Auto-Detect Brand Colors"}
+              </button>
+              <div style={{ fontSize: 13, color: "#6b7280", marginTop: 8 }}>
+                Automatically detect colors from your store's homepage
+              </div>
+            </div>
+
+            {/* Color Pickers */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 20 }}>
+              <div>
+                <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+                  Primary Color
+                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="color"
+                    name="brandPrimaryColor"
+                    value={brandPrimaryColor}
+                    onChange={(e) => setBrandPrimaryColor(e.target.value)}
+                    style={{ width: 50, height: 40, border: "1px solid #d1d5db", borderRadius: 6, cursor: "pointer" }}
+                  />
+                  <input
+                    type="text"
+                    value={brandPrimaryColor}
+                    onChange={(e) => setBrandPrimaryColor(e.target.value)}
+                    style={{ flex: 1, padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+                  Secondary Color
+                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="color"
+                    name="brandSecondaryColor"
+                    value={brandSecondaryColor}
+                    onChange={(e) => setBrandSecondaryColor(e.target.value)}
+                    style={{ width: 50, height: 40, border: "1px solid #d1d5db", borderRadius: 6, cursor: "pointer" }}
+                  />
+                  <input
+                    type="text"
+                    value={brandSecondaryColor}
+                    onChange={(e) => setBrandSecondaryColor(e.target.value)}
+                    style={{ flex: 1, padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+                  Accent Color
+                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="color"
+                    name="brandAccentColor"
+                    value={brandAccentColor}
+                    onChange={(e) => setBrandAccentColor(e.target.value)}
+                    style={{ width: 50, height: 40, border: "1px solid #d1d5db", borderRadius: 6, cursor: "pointer" }}
+                  />
+                  <input
+                    type="text"
+                    value={brandAccentColor}
+                    onChange={(e) => setBrandAccentColor(e.target.value)}
+                    style={{ flex: 1, padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Font Selector */}
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+                Font Family
+              </label>
+              <select
+                name="brandFont"
+                value={brandFont}
+                onChange={(e) => setBrandFont(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: 6,
+                  fontSize: 14
+                }}
+              >
+                <option value="system">System Default</option>
+                <option value="Arial, sans-serif">Arial</option>
+                <option value="'Helvetica Neue', sans-serif">Helvetica</option>
+                <option value="'Georgia', serif">Georgia</option>
+                <option value="'Times New Roman', serif">Times New Roman</option>
+                <option value="'Courier New', monospace">Courier</option>
+                <option value="'Roboto', sans-serif">Roboto</option>
+                <option value="'Open Sans', sans-serif">Open Sans</option>
+                <option value="'Lato', sans-serif">Lato</option>
+                <option value="'Montserrat', sans-serif">Montserrat</option>
+              </select>
+            </div>
+
+            {/* Preview Box */}
+            <div style={{
+              padding: 16,
+              background: brandSecondaryColor,
+              border: `2px solid ${brandPrimaryColor}`,
+              borderRadius: 8,
+              textAlign: "center"
+            }}>
+              <div style={{ 
+                fontSize: 18, 
+                fontWeight: 600, 
+                color: brandPrimaryColor,
+                fontFamily: brandFont,
+                marginBottom: 8
+              }}>
+                Preview
+              </div>
+              <button type="button" style={{
+                padding: "10px 20px",
+                background: brandAccentColor,
+                color: brandSecondaryColor,
+                border: "none",
+                borderRadius: 6,
+                fontFamily: brandFont,
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: "default"
+              }}>
+                Sample Button
+              </button>
+            </div>
+          </div>
+        )}
         
       {/* Save Button with Inline Notification */}
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>

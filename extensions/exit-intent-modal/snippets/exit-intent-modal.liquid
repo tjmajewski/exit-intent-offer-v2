@@ -21,7 +21,11 @@
       cartValue: {{ shop.metafields.exit_intent.settings.value.cartValueEnabled | default: false | json }},
       minCartValue: {{ shop.metafields.exit_intent.settings.value.cartValueMin | default: 0 | json }},
       maxCartValue: {{ shop.metafields.exit_intent.settings.value.cartValueMax | default: 999999 | json }}
-    }
+    },
+    brandPrimaryColor: {{ shop.metafields.exit_intent.settings.value.brandPrimaryColor | default: "#000000" | json }},
+    brandSecondaryColor: {{ shop.metafields.exit_intent.settings.value.brandSecondaryColor | default: "#ffffff" | json }},
+    brandAccentColor: {{ shop.metafields.exit_intent.settings.value.brandAccentColor | default: "#f59e0b" | json }},
+    brandFont: {{ shop.metafields.exit_intent.settings.value.brandFont | default: "system" | json }}
   };
 </script>
 

@@ -393,7 +393,8 @@
       headline.style.cssText = `
         margin: 0 0 20px 0;
         font-size: 28px;
-        color: #333;
+        color: ${this.settings.brandPrimaryColor || '#333'};
+        font-family: ${this.settings.brandFont || 'inherit'};
       `;
       
       const body = document.createElement('p');
@@ -402,15 +403,16 @@
         margin: 0 0 30px 0;
         font-size: 16px;
         line-height: 1.6;
-        color: #666;
+        color: ${this.settings.brandPrimaryColor || '#666'};
+        font-family: ${this.settings.brandFont || 'inherit'};
       `;
       
       const ctaButton = document.createElement('button');
       ctaButton.id = 'modal-primary-cta';
       ctaButton.textContent = this.settings.ctaButton || 'Complete My Order';
       ctaButton.style.cssText = `
-        background: #000;
-        color: white;
+        background: ${this.settings.brandAccentColor || '#000'};
+        color: ${this.settings.brandSecondaryColor || 'white'};
         border: none;
         padding: 15px 40px;
         font-size: 16px;
@@ -418,6 +420,7 @@
         border-radius: 4px;
         cursor: pointer;
         width: 100%;
+        font-family: ${this.settings.brandFont || 'inherit'};
       `;
       ctaButton.onclick = () => this.handleCTAClick();
       
@@ -427,8 +430,8 @@
       secondaryButton.textContent = 'Keep Shopping';
       secondaryButton.style.cssText = `
         background: transparent;
-        color: #666;
-        border: 2px solid #ddd;
+        color: ${this.settings.brandPrimaryColor || '#666'};
+        border: 2px solid ${this.settings.brandPrimaryColor || '#ddd'};
         padding: 15px 40px;
         font-size: 16px;
         font-weight: bold;
@@ -437,6 +440,7 @@
         width: 100%;
         margin-top: 12px;
         display: none;
+        font-family: ${this.settings.brandFont || 'inherit'};
       `;
       secondaryButton.onclick = () => this.handleSecondaryClick();
       
