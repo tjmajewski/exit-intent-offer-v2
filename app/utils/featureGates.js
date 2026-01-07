@@ -27,7 +27,7 @@ export const PLAN_FEATURES = {
     redirectChoice: true,
     revenueTracking: true,
     perModalAnalytics: false,
-    impressionLimit: null, // unlimited
+    impressionLimit: 10000,
     templates: ["discount", "free-shipping", "urgency", "welcome", "reminder"]
   },
   enterprise: {
@@ -57,19 +57,19 @@ export function checkUsageLimit(plan, metricName) {
     return { allowed: false, usage: 0, limit: 0, percentage: 100 };
   }
   
-  const limit = PLAN_FEATURES[plan.tier][`${metricName}Limit`];
+  const limit = PLAN_FEATURES[plan.tier].impressionLimit;
   
   // No limit means unlimited
   if (!limit) {
     return { 
       allowed: true, 
-      usage: plan.usage?.[metricName] || 0, 
+      usage: plan.usage?.impressionsThisMonth || 0, 
       limit: null, 
       percentage: 0 
     };
   }
   
-  const usage = plan.usage?.[metricName] || 0;
+  const usage = plan.usage?.impressionsThisMonth || 0;
   
   return {
     allowed: usage < limit,

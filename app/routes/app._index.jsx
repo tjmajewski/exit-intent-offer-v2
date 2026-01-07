@@ -177,6 +177,11 @@ export async function loader({ request }) {
       ? (revenueLifetime / impressionsLifetime).toFixed(2) 
       : 0;
 
+    // Get recent events for activity feed (Enterprise)
+    const recentEvents = last30DaysEvents
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+      .slice(0, 10); // Last 10 events
+
     const analytics = {
       // 30-day metrics (everyone)
       last30Days: {
@@ -197,7 +202,9 @@ export async function loader({ request }) {
         impressions: impressionsLifetime,
         clicks: clicksLifetime,
         conversions: conversionsLifetime
-      }
+      },
+      // Recent activity (Enterprise)
+      recentEvents: recentEvents
     };
 
     // PHASE 5: Check for active site-wide promotions (Pro tier upsell)
@@ -302,6 +309,18 @@ export async function action({ request }) {
 
       if (currentPlan) {
         currentPlan.tier = newTier;
+        
+        // Ensure usage object exists when switching plans
+        if (!currentPlan.usage) {
+          const now = new Date();
+          const resetDate = new Date(now);
+          resetDate.setMonth(resetDate.getMonth() + 1);
+          
+          currentPlan.usage = {
+            impressionsThisMonth: 0,
+            resetDate: resetDate.toISOString()
+          };
+        }
 
         // Also update settings to include plan tier
         const settingsResponse = await admin.graphql(`
@@ -785,7 +804,7 @@ export default function Dashboard() {
       {/* Usage Stats - Only show for plans with limits */}
       {plan && plan.usage && plan.usage.impressionsThisMonth !== undefined && (
         (() => {
-          const limit = plan.tier === "starter" ? 1000 : null;
+          const limit = plan.tier === "starter" ? 1000 : plan.tier === "pro" ? 10000 : null;
           const usage = plan.usage.impressionsThisMonth || 0;
           const percentage = limit ? Math.min((usage / limit) * 100, 100) : 0;
           const isNearLimit = percentage >= 80;
@@ -810,11 +829,8 @@ export default function Dashboard() {
               marginBottom: 24
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ fontWeight: 500, color: isOverLimit ? "#991b1b" : isNearLimit ? "#92400e" : "#0c4a6e" }}>
-                  Monthly Impressions
-                </div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: isOverLimit ? "#991b1b" : isNearLimit ? "#92400e" : "#0c4a6e" }}>
-                  {usage.toLocaleString()} / {limit.toLocaleString()}
+                <div style={{ fontWeight: 600, fontSize: 16, color: isOverLimit ? "#991b1b" : isNearLimit ? "#92400e" : "#1f2937" }}>
+                  {plan.tier.charAt(0).toUpperCase() + plan.tier.slice(1)} Plan • {usage.toLocaleString()} of {limit.toLocaleString()} sessions used this month
                 </div>
               </div>
               <div style={{
@@ -834,12 +850,13 @@ export default function Dashboard() {
               
               {/* Reset date - always show */}
               <div style={{ marginTop: 8, fontSize: 13, color: "#6b7280" }}>
-                📅 Resets on {resetDateFormatted}
+                Resets {resetDateFormatted} 
+                <InfoTooltip content="Sessions = each time the modal is shown to a customer. Your counter resets monthly." />
               </div>
 
               {isOverLimit && (
                 <div style={{ marginTop: 8, fontSize: 13, color: "#991b1b" }}>
-                  ⚠️ Monthly limit reached. Upgrade to Pro for unlimited impressions.{" "}
+                  ⚠️ Monthly limit reached. {plan.tier === "starter" ? "Upgrade to Pro for 10,000 sessions/month" : "Upgrade to Enterprise for unlimited sessions"}.{" "}
                   <Link to="/app/upgrade" style={{ color: "#7c3aed", textDecoration: "underline" }}>
                     Upgrade now →
                   </Link>
@@ -864,19 +881,63 @@ export default function Dashboard() {
         marginBottom: 32,
         boxShadow: "0 10px 30px rgba(102, 126, 234, 0.3)"
       }}>
-        <div style={{ fontSize: 16, opacity: 0.9, marginBottom: 8 }}>
-          Revenue Recovered (Last 30 Days)
-          <InfoTooltip content="Total value of orders from exit intent conversions in the last 30 days." />
+        <div style={{ fontSize: 16, opacity: 0.9, marginBottom: 16 }}>
+          Your Performance (Last 30 Days)
         </div>
-        <div style={{ fontSize: 56, fontWeight: "bold", marginBottom: 8 }}>
-          ${analytics.last30Days.totalRevenue.toLocaleString()}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 24 }}>
+          <div>
+            <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>Revenue Saved</div>
+            <div style={{ fontSize: 32, fontWeight: "bold" }}>
+              ${analytics.last30Days.totalRevenue.toLocaleString()}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>Orders Created</div>
+            <div style={{ fontSize: 32, fontWeight: "bold" }}>
+              {analytics.last30Days.conversions.toLocaleString()}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>Times Shown</div>
+            <div style={{ fontSize: 32, fontWeight: "bold" }}>
+              {analytics.last30Days.impressions.toLocaleString()}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>Success Rate</div>
+            <div style={{ fontSize: 32, fontWeight: "bold" }}>
+              {analytics.last30Days.conversionRate}%
+            </div>
+          </div>
         </div>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          {analytics.last30Days.impressions.toLocaleString()} impressions • {analytics.last30Days.clicks.toLocaleString()} clicks • {analytics.last30Days.conversions.toLocaleString()} conversions
-        </div>
+        
+        {/* Empty State Guidance */}
+        {analytics.last30Days.conversions === 0 && analytics.last30Days.impressions > 0 && (
+          <div style={{
+            marginTop: 24,
+            padding: 16,
+            background: "rgba(255, 255, 255, 0.15)",
+            borderRadius: 8,
+            fontSize: 14
+          }}>
+            Just getting started? These numbers will grow as customers see your modal and make purchases.
+          </div>
+        )}
+        
+        {analytics.last30Days.impressions === 0 && (
+          <div style={{
+            marginTop: 24,
+            padding: 16,
+            background: "rgba(255, 255, 255, 0.15)",
+            borderRadius: 8,
+            fontSize: 14
+          }}>
+            Your modal is ready! Enable it using the toggle above to start recovering revenue.
+          </div>
+        )}
       </div>
 
-      {/* Key Metrics Grid - Last 30 Days */}
+      {/* Second Row Metrics */}
       <div style={{ 
         display: "grid", 
         gridTemplateColumns: "repeat(3, 1fr)", 
@@ -892,15 +953,12 @@ export default function Dashboard() {
           <div style={{ 
             fontSize: 14, 
             color: "#6b7280", 
-            marginBottom: 8,
-            display: "flex",
-            alignItems: "center"
+            marginBottom: 8
           }}>
-            Conversion Rate (30d)
-            <InfoTooltip content="Conversions ÷ Impressions × 100 for the last 30 days. Shows what % of people who saw your modal completed a purchase." />
+            People Clicked
           </div>
           <div style={{ fontSize: 32, fontWeight: "bold", color: "#111827" }}>
-            {analytics.last30Days.conversionRate}%
+            {analytics.last30Days.clicks.toLocaleString()}
           </div>
         </div>
 
@@ -913,12 +971,9 @@ export default function Dashboard() {
           <div style={{ 
             fontSize: 14, 
             color: "#6b7280", 
-            marginBottom: 8,
-            display: "flex",
-            alignItems: "center"
+            marginBottom: 8
           }}>
-            Click Rate (30d)
-            <InfoTooltip content="Clicks ÷ Impressions × 100 for the last 30 days. Shows what % of people who saw your modal clicked the CTA button." />
+            Click Rate
           </div>
           <div style={{ fontSize: 32, fontWeight: "bold", color: "#111827" }}>
             {analytics.last30Days.clickRate}%
@@ -934,142 +989,347 @@ export default function Dashboard() {
           <div style={{ 
             fontSize: 14, 
             color: "#6b7280", 
-            marginBottom: 8,
-            display: "flex",
-            alignItems: "center"
+            marginBottom: 8
           }}>
-            RPV (30d)
-            <InfoTooltip content="Revenue Per View for the last 30 days. Shows average revenue generated each time someone sees your modal." />
+            Avg Order
           </div>
           <div style={{ fontSize: 32, fontWeight: "bold", color: "#111827" }}>
-            ${analytics.last30Days.revenuePerView}
+            ${analytics.last30Days.conversions > 0 
+              ? (analytics.last30Days.totalRevenue / analytics.last30Days.conversions).toFixed(2)
+              : '0.00'}
           </div>
         </div>
       </div>
 
-      {/* Lifetime Analytics - Pro+ Only */}
-      {plan && (
+      {/* Removed: Old metrics grid replaced with new hero card layout */}
+
+      {/* Removed: Lifetime Analytics now on Performance page */}
+
+{/* AI Performance Section - Pro/Enterprise with AI Mode */}
+      {plan && (plan.tier === 'pro' || plan.tier === 'enterprise') && settings && settings.mode === 'ai' && (
         <div style={{
           background: "white",
-          padding: 32,
-          borderRadius: 12,
           border: "1px solid #e5e7eb",
-          marginBottom: 32,
-          opacity: plan.tier === "starter" ? 0.6 : 1,
-          position: "relative"
+          borderRadius: 12,
+          padding: 32,
+          marginBottom: 32
         }}>
-          <h2 style={{ fontSize: 24, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
-            Lifetime Analytics
-            {plan.tier === "starter" && (
-              <span style={{ 
-                padding: "2px 8px", 
-                background: "#8B5CF6", 
-                color: "white", 
-                borderRadius: 4, 
-                fontSize: 12,
-                fontWeight: 600 
-              }}>
-                PRO
-              </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+            <div style={{ fontSize: 24, fontWeight: 600, color: "#1f2937" }}>
+              AI Performance
+            </div>
+            <span style={{
+              padding: "4px 12px",
+              background: "#10b981",
+              color: "white",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600
+            }}>
+              AI Mode Active
+            </span>
+          </div>
+          
+          <div style={{ fontSize: 16, color: "#6b7280", marginBottom: 16, lineHeight: 1.6 }}>
+            {modalLibrary && modalLibrary.modals && modalLibrary.modals.length > 0 ? (
+              <>
+                Your AI is testing {modalLibrary.modals.length} different offer{modalLibrary.modals.length > 1 ? 's' : ''} to find what works best
+                {modalLibrary.currentModalId && (() => {
+                  const currentModal = modalLibrary.modals.find(m => m.modalId === modalLibrary.currentModalId);
+                  return currentModal && currentModal.headline ? (
+                    <div style={{ marginTop: 12, padding: 16, background: "#f0fdf4", borderRadius: 8, border: "1px solid #86efac" }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "#166534", marginBottom: 4 }}>
+                        Current best performer:
+                      </div>
+                      <div style={{ fontSize: 14, color: "#166534" }}>
+                        "{currentModal.headline}"
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
+              </>
+            ) : (
+              'Your AI is learning from customer behavior to optimize your offers'
             )}
-          </h2>
-          <p style={{ fontSize: 14, color: "#6b7280", marginBottom: 24 }}>
-            Track all-time performance across all your exit intent campaigns
-          </p>
+          </div>
+          
+          <div style={{ display: "flex", gap: 16 }}>
+            <Link
+              to="/app/analytics"
+              style={{
+                display: "inline-block",
+                padding: "10px 20px",
+                background: "#8B5CF6",
+                color: "white",
+                textDecoration: "none",
+                borderRadius: 6,
+                fontWeight: 500,
+                fontSize: 14
+              }}
+            >
+              See Detailed Performance →
+            </Link>
+            <Link
+              to="/app/settings"
+              style={{
+                display: "inline-block",
+                padding: "10px 20px",
+                border: "1px solid #d1d5db",
+                color: "#374151",
+                textDecoration: "none",
+                borderRadius: 6,
+                fontWeight: 500,
+                fontSize: 14
+              }}
+            >
+              Adjust AI Settings
+            </Link>
+          </div>
+        </div>
+      )}
 
-          {plan.tier === "starter" ? (
-            <div>
-              <div style={{
-                padding: 24,
-                background: "#fef3c7",
-                borderRadius: 8,
-                marginBottom: 16
-              }}>
-                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: "#92400e" }}>
-                  🔒 Unlock Lifetime Analytics
+      {/* Enterprise: Advanced AI Testing Status */}
+      {plan && plan.tier === 'enterprise' && settings && settings.mode === 'ai' && (
+        <div style={{
+          background: "white",
+          border: "2px solid #fbbf24",
+          borderRadius: 12,
+          padding: 32,
+          marginBottom: 32
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+            <div style={{ fontSize: 24, fontWeight: 600, color: "#1f2937" }}>
+              Advanced AI Testing
+            </div>
+            <span style={{
+              padding: "4px 12px",
+              background: "#fbbf24",
+              color: "#78350f",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600
+            }}>
+              Enterprise Active
+            </span>
+          </div>
+          
+          <div style={{ 
+            padding: 20, 
+            background: "#fef3c7", 
+            borderRadius: 8,
+            marginBottom: 16
+          }}>
+            <div style={{ fontSize: 14, color: "#92400e", marginBottom: 8 }}>
+              <strong>AI is testing {modalLibrary?.modals?.length || 0} different offers</strong>
+            </div>
+            <div style={{ fontSize: 13, color: "#92400e" }}>
+              {analytics.last30Days.impressions} impressions collected this period
+            </div>
+          </div>
+          
+          {modalLibrary && modalLibrary.currentModalId && modalLibrary.modals && modalLibrary.modals.length > 0 && (() => {
+            const currentModal = modalLibrary.modals.find(m => m.modalId === modalLibrary.currentModalId);
+            if (!currentModal) return null;
+            
+            return (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 16, fontWeight: 600, color: "#1f2937", marginBottom: 12 }}>
+                  Current Champion
                 </div>
-                <div style={{ fontSize: 14, color: "#92400e", marginBottom: 16 }}>
-                  See your all-time performance, track trends over time, and compare against historical benchmarks.
+                <div style={{ 
+                  padding: 16, 
+                  background: "#f0fdf4", 
+                  borderRadius: 8,
+                  border: "1px solid #86efac"
+                }}>
+                  <div style={{ fontSize: 14, color: "#166534", marginBottom: 4 }}>
+                    <strong>"{currentModal.headline}"</strong>
+                  </div>
+                  <div style={{ fontSize: 13, color: "#166534" }}>
+                    {currentModal.body}
+                  </div>
                 </div>
-                <Link
-                  to="/app/upgrade"
+              </div>
+            );
+          })()}
+          
+          <Link
+            to="/app/variants"
+            style={{
+              display: "inline-block",
+              padding: "12px 24px",
+              background: "#fbbf24",
+              color: "#78350f",
+              textDecoration: "none",
+              borderRadius: 8,
+              fontWeight: 600,
+              fontSize: 14
+            }}
+          >
+            View All Variants →
+          </Link>
+        </div>
+      )}
+
+      {/* Tier-Specific Upsell */}
+{plan && plan.tier === "starter" && (
+  <div style={{
+    background: "white",
+    border: "2px solid #8B5CF6",
+    borderRadius: 12,
+    padding: 32,
+    marginBottom: 32
+  }}>
+    <div style={{ fontSize: 24, fontWeight: 600, marginBottom: 8, color: "#1f2937" }}>
+      🚀 Grow Sales with Pro
+    </div>
+    <div style={{ fontSize: 16, color: "#6b7280", marginBottom: 24, lineHeight: 1.6 }}>
+      Upgrade to get:
+    </div>
+    <ul style={{ marginBottom: 24, color: "#374151", lineHeight: 1.8 }}>
+      <li>AI automatically tests different discounts and messages</li>
+      <li>10x more sessions (10,000/month vs 1,000)</li>
+      <li>Show modal when customers hesitate on cart page</li>
+      <li>Target specific cart amounts</li>
+      <li>Track performance over time (not just 30 days)</li>
+    </ul>
+    <div style={{ fontSize: 14, color: "#6b7280", marginBottom: 16 }}>
+      Most stores see 2-3x more conversions with AI optimization
+    </div>
+    <Link
+      to="/app/upgrade"
+      style={{
+        display: "inline-block",
+        padding: "12px 24px",
+        background: "#8B5CF6",
+        color: "white",
+        textDecoration: "none",
+        borderRadius: 8,
+        fontWeight: 600,
+        fontSize: 16
+      }}
+    >
+      See Plans & Pricing →
+    </Link>
+  </div>
+)}
+
+{plan && plan.tier === "pro" && (
+  <div style={{
+    background: "white",
+    border: "2px solid #fbbf24",
+    borderRadius: 12,
+    padding: 32,
+    marginBottom: 32
+  }}>
+    <div style={{ fontSize: 24, fontWeight: 600, marginBottom: 8, color: "#1f2937" }}>
+      ⚡ Maximize Results with Enterprise
+    </div>
+    <div style={{ fontSize: 16, color: "#6b7280", marginBottom: 24, lineHeight: 1.6 }}>
+      Get even better performance:
+    </div>
+    <ul style={{ marginBottom: 24, color: "#374151", lineHeight: 1.8 }}>
+      <li>AI tests 10 variants at once (vs 2 on Pro)</li>
+      <li>Unlimited sessions (never get cut off)</li>
+      <li>Modal matches your brand colors automatically</li>
+      <li>Adapts to Black Friday, holidays, busy seasons</li>
+      <li>Detailed variant performance tracking</li>
+      <li>Priority support</li>
+    </ul>
+    <Link
+      to="/app/upgrade"
+      style={{
+        display: "inline-block",
+        padding: "12px 24px",
+        background: "#fbbf24",
+        color: "#78350f",
+        textDecoration: "none",
+        borderRadius: 8,
+        fontWeight: 600,
+        fontSize: 16
+      }}
+    >
+      Compare Plans →
+    </Link>
+  </div>
+)}
+
+{/* Recent Activity Feed - Enterprise Only */}
+      {plan && plan.tier === 'enterprise' && analytics.recentEvents && analytics.recentEvents.length > 0 && (
+        <div style={{
+          background: "white",
+          border: "1px solid #e5e7eb",
+          borderRadius: 12,
+          padding: 32,
+          marginBottom: 32
+        }}>
+          <div style={{ fontSize: 20, fontWeight: 600, color: "#1f2937", marginBottom: 16 }}>
+            Recent Activity
+          </div>
+          
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {analytics.recentEvents.slice(0, 5).map((event, index) => {
+              const timeAgo = (() => {
+                const now = new Date();
+                const eventTime = new Date(event.timestamp);
+                const diffMinutes = Math.floor((now - eventTime) / (1000 * 60));
+                
+                if (diffMinutes < 1) return 'Just now';
+                if (diffMinutes < 60) return `${diffMinutes} min ago`;
+                const diffHours = Math.floor(diffMinutes / 60);
+                if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+                const diffDays = Math.floor(diffHours / 24);
+                return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+              })();
+              
+              const eventIcon = event.type === 'conversion' ? '●' : event.type === 'click' ? '●' : '●';
+              const eventColor = event.type === 'conversion' ? '#10b981' : event.type === 'click' ? '#8B5CF6' : '#6b7280';
+              const eventText = event.type === 'conversion' 
+                ? `Conversion${event.revenue ? `: $${event.revenue.toFixed(2)} order` : ''}`
+                : event.type === 'click' 
+                  ? 'Click on primary CTA'
+                  : 'Impression shown';
+              
+              return (
+                <div 
+                  key={index}
                   style={{
-                    display: "inline-block",
-                    padding: "10px 20px",
-                    background: "#8B5CF6",
-                    color: "white",
-                    textDecoration: "none",
+                    padding: 12,
+                    background: "#f9fafb",
                     borderRadius: 6,
-                    fontWeight: 500
+                    fontSize: 14,
+                    color: "#374151",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center"
                   }}
                 >
-                  Upgrade to Pro →
-                </Link>
-              </div>
-              
-              {/* Blurred preview */}
-              <div style={{ filter: "blur(4px)", pointerEvents: "none" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
-                  <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Total Revenue</div>
-                    <div style={{ fontSize: 24, fontWeight: "bold" }}>$12,847</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ color: eventColor, fontSize: 20 }}>●</span>
+                    <span>{eventText}</span>
                   </div>
-                  <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Impressions</div>
-                    <div style={{ fontSize: 24, fontWeight: "bold" }}>45,231</div>
-                  </div>
-                  <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Conversions</div>
-                    <div style={{ fontSize: 24, fontWeight: "bold" }}>1,847</div>
-                  </div>
-                  <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Avg CVR</div>
-                    <div style={{ fontSize: 24, fontWeight: "bold" }}>4.1%</div>
+                  <div style={{ fontSize: 13, color: "#6b7280" }}>
+                    {timeAgo}
                   </div>
                 </div>
-              </div>
-            </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
-              <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
-                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Total Revenue</div>
-                <div style={{ fontSize: 24, fontWeight: "bold" }}>${analytics.lifetime.totalRevenue.toLocaleString()}</div>
-              </div>
-              <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
-                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Impressions</div>
-                <div style={{ fontSize: 24, fontWeight: "bold" }}>{analytics.lifetime.impressions.toLocaleString()}</div>
-              </div>
-              <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
-                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Conversions</div>
-                <div style={{ fontSize: 24, fontWeight: "bold" }}>{analytics.lifetime.conversions.toLocaleString()}</div>
-              </div>
-              <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}>
-                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Avg CVR</div>
-                <div style={{ fontSize: 24, fontWeight: "bold" }}>{analytics.lifetime.conversionRate}%</div>
-              </div>
+              );
+            })}
+          </div>
+          
+          {analytics.recentEvents.length === 0 && (
+            <div style={{ 
+              padding: 24, 
+              textAlign: "center", 
+              color: "#6b7280",
+              fontSize: 14 
+            }}>
+              No recent activity yet. Activity will appear here as customers interact with your modal.
             </div>
           )}
         </div>
       )}
 
-{/* Configure Button */}
-      <div style={{ marginTop: 32 }}>
-        <Link
-          to="/app/settings"
-          style={{
-            display: "inline-block",
-            padding: "12px 24px",
-            background: "#8B5CF6",
-            color: "white",
-            textDecoration: "none",
-            borderRadius: 6,
-            fontWeight: 500,
-            fontSize: 16
-          }}
-        >
-          Configure Modal
-        </Link>
-      </div>
+      {/* Configure Button removed - now in modal preview header */}
 
       {/* Current Modal Preview */}
       {settings && (
@@ -1081,21 +1341,37 @@ export default function Dashboard() {
           borderRadius: 8
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <h3 style={{ marginTop: 0, marginBottom: 0 }}>
-              Current Modal Preview
-            </h3>
-            {settings.mode === 'ai' && modalLibrary && modalLibrary.currentModalId && (
-              <span style={{
-                padding: "4px 12px",
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <h3 style={{ marginTop: 0, marginBottom: 0, fontSize: 20, fontWeight: 600 }}>
+                Your Current Modal
+              </h3>
+              {settings.mode === 'ai' && modalLibrary && modalLibrary.currentModalId && (
+                <span style={{
+                  padding: "4px 12px",
+                  background: "#8B5CF6",
+                  color: "white",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 600
+                }}>
+                  AI-Generated
+                </span>
+              )}
+            </div>
+            <Link
+              to="/app/settings"
+              style={{
+                padding: "8px 16px",
                 background: "#8B5CF6",
                 color: "white",
+                textDecoration: "none",
                 borderRadius: 6,
-                fontSize: 12,
-                fontWeight: 600
-              }}>
-                AI-Generated Copy
-              </span>
-            )}
+                fontWeight: 500,
+                fontSize: 14
+              }}
+            >
+              Edit Settings
+            </Link>
           </div>
           <div style={{
             background: "rgba(0, 0, 0, 0.05)",
@@ -1197,6 +1473,28 @@ export default function Dashboard() {
               })()}
             </div>
           </div>
+          
+          {/* Trigger Info */}
+          <div style={{ marginTop: 16, fontSize: 14, color: "#6b7280" }}>
+            Shows when: Customer tries to leave page
+            {plan && (plan.tier === 'pro' || plan.tier === 'enterprise') && (
+              <span> • Cart page after 30s • Cart value triggers</span>
+            )}
+          </div>
+          
+          <Link
+            to="/app/settings"
+            style={{
+              display: "inline-block",
+              marginTop: 16,
+              color: "#8B5CF6",
+              textDecoration: "none",
+              fontWeight: 500,
+              fontSize: 14
+            }}
+          >
+            Edit Modal Settings →
+          </Link>
         </div>
       )}
 

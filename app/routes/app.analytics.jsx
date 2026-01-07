@@ -145,15 +145,17 @@ export async function loader({ request }) {
   }
 }
 
-export default function Analytics() {
+export default function Performance() {
   const { plan, modalLibrary } = useLoaderData();
-  const canAccessAnalytics = plan ? hasFeature(plan, 'perModalAnalytics') : false;
+  const canAccessPerformance = plan && (plan.tier === 'pro' || plan.tier === 'enterprise');
+  const canAccessAIVariants = plan && plan.tier === 'enterprise';
 
-  if (!canAccessAnalytics) {
+  // Starter users see locked page
+  if (!canAccessPerformance) {
     return (
       <AppLayout plan={plan}>
         <div style={{ padding: 40, maxWidth: 1200, margin: "0 auto" }}>
-        <h1 style={{ fontSize: 32, marginBottom: 16 }}>Per-Modal Analytics</h1>
+        <h1 style={{ fontSize: 32, marginBottom: 16 }}>Performance</h1>
         
         <div style={{
           background: "white",
@@ -162,8 +164,7 @@ export default function Analytics() {
           border: "1px solid #e5e7eb",
           textAlign: "center"
         }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>📊</div>
-          <h2 style={{ fontSize: 24, marginBottom: 16 }}>Enterprise Feature</h2>
+          <h2 style={{ fontSize: 24, marginBottom: 16 }}>Pro Feature</h2>
           <p style={{ fontSize: 16, color: "#6b7280", marginBottom: 24, maxWidth: 500, margin: "0 auto 24px" }}>
             Compare performance across all your modal campaigns, track trends over time, 
             and make data-driven decisions about your exit intent strategy.
@@ -213,7 +214,7 @@ export default function Analytics() {
               fontSize: 16
             }}
           >
-            Upgrade to Enterprise
+            Upgrade to Pro
           </Link>
         </div>
 
@@ -234,7 +235,7 @@ export default function Analytics() {
     );
   }
 
-  // Enterprise view
+   
   const modals = modalLibrary.modals || [];
   const activeModal = modals.find(m => m.modalId === modalLibrary.currentModalId);
 
@@ -242,28 +243,11 @@ export default function Analytics() {
     <AppLayout plan={plan}>
       <div style={{ padding: 40, maxWidth: 1400, margin: "0 auto" }}>
       <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: 32, marginBottom: 8 }}>Per-Modal Analytics</h1>
+        <h1 style={{ fontSize: 32, marginBottom: 8 }}>Performance</h1>
         <p style={{ color: "#666" }}>
           Compare performance across all your modal campaigns
         </p>
       </div>
-
-      {/* Current Modal Highlight */}
-      {activeModal && (
-        <div style={{
-          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-          padding: 24,
-          borderRadius: 12,
-          color: "white",
-          marginBottom: 32
-        }}>
-          <div style={{ fontSize: 14, opacity: 0.9, marginBottom: 4 }}>Currently Active</div>
-          <div style={{ fontSize: 24, fontWeight: "bold" }}>{activeModal.modalName}</div>
-          <div style={{ fontSize: 14, opacity: 0.8, marginTop: 8 }}>
-            Active since {new Date(activeModal.lastActiveAt).toLocaleDateString()}
-          </div>
-        </div>
-      )}
 
       {/* Modal Performance Table */}
       <div style={{
@@ -275,32 +259,24 @@ export default function Analytics() {
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
-              <th style={{ padding: 16, textAlign: "left", fontWeight: 600 }}>Modal Name</th>
-              <th style={{ padding: 16, textAlign: "left", fontWeight: 600 }}>Live Dates</th>
-              <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Impressions</th>
+              <th style={{ padding: 16, textAlign: "left", fontWeight: 600 }}>Modal</th>
+              <th style={{ padding: 16, textAlign: "left", fontWeight: 600 }}>Status</th>
+              <th style={{ padding: 16, textAlign: "left", fontWeight: 600 }}>Dates</th>
+              <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Shown</th>
               <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Clicks</th>
-              <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>CTR</th>
-              <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Conversions</th>
-              <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>CVR</th>
+              <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Orders</th>
               <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Revenue</th>
             </tr>
           </thead>
           <tbody>
             {modals.length === 0 ? (
               <tr>
-                <td colSpan="8" style={{ padding: 32, textAlign: "center", color: "#6b7280" }}>
+                <td colSpan="7" style={{ padding: 32, textAlign: "center", color: "#6b7280" }}>
                   No modals created yet. Save your first modal in Settings to start tracking performance.
                 </td>
               </tr>
             ) : (
               modals.map((modal) => {
-                const ctr = modal.stats.impressions > 0 
-                  ? ((modal.stats.clicks / modal.stats.impressions) * 100).toFixed(1)
-                  : 0;
-                const cvr = modal.stats.impressions > 0
-                  ? ((modal.stats.conversions / modal.stats.impressions) * 100).toFixed(1)
-                  : 0;
-
                 return (
                   <tr 
                     key={modal.modalId}
@@ -311,24 +287,36 @@ export default function Analytics() {
                   >
                     <td style={{ padding: 16, fontWeight: 500 }}>
                       {modal.modalName}
-                      {modal.active && (
+                    </td>
+                    <td style={{ padding: 16 }}>
+                      {modal.active ? (
                         <span style={{
-                          marginLeft: 8,
-                          padding: "2px 6px",
+                          padding: "4px 8px",
                           background: "#10b981",
                           color: "white",
                           borderRadius: 4,
-                          fontSize: 11,
+                          fontSize: 12,
                           fontWeight: 600
                         }}>
-                          ACTIVE
+                          Enabled
+                        </span>
+                      ) : (
+                        <span style={{
+                          padding: "4px 8px",
+                          background: "#6b7280",
+                          color: "white",
+                          borderRadius: 4,
+                          fontSize: 12,
+                          fontWeight: 600
+                        }}>
+                          Disabled
                         </span>
                       )}
                     </td>
                     <td style={{ padding: 16, fontSize: 14, color: "#6b7280" }}>
                       {modal.active ? (
                         <div>
-                          {new Date(modal.createdAt).toLocaleDateString()} - Present
+                          {new Date(modal.createdAt).toLocaleDateString()} - Now
                         </div>
                       ) : (
                         <div>
@@ -343,13 +331,7 @@ export default function Analytics() {
                       {modal.stats.clicks.toLocaleString()}
                     </td>
                     <td style={{ padding: 16, textAlign: "right" }}>
-                      {ctr}%
-                    </td>
-                    <td style={{ padding: 16, textAlign: "right" }}>
                       {modal.stats.conversions.toLocaleString()}
-                    </td>
-                    <td style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>
-                      {cvr}%
                     </td>
                     <td style={{ padding: 16, textAlign: "right", fontWeight: 600, color: "#10b981" }}>
                       ${modal.stats.revenue.toLocaleString()}
@@ -362,53 +344,7 @@ export default function Analytics() {
         </table>
       </div>
 
-      {/* Test Conversion Button */}
-      <div style={{ marginTop: 32, padding: 24, background: "#fef3c7", borderRadius: 8, border: "1px solid #fde68a" }}>
-        <h3 style={{ fontSize: 16, marginBottom: 8, color: "#92400e" }}>🧪 Test Mode</h3>
-        <p style={{ fontSize: 14, color: "#92400e", marginBottom: 16 }}>
-          Simulate a conversion for testing. In production, conversions are tracked via order webhooks.
-        </p>
-        <Form method="post">
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
-            <div>
-              <label style={{ display: "block", fontSize: 14, marginBottom: 4, color: "#92400e" }}>
-                Order Value ($):
-              </label>
-              <input
-                type="number"
-                name="testRevenue"
-                defaultValue="100"
-                min="1"
-                step="0.01"
-                style={{
-                  padding: "8px 12px",
-                  border: "1px solid #fde68a",
-                  borderRadius: 6,
-                  width: 120
-                }}
-              />
-            </div>
-            <button
-              type="submit"
-              name="action"
-              value="testConversion"
-              style={{
-                padding: "8px 16px",
-                background: "#8B5CF6",
-                color: "white",
-                border: "none",
-                borderRadius: 6,
-                cursor: "pointer",
-                fontWeight: 500
-              }}
-            >
-              Add Test Conversion
-            </button>
-          </div>
-        </Form>
-      </div>
-
-      <div style={{ marginTop: 24, textAlign: "center" }}>
+      <div style={{ marginTop: 32, textAlign: "center" }}>
         <Link
           to="/app"
           style={{

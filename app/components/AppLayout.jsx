@@ -97,9 +97,9 @@ export default function AppLayout({ children, plan }) {
     { path: "/app/settings", label: "Settings", icon: "settings" },
     { 
       path: "/app/analytics", 
-      label: "Analytics", 
+      label: "Performance", 
       icon: "analytics",
-      badge: plan?.tier !== "enterprise" ? "ENTERPRISE" : null
+      badge: plan?.tier === "starter" ? "PRO" : null
     },
     { 
       path: "/app/promotions", 
@@ -187,7 +187,7 @@ export default function AppLayout({ children, plan }) {
         {plan && (
           <div style={{
             position: "absolute",
-            bottom: 24,
+            bottom: process.env.NODE_ENV === 'development' ? 180 : 24,
             left: 24,
             right: 24,
             padding: 12,
