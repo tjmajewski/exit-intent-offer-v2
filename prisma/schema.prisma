@@ -279,3 +279,36 @@ model Promotion {
   @@index([shopId, code])
   @@index([detectedAt])
 }
+
+model Conversion {
+  id                String   @id @default(uuid())
+  shopId            String
+  
+  // Order details
+  orderId           String   // Shopify order ID
+  orderNumber       String   // Human-readable (#1234)
+  orderValue        Float
+  customerEmail     String?
+  orderedAt         DateTime
+  
+  // Modal context
+  modalId           String
+  modalName         String?
+  variantId         String?  // For AI mode
+  
+  // Discount tracking
+  modalHadDiscount  Boolean  @default(false)
+  discountCode      String?
+  discountRedeemed  Boolean  @default(false)
+  discountAmount    Float?
+  
+  // Modal snapshot (Enterprise only)
+  modalSnapshot     String?  // JSON of modal config when shown
+  
+  // Metadata
+  createdAt         DateTime @default(now())
+  
+  @@index([shopId])
+  @@index([orderedAt])
+  @@unique([shopId, orderId])
+}

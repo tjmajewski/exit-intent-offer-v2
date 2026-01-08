@@ -176,6 +176,10 @@ export const action = async ({ request }) => {
     await updateAnalytics(session, orderValue);
     console.log("✓ Analytics updated with conversion and revenue");
 
+    // CONVERSIONS TABLE: Store order-level data for reporting
+    await storeConversion(shop, payload, exitDiscountUsed);
+    console.log("✓ Conversion stored in conversions table");
+
     return new Response(null, { status: 200 });
   } catch (error) {
     console.error("Webhook error:", error);
@@ -349,4 +353,76 @@ async function classifyPromotion(promoId) {
   });
 
   console.log(`✅ Promotion classified: ${promo.code} → ${classification} (${aiStrategy})`);
+}
+
+async function storeConversion(shop, orderPayload, discountUsed) {
+  try {
+    // Find shop record
+    const shopRecord = await db.shop.findUnique({
+      where: { shopifyDomain: shop }
+    });
+
+    if (!shopRecord) {
+      console.log("Shop not found in database, skipping conversion storage");
+      return;
+    }
+
+    // Get current modal settings to determine if discount was offered
+    const { admin } = await authenticate.admin({ 
+      shop,
+      accessToken: orderPayload.admin_graphql_api_id // Use order's access context
+    });
+    
+    const settingsQuery = `
+      query {
+        shop {
+          metafield(namespace: "exit_intent", key: "settings") {
+            value
+          }
+          modalLibrary: metafield(namespace: "exit_intent", key: "modal_library") {
+            value
+          }
+        }
+      }
+    `;
+    
+    const settingsResponse = await admin.graphql(settingsQuery);
+    const settingsResult = await settingsResponse.json();
+    const settings = JSON.parse(settingsResult.data.shop?.metafield?.value || '{}');
+    const modalLibrary = JSON.parse(settingsResult.data.shop?.modalLibrary?.value || '{"currentModalId":null,"modals":[]}');
+    
+    // Get current modal info
+    const currentModal = modalLibrary.modals?.find(m => m.modalId === modalLibrary.currentModalId);
+    
+    // Determine if modal had discount enabled
+    const modalHadDiscount = settings.discountEnabled === true || settings.discountEnabled === 'true';
+    
+    // Calculate discount amount (if redeemed)
+    const discountAmount = discountUsed ? parseFloat(orderPayload.total_discounts) : 0;
+    
+    // Store conversion
+    await db.conversion.create({
+      data: {
+        shopId: shopRecord.id,
+        orderId: orderPayload.id.toString(),
+        orderNumber: orderPayload.order_number.toString(),
+        orderValue: parseFloat(orderPayload.total_price),
+        customerEmail: orderPayload.customer?.email || orderPayload.email,
+        orderedAt: new Date(orderPayload.created_at),
+        modalId: modalLibrary.currentModalId || 'unknown',
+        modalName: currentModal?.modalName || 'Unknown Modal',
+        variantId: null, // TODO: Track variant from impression
+        modalHadDiscount: modalHadDiscount,
+        discountCode: discountUsed?.code || null,
+        discountRedeemed: !!discountUsed,
+        discountAmount: discountAmount > 0 ? discountAmount : null,
+        modalSnapshot: currentModal ? JSON.stringify(currentModal.config) : null
+      }
+    });
+
+    console.log(`✓ Conversion stored: Order ${orderPayload.order_number} ($${orderPayload.total_price})`);
+  } catch (error) {
+    console.error("Error storing conversion:", error);
+    // Don't throw - we don't want to fail the webhook if conversion storage fails
+  }
 }

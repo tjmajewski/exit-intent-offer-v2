@@ -681,8 +681,8 @@ export async function action({ request }) {
 }
 
 export default function Settings() {
-  const { settings, status, plan, modalLibrary, hasPromo } = useLoaderData();
-  const [activeTab, setActiveTab] = useState('setup');
+  const { settings, status, plan, modalLibrary, hasPromo, availableTemplates } = useLoaderData();
+  const [activeTab, setActiveTab] = useState('quick');
   const actionData = useActionData();
   const navigation = useNavigation();
   const [showPreview, setShowPreview] = useState(false);
@@ -784,14 +784,14 @@ export default function Settings() {
         gap: 0
       }}>
         <button
-          onClick={() => setActiveTab('setup')}
+          onClick={() => setActiveTab('quick')}
           style={{
             padding: "12px 24px",
             background: "transparent",
             border: "none",
-            borderBottom: activeTab === 'setup' ? "3px solid #8B5CF6" : "3px solid transparent",
-            color: activeTab === 'setup' ? "#8B5CF6" : "#6b7280",
-            fontWeight: activeTab === 'setup' ? 600 : 400,
+            borderBottom: activeTab === 'quick' ? "3px solid #8B5CF6" : "3px solid transparent",
+            color: activeTab === 'quick' ? "#8B5CF6" : "#6b7280",
+            fontWeight: activeTab === 'quick' ? 600 : 400,
             fontSize: 16,
             cursor: "pointer",
             marginBottom: -2
@@ -884,9 +884,9 @@ export default function Settings() {
 
       <Form method="post">
       {/* Quick Setup Tab */}
-      {activeTab === 'setup' && (
+      {activeTab === 'quick' && (
         <>
-        {/* Optimization Mode */}
+        {/* Optimization Mode Selector */}
         <div style={{ 
           background: "white", 
           padding: 24, 
@@ -894,246 +894,91 @@ export default function Settings() {
           border: "1px solid #e5e7eb",
           marginBottom: 24 
         }}>
-          <h2 style={{ fontSize: 20, marginBottom: 8 }}>Optimization Mode</h2>
+          <h2 style={{ fontSize: 20, marginBottom: 8 }}>How do you want to manage your offers?</h2>
           <p style={{ fontSize: 14, color: "#666", marginBottom: 20 }}>
-            Choose how you want to manage your exit intent offers
+            Choose between full manual control or AI-powered optimization
           </p>
 
-          {/* Manual Mode */}
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            {/* Manual Mode */}
             <label style={{ 
               display: "flex", 
-              alignItems: "flex-start", 
+              flexDirection: "column",
               cursor: "pointer",
-              padding: 16,
+              padding: 20,
               border: optimizationMode === "manual" ? "2px solid #8B5CF6" : "1px solid #e5e7eb",
               borderRadius: 8,
               background: optimizationMode === "manual" ? "#f5f3ff" : "white"
             }}>
-              <input
-                type="radio"
-                name="mode"
-                value="manual"
-                checked={optimizationMode === "manual"}
-                onChange={(e) => setOptimizationMode(e.target.value)}
-                style={{ marginRight: 12, marginTop: 4 }}
-              />
-              <div>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>Manual Mode</div>
-                <div style={{ fontSize: 14, color: "#666" }}>
-                  Full control over templates, copy, and triggers
-                </div>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+                <input
+                  type="radio"
+                  name="mode"
+                  value="manual"
+                  checked={optimizationMode === "manual"}
+                  onChange={(e) => setOptimizationMode(e.target.value)}
+                  style={{ marginRight: 12 }}
+                />
+                <div style={{ fontWeight: 600, fontSize: 16 }}>Manual Mode</div>
+              </div>
+              <div style={{ fontSize: 14, color: "#666", marginLeft: 28 }}>
+                Full control over templates, copy, and triggers. Perfect for testing specific offers.
               </div>
             </label>
-          </div>
 
-          {/* AI Mode */}
-          <div style={{ marginBottom: 16 }}>
+            {/* AI Mode */}
             <label style={{ 
               display: "flex", 
-              alignItems: "flex-start", 
+              flexDirection: "column",
               cursor: canUseAIMode ? "pointer" : "not-allowed",
-              padding: 16,
+              padding: 20,
               border: optimizationMode === "ai" ? "2px solid #8B5CF6" : "1px solid #e5e7eb",
               borderRadius: 8,
               background: optimizationMode === "ai" ? "#f5f3ff" : "white",
               opacity: canUseAIMode ? 1 : 0.6
             }}>
-              <input
-                type="radio"
-                name="mode"
-                value="ai"
-                checked={optimizationMode === "ai"}
-                onChange={(e) => setOptimizationMode(e.target.value)}
-                disabled={!canUseAIMode}
-                style={{ marginRight: 12, marginTop: 4 }}
-              />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
-                  AI Mode - Optimized Offers
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+                <input
+                  type="radio"
+                  name="mode"
+                  value="ai"
+                  checked={optimizationMode === "ai"}
+                  onChange={(e) => setOptimizationMode(e.target.value)}
+                  disabled={!canUseAIMode}
+                  style={{ marginRight: 12 }}
+                />
+                <div style={{ fontWeight: 600, fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}>
+                  AI Mode
                   {!canUseAIMode && (
                     <span style={{ 
                       padding: "2px 8px", 
                       background: "#8B5CF6", 
                       color: "white", 
                       borderRadius: 4, 
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: 600 
                     }}>
                       PRO
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: 14, color: "#666" }}>
-                  AI automatically tests and optimizes offers to maximize results
-                </div>
+              </div>
+              <div style={{ fontSize: 14, color: "#666", marginLeft: 28 }}>
+                AI automatically tests and optimizes to maximize results. Configure in AI Settings tab.
               </div>
             </label>
           </div>
 
-          {/* AI Mode Settings */}
-          {optimizationMode === "ai" && canUseAIMode && (
-            <div style={{ 
-              marginLeft: 32, 
-              padding: 16, 
-              background: "#f9fafb", 
-              borderRadius: 8,
-              border: "1px solid #e5e7eb" 
-            }}>
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
-                  Optimization Goal
-                </label>
-                <select
-                  name="aiGoal"
-                  defaultValue={settings.aiGoal || "revenue"}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    border: "1px solid #d1d5db",
-                    borderRadius: 6,
-                    fontSize: 16
-                  }}
-                >
-                  <option value="revenue">Maximize Revenue</option>
-                  <option value="conversions">Maximize Conversions</option>
-                </select>
-                <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
-                  AI will optimize offers based on this goal
-                </div>
-              </div>
-
-             <div>
-                <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
-                  Discount Aggression: {aggressionLevel}
-                </label>
-                <input
-                  type="range"
-                  name="aggression"
-                  min="0"
-                  max="10"
-                  value={aggressionLevel}
-                  onChange={(e) => setAggressionLevel(parseInt(e.target.value))}
-                  style={{ width: "100%" }}
-                />
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#666", marginTop: 4 }}>
-                  <span>0 = No discounts (announcement only)</span>
-                  <span>10 = Maximum discounts</span>
-                </div>
-                {aggressionLevel === 0 && (
-                  <div style={{ 
-                    marginTop: 8, 
-                    padding: 8, 
-                    background: "#e0f2fe", 
-                    borderRadius: 4,
-                    fontSize: 13,
-                    color: "#075985"
-                  }}>
-                    ℹ️ At level 0, modals will show without discount offers - great for announcements or cart reminders
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Promotion Budget - Pro/Enterprise Only */}
-              {optimizationMode === "ai" && (
-              <div style={{ 
-                marginTop: 16,
-                padding: 16, 
-                background: "#fff7ed", 
-                borderRadius: 8,
-                border: "1px solid #fed7aa" 
-              }}>
-                <div style={{ marginBottom: 12 }}>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
-                    💰 Promotion Budget (Optional)
-                  </label>
-                  <div style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
-                    Limit how much the AI can discount per time period to control costs
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: 12 }}>
-                  <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      name="budgetEnabled"
-                      defaultChecked={settings.budgetEnabled}
-                      style={{ marginRight: 12, width: 18, height: 18 }}
-                    />
-                    <span style={{ fontWeight: 500 }}>Enable Budget Cap</span>
-                  </label>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div>
-                    <label style={{ display: "block", marginBottom: 6, fontSize: 14, fontWeight: 500 }}>
-                      Budget Amount
-                    </label>
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <span style={{ marginRight: 8, color: "#666" }}>$</span>
-                      <input
-                        type="number"
-                        name="budgetAmount"
-                        defaultValue={settings.budgetAmount || 500}
-                        min="0"
-                        step="50"
-                        style={{ 
-                          padding: "8px 12px", 
-                          border: "1px solid #d1d5db",
-                          borderRadius: 6,
-                          width: "100%",
-                          fontSize: 16
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label style={{ display: "block", marginBottom: 6, fontSize: 14, fontWeight: 500 }}>
-                      Time Period
-                    </label>
-                    <select
-                      name="budgetPeriod"
-                      defaultValue={settings.budgetPeriod || "month"}
-                      style={{
-                        width: "100%",
-                        padding: "8px 12px",
-                        border: "1px solid #d1d5db",
-                        borderRadius: 6,
-                        fontSize: 16
-                      }}
-                    >
-                      <option value="week">Per Week</option>
-                      <option value="month">Per Month</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ 
-                  marginTop: 12, 
-                  padding: 10, 
-                  background: "#eff6ff", 
-                  borderRadius: 4,
-                  fontSize: 13,
-                  color: "#1e40af"
-                }}>
-                  💡 <strong>Example:</strong> $500/month means AI will stop offering discounts once $500 in total discounts have been given out this month. Resets at the start of each period.
-                </div>
-              </div>
-              )}
-
-          {/* Upgrade Prompt for Entry Users */}
           {!canUseAIMode && (
             <div style={{ 
-              marginTop: 12, 
+              marginTop: 16, 
               padding: 12, 
               background: "#fef3c7", 
               borderRadius: 6,
-              fontSize: 14 
+              fontSize: 14,
+              textAlign: "center"
             }}>
-              ⭐ <strong>Upgrade to Pro</strong> to unlock AI Mode with automatic offer optimization.{" "}
+              ⭐ <strong>Upgrade to Pro</strong> to unlock AI Mode with automatic optimization.{" "}
               <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
                 Learn more →
               </a>
@@ -1141,41 +986,43 @@ export default function Settings() {
           )}
         </div>
 
-       {/* Template Selector */}
-       {/* AI Mode Active - Everything Disabled */}
+        {/* Template Selector */}
+       {/* AI Mode Active - Guide to AI Settings */}
         {optimizationMode === "ai" && (
           <div style={{ 
-            background: "white", 
-            padding: 32, 
+            background: "#f5f3ff", 
+            padding: 24, 
             borderRadius: 8, 
             border: "2px solid #8B5CF6",
-            marginBottom: 24,
-            textAlign: "center"
+            marginBottom: 24
           }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🤖</div>
-            <h2 style={{ fontSize: 24, marginBottom: 12, color: "#8B5CF6" }}>AI Mode Active</h2>
-            <p style={{ fontSize: 16, color: "#666", marginBottom: 8 }}>
-              The AI is now controlling your exit intent offers. It will automatically:
-            </p>
-            <ul style={{ 
-              textAlign: "left", 
-              maxWidth: 500, 
-              margin: "16px auto 24px", 
-              fontSize: 15, 
-              color: "#666",
-              lineHeight: 1.8
-            }}>
-              <li>Choose and test different templates</li>
-              <li>Optimize modal copy and messaging</li>
-              <li>Adjust discount offers based on performance</li>
-              <li>Select the best triggers for each visitor</li>
-            </ul>
-            <p style={{ fontSize: 14, color: "#666" }}>
-              View performance and results in{" "}
-              <a href="/app/analytics" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
-                Analytics →
-              </a>
-            </p>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+              <div style={{ fontSize: 40 }}></div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ fontSize: 18, marginBottom: 8, color: "#8B5CF6", fontWeight: 600 }}>
+                  AI Mode Enabled
+                </h3>
+                <p style={{ fontSize: 14, color: "#666", marginBottom: 16 }}>
+                  The AI will automatically test and optimize your offers. Configure AI settings like optimization goal, discount aggression, and budget cap in the <strong>AI Settings</strong> tab.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('ai')}
+                  style={{
+                    padding: "10px 20px",
+                    background: "#8B5CF6",
+                    color: "white",
+                    border: "none",
+                    borderRadius: 6,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer"
+                  }}
+                >
+                  Go to AI Settings →
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1195,7 +1042,7 @@ export default function Settings() {
           </h2>
           <p style={{ fontSize: 14, color: "#666", marginBottom: 20 }}>
             {optimizationMode === "ai" 
-              ? "🤖 AI will automatically choose and test the best templates" 
+              ? "   AI will automatically choose and test the best templates" 
               : "Start with a pre-made template and customize it to match your brand"}
           </p>
 
@@ -1463,131 +1310,6 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Redirect Destination Section */}
-        <div style={{ 
-          background: "white", 
-          padding: 24, 
-          borderRadius: 8, 
-          border: "1px solid #e5e7eb",
-          marginBottom: 24,
-          opacity: canChooseRedirect ? 1 : 0.5,
-          position: 'relative'
-        }}>
-          <h2 style={{ fontSize: 20, marginBottom: 20 }}>
-            After Click Behavior <span style={{ color: "#dc2626" }}>*</span>
-            {!canChooseRedirect && (
-              <span style={{ 
-                marginLeft: 8, 
-                padding: "2px 8px", 
-                background: "#8B5CF6", 
-                color: "white", 
-                borderRadius: 4, 
-                fontSize: 12,
-                fontWeight: 600 
-              }}>
-                PRO
-              </span>
-            )}
-          </h2>
-
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: "block", marginBottom: 12, fontWeight: 500 }}>
-              Where should customers go after clicking the CTA?
-            </label>
-            
-            <label style={{ 
-              display: "flex", 
-              alignItems: "flex-start", 
-              cursor: canChooseRedirect ? "pointer" : "not-allowed",
-              padding: 16,
-              border: "2px solid",
-              borderRadius: 8,
-              marginBottom: 12,
-              background: (settings.redirectDestination === "checkout" || !settings.redirectDestination) ? "#f0fdf4" : "white",
-              borderColor: (settings.redirectDestination === "checkout" || !settings.redirectDestination) ? "#10b981" : "#e5e7eb",
-              transition: "all 0.2s"
-            }}>
-              <input
-                type="radio"
-                name="redirectDestination"
-                value="checkout"
-                defaultChecked={!settings.redirectDestination || settings.redirectDestination === "checkout"}
-                disabled={!canChooseRedirect}
-                style={{ marginRight: 12, marginTop: 4 }}
-              />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                  Checkout {!canChooseRedirect && "(Starter Plan Default)"}
-                </div>
-                <div style={{ fontSize: 14, color: "#666" }}>
-                  Send customers directly to checkout. Fewer steps = higher conversion. Discount auto-applies.
-                </div>
-              </div>
-            </label>
-
-            <label style={{ 
-              display: "flex", 
-              alignItems: "flex-start", 
-              cursor: canChooseRedirect ? "pointer" : "not-allowed",
-              padding: 16,
-              border: "2px solid",
-              borderRadius: 8,
-              background: settings.redirectDestination === "cart" ? "#f0fdf4" : "white",
-              borderColor: settings.redirectDestination === "cart" ? "#10b981" : "#e5e7eb",
-              transition: "all 0.2s"
-            }}>
-              <input
-                type="radio"
-                name="redirectDestination"
-                value="cart"
-                defaultChecked={settings.redirectDestination === "cart"}
-                disabled={!canChooseRedirect}
-                style={{ marginRight: 12, marginTop: 4 }}
-              />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                  Cart Page*
-                </div>
-                <div style={{ fontSize: 14, color: "#666" }}>
-                  Send customers to cart page first. Gives them a chance to review or add more items before checkout.
-                </div>
-                <div style={{ fontSize: 13, color: "#f59e0b", marginTop: 8, fontStyle: "italic" }}>
-                  *If discount is enabled and your theme doesn't have a cart discount field, customers will be automatically redirected to checkout to apply the discount.
-                </div>
-              </div>
-            </label>
-          </div>
-
-          {!canChooseRedirect ? (
-            <div style={{
-              padding: 12,
-              background: "#fef3c7",
-              border: "1px solid #fde68a",
-              borderRadius: 6,
-              fontSize: 14,
-              color: "#92400e",
-              marginTop: 16
-            }}>
-              ⭐ <strong>Upgrade to Pro</strong> to choose between cart and checkout redirect and A/B test which converts better.{" "}
-              <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
-                Learn more →
-              </a>
-            </div>
-          ) : (
-            <div style={{
-              padding: 12,
-              background: "#fef3c7",
-              border: "1px solid #fde68a",
-              borderRadius: 6,
-              fontSize: 14,
-              color: "#92400e",
-              marginTop: 16
-            }}>
-              🧪 <strong>A/B Testing Tip:</strong> This is a great variable to test! Try both and see which converts better for your store.
-            </div>
-          )}
-        </div>
-
         {/* Trigger Conditions Section */}
         <div style={{ 
           background: "white", 
@@ -1687,120 +1409,7 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Cart Value Conditions Section */}
-        <div style={{ 
-          background: "white", 
-          padding: 24, 
-          borderRadius: 8, 
-          border: "1px solid #e5e7eb",
-          marginBottom: 24 
-        }}>
-          <h2 style={{ fontSize: 20, marginBottom: 20 }}>Additional Conditions <span style={{ fontSize: 14, fontWeight: 400, color: "#6b7280" }}>(Optional)</span></h2>
-
-          <div style={{ 
-            marginBottom: 20,
-            opacity: canUseCartValue ? 1 : 0.5,
-            position: 'relative'
-          }}>
-            <label style={{ display: "flex", alignItems: "center", cursor: canUseCartValue ? "pointer" : "not-allowed" }}>
-              <input
-                type="checkbox"
-                name="cartValueEnabled"
-                defaultChecked={settings.cartValueEnabled}
-                disabled={!canUseCartValue}
-                style={{ marginRight: 12, width: 20, height: 20 }}
-              />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 500 }}>
-                  Cart Value Range
-                  {!canUseCartValue && (
-                    <span style={{ 
-                      marginLeft: 8, 
-                      padding: "2px 8px", 
-                      background: "#8B5CF6", 
-                      color: "white", 
-                      borderRadius: 4, 
-                      fontSize: 12,
-                      fontWeight: 600 
-                    }}>
-                      PRO
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: 14, color: "#666" }}>
-                  Only show modal if cart value falls within a specific range
-                </div>
-              </div>
-            </label>
-            <div style={{ marginLeft: 32, marginTop: 12, display: "flex", gap: 20 }}>
-              <div>
-                <label style={{ display: "block", marginBottom: 4, fontSize: 14 }}>
-                  Minimum ($):
-                </label>
-                <input
-                  type="number"
-                  name="cartValueMin"
-                  defaultValue={settings.cartValueMin}
-                  min="0"
-                  step="0.01"
-                  disabled={!canUseCartValue}
-                  style={{ 
-                    padding: "8px 12px", 
-                    border: "1px solid #d1d5db",
-                    borderRadius: 6,
-                    width: 120
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ display: "block", marginBottom: 4, fontSize: 14 }}>
-                  Maximum ($):
-                </label>
-                <input
-                  type="number"
-                  name="cartValueMax"
-                  defaultValue={settings.cartValueMax}
-                  min="0"
-                  step="0.01"
-                  disabled={!canUseCartValue}
-                  style={{ 
-                    padding: "8px 12px", 
-                    border: "1px solid #d1d5db",
-                    borderRadius: 6,
-                    width: 120
-                  }}
-                />
-              </div>
-            </div>
-            
-            {!canUseCartValue && (
-              <div style={{ 
-                marginTop: 12, 
-                padding: 12, 
-                background: "#fef3c7", 
-                borderRadius: 6,
-                fontSize: 14 
-              }}>
-                ⭐ <strong>Upgrade to Pro</strong> to target specific cart value ranges.{" "}
-                <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
-                  Learn more →
-                </a>
-              </div>
-            )}
-          </div>
-
-          <div style={{
-            padding: 12,
-            background: "#f0f9ff",
-            border: "1px solid #bae6fd",
-            borderRadius: 6,
-            fontSize: 14,
-            color: "#0c4a6e"
-          }}>
-            💡 <strong>Example:</strong> Set minimum to $100 and maximum to $3000 to only show the modal for mid-range carts. Combine with any trigger above!
-          </div>
-        </div>
-          </>
+        </>
         )}
 
         
@@ -1867,7 +1476,7 @@ export default function Settings() {
                   fontWeight: 500
                 }}
               >
-                {autoDetecting ? "Detecting..." : "🎨 Auto-Detect Brand Colors"}
+                {autoDetecting ? "Detecting..." : " Auto-Detect Brand Colors"}
               </button>
               <div style={{ fontSize: 13, color: "#6b7280", marginTop: 8 }}>
                 Automatically detect colors from your store's homepage
@@ -2004,69 +1613,471 @@ export default function Settings() {
           </div>
         )}
         
-      {/* Save Button with Inline Notification */}
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            style={{ 
-              padding: "12px 24px", 
-              background: isSubmitting ? "#9ca3af" : "#8B5CF6", 
-              color: "white", 
-              border: "none",
-              borderRadius: 6,
-              cursor: isSubmitting ? "not-allowed" : "pointer",
-              fontSize: 16,
-              fontWeight: 500
-            }}
-          >
-            {isSubmitting ? "Saving..." : "Save Settings"}
-          </button>
-
-          {/* Inline Success/Error Message */}
-          {showSuccessMessage && (
-            <div style={{ 
-              padding: "10px 16px", 
-              background: "#d1fae5", 
-              color: "#065f46", 
-              borderRadius: 6,
-              fontSize: 14,
-              fontWeight: 500
-            }}>
-              ✓ {actionData.message}
-            </div>
-          )}
-
-          {showErrorMessage && (
-            <div style={{ 
-              padding: "10px 16px", 
-              background: "#fee2e2", 
-              color: "#991b1b", 
-              borderRadius: 6,
-              fontSize: 14,
-              fontWeight: 500
-            }}>
-              ✗ {actionData.message}
-            </div>
-          )}
-        </div>
-        </>
+      </>
       )}
 
       {/* AI Settings Tab */}
       {activeTab === 'ai' && (
-        <div style={{ padding: 40, textAlign: "center" }}>
-          <h2 style={{ fontSize: 24, marginBottom: 16 }}>AI Settings</h2>
-          <p style={{ color: "#6b7280" }}>AI optimization settings will appear here</p>
-        </div>
+        <>
+        {!canUseAIMode ? (
+          <div style={{
+            background: 'white',
+            padding: 48,
+            borderRadius: 8,
+            border: '1px solid #e5e7eb',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              display: 'inline-block',
+              padding: '4px 12px',
+              background: '#f3f4f6',
+              borderRadius: 4,
+              fontSize: 12,
+              fontWeight: 600,
+              marginBottom: 16,
+              color: '#6b7280'
+            }}>
+              PRO
+            </div>
+            <h2 style={{ fontSize: 24, marginBottom: 12 }}>AI-Powered Optimization</h2>
+            <p style={{ color: '#6b7280', marginBottom: 24, maxWidth: 500, margin: '0 auto 24px' }}>
+              Let AI automatically test headlines, body copy, and CTAs to find what converts best. 
+              Available on Pro and Enterprise plans.
+            </p>
+            <button
+              type="button"
+              onClick={() => window.open('https://sealdeal.ai/pricing', '_blank')}
+              style={{
+                padding: '12px 24px',
+                background: '#8B5CF6',
+                color: 'white',
+                border: 'none',
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              Upgrade to Pro
+            </button>
+          </div>
+        ) : (
+          <>
+          {optimizationMode === "manual" ? (
+            <div style={{
+              background: 'white',
+              padding: 48,
+              borderRadius: 8,
+              border: '1px solid #e5e7eb',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>🎯</div>
+              <h2 style={{ fontSize: 24, marginBottom: 12 }}>Manual Mode Active</h2>
+              <p style={{ color: '#6b7280', marginBottom: 24 }}>
+                You're currently in Manual Mode. Switch to AI Mode in the Quick Setup tab to access AI optimization settings.
+              </p>
+            </div>
+          ) : (
+            <div style={{ 
+              background: "white", 
+              padding: 24, 
+              borderRadius: 8, 
+              border: "1px solid #e5e7eb",
+              marginBottom: 24 
+            }}>
+              <h2 style={{ fontSize: 20, marginBottom: 8 }}>AI Optimization Settings</h2>
+              <p style={{ fontSize: 14, color: "#666", marginBottom: 20 }}>
+                Configure how the AI optimizes your exit intent offers
+              </p>
+
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: "block", marginBottom: 8, fontWeight: 500, fontSize: 16 }}>
+                  Optimization Goal
+                </label>
+                <p style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>
+                  What should the AI optimize for?
+                </p>
+                <select
+                  name="aiGoal"
+                  defaultValue={settings.aiGoal || "revenue"}
+                  style={{
+                    width: "100%",
+                    padding: "12px 16px",
+                    border: "1px solid #d1d5db",
+                    borderRadius: 8,
+                    fontSize: 16
+                  }}
+                >
+                  <option value="revenue">Maximize Revenue (recommended)</option>
+                  <option value="conversions">Maximize Conversions</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: "block", marginBottom: 8, fontWeight: 500, fontSize: 16 }}>
+                  Discount Aggression: {aggressionLevel}
+                </label>
+                <p style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>
+                  How aggressive should discounts be?
+                </p>
+                <input
+                  type="range"
+                  name="aggression"
+                  min="0"
+                  max="10"
+                  value={aggressionLevel}
+                  onChange={(e) => setAggressionLevel(parseInt(e.target.value))}
+                  style={{ width: "100%" }}
+                />
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#666", marginTop: 8 }}>
+                  <span>Conservative (0)</span>
+                  <span>Moderate (5)</span>
+                  <span>Aggressive (10)</span>
+                </div>
+                {aggressionLevel === 0 && (
+                  <div style={{ 
+                    marginTop: 12, 
+                    padding: 12, 
+                    background: "#eff6ff", 
+                    borderRadius: 6,
+                    fontSize: 14,
+                    color: "#1e40af"
+                  }}>
+                    💡 At level 0, modals will show without discount offers - great for announcements or cart reminders
+                  </div>
+                )}
+              </div>
+
+              <div style={{ 
+                padding: 20, 
+                background: "#fff7ed", 
+                borderRadius: 8,
+                border: "1px solid #fed7aa" 
+              }}>
+                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>
+                  Promotion Budget (Optional)
+                </h3>
+                <p style={{ fontSize: 14, color: "#666", marginBottom: 16 }}>
+                  Limit how much the AI can discount per time period to control costs
+                </p>
+
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      name="budgetEnabled"
+                      defaultChecked={settings.budgetEnabled}
+                      style={{ marginRight: 12, width: 18, height: 18 }}
+                    />
+                    <span style={{ fontWeight: 500 }}>Enable Budget Cap</span>
+                  </label>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                  <div>
+                    <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+                      Budget Amount
+                    </label>
+                    <div style={{ display: "flex", alignItems: "center" }}>
+                      <span style={{ marginRight: 8, color: "#666" }}>$</span>
+                      <input
+                        type="number"
+                        name="budgetAmount"
+                        defaultValue={settings.budgetAmount || 500}
+                        min="0"
+                        step="50"
+                        style={{ 
+                          padding: "10px 12px", 
+                          border: "1px solid #d1d5db",
+                          borderRadius: 6,
+                          width: "100%",
+                          fontSize: 16
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+                      Time Period
+                    </label>
+                    <select
+                      name="budgetPeriod"
+                      defaultValue={settings.budgetPeriod || "month"}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        border: "1px solid #d1d5db",
+                        borderRadius: 6,
+                        fontSize: 16
+                      }}
+                    >
+                      <option value="week">Per Week</option>
+                      <option value="month">Per Month</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ 
+                  marginTop: 12, 
+                  padding: 12, 
+                  background: "#eff6ff", 
+                  borderRadius: 6,
+                  fontSize: 13,
+                  color: "#1e40af"
+                }}>
+                  💡 <strong>Example:</strong> $500/month means AI will stop offering discounts once $500 in total discounts have been given out this month. Resets at the start of each period.
+                </div>
+              </div>
+            </div>
+          )}
+          </>
+        )}
+        </>
       )}
 
       {/* Advanced Tab */}
       {activeTab === 'advanced' && (
-        <div style={{ padding: 40, textAlign: "center" }}>
-          <h2 style={{ fontSize: 24, marginBottom: 16 }}>Advanced Settings</h2>
-          <p style={{ color: "#6b7280" }}>Advanced configuration options will appear here</p>
+        <>
+        {/* Redirect Destination Section */}
+        <div style={{ 
+          background: "white", 
+          padding: 24, 
+          borderRadius: 8, 
+          border: "1px solid #e5e7eb",
+          marginBottom: 24,
+          opacity: canChooseRedirect ? 1 : 0.5,
+          position: 'relative'
+        }}>
+          <h2 style={{ fontSize: 20, marginBottom: 20 }}>
+            After Click Behavior <span style={{ color: "#dc2626" }}>*</span>
+            {!canChooseRedirect && (
+              <span style={{ 
+                marginLeft: 8, 
+                padding: "2px 8px", 
+                background: "#8B5CF6", 
+                color: "white", 
+                borderRadius: 4, 
+                fontSize: 12,
+                fontWeight: 600 
+              }}>
+                PRO
+              </span>
+            )}
+          </h2>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: "block", marginBottom: 12, fontWeight: 500 }}>
+              Where should customers go after clicking the CTA?
+            </label>
+            
+            <label style={{ 
+              display: "flex", 
+              alignItems: "flex-start", 
+              cursor: canChooseRedirect ? "pointer" : "not-allowed",
+              padding: 16,
+              border: "2px solid",
+              borderRadius: 8,
+              marginBottom: 12,
+              background: (settings.redirectDestination === "checkout" || !settings.redirectDestination) ? "#f0fdf4" : "white",
+              borderColor: (settings.redirectDestination === "checkout" || !settings.redirectDestination) ? "#10b981" : "#e5e7eb",
+              transition: "all 0.2s"
+            }}>
+              <input
+                type="radio"
+                name="redirectDestination"
+                value="checkout"
+                defaultChecked={!settings.redirectDestination || settings.redirectDestination === "checkout"}
+                disabled={!canChooseRedirect}
+                style={{ marginRight: 12, marginTop: 4 }}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                  Checkout {!canChooseRedirect && "(Starter Plan Default)"}
+                </div>
+                <div style={{ fontSize: 14, color: "#666" }}>
+                  Send customers directly to checkout. Fewer steps = higher conversion. Discount auto-applies.
+                </div>
+              </div>
+            </label>
+
+            <label style={{ 
+              display: "flex", 
+              alignItems: "flex-start", 
+              cursor: canChooseRedirect ? "pointer" : "not-allowed",
+              padding: 16,
+              border: "2px solid",
+              borderRadius: 8,
+              background: settings.redirectDestination === "cart" ? "#f0fdf4" : "white",
+              borderColor: settings.redirectDestination === "cart" ? "#10b981" : "#e5e7eb",
+              transition: "all 0.2s"
+            }}>
+              <input
+                type="radio"
+                name="redirectDestination"
+                value="cart"
+                defaultChecked={settings.redirectDestination === "cart"}
+                disabled={!canChooseRedirect}
+                style={{ marginRight: 12, marginTop: 4 }}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                  Cart Page*
+                </div>
+                <div style={{ fontSize: 14, color: "#666" }}>
+                  Send customers to cart page first. Gives them a chance to review or add more items before checkout.
+                </div>
+                <div style={{ fontSize: 13, color: "#f59e0b", marginTop: 8, fontStyle: "italic" }}>
+                  *If discount is enabled and your theme doesn't have a cart discount field, customers will be automatically redirected to checkout to apply the discount.
+                </div>
+              </div>
+            </label>
+          </div>
+
+          {!canChooseRedirect ? (
+            <div style={{
+              padding: 12,
+              background: "#fef3c7",
+              border: "1px solid #fde68a",
+              borderRadius: 6,
+              fontSize: 14,
+              color: "#92400e",
+              marginTop: 16
+            }}>
+              ⭐ <strong>Upgrade to Pro</strong> to choose between cart and checkout redirect and A/B test which converts better.{" "}
+              <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
+                Learn more →
+              </a>
+            </div>
+          ) : (
+            <div style={{
+              padding: 12,
+              background: "#fef3c7",
+              border: "1px solid #fde68a",
+              borderRadius: 6,
+              fontSize: 14,
+              color: "#92400e",
+              marginTop: 16
+            }}>
+              🧪 <strong>A/B Testing Tip:</strong> This is a great variable to test! Try both and see which converts better for your store.
+            </div>
+          )}
         </div>
+        
+        {/* Cart Value Conditions Section */}
+        <div style={{ 
+          background: "white", 
+          padding: 24, 
+          borderRadius: 8, 
+          border: "1px solid #e5e7eb",
+          marginBottom: 24 
+        }}>
+          <h2 style={{ fontSize: 20, marginBottom: 20 }}>Additional Conditions <span style={{ fontSize: 14, fontWeight: 400, color: "#6b7280" }}>(Optional)</span></h2>
+
+          <div style={{ 
+            marginBottom: 20,
+            opacity: canUseCartValue ? 1 : 0.5,
+            position: 'relative'
+          }}>
+            <label style={{ display: "flex", alignItems: "center", cursor: canUseCartValue ? "pointer" : "not-allowed" }}>
+              <input
+                type="checkbox"
+                name="cartValueEnabled"
+                defaultChecked={settings.cartValueEnabled}
+                disabled={!canUseCartValue}
+                style={{ marginRight: 12, width: 20, height: 20 }}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 500 }}>
+                  Cart Value Range
+                  {!canUseCartValue && (
+                    <span style={{ 
+                      marginLeft: 8, 
+                      padding: "2px 8px", 
+                      background: "#8B5CF6", 
+                      color: "white", 
+                      borderRadius: 4, 
+                      fontSize: 12,
+                      fontWeight: 600 
+                    }}>
+                      PRO
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 14, color: "#666" }}>
+                  Only show modal if cart value falls within a specific range
+                </div>
+              </div>
+            </label>
+            <div style={{ marginLeft: 32, marginTop: 12, display: "flex", gap: 20 }}>
+              <div>
+                <label style={{ display: "block", marginBottom: 4, fontSize: 14 }}>
+                  Minimum ($):
+                </label>
+                <input
+                  type="number"
+                  name="cartValueMin"
+                  defaultValue={settings.cartValueMin}
+                  min="0"
+                  step="0.01"
+                  disabled={!canUseCartValue}
+                  style={{ 
+                    padding: "8px 12px", 
+                    border: "1px solid #d1d5db",
+                    borderRadius: 6,
+                    width: 120
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ display: "block", marginBottom: 4, fontSize: 14 }}>
+                  Maximum ($):
+                </label>
+                <input
+                  type="number"
+                  name="cartValueMax"
+                  defaultValue={settings.cartValueMax}
+                  min="0"
+                  step="0.01"
+                  disabled={!canUseCartValue}
+                  style={{ 
+                    padding: "8px 12px", 
+                    border: "1px solid #d1d5db",
+                    borderRadius: 6,
+                    width: 120
+                  }}
+                />
+              </div>
+            </div>
+            
+            {!canUseCartValue && (
+              <div style={{ 
+                marginTop: 12, 
+                padding: 12, 
+                background: "#fef3c7", 
+                borderRadius: 6,
+                fontSize: 14 
+              }}>
+                ⭐ <strong>Upgrade to Pro</strong> to target specific cart value ranges.{" "}
+                <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
+                  Learn more →
+                </a>
+              </div>
+            )}
+          </div>
+
+          <div style={{
+            padding: 12,
+            background: "#f0f9ff",
+            border: "1px solid #bae6fd",
+            borderRadius: 6,
+            fontSize: 14,
+            color: "#0c4a6e"
+          }}>
+            💡 <strong>Example:</strong> Set minimum to $100 and maximum to $3000 to only show the modal for mid-range carts. Combine with any trigger above!
+          </div>
+        </div>
+        </>
       )}
 
       {/* Branding Tab */}
@@ -2076,6 +2087,53 @@ export default function Settings() {
           <p style={{ color: "#6b7280" }}>Brand customization options will appear here</p>
         </div>
       )}
+
+      {/* Save Button - Appears on all tabs */}
+      <div style={{ marginTop: 32, display: "flex", alignItems: "center", gap: 16 }}>
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          style={{ 
+            padding: "12px 24px", 
+            background: isSubmitting ? "#9ca3af" : "#8B5CF6", 
+            color: "white", 
+            border: "none",
+            borderRadius: 6,
+            cursor: isSubmitting ? "not-allowed" : "pointer",
+            fontSize: 16,
+            fontWeight: 500
+          }}
+        >
+          {isSubmitting ? "Saving..." : "Save Settings"}
+        </button>
+
+        {/* Inline Success/Error Message */}
+        {showSuccessMessage && (
+          <div style={{ 
+            padding: "10px 16px", 
+            background: "#d1fae5", 
+            color: "#065f46", 
+            borderRadius: 6,
+            fontSize: 14,
+            fontWeight: 500
+          }}>
+            ✓ {actionData.message}
+          </div>
+        )}
+
+        {showErrorMessage && (
+          <div style={{ 
+            padding: "10px 16px", 
+            background: "#fee2e2", 
+            color: "#991b1b", 
+            borderRadius: 6,
+            fontSize: 14,
+            fontWeight: 500
+          }}>
+            ✗ {actionData.message}
+          </div>
+        )}
+      </div>
 
 </Form>
 
@@ -2123,7 +2181,7 @@ export default function Settings() {
                       actionData.currentSettings.mode === "ai" ? (
                         <>
                           <div style={{ textAlign: "center", marginBottom: 16 }}>
-                            <div style={{ fontSize: 48 }}>🤖</div>
+                            <div style={{ fontSize: 48 }}>  </div>
                             <h4 style={{ fontSize: 20, marginBottom: 8, color: "#8B5CF6" }}>AI Mode</h4>
                           </div>
                           <div style={{ fontSize: 14, color: "#666" }}>
@@ -2199,12 +2257,12 @@ export default function Settings() {
                     {actionData.newSettings?.mode === "ai" ? (
                       <>
                         <div style={{ textAlign: "center", marginBottom: 16 }}>
-                          <div style={{ fontSize: 48 }}>🤖</div>
+                          <div style={{ fontSize: 48 }}>  </div>
                           <h4 style={{ fontSize: 20, marginBottom: 8, color: "#8B5CF6" }}>AI Mode Active</h4>
                         </div>
                         <div style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>
                           <div style={{ marginBottom: 8 }}>
-                            <span style={{ fontSize: 18, marginRight: 8 }}>🎯</span>
+                            <span style={{ fontSize: 18, marginRight: 8 }}>  </span>
                             <strong>Goal:</strong> {actionData.newSettings.aiGoal === "revenue" ? "Maximize Revenue" : "Maximize Conversions"}
                           </div>
                           <div style={{ 
@@ -2213,7 +2271,7 @@ export default function Settings() {
                             borderRadius: 6,
                             marginBottom: 8
                           }}>
-                            <span style={{ fontSize: 18, marginRight: 8 }}>💪</span>
+                            <span style={{ fontSize: 18, marginRight: 8 }}></span>
                             <strong>Aggression:</strong> {actionData.newSettings.aggression}/10
                           </div>
                           <div style={{ fontSize: 13, color: "#6b7280" }}>
@@ -2287,7 +2345,7 @@ export default function Settings() {
                 fontSize: 14,
                 color: "#1e40af"
               }}>
-                📊 <strong>New Modal Campaign</strong>
+                 <strong>New Modal Campaign</strong>
                 <div style={{ marginTop: 4 }}>
                   This will create a new modal and start tracking its performance separately. Your previous modal will be deactivated.
                 </div>

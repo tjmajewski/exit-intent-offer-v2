@@ -102,6 +102,12 @@ export default function AppLayout({ children, plan }) {
       badge: plan?.tier === "starter" ? "PRO" : null
     },
     { 
+      path: "/app/conversions", 
+      label: "Conversions", 
+      icon: "analytics",
+      badge: plan?.tier === "starter" ? "PRO" : null
+    },
+    { 
       path: "/app/promotions", 
       label: "Promotions", 
       icon: "promotions",
