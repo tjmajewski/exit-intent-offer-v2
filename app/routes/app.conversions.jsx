@@ -3,6 +3,7 @@ import { useLoaderData, Link } from "react-router";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { useState } from "react";
+import AppLayout from "../components/AppLayout";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
@@ -164,6 +165,7 @@ export default function Conversions() {
   }
 
   return (
+    <AppLayout plan={{ tier: plan, status: "active" }}>
     <div style={{ padding: 32 }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
@@ -500,5 +502,6 @@ export default function Conversions() {
         </div>
       )}
     </div>
+    </AppLayout>
   );
 }
