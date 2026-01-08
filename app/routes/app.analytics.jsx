@@ -1,4 +1,5 @@
 import { useLoaderData, Link, Form } from "react-router";
+import { useState } from "react";
 import { authenticate } from "../shopify.server";
 import { hasFeature } from "../utils/featureGates";
 import { getDefaultModalLibrary } from "../utils/modalHash";
@@ -111,6 +112,10 @@ export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
 
   try {
+    // Get date range from URL params
+    const url = new URL(request.url);
+    const dateRange = url.searchParams.get('range') || '30d';
+    
     const response = await admin.graphql(`
       query {
         shop {
@@ -135,7 +140,14 @@ export async function loader({ request }) {
       ? JSON.parse(data.data.shop.modalLibrary.value)
       : getDefaultModalLibrary();
 
-    return { plan, modalLibrary };
+    // TODO: Filter modal stats by date range when event-level tracking is implemented
+    // Currently showing all-time stats regardless of dateRange selection
+    // Need to:
+    // 1. Store timestamped events for each modal
+    // 2. Filter events by dateRange (7d, 30d, all)
+    // 3. Recalculate impressions, clicks, conversions, revenue from filtered events
+
+    return { plan, modalLibrary, dateRange };
   } catch (error) {
     console.error("Error loading analytics:", error);
     return { 
@@ -145,10 +157,21 @@ export async function loader({ request }) {
   }
 }
 
+ 
+
 export default function Performance() {
-  const { plan, modalLibrary } = useLoaderData();
+  const { plan, modalLibrary, dateRange: loaderDateRange } = useLoaderData();
   const canAccessPerformance = plan && (plan.tier === 'pro' || plan.tier === 'enterprise');
   const canAccessAIVariants = plan && plan.tier === 'enterprise';
+  
+  const [activeTab, setActiveTab] = useState('modals');
+  const [dateRange, setDateRange] = useState(loaderDateRange || '30d');
+  
+  const handleDateRangeChange = (range) => {
+    setDateRange(range);
+    // Update URL to trigger loader refresh
+    window.location.href = `/app/analytics?range=${range}`;
+  };
 
   // Starter users see locked page
   if (!canAccessPerformance) {
@@ -242,13 +265,127 @@ export default function Performance() {
   return (
     <AppLayout plan={plan}>
       <div style={{ padding: 40, maxWidth: 1400, margin: "0 auto" }}>
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: 32, marginBottom: 8 }}>Performance</h1>
-        <p style={{ color: "#666" }}>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <h1 style={{ fontSize: 32, margin: 0 }}>Performance</h1>
+          
+          {/* Date Selector */}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={() => handleDateRangeChange('30d')}
+              style={{
+                padding: "8px 16px",
+                background: dateRange === '30d' ? "#8B5CF6" : "white",
+                color: dateRange === '30d' ? "white" : "#6b7280",
+                border: dateRange === '30d' ? "none" : "1px solid #e5e7eb",
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: "pointer"
+              }}
+            >
+              Last 30 Days
+            </button>
+            <button
+              onClick={() => setDateRange('7d')}
+              style={{
+                padding: "8px 16px",
+                background: dateRange === '7d' ? "#8B5CF6" : "white",
+                color: dateRange === '7d' ? "white" : "#6b7280",
+                border: dateRange === '7d' ? "none" : "1px solid #e5e7eb",
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: "pointer"
+              }}
+            >
+              Last 7 Days
+            </button>
+            <button
+              onClick={() => setDateRange('all')}
+              style={{
+                padding: "8px 16px",
+                background: dateRange === 'all' ? "#8B5CF6" : "white",
+                color: dateRange === 'all' ? "white" : "#6b7280",
+                border: dateRange === 'all' ? "none" : "1px solid #e5e7eb",
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: "pointer"
+              }}
+            >
+              All Time
+            </button>
+          </div>
+        </div>
+        <p style={{ color: "#666", margin: 0 }}>
           Compare performance across all your modal campaigns
         </p>
       </div>
 
+      {/* Tab Navigation */}
+      <div style={{ 
+        borderBottom: "2px solid #e5e7eb", 
+        marginBottom: 32,
+        display: "flex",
+        gap: 0
+      }}>
+        <button
+          onClick={() => setActiveTab('modals')}
+          style={{
+            padding: "12px 24px",
+            background: "transparent",
+            border: "none",
+            borderBottom: activeTab === 'modals' ? "3px solid #8B5CF6" : "3px solid transparent",
+            color: activeTab === 'modals' ? "#8B5CF6" : "#6b7280",
+            fontWeight: activeTab === 'modals' ? 600 : 400,
+            fontSize: 16,
+            cursor: "pointer",
+            marginBottom: -2,
+            transition: "all 0.2s"
+          }}
+        >
+          Your Modals
+        </button>
+        
+        <button
+          onClick={() => canAccessAIVariants && setActiveTab('variants')}
+          style={{
+            padding: "12px 24px",
+            background: "transparent",
+            border: "none",
+            borderBottom: activeTab === 'variants' ? "3px solid #8B5CF6" : "3px solid transparent",
+            color: activeTab === 'variants' ? "#8B5CF6" : "#6b7280",
+            fontWeight: activeTab === 'variants' ? 600 : 400,
+            fontSize: 16,
+            cursor: canAccessAIVariants ? "pointer" : "not-allowed",
+            marginBottom: -2,
+            opacity: canAccessAIVariants ? 1 : 0.5,
+            transition: "all 0.2s",
+            display: "flex",
+            alignItems: "center",
+            gap: 8
+          }}
+        >
+          AI Variants
+          {!canAccessAIVariants && (
+            <span style={{
+              padding: "2px 6px",
+              background: "#8B5CF6",
+              color: "white",
+              borderRadius: 4,
+              fontSize: 11,
+              fontWeight: 600
+            }}>
+              ENTERPRISE
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Tab Content - Your Modals */}
+      {activeTab === 'modals' && (
+        <>
       {/* Modal Performance Table */}
       <div style={{
         background: "white",
@@ -343,6 +480,27 @@ export default function Performance() {
           </tbody>
         </table>
       </div>
+        </>
+      )}
+
+      {/* Tab Content - AI Variants */}
+      {activeTab === 'variants' && (
+        <div style={{
+          background: "white",
+          padding: 48,
+          borderRadius: 12,
+          border: "1px solid #e5e7eb",
+          textAlign: "center"
+        }}>
+          <h2 style={{ fontSize: 24, marginBottom: 16 }}>AI Variant Testing</h2>
+          <p style={{ fontSize: 16, color: "#6b7280", marginBottom: 24 }}>
+            Track performance across all AI-generated variants and see which copy performs best.
+          </p>
+          <div style={{ fontSize: 14, color: "#6b7280" }}>
+            Coming soon - detailed variant performance analytics
+          </div>
+        </div>
+      )}
 
       <div style={{ marginTop: 32, textAlign: "center" }}>
         <Link

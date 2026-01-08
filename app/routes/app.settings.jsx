@@ -681,7 +681,8 @@ export async function action({ request }) {
 }
 
 export default function Settings() {
-  const { settings, plan, availableTemplates, modalLibrary } = useLoaderData();
+  const { settings, status, plan, modalLibrary, hasPromo } = useLoaderData();
+  const [activeTab, setActiveTab] = useState('setup');
   const actionData = useActionData();
   const navigation = useNavigation();
   const [showPreview, setShowPreview] = useState(false);
@@ -756,7 +757,7 @@ export default function Settings() {
     <AppLayout plan={plan}>
       <div style={{ padding: 40, maxWidth: 1200, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <h1 style={{ fontSize: 32, margin: 0 }}>Exit Intent Settings</h1>
+        <h1 style={{ fontSize: 32, margin: 0 }}>Settings</h1>
         {modalLibrary?.currentModalId && (
           <div style={{
             padding: "8px 16px",
@@ -771,23 +772,120 @@ export default function Settings() {
           </div>
         )}
       </div>
-      <p style={{ color: "#666", marginBottom: 40 }}>
-        Configure your exit intent modal and trigger conditions
+      <p style={{ color: "#666", marginBottom: 24 }}>
+        Configure your modal, triggers, and optimization
       </p>
 
-      <Form method="post">
-        {/* Required Fields Legend */}
-        <div style={{
-          padding: 12,
-          background: "#f3f4f6",
-          borderRadius: 6,
-          marginBottom: 24,
-          fontSize: 14,
-          color: "#4b5563"
-        }}>
-          Fields marked with <span style={{ color: "#dc2626", fontWeight: 600 }}>*</span> are required
-        </div>
+      {/* Tab Navigation */}
+      <div style={{ 
+        borderBottom: "2px solid #e5e7eb", 
+        marginBottom: 32,
+        display: "flex",
+        gap: 0
+      }}>
+        <button
+          onClick={() => setActiveTab('setup')}
+          style={{
+            padding: "12px 24px",
+            background: "transparent",
+            border: "none",
+            borderBottom: activeTab === 'setup' ? "3px solid #8B5CF6" : "3px solid transparent",
+            color: activeTab === 'setup' ? "#8B5CF6" : "#6b7280",
+            fontWeight: activeTab === 'setup' ? 600 : 400,
+            fontSize: 16,
+            cursor: "pointer",
+            marginBottom: -2
+          }}
+        >
+          Quick Setup
+        </button>
+        
+        <button
+          onClick={() => setActiveTab('ai')}
+          style={{
+            padding: "12px 24px",
+            background: "transparent",
+            border: "none",
+            borderBottom: activeTab === 'ai' ? "3px solid #8B5CF6" : "3px solid transparent",
+            color: activeTab === 'ai' ? "#8B5CF6" : "#6b7280",
+            fontWeight: activeTab === 'ai' ? 600 : 400,
+            fontSize: 16,
+            cursor: "pointer",
+            marginBottom: -2,
+            display: "flex",
+            alignItems: "center",
+            gap: 8
+          }}
+        >
+          AI Settings
+          {plan && plan.tier === 'starter' && (
+            <span style={{
+              padding: "2px 6px",
+              background: "#8B5CF6",
+              color: "white",
+              borderRadius: 4,
+              fontSize: 11,
+              fontWeight: 600
+            }}>
+              PRO
+            </span>
+          )}
+        </button>
 
+        <button
+          onClick={() => setActiveTab('advanced')}
+          style={{
+            padding: "12px 24px",
+            background: "transparent",
+            border: "none",
+            borderBottom: activeTab === 'advanced' ? "3px solid #8B5CF6" : "3px solid transparent",
+            color: activeTab === 'advanced' ? "#8B5CF6" : "#6b7280",
+            fontWeight: activeTab === 'advanced' ? 600 : 400,
+            fontSize: 16,
+            cursor: "pointer",
+            marginBottom: -2
+          }}
+        >
+          Advanced
+        </button>
+
+        <button
+          onClick={() => setActiveTab('branding')}
+          style={{
+            padding: "12px 24px",
+            background: "transparent",
+            border: "none",
+            borderBottom: activeTab === 'branding' ? "3px solid #8B5CF6" : "3px solid transparent",
+            color: activeTab === 'branding' ? "#8B5CF6" : "#6b7280",
+            fontWeight: activeTab === 'branding' ? 600 : 400,
+            fontSize: 16,
+            cursor: "pointer",
+            marginBottom: -2,
+            display: "flex",
+            alignItems: "center",
+            gap: 8
+          }}
+        >
+          Branding
+          {plan && plan.tier !== 'enterprise' && (
+            <span style={{
+              padding: "2px 6px",
+              background: "#fbbf24",
+              color: "#78350f",
+              borderRadius: 4,
+              fontSize: 11,
+              fontWeight: 600
+            }}>
+              ENTERPRISE
+            </span>
+          )}
+        </button>
+      </div>
+
+      <Form method="post">
+      {/* Quick Setup Tab */}
+      {activeTab === 'setup' && (
+        <>
         {/* Optimization Mode */}
         <div style={{ 
           background: "white", 
@@ -1952,7 +2050,34 @@ export default function Settings() {
             </div>
           )}
         </div>
-      </Form>
+        </>
+      )}
+
+      {/* AI Settings Tab */}
+      {activeTab === 'ai' && (
+        <div style={{ padding: 40, textAlign: "center" }}>
+          <h2 style={{ fontSize: 24, marginBottom: 16 }}>AI Settings</h2>
+          <p style={{ color: "#6b7280" }}>AI optimization settings will appear here</p>
+        </div>
+      )}
+
+      {/* Advanced Tab */}
+      {activeTab === 'advanced' && (
+        <div style={{ padding: 40, textAlign: "center" }}>
+          <h2 style={{ fontSize: 24, marginBottom: 16 }}>Advanced Settings</h2>
+          <p style={{ color: "#6b7280" }}>Advanced configuration options will appear here</p>
+        </div>
+      )}
+
+      {/* Branding Tab */}
+      {activeTab === 'branding' && (
+        <div style={{ padding: 40, textAlign: "center" }}>
+          <h2 style={{ fontSize: 24, marginBottom: 16 }}>Branding</h2>
+          <p style={{ color: "#6b7280" }}>Brand customization options will appear here</p>
+        </div>
+      )}
+
+</Form>
 
       {/* Modal Naming Popup */}
       {actionData?.needsConfirmation && (
@@ -1976,47 +2101,17 @@ export default function Settings() {
             width: "100%",
             maxHeight: "90vh",
             overflow: "auto",
-            position: "relative"
-          }}
-          onClick={(e) => e.stopPropagation()}
-          >
-            {/* Close X Button */}
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              style={{
-                position: "absolute",
-                top: 20,
-                right: 20,
-                background: "#f3f4f6",
-                border: "none",
-                fontSize: 28,
-                cursor: "pointer",
-                color: "#666",
-                lineHeight: 1,
-                width: 36,
-                height: 36,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                zIndex: 10,
-                borderRadius: 6,
-                transition: "background 0.2s"
-              }}
-              onMouseEnter={(e) => e.target.style.background = "#e5e7eb"}
-              onMouseLeave={(e) => e.target.style.background = "#f3f4f6"}
-            >
-              ×
-            </button>
-
-            <div style={{ padding: 40 }}>
-              <h2 style={{ fontSize: 28, marginBottom: 24 }}>New Modal Version Detected</h2>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 32 }}>
+            position: "relative",
+            padding: 32
+          }}>
+            {/* Comparison Section */}
+            <div style={{ marginBottom: 32 }}>
+              <h2 style={{ fontSize: 24, marginBottom: 24, textAlign: "center" }}>Save Changes</h2>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
                 {/* Current Modal */}
                 <div>
-                  <h3 style={{ fontSize: 18, marginBottom: 16, color: "#6b7280" }}>
-                    Current Modal ({modalLibrary.modals.find(m => m.modalId === modalLibrary.currentModalId)?.modalName || "modal10"})
+                  <h3 style={{ fontSize: 18, marginBottom: 16, color: "#6b7280", fontWeight: 600 }}>
+                    Current Modal
                   </h3>
                   <div style={{ 
                     padding: 24, 
@@ -2029,25 +2124,17 @@ export default function Settings() {
                         <>
                           <div style={{ textAlign: "center", marginBottom: 16 }}>
                             <div style={{ fontSize: 48 }}>🤖</div>
-                            <h4 style={{ fontSize: 20, marginBottom: 8, color: "#8B5CF6" }}>AI Mode Active</h4>
+                            <h4 style={{ fontSize: 20, marginBottom: 8, color: "#8B5CF6" }}>AI Mode</h4>
                           </div>
-                          <div style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>
+                          <div style={{ fontSize: 14, color: "#666" }}>
                             <div style={{ marginBottom: 8 }}>
-                              <span style={{ fontSize: 18, marginRight: 8 }}>🎯</span>
                               <strong>Goal:</strong> {actionData.currentSettings.aiGoal === "revenue" ? "Maximize Revenue" : "Maximize Conversions"}
                             </div>
-                            <div style={{ 
-                              padding: 12, 
-                              background: "#fef3c7", 
-                              borderRadius: 6,
-                              marginBottom: 8
-                            }}>
-                              <span style={{ fontSize: 18, marginRight: 8 }}>💪</span>
+                            <div style={{ marginBottom: 8 }}>
                               <strong>Aggression:</strong> {actionData.currentSettings.aggression}/10
                             </div>
-                            <div style={{ fontSize: 13, color: "#6b7280" }}>
-                              <span style={{ fontSize: 18, marginRight: 8 }}>⚡</span>
-                              <strong>Trigger:</strong> {getTriggerDisplay(actionData.currentSettings)}
+                            <div>
+                              <strong>Triggers:</strong> {getTriggerDisplay(actionData.currentSettings)}
                             </div>
                           </div>
                         </>
@@ -2168,9 +2255,10 @@ export default function Settings() {
                   </div>
                 </div>
               </div>
+            </div>
 
-              {/* Modal Name Input */}
-              <div style={{ marginBottom: 24 }}>
+            {/* Modal Name Input */}
+            <div style={{ marginBottom: 24 }}>
                 <label style={{ display: "block", marginBottom: 8, fontWeight: 600, fontSize: 16 }}>
                   Name this modal:
                 </label>
@@ -2266,8 +2354,9 @@ export default function Settings() {
               </div>
             </div>
           </div>
-        </div>
-      )}       
+        )}
+
+      {/* Preview Modal */}
 
       {/* Preview Modal */}
       {showPreview && (
@@ -2340,9 +2429,7 @@ export default function Settings() {
           </div>
         </div>
       )}
-    </div>
+      </div>
     </AppLayout>
-
-      
   );
 }
