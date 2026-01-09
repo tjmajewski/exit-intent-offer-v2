@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Form, useLoaderData, useActionData, useNavigation } from "react-router";
 import { authenticate } from "../shopify.server";
 import { hasFeature } from "../utils/featureGates";
@@ -536,32 +536,52 @@ export async function action({ request }) {
       ? JSON.parse(shopData.data.shop.currentSettings.value)
       : null;
 
-    const modalLibrary = shopData.data.shop?.modalLibrary?.value
+   const modalLibrary = shopData.data.shop?.modalLibrary?.value
       ? JSON.parse(shopData.data.shop.modalLibrary.value)
       : getDefaultModalLibrary();
+
+    // Load brand colors from database and add to currentSettings
+    const shopRecord = await db.shop.findUnique({
+      where: { shopifyDomain: shopDomain },
+      select: {
+        brandPrimaryColor: true,
+        brandSecondaryColor: true,
+        brandAccentColor: true,
+        brandFont: true
+      }
+    });
+
+    // Add brand colors from database to currentSettings
+    if (currentSettings && shopRecord) {
+      currentSettings.brandPrimaryColor = shopRecord.brandPrimaryColor;
+      currentSettings.brandSecondaryColor = shopRecord.brandSecondaryColor;
+      currentSettings.brandAccentColor = shopRecord.brandAccentColor;
+      currentSettings.brandFont = shopRecord.brandFont;
+    }
 
     // Generate hash for new settings
     const newHash = generateModalHash(settings);
     const currentHash = currentSettings ? generateModalHash(currentSettings) : null;
 
-    // Check if this is a new modal or confirmation with modal name
-    const modalName = formData.get("modalName");
-    const confirmSave = formData.get("confirmSave") === "true";
-
-    // If settings changed and no confirmation yet, prompt for modal name
-    if (newHash !== currentHash && !confirmSave) {
+    // Auto-generate modal name based on whether this is a new config or existing one
+    let modalName;
+    let isNewModal = false;
+    
+    if (newHash !== currentHash) {
       const existingModal = findModalByHash(modalLibrary, newHash);
-      const suggestedName = existingModal 
-        ? existingModal.modalName 
-        : getNextModalName(modalLibrary);
-
-      return {
-        needsConfirmation: true,
-        suggestedName,
-        existingModal,
-        currentSettings,
-        newSettings: settings
-      };
+      if (existingModal) {
+        // Reactivating an existing modal configuration
+        modalName = existingModal.modalName;
+      } else {
+        // Creating a new modal configuration
+        modalName = getNextModalName(modalLibrary);
+        isNewModal = true;
+      }
+    } else {
+      // Hash is the same, but user still clicked save (maybe tweaked brand colors slightly)
+      // Create a new modal version anyway
+      modalName = getNextModalName(modalLibrary);
+      isNewModal = true;
     }
 
     // Save settings and plan
@@ -604,45 +624,33 @@ export async function action({ request }) {
       }
     );
 
-    // If confirmed, update modal library
-    if (confirmSave && modalName) {
-      const existingModal = findModalByHash(modalLibrary, newHash);
+    // Always create new modal entry for performance tracking
+    if (modalName) {
+      const newModalId = `modal_${Date.now()}`;
+      const newHash = generateModalHash(settings);
       
-      if (existingModal) {
-        // Reactivating existing modal
-        modalLibrary.modals = modalLibrary.modals.map(m => ({
-          ...m,
-          active: m.modalId === existingModal.modalId,
-          lastActiveAt: m.modalId === existingModal.modalId ? new Date().toISOString() : m.lastActiveAt
-        }));
-        modalLibrary.currentModalId = existingModal.modalId;
-      } else {
-        // Create new modal
-        const newModalId = `modal_${Date.now()}`;
-        
-        // Deactivate all existing modals
-        modalLibrary.modals = modalLibrary.modals.map(m => ({ ...m, active: false }));
-        
-        // Add new modal
-        modalLibrary.modals.push({
-          modalId: newModalId,
-          modalName: modalName,
-          hash: newHash,
-          active: true,
-          createdAt: new Date().toISOString(),
-          lastActiveAt: new Date().toISOString(),
-          config: settings,
-          stats: {
-            impressions: 0,
-            clicks: 0,
-            conversions: 0,
-            revenue: 0
-          }
-        });
+      // Deactivate all existing modals
+      modalLibrary.modals = modalLibrary.modals.map(m => ({ ...m, active: false }));
+      
+      // Add new modal
+      modalLibrary.modals.push({
+        modalId: newModalId,
+        modalName: modalName,
+        hash: newHash,
+        active: true,
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        config: settings,
+        stats: {
+          impressions: 0,
+          clicks: 0,
+          conversions: 0,
+          revenue: 0
+        }
+      });
 
-        modalLibrary.currentModalId = newModalId;
-        modalLibrary.nextModalNumber = modalLibrary.nextModalNumber + 1;
-      }
+      modalLibrary.currentModalId = newModalId;
+      modalLibrary.nextModalNumber = modalLibrary.nextModalNumber + 1;
 
       // Save modal library
       await admin.graphql(
@@ -670,9 +678,9 @@ export async function action({ request }) {
 
     return { 
       success: true, 
-      message: settings.discountCode 
-        ? `Settings saved! Discount code ${settings.discountCode} created.`
-        : "Settings saved successfully!" 
+      message: isNewModal 
+        ? `Settings saved as ${modalName}${settings.discountCode ? `. Discount code ${settings.discountCode} created` : ''}`
+        : `Settings updated successfully${settings.discountCode ? `. Discount code ${settings.discountCode} created` : ''}` 
     };
   } catch (error) {
     console.error("Error saving settings:", error);
@@ -748,8 +756,18 @@ export default function Settings() {
     // Message will stay visible now
   };
 
-  const showSuccessMessage = actionData?.success && !formChanged && !isSubmitting;
-  const showErrorMessage = actionData?.success === false && !actionData?.needsConfirmation && !formChanged && !isSubmitting;
+  const showSuccessMessage = actionData?.success && !isSubmitting;
+  const showErrorMessage = actionData?.success === false && !isSubmitting;
+  
+  // Reset formChanged after successful save
+  useEffect(() => {
+    if (actionData?.success) {
+      setFormChanged(false);
+    }
+  }, [actionData]);
+
+  // Helper function to detect what changed
+  
 
      
   
@@ -1413,206 +1431,6 @@ export default function Settings() {
         )}
 
         
-      {/* Brand Customization (Enterprise Only) */}
-        {plan?.tier === 'enterprise' && (
-          <div style={{ 
-            background: "white", 
-            padding: 24, 
-            borderRadius: 8, 
-            border: "1px solid #e5e7eb",
-            marginBottom: 24 
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <div>
-                <h2 style={{ fontSize: 20, marginBottom: 4 }}>Brand Customization</h2>
-                <p style={{ fontSize: 14, color: "#666", margin: 0 }}>
-                  Customize the modal to match your brand
-                </p>
-              </div>
-              <span style={{ 
-                padding: "4px 12px", 
-                background: "#8B5CF6", 
-                color: "white", 
-                borderRadius: 4, 
-                fontSize: 12,
-                fontWeight: 600 
-              }}>
-                ENTERPRISE
-              </span>
-            </div>
-
-            {/* Auto-Detect Button */}
-            <div style={{ marginBottom: 24 }}>
-              <button
-                type="button"
-                onClick={async () => {
-                  setAutoDetecting(true);
-                  try {
-                    const response = await fetch('/apps/exit-intent/api/detect-brand', {
-                      method: 'POST'
-                    });
-                    const data = await response.json();
-                    if (data.success) {
-                      setBrandPrimaryColor(data.colors.primary);
-                      setBrandSecondaryColor(data.colors.secondary);
-                      setBrandAccentColor(data.colors.accent);
-                      setBrandFont(data.colors.font);
-                    }
-                  } catch (error) {
-                    console.error('Auto-detect failed:', error);
-                  } finally {
-                    setAutoDetecting(false);
-                  }
-                }}
-                disabled={autoDetecting}
-                style={{
-                  padding: "10px 20px",
-                  background: autoDetecting ? "#9ca3af" : "#10b981",
-                  color: "white",
-                  border: "none",
-                  borderRadius: 6,
-                  cursor: autoDetecting ? "not-allowed" : "pointer",
-                  fontSize: 14,
-                  fontWeight: 500
-                }}
-              >
-                {autoDetecting ? "Detecting..." : " Auto-Detect Brand Colors"}
-              </button>
-              <div style={{ fontSize: 13, color: "#6b7280", marginTop: 8 }}>
-                Automatically detect colors from your store's homepage
-              </div>
-            </div>
-
-            {/* Color Pickers */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 20 }}>
-              <div>
-                <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
-                  Primary Color
-                </label>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <input
-                    type="color"
-                    name="brandPrimaryColor"
-                    value={brandPrimaryColor}
-                    onChange={(e) => setBrandPrimaryColor(e.target.value)}
-                    style={{ width: 50, height: 40, border: "1px solid #d1d5db", borderRadius: 6, cursor: "pointer" }}
-                  />
-                  <input
-                    type="text"
-                    value={brandPrimaryColor}
-                    onChange={(e) => setBrandPrimaryColor(e.target.value)}
-                    style={{ flex: 1, padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
-                  Secondary Color
-                </label>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <input
-                    type="color"
-                    name="brandSecondaryColor"
-                    value={brandSecondaryColor}
-                    onChange={(e) => setBrandSecondaryColor(e.target.value)}
-                    style={{ width: 50, height: 40, border: "1px solid #d1d5db", borderRadius: 6, cursor: "pointer" }}
-                  />
-                  <input
-                    type="text"
-                    value={brandSecondaryColor}
-                    onChange={(e) => setBrandSecondaryColor(e.target.value)}
-                    style={{ flex: 1, padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
-                  Accent Color
-                </label>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <input
-                    type="color"
-                    name="brandAccentColor"
-                    value={brandAccentColor}
-                    onChange={(e) => setBrandAccentColor(e.target.value)}
-                    style={{ width: 50, height: 40, border: "1px solid #d1d5db", borderRadius: 6, cursor: "pointer" }}
-                  />
-                  <input
-                    type="text"
-                    value={brandAccentColor}
-                    onChange={(e) => setBrandAccentColor(e.target.value)}
-                    style={{ flex: 1, padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Font Selector */}
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
-                Font Family
-              </label>
-              <select
-                name="brandFont"
-                value={brandFont}
-                onChange={(e) => setBrandFont(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  border: "1px solid #d1d5db",
-                  borderRadius: 6,
-                  fontSize: 14
-                }}
-              >
-                <option value="system">System Default</option>
-                <option value="Arial, sans-serif">Arial</option>
-                <option value="'Helvetica Neue', sans-serif">Helvetica</option>
-                <option value="'Georgia', serif">Georgia</option>
-                <option value="'Times New Roman', serif">Times New Roman</option>
-                <option value="'Courier New', monospace">Courier</option>
-                <option value="'Roboto', sans-serif">Roboto</option>
-                <option value="'Open Sans', sans-serif">Open Sans</option>
-                <option value="'Lato', sans-serif">Lato</option>
-                <option value="'Montserrat', sans-serif">Montserrat</option>
-              </select>
-            </div>
-
-            {/* Preview Box */}
-            <div style={{
-              padding: 16,
-              background: brandSecondaryColor,
-              border: `2px solid ${brandPrimaryColor}`,
-              borderRadius: 8,
-              textAlign: "center"
-            }}>
-              <div style={{ 
-                fontSize: 18, 
-                fontWeight: 600, 
-                color: brandPrimaryColor,
-                fontFamily: brandFont,
-                marginBottom: 8
-              }}>
-                Preview
-              </div>
-              <button type="button" style={{
-                padding: "10px 20px",
-                background: brandAccentColor,
-                color: brandSecondaryColor,
-                border: "none",
-                borderRadius: 6,
-                fontFamily: brandFont,
-                fontSize: 14,
-                fontWeight: 500,
-                cursor: "default"
-              }}>
-                Sample Button
-              </button>
-            </div>
-          </div>
-        )}
-        
       </>
       )}
 
@@ -2082,10 +1900,256 @@ export default function Settings() {
 
       {/* Branding Tab */}
       {activeTab === 'branding' && (
-        <div style={{ padding: 40, textAlign: "center" }}>
-          <h2 style={{ fontSize: 24, marginBottom: 16 }}>Branding</h2>
-          <p style={{ color: "#6b7280" }}>Brand customization options will appear here</p>
-        </div>
+        <>
+        {/* Hidden inputs to preserve trigger settings when saving from Branding tab */}
+        <input type="hidden" name="exitIntentEnabled" value={settings.exitIntentEnabled || settings.triggers?.exitIntent ? "on" : ""} />
+        <input type="hidden" name="timeDelayEnabled" value={settings.timeDelayEnabled || settings.triggers?.timeDelay ? "on" : ""} />
+        <input type="hidden" name="timeDelaySeconds" value={settings.timeDelaySeconds || settings.triggers?.timeDelaySeconds || 30} />
+        <input type="hidden" name="cartValueEnabled" value={settings.cartValueEnabled || settings.triggers?.cartValue ? "on" : ""} />
+        <input type="hidden" name="cartValueMin" value={settings.cartValueMin || settings.triggers?.minCartValue || 0} />
+        <input type="hidden" name="cartValueMax" value={settings.cartValueMax || settings.triggers?.maxCartValue || 1000} />
+        
+        {plan?.tier !== 'enterprise' ? (
+          <div style={{
+            background: 'white',
+            padding: 48,
+            borderRadius: 8,
+            border: '1px solid #e5e7eb',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              display: 'inline-block',
+              padding: '4px 12px',
+              background: '#8B5CF6',
+              color: 'white',
+              borderRadius: 4,
+              fontSize: 12,
+              fontWeight: 600,
+              marginBottom: 16
+            }}>
+              ENTERPRISE
+            </div>
+            <h2 style={{ fontSize: 24, marginBottom: 12 }}>Brand Customization</h2>
+            <p style={{ color: '#6b7280', marginBottom: 24, maxWidth: 500, margin: '0 auto 24px' }}>
+              Customize your modal colors and fonts to match your brand perfectly. 
+              Available on Enterprise plan.
+            </p>
+            <button
+              type="button"
+              onClick={() => window.open('https://sealdeal.ai/pricing', '_blank')}
+              style={{
+                padding: '12px 24px',
+                background: '#8B5CF6',
+                color: 'white',
+                border: 'none',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontSize: 16,
+                fontWeight: 500
+              }}
+            >
+              Upgrade to Enterprise
+            </button>
+          </div>
+        ) : (
+          <div style={{ 
+            background: "white", 
+            padding: 24, 
+            borderRadius: 8, 
+            border: "1px solid #e5e7eb",
+            marginBottom: 24 
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div>
+                <h2 style={{ fontSize: 20, marginBottom: 4 }}>Brand Customization</h2>
+                <p style={{ fontSize: 14, color: "#666", margin: 0 }}>
+                  Customize the modal to match your brand
+                </p>
+              </div>
+              <span style={{ 
+                padding: "4px 12px", 
+                background: "#8B5CF6", 
+                color: "white", 
+                borderRadius: 4, 
+                fontSize: 12,
+                fontWeight: 600 
+              }}>
+                ENTERPRISE
+              </span>
+            </div>
+
+            {/* Auto-Detect Button */}
+            <div style={{ marginBottom: 24 }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  setAutoDetecting(true);
+                  try {
+                    const response = await fetch('/apps/exit-intent/api/detect-brand', {
+                      method: 'POST'
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                      setBrandPrimaryColor(data.colors.primary);
+                      setBrandSecondaryColor(data.colors.secondary);
+                      setBrandAccentColor(data.colors.accent);
+                      setBrandFont(data.colors.font);
+                    }
+                  } catch (error) {
+                    console.error('Auto-detect failed:', error);
+                  } finally {
+                    setAutoDetecting(false);
+                  }
+                }}
+                disabled={autoDetecting}
+                style={{
+                  padding: "10px 20px",
+                  background: autoDetecting ? "#9ca3af" : "#10b981",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 6,
+                  cursor: autoDetecting ? "not-allowed" : "pointer",
+                  fontSize: 14,
+                  fontWeight: 500
+                }}
+              >
+                {autoDetecting ? "Detecting..." : "Auto-Detect Brand Colors"}
+              </button>
+              <div style={{ fontSize: 13, color: "#6b7280", marginTop: 8 }}>
+                Automatically detect colors from your store's homepage
+              </div>
+            </div>
+
+            {/* Color Pickers */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 20 }}>
+              <div>
+                <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+                  Primary Color
+                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="color"
+                    name="brandPrimaryColor"
+                    value={brandPrimaryColor}
+                    onChange={(e) => { setBrandPrimaryColor(e.target.value); setFormChanged(true); }}
+                    style={{ width: 50, height: 40, border: "1px solid #d1d5db", borderRadius: 6, cursor: "pointer" }}
+                  />
+                  <input
+                    type="text"
+                    value={brandPrimaryColor}
+                    onChange={(e) => { setBrandPrimaryColor(e.target.value); setFormChanged(true); }}
+                    style={{ flex: 1, padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+                  Secondary Color
+                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="color"
+                    name="brandSecondaryColor"
+                    value={brandSecondaryColor}
+                    onChange={(e) => { setBrandSecondaryColor(e.target.value); setFormChanged(true); }}
+                    style={{ width: 50, height: 40, border: "1px solid #d1d5db", borderRadius: 6, cursor: "pointer" }}
+                  />
+                  <input
+                    type="text"
+                    value={brandSecondaryColor}
+                    onChange={(e) => { setBrandSecondaryColor(e.target.value); setFormChanged(true); }}
+                    style={{ flex: 1, padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+                  Accent Color
+                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="color"
+                    name="brandAccentColor"
+                    value={brandAccentColor}
+                    onChange={(e) => { setBrandAccentColor(e.target.value); setFormChanged(true); }}
+                    style={{ width: 50, height: 40, border: "1px solid #d1d5db", borderRadius: 6, cursor: "pointer" }}
+                  />
+                  <input
+                    type="text"
+                    value={brandAccentColor}
+                    onChange={(e) => { setBrandAccentColor(e.target.value); setFormChanged(true); }}
+                    style={{ flex: 1, padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Font Selector */}
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+                Font Family
+              </label>
+              <select
+                name="brandFont"
+                value={brandFont}
+                onChange={(e) => { setBrandFont(e.target.value); setFormChanged(true); }}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: 6,
+                  fontSize: 14
+                }}
+              >
+                <option value="system">System Default</option>
+                <option value="Arial, sans-serif">Arial</option>
+                <option value="'Helvetica Neue', sans-serif">Helvetica</option>
+                <option value="'Georgia', serif">Georgia</option>
+                <option value="'Times New Roman', serif">Times New Roman</option>
+                <option value="'Courier New', monospace">Courier</option>
+                <option value="'Roboto', sans-serif">Roboto</option>
+                <option value="'Open Sans', sans-serif">Open Sans</option>
+                <option value="'Lato', sans-serif">Lato</option>
+                <option value="'Montserrat', sans-serif">Montserrat</option>
+              </select>
+            </div>
+
+            {/* Preview Box */}
+            <div style={{
+              padding: 16,
+              background: brandSecondaryColor,
+              border: `2px solid ${brandPrimaryColor}`,
+              borderRadius: 8,
+              textAlign: "center"
+            }}>
+              <div style={{ 
+                fontSize: 18, 
+                fontWeight: 600, 
+                color: brandPrimaryColor,
+                fontFamily: brandFont,
+                marginBottom: 8
+              }}>
+                Preview
+              </div>
+              <button type="button" style={{
+                padding: "10px 20px",
+                background: brandAccentColor,
+                color: brandSecondaryColor,
+                border: "none",
+                borderRadius: 6,
+                fontFamily: brandFont,
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: "default"
+              }}>
+                Sample Button
+              </button>
+            </div>
+          </div>
+        )}
+        </>
       )}
 
       {/* Save Button - Appears on all tabs */}
@@ -2136,285 +2200,6 @@ export default function Settings() {
       </div>
 
 </Form>
-
-      {/* Modal Naming Popup */}
-      {actionData?.needsConfirmation && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: "rgba(0, 0, 0, 0.7)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 2000,
-          padding: 20
-        }}>
-          <div style={{
-            background: "white",
-            borderRadius: 12,
-            maxWidth: 1000,
-            width: "100%",
-            maxHeight: "90vh",
-            overflow: "auto",
-            position: "relative",
-            padding: 32
-          }}>
-            {/* Comparison Section */}
-            <div style={{ marginBottom: 32 }}>
-              <h2 style={{ fontSize: 24, marginBottom: 24, textAlign: "center" }}>Save Changes</h2>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-                {/* Current Modal */}
-                <div>
-                  <h3 style={{ fontSize: 18, marginBottom: 16, color: "#6b7280", fontWeight: 600 }}>
-                    Current Modal
-                  </h3>
-                  <div style={{ 
-                    padding: 24, 
-                    background: "#f9fafb", 
-                    borderRadius: 8,
-                    border: "1px solid #e5e7eb"
-                  }}>
-                    {actionData.currentSettings ? (
-                      actionData.currentSettings.mode === "ai" ? (
-                        <>
-                          <div style={{ textAlign: "center", marginBottom: 16 }}>
-                            <div style={{ fontSize: 48 }}>  </div>
-                            <h4 style={{ fontSize: 20, marginBottom: 8, color: "#8B5CF6" }}>AI Mode</h4>
-                          </div>
-                          <div style={{ fontSize: 14, color: "#666" }}>
-                            <div style={{ marginBottom: 8 }}>
-                              <strong>Goal:</strong> {actionData.currentSettings.aiGoal === "revenue" ? "Maximize Revenue" : "Maximize Conversions"}
-                            </div>
-                            <div style={{ marginBottom: 8 }}>
-                              <strong>Aggression:</strong> {actionData.currentSettings.aggression}/10
-                            </div>
-                            <div>
-                              <strong>Triggers:</strong> {getTriggerDisplay(actionData.currentSettings)}
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <h4 style={{ fontSize: 20, marginBottom: 12 }}>
-                            {actionData.currentSettings.modalHeadline}
-                          </h4>
-                          <p style={{ marginBottom: 16, color: "#666" }}>
-                            {actionData.currentSettings.modalBody}
-                          </p>
-                          <button style={{
-                            width: "100%",
-                            padding: "10px",
-                            background: "#8B5CF6",
-                            color: "white",
-                            border: "none",
-                            borderRadius: 6,
-                            fontSize: 14,
-                            fontWeight: 500
-                          }}>
-                            {actionData.currentSettings.ctaButton}
-                          </button>
-                          {actionData.currentSettings.discountEnabled && (
-                            <div style={{ marginTop: 12, fontSize: 14, color: "#6b7280" }}>
-                              {getDiscountDisplay(actionData.currentSettings)} discount
-                            </div>
-                          )}
-                          <div style={{ marginTop: 16, fontSize: 13, color: "#6b7280" }}>
-                            <div><strong>Triggers:</strong> {getTriggerDisplay(actionData.currentSettings)}</div>
-                          </div>
-                        </>
-                      )
-                    ) : (
-                      <div style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>
-                        <h4 style={{ fontSize: 18, marginBottom: 8 }}>No current modal</h4>
-                        <div style={{ height: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <div style={{ 
-                            width: "100%", 
-                            height: 40, 
-                            background: "#8B5CF6", 
-                            borderRadius: 6,
-                            opacity: 0.3
-                          }} />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* New Changes */}
-                <div>
-                  <h3 style={{ fontSize: 18, marginBottom: 16, color: "#10b981", fontWeight: 600 }}>
-                    New Changes
-                  </h3>
-                  <div style={{ 
-                    padding: 24, 
-                    background: "#f0fdf4", 
-                    borderRadius: 8,
-                    border: "2px solid #10b981"
-                  }}>
-                    {actionData.newSettings?.mode === "ai" ? (
-                      <>
-                        <div style={{ textAlign: "center", marginBottom: 16 }}>
-                          <div style={{ fontSize: 48 }}>  </div>
-                          <h4 style={{ fontSize: 20, marginBottom: 8, color: "#8B5CF6" }}>AI Mode Active</h4>
-                        </div>
-                        <div style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>
-                          <div style={{ marginBottom: 8 }}>
-                            <span style={{ fontSize: 18, marginRight: 8 }}>  </span>
-                            <strong>Goal:</strong> {actionData.newSettings.aiGoal === "revenue" ? "Maximize Revenue" : "Maximize Conversions"}
-                          </div>
-                          <div style={{ 
-                            padding: 12, 
-                            background: "#fef3c7", 
-                            borderRadius: 6,
-                            marginBottom: 8
-                          }}>
-                            <span style={{ fontSize: 18, marginRight: 8 }}></span>
-                            <strong>Aggression:</strong> {actionData.newSettings.aggression}/10
-                          </div>
-                          <div style={{ fontSize: 13, color: "#6b7280" }}>
-                            <span style={{ fontSize: 18, marginRight: 8 }}>⚡</span>
-                            <strong>Trigger:</strong> {getTriggerDisplay(actionData.newSettings)}
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <h4 style={{ fontSize: 20, marginBottom: 12 }}>
-                          {actionData.newSettings?.modalHeadline}
-                        </h4>
-                        <p style={{ marginBottom: 16, color: "#666" }}>
-                          {actionData.newSettings?.modalBody}
-                        </p>
-                        <button style={{
-                          width: "100%",
-                          padding: "10px",
-                          background: "#8B5CF6",
-                          color: "white",
-                          border: "none",
-                          borderRadius: 6,
-                          fontSize: 14,
-                          fontWeight: 500
-                        }}>
-                          {actionData.newSettings?.ctaButton}
-                        </button>
-                        {actionData.newSettings?.discountEnabled && (
-                          <div style={{ marginTop: 12, fontSize: 14, color: "#6b7280" }}>
-                            {getDiscountDisplay(actionData.newSettings)} discount
-                          </div>
-                        )}
-                        <div style={{ marginTop: 16, fontSize: 13, color: "#6b7280" }}>
-                          <div><strong>Triggers:</strong> {getTriggerDisplay(actionData.newSettings)}</div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Name Input */}
-            <div style={{ marginBottom: 24 }}>
-                <label style={{ display: "block", marginBottom: 8, fontWeight: 600, fontSize: 16 }}>
-                  Name this modal:
-                </label>
-                <input
-                  type="text"
-                  value={modalName || actionData.suggestedName}
-                  onChange={(e) => setModalName(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    border: "2px solid #d1d5db",
-                    borderRadius: 6,
-                    fontSize: 16
-                  }}
-                  placeholder={actionData.suggestedName}
-                />
-              </div>
-
-              {/* Info Box */}
-              <div style={{
-                padding: 16,
-                background: "#eff6ff",
-                border: "1px solid #bfdbfe",
-                borderRadius: 6,
-                marginBottom: 24,
-                fontSize: 14,
-                color: "#1e40af"
-              }}>
-                 <strong>New Modal Campaign</strong>
-                <div style={{ marginTop: 4 }}>
-                  This will create a new modal and start tracking its performance separately. Your previous modal will be deactivated.
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div style={{ display: "flex", gap: 16, justifyContent: "flex-end" }}>
-                <button
-                  type="button"
-                  onClick={() => window.location.reload()}
-                  style={{
-                    padding: "12px 24px",
-                    background: "white",
-                    color: "#374151",
-                    border: "2px solid #d1d5db",
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    fontSize: 16,
-                    fontWeight: 500
-                  }}
-                >
-                  Cancel
-                </button>
-                <Form method="post">
-                  <input type="hidden" name="confirmSave" value="true" />
-                  <input type="hidden" name="modalName" value={modalName || actionData.suggestedName} />
-                  <input type="hidden" name="modalHeadline" value={actionData.newSettings?.modalHeadline} />
-                  <input type="hidden" name="modalBody" value={actionData.newSettings?.modalBody} />
-                  <input type="hidden" name="ctaButton" value={actionData.newSettings?.ctaButton} />
-                  <input type="hidden" name="exitIntentEnabled" value={actionData.newSettings?.exitIntentEnabled ? "on" : "off"} />
-                  <input type="hidden" name="timeDelayEnabled" value={actionData.newSettings?.timeDelayEnabled ? "on" : "off"} />
-                  <input type="hidden" name="timeDelaySeconds" value={actionData.newSettings?.timeDelaySeconds} />
-                  <input type="hidden" name="cartValueEnabled" value={actionData.newSettings?.cartValueEnabled ? "on" : "off"} />
-                  <input type="hidden" name="cartValueMin" value={actionData.newSettings?.cartValueMin} />
-                  <input type="hidden" name="cartValueMax" value={actionData.newSettings?.cartValueMax} />
-                  <input type="hidden" name="discountEnabled" value={actionData.newSettings?.discountEnabled ? "on" : "off"} />
-                  <input type="hidden" name="offerType" value={actionData.newSettings?.offerType} />
-                  <input type="hidden" name="discountPercentage" value={actionData.newSettings?.discountPercentage} />
-                  <input type="hidden" name="discountAmount" value={actionData.newSettings?.discountAmount} />
-                  <input type="hidden" name="redirectDestination" value={actionData.newSettings?.redirectDestination} />
-                  <input type="hidden" name="template" value={actionData.newSettings?.template} />
-                  <input type="hidden" name="mode" value={actionData.newSettings?.mode} />
-                  <input type="hidden" name="aiGoal" value={actionData.newSettings?.aiGoal} />
-                  <input type="hidden" name="aggression" value={actionData.newSettings?.aggression} />
-                  <input type="hidden" name="budgetEnabled" value={actionData.newSettings?.budgetEnabled ? "on" : "off"} />
-                  <input type="hidden" name="budgetAmount" value={actionData.newSettings?.budgetAmount} />
-                  <input type="hidden" name="budgetPeriod" value={actionData.newSettings?.budgetPeriod} />
-                  <button
-                    type="submit"
-                    style={{
-                      padding: "12px 24px",
-                      background: "#8B5CF6",
-                      color: "white",
-                      border: "none",
-                      borderRadius: 6,
-                      cursor: "pointer",
-                      fontSize: 16,
-                      fontWeight: 500
-                    }}
-                  >
-                    Save as New Modal
-                  </button>
-                </Form>
-              </div>
-            </div>
-          </div>
-        )}
-
-      {/* Preview Modal */}
 
       {/* Preview Modal */}
       {showPreview && (

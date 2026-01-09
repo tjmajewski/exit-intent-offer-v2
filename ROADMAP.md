@@ -1,571 +1,283 @@
-# Exit Intent Offer - UX Redesign & Roadmap Handoff
-## January 8, 2026 - Session Summary
+# Exit Intent Offer - Updated Roadmap & Handoff
+## January 8, 2026 - Evening Session Summary
 
-**Previous Session:** Dashboard & Performance Page Redesign Planning (Jan 7)  
-**This Session:** Dashboard Completed, Performance Page Completed, Settings Page Redesigned (Tabs Added)
+**Previous Session:** UX Redesign (Dashboard, Performance, Settings tabs structure)  
+**This Session:** Settings Page Reorganization + Conversions Tracking System
 
 ---
 
 ## 📋 TABLE OF CONTENTS
 
-1. [Completed Today](#completed-today)
-2. [Settings Page Reorganization Plan](#settings-page-reorganization-plan)
-3. [Orders Tracking System Design](#orders-tracking-system-design)
-4. [Updated Product Roadmap](#updated-product-roadmap)
-5. [Implementation Priorities](#implementation-priorities)
+1. [Completed This Session](#completed-this-session)
+2. [Current State](#current-state)
+3. [Next Priorities](#next-priorities)
+4. [AI Settings Enhancements Spec](#ai-settings-enhancements-spec)
+5. [Branding Tab Implementation](#branding-tab-implementation)
+6. [Production Deployment Checklist](#production-deployment-checklist)
 
 ---
 
-## ✅ COMPLETED TODAY
+## ✅ COMPLETED THIS SESSION
 
-### 1. Dashboard Redesign - COMPLETE ✅
-**File:** `app/routes/app._index.jsx`
+### 1. Settings Page Reorganization - COMPLETE ✅
 
-**Implemented Changes:**
-- ✅ Session counter with usage tracking (Starter: 1,000 limit, Pro: 10,000 limit, Enterprise: unlimited)
-- ✅ Hero card redesigned with 4-column metrics layout
-- ✅ Plain English metrics throughout:
-  - "Revenue Saved" (not "Revenue Recovered")
-  - "Times Shown" (not "Impressions")
-  - "Success Rate" (not "Conversion Rate")
-  - "People Clicked" (not "Click Count")
-- ✅ AI Performance section for Pro/Enterprise (shows when AI Mode is active)
-- ✅ Advanced AI Testing Status (Enterprise only, shows variant testing details)
-- ✅ Recent Activity feed (Enterprise only, last 5 events with time-ago formatting)
-- ✅ Tier-specific upsells with appropriate upgrade CTAs
-- ✅ All emojis removed for professional look
-- ✅ Sidebar plan badge position fixed (moved up in dev mode to avoid dev switcher overlap)
+**Tab Structure Implemented:**
+- ✅ **Quick Setup Tab:** Optimization Mode selector, Templates, Modal Content, Discount, Triggers
+- ✅ **AI Settings Tab:** Locked for Starter / Full AI controls for Pro+ (Goal, Aggression, Budget)
+- ✅ **Advanced Tab:** After Click Behavior, Additional Conditions
+- ✅ **Branding Tab:** Placeholder (needs brand customization content moved in)
 
-**Key Technical Details:**
-- Session counter updates properly after plan switching (usage object added to loader)
-- Empty state guidance when no data ("Just getting started? These numbers will grow...")
-- AI Performance section only shows when `settings.mode === 'ai'`
-- Fallback for missing currentModal.headline prevents empty "**" display
-- Recent Activity feed uses time-ago calculation (minutes, hours, days)
+**Key Changes:**
+- Moved Optimization Mode selector to top of Quick Setup (2-column card layout)
+- Added "Go to AI Settings →" CTA when AI Mode is enabled
+- Moved After Click Behavior and Additional Conditions to Advanced tab
+- Populated AI Settings tab with optimization controls
+- Fixed Save Settings button position (now appears at bottom of all tabs)
+- All tier gating working correctly
 
-**Tier-Specific Features:**
-- **Starter:** Session counter, basic metrics, empty states, upgrade CTA
-- **Pro:** All Starter + AI Performance section, 10,000 session limit
-- **Enterprise:** All Pro + Advanced AI Testing, Recent Activity feed, unlimited sessions
+**Files Modified:**
+- `app/routes/app.settings.jsx` - Major reorganization
 
 ---
 
-### 2. Performance Page Redesign - COMPLETE ✅
-**File:** `app/routes/app.analytics.jsx`
+### 2. Conversions Tracking System - COMPLETE ✅
 
-**Implemented Changes:**
-- ✅ Renamed "Analytics" → "Performance" throughout (page title, sidebar, links)
-- ✅ Access changed from Enterprise-only to Pro+ (Starter sees locked page)
-- ✅ Tab structure implemented:
-  - Tab 1: "Your Modals" (Pro+)
-  - Tab 2: "AI Variants" (Enterprise only, locked for Pro with badge)
-- ✅ Date selector added (7d, 30d, All time) with URL parameter support
-- ✅ Plain English column headers:
-  - "Modal", "Status", "Dates", "Shown", "Clicks", "Orders", "Revenue"
-  - Removed CTR and CVR columns for simplicity
-- ✅ Status badges ("Enabled" / "Disabled") instead of inline text
-- ✅ Dates show "Now" instead of "Present"
-- ✅ Test conversion button removed from production view
-- ✅ Sidebar badge now shows "PRO" for Starter (was "ENTERPRISE")
-
-**Locked Page (Starter Tier):**
-- Title: "Performance"
-- Badge: "PRO"
-- CTA: "Upgrade to Pro"
-- Shows blurred preview of table
-- Clear value prop: "Compare performance across all your modal campaigns..."
-
-**Date Filtering Infrastructure:**
-- URL parameter system in place (`?range=30d`)
-- Loader accepts date range parameter
-- TODO comment added for actual filtering logic (requires event-level data)
-- Frontend buttons trigger page reload with new range
-- Ready for implementation when event tracking is added
-
-**Technical Notes:**
-- Removed test conversion button (was only for development)
-- Fixed `availableTemplates` bug in Settings page
-- Component properly destructures all loader data
-
----
-
-### 3. Settings Page Tab Structure - ADDED ✅
-**File:** `app/routes/app.settings.jsx`
-
-**Implemented Changes:**
-- ✅ Tab navigation added (Quick Setup, AI Settings, Advanced, Branding)
-- ✅ `useState` for tab management
-- ✅ Tab styling with active state indicators
-- ✅ Tier badges on locked tabs (AI Settings: "PRO", Branding: "ENTERPRISE")
-- ✅ All emojis removed from Manual Mode sections
-- ✅ Fixed `availableTemplates` undefined error
-- ✅ "Analytics" links updated to "Performance"
-
-**Tab Structure:**
-- **Quick Setup:** Template selection, Modal Content, Discount, Triggers (currently has ALL content)
-- **AI Settings:** Placeholder (needs Optimization Mode moved here)
-- **Advanced:** Placeholder (needs After-click, Conditions moved here)
-- **Branding:** Placeholder (needs Brand Customization moved here)
-
-**Status:** Tab infrastructure complete, content reorganization needed (see next section)
-
----
-
-## 🎯 SETTINGS PAGE REORGANIZATION PLAN
-
-### Current Problem
-All settings content is currently in the "Quick Setup" tab. Need to reorganize into 4 logical tabs with proper tier gating.
-
-### Proposed Tab Organization
-
-#### TAB 1: QUICK SETUP (All Tiers)
-**What belongs here:**
-- Template Selector (Manual Mode only)
-- Modal Content (Headline, Body, CTA)
-- Discount Offer (Optional)
-- When to Show Modal (Triggers: Exit Intent, Time Delay, Cart Value)
-
-**Tier Access:**
-- **Starter:** Template, Modal Content, Discount, Exit Intent only
-- **Pro:** All triggers available
-- **Enterprise:** All triggers available
-
-**Implementation:**
-- Content is already here
-- Just needs slight cleanup when other sections move out
-
----
-
-#### TAB 2: AI SETTINGS (Pro+) place with
-**Locked for Starter** - Shows locked message with "PRO" badge and upgrade CTA
-
-**What belongs here:**
-- Optimization Mode selector (Manual vs AI)
-- AI Goal dropdown (Maximize Revenue / Maximize Conversions)
-- Discount Aggression slider (0-10)
-- Promotion Budget (Optional checkbox, amount, period)
-- AI Mode Active notification box (when AI is selected)
-
-**Current Location:** Lines 889-1136 in `app/routes/app.settings.jsx`
-
-**Move Instructions:**
-1. Find section starting with `{/* Optimization Mode */}` (line ~889)
-2. Cut entire section through closing `</div>` before Template Selector
-3. Paste into AI Settings tab conditional: `{activeTab === 'ai' && ( ... )}`
-4. Keep tier gating: `canUseAIMode` check for Pro+
-
-**Tier Access:**
-- **Starter:** Locked with upgrade CTA
-- **Pro:** Full access to all AI settings
-- **Enterprise:** Same as Pro (no additional AI settings yet)
-
----
-
-#### TAB 3: ADVANCED (All Tiers)
-**What belongs here:**
-- After Click Behavior (Checkout vs Cart Page)
-- Additional Conditions (Cart Value Range)
-- Frequency Caps (future: how often to show per customer)
-- Session Limits (future: daily/weekly caps)
-
-**Current Location:** Scattered in settings, some not built yet
-
-**Implementation:**
-- Move "After Click Behavior" section
-- Move "Additional Conditions" section
-- Add TODOs for future frequency cap features
-
-**Tier Access:**
-- **Starter:** All features available
-- **Pro:** All features available
-- **Enterprise:** All features available
-
----
-
-#### TAB 4: BRANDING (Enterprise Only)
-**Locked for Starter & Pro** - Shows locked message with "ENTERPRISE" badge
-
-**What belongs here:**
-- Auto-Detect Brand Colors button
-- Primary Color picker
-- Secondary Color picker
-- Accent Color picker
-- Font Family dropdown
-- Preview section (shows sample button with current colors)
-
-**Current Location:** Already in correct place in settings file
-
-**Move Instructions:**
-- Should already be in the Branding tab
-- Verify Enterprise-only access with proper tier gating
-- Ensure preview updates in real-time
-
-**Tier Access:**
-- **Starter:** Locked with upgrade CTA
-- **Pro:** Locked with upgrade CTA
-- **Enterprise:** Full access
-
----
-
-### Implementation Steps
-
-**Step 1: Move Optimization Mode to AI Settings Tab**
-```javascript
-// Find this section (lines 889-1136)
-{/* Optimization Mode */}
-<div style={{ background: "white", ... }}>
-  // ... entire Optimization Mode section
-</div>
-
-// Cut and paste into:
-{activeTab === 'ai' && (
-  <>
-    {!canUseAIMode ? (
-      // Locked state for Starter
-      <LockedFeature feature="ai-settings" requiredTier="pro" />
-    ) : (
-      // Full AI settings for Pro+
-      <div>
-        {/* Optimization Mode section here */}
-      </div>
-    )}
-  </>
-)}
-```
-
-**Step 2: Move After-Click and Conditions to Advanced Tab**
-```javascript
-{activeTab === 'advanced' && (
-  <>
-    {/* After Click Behavior */}
-    <div style={{ background: "white", padding: 24, ... }}>
-      <h2>After Click Behavior</h2>
-      // ... existing content
-    </div>
-
-    {/* Additional Conditions */}
-    <div style={{ background: "white", padding: 24, ... }}>
-      <h2>Additional Conditions</h2>
-      // ... existing content
-    </div>
-  </>
-)}
-```
-
-**Step 3: Verify Branding Tab**
-- Should already be implemented
-- Just verify Enterprise-only access
-
-**Step 4: Clean Up Quick Setup Tab**
-- Remove sections that moved to other tabs
-- Keep only: Template, Content, Discount, Triggers
-
----
-
-## 📦 ORDERS TRACKING SYSTEM DESIGN
-
-### Problem Statement
-Currently, the app tracks impressions, clicks, and conversions at an aggregate level. We need order-level data to:
-1. Enable date-range filtering in Performance page
-2. Provide attribution (which modal led to which order)
-3. Show ROI validation (actual orders, not just stats)
-4. Support customer insights (repeat customers, cart values)
-5. Build "Orders" page/section for granular analysis
-
-### Proposed Solution
-
-#### Database Schema
-**New Table:** `Order`
+**Database Schema:**
 ```prisma
-model Order {
-  id            String   @id @default(cuid())
-  shopId        String
-  orderId       String   // Shopify order ID
-  orderNumber   String   // Human-readable order number (e.g., #1001)
-  modalId       String   // Which modal led to this order
-  variantId     String?  // Which AI variant (if AI mode)
-  
-  // Order Details
-  revenue       Float
-  discountCode  String?
-  discountAmount Float?
-  productIds    String[] // JSON array of product IDs
-  
-  // Customer Context
-  customerId    String?
-  isRepeat      Boolean  @default(false)
-  deviceType    String?  // mobile, desktop, tablet
-  
-  // Timestamps
-  modalShownAt  DateTime?
-  clickedAt     DateTime?
-  orderedAt     DateTime
-  createdAt     DateTime @default(now())
+model Conversion {
+  id                String   @id @default(uuid())
+  shopId            String
+  orderId           String   // Shopify order ID
+  orderNumber       String   // Human-readable (#1234)
+  orderValue        Float
+  customerEmail     String?
+  orderedAt         DateTime
+  modalId           String
+  modalName         String?
+  variantId         String?  // For AI mode
+  modalHadDiscount  Boolean  @default(false)
+  discountCode      String?
+  discountRedeemed  Boolean  @default(false)
+  discountAmount    Float?
+  modalSnapshot     String?  // JSON of modal config (Enterprise)
+  createdAt         DateTime @default(now())
   
   @@index([shopId])
-  @@index([modalId])
   @@index([orderedAt])
   @@unique([shopId, orderId])
 }
 ```
 
-#### Data Collection Flow
+**Conversions Page Features:**
+- ✅ Table with columns: Date, Time, Order #, Customer, Order Value, Had Discount?, Redeemed?, Promo Total
+- ✅ Date range filters: 7 days | 30 days (default) | All time
+- ✅ Tier gating: Starter locked, Pro+ full access
+- ✅ CSV export (Enterprise only)
+- ✅ Modal preview popup (Enterprise only)
+- ✅ Clickable order numbers → Shopify admin
+- ✅ Empty state messaging
+- ✅ Sidebar navigation link added
 
-**1. Order Webhook Handler**
-```javascript
-// app/routes/webhooks.orders.create.jsx
-export async function action({ request }) {
-  const { shop, session, payload } = await authenticate.webhook(request);
-  
-  const order = payload;
-  
-  // Check if order used our discount code
-  const discountCode = order.discount_codes?.[0]?.code;
-  if (!discountCode || !discountCode.includes('OFF')) {
-    return json({ received: true });
-  }
-  
-  // Find which modal this order came from
-  // (Match discount code to active modal's discount)
-  const modalId = await findModalByDiscountCode(shop, discountCode);
-  
-  // Store order with attribution
-  await db.order.create({
-    data: {
-      shopId: shop,
-      orderId: order.id.toString(),
-      orderNumber: order.name,
-      modalId: modalId,
-      revenue: parseFloat(order.total_price),
-      discountCode: discountCode,
-      discountAmount: parseFloat(order.total_discounts),
-      productIds: order.line_items.map(i => i.product_id.toString()),
-      customerId: order.customer?.id?.toString(),
-      orderedAt: new Date(order.created_at),
-      deviceType: detectDevice(order),
-    }
-  });
-  
-  return json({ received: true });
-}
+**Webhook Enhancement:**
+- ✅ Enhanced `webhooks.orders.create.jsx` with `storeConversion()` function
+- ✅ Tracks orders that used exit intent discount codes
+- ✅ Stores full order context (customer, discount, modal snapshot)
+- ✅ Fixed authentication issue for production
+
+**Files Created:**
+- `app/routes/app.conversions.jsx` - Full page implementation
+- Migration: `add_conversions` - Prisma schema update
+
+**Files Modified:**
+- `app/routes/webhooks.orders.create.jsx` - Added conversion tracking
+- `app/components/AppLayout.jsx` - Added Conversions nav link
+- `prisma/schema.prisma` - Added Conversion model
+
+---
+
+### 3. Bug Fixes & Polish
+- ✅ Fixed import issues (`@remix-run/react` → `react-router`)
+- ✅ Removed all emojis from Conversions page
+- ✅ Added AppLayout wrapper to Conversions page
+- ✅ Fixed webhook authentication (passes session correctly)
+
+---
+
+## 🎯 CURRENT STATE (January 8, 2026 - Evening)
+
+### What's Working:
+✅ Dashboard with tier-specific features  
+✅ Performance page with tabs (Your Modals, AI Variants)  
+✅ Settings page with 4 tabs (3 fully functional)  
+✅ Conversions page with order tracking  
+✅ Promotions page (Enterprise)  
+✅ AI evolution engine  
+✅ Thompson Sampling traffic allocation  
+✅ Meta-learning gene aggregation  
+✅ Seasonal pattern detection  
+✅ Brand customization (Enterprise - needs UI in Branding tab)  
+✅ Session limits enforcement  
+✅ Tier-based feature gating  
+
+### What's Incomplete:
+⏳ Branding tab (needs brand customization UI moved in)  
+⏳ AI Settings enhancements for Enterprise (variant insights, manual controls)  
+⏳ Professional templates system  
+⏳ Cart intelligence (automatic offer scaling)  
+⏳ Historical campaign library  
+⏳ Merchant onboarding wizard  
+⏳ Email notifications  
+
+---
+
+## 🚀 NEXT PRIORITIES
+
+### Priority 1: Branding Tab Implementation (30 minutes)
+**Goal:** Move existing brand customization UI into Branding tab
+
+**Current Location:** Brand customization code exists but is hidden  
+**Target Location:** `app/routes/app.settings.jsx` - Branding tab section
+
+**What to Move:**
+- Auto-Detect Brand Colors button
+- Color pickers (Primary, Secondary, Accent)
+- Font Family dropdown
+- Preview section with sample button
+
+**Tier Access:** Enterprise only (Pro/Starter see locked state)
+
+**Find/Replace Approach:**
+1. Locate existing brand customization code (currently disabled)
+2. Move into Branding tab conditional
+3. Add tier gating for Enterprise
+4. Test color picker functionality
+
+---
+
+### Priority 2: AI Settings Enhancements for Enterprise (2-3 hours)
+
+**Goal:** Give Enterprise customers deep visibility and control over AI optimization
+
+#### Feature 1: Variant Performance Breakdown
+**Where:** AI Settings tab (Enterprise only)
+
+**UI Layout:**
+```
+AI Optimization Settings
+├── [Existing: Goal, Aggression, Budget]
+└── [NEW] Variant Performance (Enterprise)
+    ├── Table showing all active variants
+    │   ├── Variant ID (e.g., "Variant 7 - Gen 4")
+    │   ├── Headline
+    │   ├── CTA
+    │   ├── Times Shown
+    │   ├── Success Rate
+    │   ├── Revenue
+    │   └── Status (Testing / Champion / Dying)
+    └── Filters: Show All | Champions Only | Currently Testing
 ```
 
-**2. Link Orders to Modal Impressions/Clicks**
-- When modal is shown, store sessionId in localStorage
-- When customer clicks, include sessionId in tracking
-- When order is created, match sessionId to link impression → click → order
-- This gives full funnel attribution
+**Data Source:** Query `Variant` table where `status = 'alive'` or `status = 'champion'`
 
-**3. Performance Page Date Filtering**
+**Technical Implementation:**
 ```javascript
-// When user selects date range
-const orders = await db.order.findMany({
+// In loader
+const variants = await db.variant.findMany({
   where: {
-    shopId: shop,
-    orderedAt: {
-      gte: startDate,
-      lte: endDate
-    }
+    shopId: shopRecord.id,
+    status: { in: ['alive', 'champion'] }
   },
-  include: {
-    modal: true
-  }
+  orderBy: { profitPerImpression: 'desc' }
 });
-
-// Recalculate stats from orders
-const stats = {
-  revenue: orders.reduce((sum, o) => sum + o.revenue, 0),
-  conversions: orders.length,
-  avgOrder: orders.length > 0 ? revenue / orders.length : 0
-};
 ```
 
 ---
 
-### "Orders" Page Design
-
-**New Page:** `app/routes/app.orders.jsx`
-
-**Purpose:** Show order-level data with filtering and search
+#### Feature 2: Manual Intervention Controls
+**Where:** AI Settings tab > Variant Performance table (Enterprise only)
 
 **Features:**
-1. **Order List Table**
-   - Order number, Date, Customer, Revenue, Modal, Discount, Products
-   - Sortable by any column
-   - Filterable by date range, modal, product
+1. **Force Keep Variant** - Prevent AI from killing a variant you like
+2. **Force Kill Variant** - Remove a variant you don't want tested
+3. **Set as Champion** - Manually promote a variant to champion status
 
-2. **Filters**
-   - Date range picker
-   - Modal dropdown (filter by which modal)
-   - Min/max revenue
-   - Search by order number or customer
+**UI Pattern:**
+- Each variant row has "..." menu button
+- Dropdown shows: "Force Keep" | "Kill Variant" | "Set as Champion"
+- Confirmation modal before destructive actions
 
-3. **Order Detail View**
-   - Click order row to see full details
-   - Modal preview (which modal they saw)
-   - Timeline: Impression → Click → Order
-   - Products purchased
-   - Customer info (if available)
-
-4. **Export**
-   - CSV export of filtered orders
-   - Useful for accounting, reporting
-
-**Tier Access:**
-- **Starter:** Last 30 days only
-- **Pro:** Lifetime access
-- **Enterprise:** Lifetime + advanced filters
+**Implementation Notes:**
+- Add `manualOverride` field to Variant model (string: 'force_keep' | 'force_kill' | null)
+- Evolution engine respects manual overrides
+- Show badge on manually controlled variants
 
 ---
 
-### Implementation Priority
-**Phase 1 (High Priority):**
-- ✅ Order webhook handler (already exists, enhance it)
-- Create Order database model
-- Store orders on webhook
-- Basic order attribution (match discount code to modal)
+#### Feature 3: Evolution Controls (Advanced)
+**Where:** AI Settings tab > Collapsible "Advanced Evolution Settings" section (Enterprise only)
 
-**Phase 2 (Medium Priority):**
-- Full funnel tracking (impression → click → order)
-- Date filtering in Performance page using order data
-- Order list on Dashboard ("Recent Orders" widget)
+**Controls:**
+```
+Advanced Evolution Settings (collapse/expand)
+├── Mutation Rate: [slider 0-100] (default: 30)
+│   └── How aggressively AI creates new variants
+├── Crossover Probability: [slider 0-100] (default: 70)
+│   └── How often AI combines successful genes
+├── Survival Threshold: [slider 0-1] (default: 0.3)
+│   └── Performance level required to keep variants alive
+└── Reset to Defaults button
+```
 
-**Phase 3 (Future):**
-- Full "Orders" page with filters
-- Advanced attribution (which variant for AI mode)
-- Customer insights (repeat purchase rate)
-- Export functionality
+**Data Storage:** Store in `Shop` model as JSON field `evolutionSettings`
 
----
-
-## 🗺️ UPDATED PRODUCT ROADMAP
-
-### Current State (January 2026)
-
-**✅ COMPLETED:**
-- Evolution engine (genetic algorithms)
-- Thompson Sampling traffic allocation
-- Bayesian A/B testing
-- Meta-learning gene aggregation
-- Click tracking
-- Conversion tracking (webhook-based)
-- Brand customization (Enterprise)
-- Seasonal pattern detection
-- Device-specific variants
-- Real-time monitoring dashboard
-- Session limits enforcement
-- Tier-based feature gating
-- **NEW: Dashboard UX redesign**
-- **NEW: Performance page with tabs**
-- **NEW: Settings page with tab structure**
-- **NEW: Plain English throughout**
-
-**🚧 IN PROGRESS:**
-- Settings page content reorganization
-- Orders tracking system
-- Date filtering for Performance page
+**Technical Notes:**
+- Pass these values to variant-engine.js functions
+- Add validation (reasonable ranges)
+- Show tooltip explanations for each control
 
 ---
 
-### Phase 1: UX Polish & Core Features (Next 2-4 Weeks)
+#### Feature 4: Learning Insights Dashboard
+**Where:** New section in AI Settings tab (Enterprise only)
 
-#### Week 1-2: Settings Page Reorganization
-**Goal:** Move content into proper tabs for better organization
+**UI Layout:**
+```
+What the AI Has Learned
+├── Top Performing Genes
+│   ├── Best Headlines (by profitPerImpression)
+│   ├── Best CTAs
+│   └── Best Offer Amounts
+├── Performance Patterns
+│   ├── "20% off performs 15% better than 10% off"
+│   ├── "Urgency language increases conversions by 8%"
+│   └── "Checkout redirect outperforms cart by 12%"
+└── Recommendations
+    └── "Try increasing aggression to 7 for better results"
+```
 
-**Tasks:**
-1. Move Optimization Mode → AI Settings tab
-2. Move After-Click & Conditions → Advanced tab
-3. Verify Branding tab (already there)
-4. Clean up Quick Setup tab
-5. Test all tier access controls
-
-**Files:** `app/routes/app.settings.jsx`
-
----
-
-#### Week 1-2: Orders Tracking Foundation
-**Goal:** Start collecting order-level data
-
-**Tasks:**
-1. Create Order database model (Prisma schema)
-2. Enhance order webhook to store orders
-3. Implement basic attribution (discount code → modal)
-4. Test with real orders
-
-**Files:**
-- `prisma/schema.prisma`
-- `app/routes/webhooks.orders.create.jsx`
-
----
-
-#### Week 3-4: Performance Page Enhancements
-**Goal:** Make date filtering actually work
-
-**Tasks:**
-1. Implement date filtering using order data
-2. Add "Recent Orders" section to Dashboard
-3. Show order count in Performance page metrics
-4. Test with various date ranges
-
-**Files:**
-- `app/routes/app.analytics.jsx` (Performance page)
-- `app/routes/app._index.jsx` (Dashboard)
-
----
-
-### Phase 2: Advanced Features (Months 2-3)
-
-#### Orders Page
-**Goal:** Full order management and insights
-
-**Features:**
-- Order list with search and filters
-- Order detail view
-- Export to CSV
-- Customer insights
-
-**Tier Access:**
-- Starter: Last 30 days
-- Pro: Lifetime
-- Enterprise: Lifetime + advanced filters
-
----
-
-#### AI Mode Enhancements
-**Goal:** More control and visibility over AI optimization
-
-**Features for Enterprise:**
-1. **Variant Performance Breakdown**
-   - See detailed stats for each AI variant
-   - Compare headline/body/CTA variations
-   - Identify winning patterns
-
-2. **Manual Intervention**
-   - Force-keep a specific variant
-   - Prevent AI from killing good performers too early
-   - Override AI decisions temporarily
-
-3. **Evolution Controls**
-   - Adjust mutation rate
-   - Control crossover probability
-   - Set survival threshold
-
-4. **Learning Insights**
-   - Show what AI has learned
-   - Explain why variants win/lose
-   - Highlight successful genetic traits
+**Data Source:** Query `MetaLearningGene` table aggregated by `geneType`
 
 **Implementation:**
-- New section in AI Settings tab
-- Advanced controls with tooltips
-- Read-only insights for Pro, full control for Enterprise
+```javascript
+// Top performing headlines
+const topHeadlines = await db.metaLearningGene.findMany({
+  where: {
+    baseline: shopRecord.mode === 'ai' ? settings.aiGoal : 'revenue_with_discount',
+    geneType: 'headline',
+    confidenceLevel: { gte: 0.8 }
+  },
+  orderBy: { avgProfitPerImpression: 'desc' },
+  take: 5
+});
+```
 
 ---
 
-#### Professional Templates System
+### Priority 3: Professional Templates System (1-2 hours)
+
 **Goal:** Quick-start templates for common use cases
 
-**Templates:**
+**Templates to Build:**
 1. **Discount Offer** (10%, 15%, 20% variants)
 2. **Free Shipping**
 3. **Gift with Purchase**
@@ -574,196 +286,107 @@ const stats = {
 6. **First-Time Visitor**
 7. **Returning Customer**
 
-**Features:**
-- One-click template selection
-- Auto-customizes with store branding (Enterprise)
-- Proven high-converting copy
-- Editable after selection
+**Where:** Settings > Quick Setup > Template Selector (enhance existing)
+
+**Current State:** Basic template selector exists  
+**Enhancement:** Add 7 professional, high-converting templates
+
+**Implementation:**
+```javascript
+// In utils/templates.js
+export const PRO_TEMPLATES = [
+  {
+    id: "discount_10",
+    name: "10% Discount Offer",
+    icon: "💰",
+    headline: "Wait! Get 10% off your order",
+    body: "Complete your purchase now and save on your entire order!",
+    cta: "Claim My Discount",
+    discountType: "percentage",
+    discountAmount: 10
+  },
+  // ... more templates
+];
+```
+
+**UI Enhancement:**
+- Grid layout (3 columns)
+- Preview on hover
+- "Most Popular" badge on top performers
+- One-click apply (auto-fills all settings)
 
 ---
 
-### Phase 3: Intelligence & Automation (Months 4-6)
+### Priority 4: Cart Intelligence (Future - 3-4 hours)
 
-#### Cart Intelligence
 **Goal:** Automatic offer scaling based on cart value
 
-**Features:**
-- Set rules: $0-50 → 10% off, $50-150 → Free shipping, $150+ → Gift
-- Auto-configure based on store AOV
+**Feature:** Rules-based offer adjustment
+```
+Cart Value Rules
+├── $0-50: 10% off
+├── $50-150: Free shipping
+└── $150+: Gift with purchase
+```
+
+**Implementation:**
+- Store rules in settings
+- Frontend sends cart value in modal trigger
+- Backend selects appropriate offer based on rules
 - A/B test different thresholds
-- Show impact forecast
-
-**Implementation:**
-- New section in Advanced tab
-- Server-side logic to select offer based on cart
-- Frontend receives cart value, shows appropriate offer
 
 ---
 
-#### Traffic Management
-**Goal:** Control who sees modals and when
+## 📦 PRODUCTION DEPLOYMENT CHECKLIST
 
-**Features:**
-- Traffic percentage slider (show to X% of visitors)
-- Frequency caps (1x per customer per week)
-- Gradual rollout (start at 10%, increase to 100%)
-- Margin protection (pause if discount budget exceeded)
+### Pre-Deployment Tasks:
+- [ ] Migrate SQLite → PostgreSQL
+- [ ] Set up 3 cron jobs (Heroku Scheduler or similar):
+  - [ ] Evolution cycles (every 6 hours)
+  - [ ] Gene aggregation (daily at 2am)
+  - [ ] Seasonal pattern detection (weekly on Sundays)
+- [ ] Configure environment variables
+- [ ] Set up error tracking (Sentry)
+- [ ] Test webhooks in production
+- [ ] Verify Conversions tracking works with real orders
 
----
+### Deployment Platforms (Recommended):
+1. **Heroku** - Easy, has scheduler addon
+2. **Railway** - Modern, good DX
+3. **Render** - Free tier available
 
-#### Historical Campaign Library
-**Goal:** Track and reuse seasonal campaigns
-
-**Features:**
-- Archive completed campaigns with full results
-- "Reactivate" button for seasonal campaigns
-- Year-over-year comparison
-- Export historical reports
-- Tag campaigns (Holiday 2024, Black Friday, etc.)
-
----
-
-### Phase 4: Scale & Polish (Months 7-9)
-
-#### Production Deployment
-**Reference:** `PRODUCTION-CRON-SETUP.md`
-
-**Tasks:**
-1. Choose hosting (Heroku/Railway/Render recommended)
-2. Migrate SQLite → PostgreSQL
-3. Set up 3 cron jobs:
-   - Evolution cycles (every 6 hours)
-   - Gene aggregation (daily)
-   - Seasonal pattern detection (weekly)
-4. Deploy app
-5. Monitor performance
-6. Set up error tracking (Sentry)
+### Reference Document:
+See `PRODUCTION-CRON-SETUP.md` for detailed deployment instructions
 
 ---
 
-#### Merchant Onboarding Flow
-**Goal:** Guided setup wizard for new merchants
+## 🗂️ FILE STRUCTURE REFERENCE
+```
+app/
+├── routes/
+│   ├── app._index.jsx              # Dashboard ✅ REDESIGNED
+│   ├── app.analytics.jsx            # Performance ✅ REDESIGNED
+│   ├── app.settings.jsx             # Settings ✅ TABS COMPLETE (3/4)
+│   ├── app.conversions.jsx          # Conversions ✅ NEW
+│   ├── app.promotions.jsx           # Promotions (Enterprise)
+│   ├── app.upgrade.jsx              # Upgrade page
+│   └── webhooks.orders.create.jsx   # Order webhook ✅ ENHANCED
+├── components/
+│   └── AppLayout.jsx                # Sidebar nav ✅ UPDATED
+└── utils/
+    ├── featureGates.js              # Tier access control
+    ├── variant-engine.js            # AI evolution engine
+    ├── meta-learning.js             # Network learning
+    └── templates.js                 # Modal templates
 
-**Steps:**
-1. Welcome + explain AI vs Manual mode
-2. Choose goal (Revenue vs Conversions)
-3. Set discount aggression
-4. Auto-detect brand (Enterprise)
-5. Preview modal
-6. Enable and go live
-
-**Implementation:**
-- Multi-step wizard modal
-- Progress indicator
-- Skip option (go straight to Settings)
-- Save progress for return visits
-
----
-
-#### Email Notifications
-**Goal:** Keep merchants informed
-
-**Triggers:**
-- New champion variant found (Enterprise)
-- Session limit warning (80% used)
-- Session limit reached (100%, modal disabled)
-- Modal auto-disabled
-- Significant performance change (±20%)
-
-**Implementation:**
-- Email service (SendGrid/Postmark)
-- Email preferences page
-- Notification history
+prisma/
+└── schema.prisma                    # Database ✅ CONVERSION MODEL ADDED
+```
 
 ---
 
-### Long-Term Vision (Months 10-12)
+## 🎯 TIER ACCESS MATRIX (Updated)
 
-#### Multi-Store Support
-**For agencies managing multiple clients**
-
-**Features:**
-- Dashboard showing all client stores
-- Switch between stores
-- Aggregate reporting
-- White label option
-
----
-
-#### API & Webhooks
-**For custom integrations**
-
-**Endpoints:**
-- GET /api/performance - Fetch stats
-- POST /api/modal/enable - Enable/disable modal
-- POST /api/modal/update - Update modal content
-- Webhook: modal.impression
-- Webhook: modal.conversion
-
----
-
-#### Advanced Analytics
-**For data-driven merchants**
-
-**Features:**
-- Cohort analysis
-- Funnel visualization
-- Conversion path analysis
-- Attribution modeling
-- Product affinity (which products convert best with modals)
-
----
-
-## 🎯 IMPLEMENTATION PRIORITIES
-
-### Immediate (This Week)
-1. ✅ Dashboard redesign - DONE
-2. ✅ Performance page - DONE
-3. ✅ Settings tab structure - DONE
-4. ⏳ Settings content reorganization - IN PROGRESS
-
----
-
-### Short-term (Next 2-4 Weeks)
-1. Complete Settings page reorganization
-2. Implement Orders tracking foundation
-3. Enable date filtering on Performance page
-4. Add "Recent Orders" widget to Dashboard
-5. Remove remaining emojis from Settings page
-
----
-
-### Medium-term (Next 2-3 Months)
-1. Build full Orders page
-2. Add AI mode enhancements (variant insights, controls)
-3. Professional templates system
-4. Merchant onboarding wizard
-5. Email notifications
-
----
-
-### Long-term (3-6 Months)
-1. Cart intelligence (automatic offer scaling)
-2. Traffic management (percentage slider, frequency caps)
-3. Historical campaign library
-4. Production deployment (with PostgreSQL)
-5. Real merchant testing (5-10 stores)
-
----
-
-## 🔑 KEY TECHNICAL DETAILS
-
-### Plain English Mapping
-| Old Term | New Term | Why |
-|----------|----------|-----|
-| Impressions | Times Shown | More natural language |
-| CVR | Success Rate | Easier to understand |
-| CTR | Click Rate | Simpler |
-| Revenue Recovered | Revenue Saved | More impactful |
-| Conversions | Orders Created | Clearer outcome |
-| VAR_MK2RV1C6 | Variant 7 (Gen 4) | Human-readable |
-
-### Tier Access Matrix
 | Feature | Starter | Pro | Enterprise |
 |---------|---------|-----|------------|
 | Manual Mode | ✅ | ✅ | ✅ |
@@ -771,110 +394,140 @@ const stats = {
 | Sessions/month | 1,000 | 10,000 | Unlimited |
 | Performance Page | ❌ | ✅ | ✅ |
 | AI Variants Tab | ❌ | ❌ | ✅ |
+| Conversions Page | ❌ | ✅ (view) | ✅ (export + preview) |
+| CSV Export | ❌ | ❌ | ✅ |
+| Modal Preview | ❌ | ❌ | ✅ |
 | Brand Customization | ❌ | ❌ | ✅ |
-| Orders (Historical) | 30 days | Lifetime | Lifetime |
+| Promotions Page | ❌ | ❌ | ✅ |
+| AI Insights | ❌ | ❌ | ✅ |
+| Manual Variant Control | ❌ | ❌ | ✅ |
 
-### File Structure
-```
-app/
-├── routes/
-│   ├── app._index.jsx          # Dashboard ✅ REDESIGNED
-│   ├── app.analytics.jsx        # Performance ✅ REDESIGNED
-│   ├── app.settings.jsx         # Settings ⏳ TABS ADDED
-│   ├── app.orders.jsx          # Orders 📝 TO BUILD
-│   ├── app.promotions.jsx      # Promotions (existing)
-│   └── webhooks.orders.create.jsx  # Order webhook 🔧 NEEDS ENHANCEMENT
-├── components/
-│   └── AppLayout.jsx           # Sidebar nav ✅ UPDATED
-└── utils/
-    ├── featureGates.js         # Tier access control
-    ├── variant-engine.js       # AI engine
-    └── meta-learning.js        # Network learning
-```
+---
+
+## 🐛 KNOWN ISSUES & NOTES
+
+### Current Issues:
+1. **Webhooks don't work in dev mode** - Use Prisma Studio to add test conversions
+2. **Branding tab placeholder** - Brand customization UI exists but needs to be moved into tab
+3. **Date filtering on Performance page** - Infrastructure in place but needs conversion data to filter properly
+
+### Fixed This Session:
+1. ✅ Import issues (`@remix-run/react` → `react-router`)
+2. ✅ Webhook authentication for production
+3. ✅ AppLayout missing from Conversions page
+4. ✅ Save Settings button position
 
 ---
 
 ## 📝 HANDOFF NOTES FOR NEXT SESSION
 
-### If Continuing UX Work:
-1. Open `app/routes/app.settings.jsx`
-2. Find line 889 (Optimization Mode section)
-3. Cut and move to AI Settings tab
-4. Move After-Click Behavior to Advanced tab
-5. Test all tier access controls
+### If Implementing Branding Tab:
+1. Search for "Brand Customization" in `app/routes/app.settings.jsx`
+2. Find the existing brand customization code (currently disabled)
+3. Move it into the Branding tab section
+4. Add Enterprise-only tier gating
+5. Test color picker and font selector functionality
 
-### If Building Orders System:
-1. Review Orders Tracking System Design section above
-2. Start with Prisma schema (add Order model)
-3. Run migration: `npx prisma migrate dev --name add_orders`
-4. Enhance webhook handler to store orders
-5. Test with real Shopify orders
+### If Building AI Insights (Enterprise):
+1. Start with Variant Performance table
+2. Query `db.variant.findMany()` for active variants
+3. Display in sortable table
+4. Add manual control dropdown menu
+5. Implement "Force Keep" / "Kill" / "Set Champion" actions
 
-### If Working on AI Enhancements:
-1. Review "AI Mode Enhancements" in Phase 2
-2. Add variant performance breakdown UI
-3. Add manual intervention controls (Enterprise only)
-4. Show learning insights
-
----
-
-## 🐛 KNOWN ISSUES
-
-### Current Issues:
-1. **Date filtering** - Infrastructure in place but needs order data to actually filter
-2. **Session counter** - Updates on page load, not real-time (acceptable for now)
-3. **AI Variants tab** - Just placeholder, needs actual variant performance data
-4. **Manual Mode templates** - Still have some emojis in Settings page
-
-### Fixed This Session:
-1. ✅ `availableTemplates` undefined error
-2. ✅ Sidebar plan badge cut-off in dev mode
-3. ✅ Analytics link text (now says "Performance")
-4. ✅ Empty headline causing "**" display
-5. ✅ Session counter not updating after plan switch
+### If Adding Professional Templates:
+1. Open `app/utils/templates.js`
+2. Add 7 new template objects to `PRO_TEMPLATES` array
+3. Update template selector UI in Settings > Quick Setup
+4. Add preview functionality
+5. Test one-click apply
 
 ---
 
-## 📚 REFERENCE DOCUMENTS
+## 🔑 KEY TECHNICAL PATTERNS
 
-### In This Repo:
-- `ROADMAP.md` - Original product roadmap (now updated above)
+### Plain English Mapping
+| Old Term | New Term | Why |
+|----------|----------|-----|
+| Impressions | Times Shown | More natural |
+| CVR | Success Rate | Easier to understand |
+| CTR | Click Rate | Simpler |
+| Revenue Recovered | Revenue Saved | More impactful |
+| Conversions | Orders Created | Clearer outcome |
+
+### Adding New Pages
+```javascript
+// 1. Create route file
+app/routes/app.yourpage.jsx
+
+// 2. Add loader with tier gating
+export const loader = async ({ request }) => {
+  const { session } = await authenticate.admin(request);
+  const shop = session.shop;
+  
+  const shopRecord = await db.shop.findUnique({
+    where: { shopifyDomain: shop }
+  });
+  
+  return json({ plan: shopRecord.plan });
+};
+
+// 3. Wrap in AppLayout
+import AppLayout from "../components/AppLayout";
+
+export default function YourPage() {
+  const { plan } = useLoaderData();
+  
+  return (
+    <AppLayout plan={{ tier: plan, status: "active" }}>
+      <div style={{ padding: 32 }}>
+        {/* Your content */}
+      </div>
+    </AppLayout>
+  );
+}
+
+// 4. Add to sidebar in AppLayout.jsx
+const navItems = [
+  // ...
+  { path: "/app/yourpage", label: "Your Page", icon: "analytics" },
+];
+```
+
+---
+
+## 📚 EXTERNAL REFERENCE DOCUMENTS
+
+- `UX-REDESIGN-HANDOFF-JANUARY-7-2026.md` - Previous session (Dashboard, Performance)
+- `ROADMAP.md` - Original product roadmap
 - `PRODUCTION-CRON-SETUP.md` - Deployment guide
 - `CAMPAIGN_ARCHITECTURE.md` - How modal campaigns work
 - `DISCOUNT_IMPLEMENTATION.md` - Discount system details
-- `UX-REDESIGN-HANDOFF-JANUARY-7-2026.md` - Previous session handoff
-
-### External Resources:
-- Shopify App Bridge: https://shopify.dev/docs/api/app-bridge
-- Prisma Docs: https://www.prisma.io/docs
-- Thompson Sampling: https://en.wikipedia.org/wiki/Thompson_sampling
-- Bayesian A/B Testing: https://en.wikipedia.org/wiki/Bayesian_inference
 
 ---
 
 ## 🎉 SESSION SUMMARY
 
 **What We Accomplished:**
-1. ✅ Completed Dashboard redesign (all 3 tiers)
-2. ✅ Completed Performance page with tabs
-3. ✅ Added Settings page tab structure
-4. ✅ Removed emojis throughout
-5. ✅ Updated all "Analytics" → "Performance"
-6. ✅ Fixed bugs (`availableTemplates`, sidebar badge)
-7. ✅ Created comprehensive handoff doc with roadmap
+1. ✅ Reorganized Settings page into logical 4-tab structure
+2. ✅ Built complete Conversions tracking system
+3. ✅ Enhanced order webhook for production
+4. ✅ Fixed authentication bugs
+5. ✅ Added proper navigation and layouts
 
 **Next Steps:**
-1. Finish Settings page reorganization (move content into tabs)
-2. Implement Orders tracking system
-3. Enable date filtering on Performance page
+1. Move brand customization into Branding tab (30 min)
+2. Build AI Insights for Enterprise (2-3 hours)
+3. Add professional templates (1-2 hours)
 
-**Time Investment:** ~4 hours
-**Files Modified:** 3 major files (Dashboard, Performance, Settings)
-**Lines Changed:** ~500+
-**Documentation:** ~1,500 lines
+**Time Investment:** ~5 hours  
+**Files Created:** 2 (conversions page, migration)  
+**Files Modified:** 4 (settings, webhook, AppLayout, schema)  
+**Lines Changed:** ~800+  
+**Documentation:** ~500 lines  
 
 ---
 
-**Status:** Dashboard ✅ | Performance Page ✅ | Settings Tabs ✅ | Content Reorganization 🚧 | Orders System 📝
+**Status:** Settings (3/4 tabs) ✅ | Conversions Page ✅ | Webhook Enhanced ✅ | Branding Tab 📝 | AI Insights 📝
 
-*Last Updated: January 8, 2026*
+*Last Updated: January 8, 2026 - Evening Session*

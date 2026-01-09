@@ -1,5 +1,8 @@
 // Generate a simple hash from modal configuration
 export function generateModalHash(config) {
+  // Handle both old flat structure and new nested triggers structure
+  const triggers = config.triggers || {};
+  
   const hashString = JSON.stringify({
     template: config.template || "discount",
     headline: config.modalHeadline,
@@ -10,12 +13,13 @@ export function generateModalHash(config) {
     discountPercentage: config.discountPercentage,
     discountAmount: config.discountAmount,
     redirectDestination: config.redirectDestination,
-    exitIntentEnabled: config.exitIntentEnabled,
-    timeDelayEnabled: config.timeDelayEnabled,
-    timeDelaySeconds: config.timeDelaySeconds,
-    cartValueEnabled: config.cartValueEnabled,
-    cartValueMin: config.cartValueMin,
-    cartValueMax: config.cartValueMax
+    // Support both old and new trigger formats
+    exitIntentEnabled: triggers.exitIntent !== undefined ? triggers.exitIntent : config.exitIntentEnabled,
+    timeDelayEnabled: triggers.timeDelay !== undefined ? triggers.timeDelay : config.timeDelayEnabled,
+    timeDelaySeconds: triggers.timeDelaySeconds !== undefined ? triggers.timeDelaySeconds : config.timeDelaySeconds,
+    cartValueEnabled: triggers.cartValue !== undefined ? triggers.cartValue : config.cartValueEnabled,
+    cartValueMin: triggers.minCartValue !== undefined ? triggers.minCartValue : config.cartValueMin,
+    cartValueMax: triggers.maxCartValue !== undefined ? triggers.maxCartValue : config.cartValueMax
   });
 
   // Simple hash function
