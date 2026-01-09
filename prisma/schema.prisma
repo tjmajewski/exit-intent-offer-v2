@@ -55,6 +55,12 @@ model Shop {
   // Evolution System
   lastEvolutionCycle DateTime?
   
+  // Evolution Controls (Enterprise)
+  mutationRate       Int      @default(15)
+  crossoverRate      Int      @default(70)
+  selectionPressure  Int      @default(5)
+  populationSize     Int      @default(10)
+  
   // Brand Customization (Enterprise)
   brandPrimaryColor   String?  @default("#000000")
   brandSecondaryColor String?  @default("#ffffff")

@@ -497,29 +497,41 @@ function weightedRandomSelection(variants, weightFn) {
 /**
  * Breed a new variant from two parents using genetic algorithm
  */
-async function breedNewVariant(parents, baseline, segment = 'all', shopId = null) {
+async function breedNewVariant(parents, baseline, segment = 'all', shopId = null, evolutionSettings = null) {
   const pool = genePools[baseline];
+  
+  // Default settings if not provided
+  const settings = evolutionSettings || {
+    mutationRate: 15,
+    crossoverRate: 70
+  };
+  
+  const crossoverRate = settings.crossoverRate / 100; // Convert to 0-1
+  const mutationRate = settings.mutationRate / 100; // Convert to 0-1
   
   // Select two parents weighted by profit per impression
   const parent1 = weightedRandomSelection(parents, v => v.profitPerImpression + 1);
   const parent2 = weightedRandomSelection(parents, v => v.profitPerImpression + 1);
   
   console.log(`🧬 Breeding from parents: ${parent1.variantId} (Gen ${parent1.generation}) + ${parent2.variantId} (Gen ${parent2.generation})`);
+  console.log(`   Settings: ${(crossoverRate*100).toFixed(0)}% crossover, ${(mutationRate*100).toFixed(0)}% mutation`);
   
-  // Crossover: Inherit genes from both parents (50/50 chance each gene)
+  // Crossover: Inherit genes from both parents based on crossoverRate
+  // High crossover rate = more mixing of parent genes
+  // Low crossover rate = more likely to take all genes from one parent
   const childGenes = {
-    offerAmount: Math.random() < 0.5 ? parent1.offerAmount : parent2.offerAmount,
-    headline: Math.random() < 0.5 ? parent1.headline : parent2.headline,
-    subhead: Math.random() < 0.5 ? parent1.subhead : parent2.subhead,
-    cta: Math.random() < 0.5 ? parent1.cta : parent2.cta,
-    redirect: Math.random() < 0.5 ? parent1.redirect : parent2.redirect,
-    urgency: Math.random() < 0.5 ? parent1.urgency : parent2.urgency
+    offerAmount: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.offerAmount : parent2.offerAmount) : parent1.offerAmount,
+    headline: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.headline : parent2.headline) : parent1.headline,
+    subhead: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.subhead : parent2.subhead) : parent1.subhead,
+    cta: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.cta : parent2.cta) : parent1.cta,
+    redirect: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.redirect : parent2.redirect) : parent1.redirect,
+    urgency: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.urgency : parent2.urgency) : parent1.urgency
   };
   
-  // Mutation: 10% chance to randomize each gene
+  // Mutation: Randomize each gene based on mutationRate
   const mutations = [];
   Object.keys(childGenes).forEach(gene => {
-    if (Math.random() < 0.1) {
+    if (Math.random() < mutationRate) {
       const geneKey = gene === 'offerAmount' ? 'offerAmounts' : 
                       gene === 'urgency' ? 'urgency' :
                       gene + 's';
@@ -623,6 +635,26 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
   console.log(`\n🧬 EVOLUTION CYCLE: Shop ${shopId}, Baseline ${baseline}, Segment ${segment}`);
   console.log('='.repeat(80));
   
+  // Load shop's evolution settings
+  const shop = await db.shop.findUnique({
+    where: { id: shopId },
+    select: {
+      mutationRate: true,
+      crossoverRate: true,
+      selectionPressure: true,
+      populationSize: true
+    }
+  });
+  
+  const evolutionSettings = {
+    mutationRate: shop?.mutationRate || 15,
+    crossoverRate: shop?.crossoverRate || 70,
+    selectionPressure: shop?.selectionPressure || 5,
+    populationSize: shop?.populationSize || 10
+  };
+  
+  console.log(`⚙️  Evolution Settings: Mutation ${evolutionSettings.mutationRate}%, Crossover ${evolutionSettings.crossoverRate}%, Pressure ${evolutionSettings.selectionPressure}/10, Pop ${evolutionSettings.populationSize}`);
+  
   let liveVariants = await getLiveVariants(shopId, baseline, segment);
   
   if (liveVariants.length === 0) {
@@ -659,10 +691,12 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
       if (variant.impressions < 50) return; // Too early
       if (variant.id === topPerformer.id) return; // Can't kill the top performer
       
-      // Bayesian A/B test: Are we 95% confident this variant is worse?
+      // Bayesian A/B test: Are we confident enough this variant is worse?
+      // Convert selectionPressure (1-10) to confidence threshold (0.80-0.99)
+      const confidenceThreshold = 0.70 + (evolutionSettings.selectionPressure / 10) * 0.29; // Maps 1→0.799, 5→0.915, 10→0.99
       const test = bayesianCompare(topPerformer, variant);
       
-      if (test.probability > 0.95) { // Top performer beats this variant with 95% confidence
+      if (test.probability > confidenceThreshold) {
         console.log(`💀 Marking for death: ${variant.variantId} (${test.probability.toFixed(3)} confidence it's worse)`);
         dying.push(variant);
       }
@@ -688,14 +722,14 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
   }
   
   // Step 4: Breed replacements
-  const targetPopulation = 10;
+  const targetPopulation = evolutionSettings.populationSize;
   const needToBreed = targetPopulation - liveVariants.length;
   
   if (needToBreed > 0 && liveVariants.length >= 2) {
     console.log(`\n🧬 Breeding ${needToBreed} new variant(s)`);
     
     for (let i = 0; i < needToBreed; i++) {
-      const childData = await breedNewVariant(liveVariants, baseline, segment, shopId);
+      const childData = await breedNewVariant(liveVariants, baseline, segment, shopId, evolutionSettings);
       
       const newVariant = await db.variant.create({
         data: {
