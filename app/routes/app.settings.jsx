@@ -1869,302 +1869,26 @@ export default function Settings() {
       {/* Advanced Tab */}
       {activeTab === 'advanced' && (
         <>
-          {optimizationMode !== "ai" ? (
+          {optimizationMode === "ai" && (
             <div style={{
               background: 'white',
               padding: 48,
               borderRadius: 8,
               border: '1px solid #e5e7eb',
-              textAlign: 'center'
+              textAlign: 'center',
+              marginBottom: 24
             }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>🎯</div>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>🤖</div>
               <h2 style={{ fontSize: 24, marginBottom: 12 }}>AI Mode Active</h2>
               <p style={{ color: '#6b7280', marginBottom: 24 }}>
-                You're currently in AI Mode. Switch to Manual Mode in the Quick Setup tab to access advanced manual settings.
+                Advanced settings are managed by AI. Switch to Manual Mode in the Quick Setup tab to access manual controls.
               </p>
-            </div>
-          ) : (
-            <div style={{ 
-              background: "white", 
-              padding: 24, 
-              borderRadius: 8, 
-              border: "1px solid #e5e7eb",
-              marginBottom: 24 
-            }}>
-              <h2 style={{ fontSize: 20, marginBottom: 8 }}>AI Optimization Settings</h2>
-              <p style={{ fontSize: 14, color: "#666", marginBottom: 20 }}>
-                Configure how the AI optimizes your exit intent offers
-              </p>
-
-              <div style={{ marginBottom: 24 }}>
-                <label style={{ display: "block", marginBottom: 8, fontWeight: 500, fontSize: 16 }}>
-                  Optimization Goal
-                </label>
-                <p style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>
-                  What should the AI optimize for?
-                </p>
-                <select
-                  name="aiGoal"
-                  defaultValue={settings.aiGoal || "revenue"}
-                  style={{
-                    width: "100%",
-                    padding: "12px 16px",
-                    border: "1px solid #d1d5db",
-                    borderRadius: 8,
-                    fontSize: 16
-                  }}
-                >
-                  <option value="revenue">Maximize Revenue (recommended)</option>
-                  <option value="conversions">Maximize Conversions</option>
-                </select>
-              </div>
-
-              <div style={{ marginBottom: 24 }}>
-                <label style={{ display: "block", marginBottom: 8, fontWeight: 500, fontSize: 16 }}>
-                  Discount Aggression: {aggressionLevel}
-                </label>
-                <p style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>
-                  How aggressive should discounts be?
-                </p>
-                <input
-                  type="range"
-                  name="aggression"
-                  min="0"
-                  max="10"
-                  value={aggressionLevel}
-                  onChange={(e) => setAggressionLevel(parseInt(e.target.value))}
-                  style={{ width: "100%" }}
-                />
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#666", marginTop: 8 }}>
-                  <span>Conservative (0)</span>
-                  <span>Moderate (5)</span>
-                  <span>Aggressive (10)</span>
-                </div>
-                {aggressionLevel === 0 && (
-                  <div style={{ 
-                    marginTop: 12, 
-                    padding: 12, 
-                    background: "#eff6ff", 
-                    borderRadius: 6,
-                    fontSize: 14,
-                    color: "#1e40af"
-                  }}>
-                    💡 At level 0, modals will show without discount offers - great for announcements or cart reminders
-                  </div>
-                )}
-              </div>
-
-              <div style={{ 
-                padding: 20, 
-                background: "#fff7ed", 
-                borderRadius: 8,
-                border: "1px solid #fed7aa" 
-              }}>
-                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>
-                  Promotion Budget (Optional)
-                </h3>
-                <p style={{ fontSize: 14, color: "#666", marginBottom: 16 }}>
-                  Limit how much the AI can discount per time period to control costs
-                </p>
-
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      name="budgetEnabled"
-                      defaultChecked={settings.budgetEnabled}
-                      style={{ marginRight: 12, width: 18, height: 18 }}
-                    />
-                    <span style={{ fontWeight: 500 }}>Enable Budget Cap</span>
-                  </label>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                  <div>
-                    <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
-                      Budget Amount
-                    </label>
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <span style={{ marginRight: 8, color: "#666" }}>$</span>
-                      <input
-                        type="number"
-                        name="budgetAmount"
-                        defaultValue={settings.budgetAmount || 500}
-                        min="0"
-                        step="50"
-                        style={{ 
-                          padding: "10px 12px", 
-                          border: "1px solid #d1d5db",
-                          borderRadius: 6,
-                          width: "100%",
-                          fontSize: 16
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
-                      Time Period
-                    </label>
-                    <select
-                      name="budgetPeriod"
-                      defaultValue={settings.budgetPeriod || "month"}
-                      style={{
-                        width: "100%",
-                        padding: "10px 12px",
-                        border: "1px solid #d1d5db",
-                        borderRadius: 6,
-                        fontSize: 16
-                      }}
-                    >
-                      <option value="week">Per Week</option>
-                      <option value="month">Per Month</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ 
-                  marginTop: 12, 
-                  padding: 12, 
-                  background: "#eff6ff", 
-                  borderRadius: 6,
-                  fontSize: 13,
-                  color: "#1e40af"
-                }}>
-                  💡 <strong>Example:</strong> $500/month means AI will stop offering discounts once $500 in total discounts have been given out this month. Resets at the start of each period.
-                </div>
-              </div>
             </div>
           )}
 
-          {plan?.tier === 'enterprise' && (
-            <div style={{ 
-              background: "white", 
-              padding: 24, 
-              borderRadius: 8, 
-              border: "1px solid #e5e7eb",
-              marginTop: 24
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <div>
-                  <h2 style={{ fontSize: 20, marginBottom: 4 }}>Evolution Controls</h2>
-                  <p style={{ fontSize: 14, color: "#666", margin: 0 }}>
-                    Fine-tune how the AI creates and tests new variants
-                  </p>
-                </div>
-                <span style={{ 
-                  padding: "4px 12px", 
-                  background: "#8B5CF6", 
-                  color: "white", 
-                  borderRadius: 4, 
-                  fontSize: 12,
-                  fontWeight: 600 
-                }}>
-                  ENTERPRISE
-                </span>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-                {/* Innovation Speed */}
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 500, fontSize: 14 }}>
-                    Innovation Speed: {settings.mutationRate || 15}%
-                  </label>
-                  <p style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
-                    How quickly to try new ideas
-                  </p>
-                  <input
-                    type="range"
-                    name="mutationRate"
-                    min="0"
-                    max="100"
-                    defaultValue={settings.mutationRate || 15}
-                    onChange={(e) => setFormChanged(true)}
-                    style={{ width: "100%" }}
-                  />
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
-                    <span>Slow & Steady</span>
-                    <span>Fast & Bold</span>
-                  </div>
-                </div>
-
-                {/* Learning Strategy */}
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 500, fontSize: 14 }}>
-                    Learning Strategy: {settings.crossoverRate || 70}%
-                  </label>
-                  <p style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
-                    Combine winners vs. start fresh with new modals
-                  </p>
-                  <input
-                    type="range"
-                    name="crossoverRate"
-                    min="0"
-                    max="100"
-                    defaultValue={settings.crossoverRate || 70}
-                    onChange={(e) => setFormChanged(true)}
-                    style={{ width: "100%" }}
-                  />
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
-                    <span>Start Fresh</span>
-                    <span>Combine Winners</span>
-                  </div>
-                </div>
-
-                {/* Quality Standards */}
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 500, fontSize: 14 }}>
-                    Quality Standards: {settings.selectionPressure || 5}/10
-                  </label>
-                  <p style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
-                    Keep underperformers longer vs. cut quickly
-                  </p>
-                  <input
-                    type="range"
-                    name="selectionPressure"
-                    min="1"
-                    max="10"
-                    defaultValue={settings.selectionPressure || 5}
-                    onChange={(e) => setFormChanged(true)}
-                    style={{ width: "100%" }}
-                  />
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
-                    <span>Patient</span>
-                    <span>Ruthless</span>
-                  </div>
-                </div>
-
-                {/* Test Group Size */}
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 500, fontSize: 14 }}>
-                    Test Group Size
-                  </label>
-                  <p style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
-                    Test more options (slower) vs. fewer (faster)
-                  </p>
-                  <select
-                    name="populationSize"
-                    defaultValue={settings.populationSize || 10}
-                    onChange={(e) => setFormChanged(true)}
-                    style={{
-                      width: "100%",
-                      padding: "10px 12px",
-                      border: "1px solid #d1d5db",
-                      borderRadius: 6,
-                      fontSize: 14
-                    }}
-                  >
-                    <option value="5">5 variants (faster learning)</option>
-                    <option value="10">10 variants (balanced)</option>
-                    <option value="15">15 variants (more exploration)</option>
-                    <option value="20">20 variants (maximum diversity)</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          )}
-
+          {/* Manual Mode Only: After Click Behavior & Cart Value Conditions */}
+          {optimizationMode !== "ai" && (
+          <>
           {/* Redirect Destination & Cart Value Conditions Sections */}
         <div style={{ 
           background: "white", 
@@ -2403,6 +2127,8 @@ export default function Settings() {
             💡 <strong>Example:</strong> Set minimum to $100 and maximum to $3000 to only show the modal for mid-range carts. Combine with any trigger above!
           </div>
         </div>
+          </>
+          )}
         </>
       )}
 

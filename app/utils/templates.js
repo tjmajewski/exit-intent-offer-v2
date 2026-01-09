@@ -3,41 +3,41 @@ export const MODAL_TEMPLATES = {
     id: "discount",
     name: "Discount Offer",
     tier: "starter",
-    icon: "🎁",
-    headline: "Wait! Don't leave yet 🎁",
-    body: "Complete your purchase now and get an exclusive discount on your order!",
-    ctaButton: "Complete My Order",
-    description: "Classic exit intent offer with discount code"
+    icon: "💰",
+    headline: "Wait! Get your exclusive discount",
+    body: "Complete your purchase in the next 24 hours and save on your order. Your discount code will be applied automatically.",
+    ctaButton: "Claim My Discount",
+    description: "Direct discount offer - best for price-sensitive shoppers"
   },
   urgency: {
     id: "urgency",
-    name: "Limited Time Offer",
+    name: "Limited Time",
     tier: "starter",
-    icon: "⚡",
-    headline: "Don't Miss Out! ⚡",
-    body: "This exclusive offer won't last forever. Complete your order now and save!",
-    ctaButton: "Claim My Offer",
-    description: "Create urgency without requiring stock/timer data"
+    icon: "⏰",
+    headline: "Limited time offer - don't miss out",
+    body: "This exclusive discount expires in 24 hours. Save on items you love before the offer ends.",
+    ctaButton: "Apply Discount Now",
+    description: "Time-limited offer - creates urgency and FOMO"
   },
-  welcome: {
-    id: "welcome",
-    name: "Special Offer",
+  social: {
+    id: "social",
+    name: "Social Proof",
     tier: "starter",
-    icon: "✨",
-    headline: "Special Offer Just For You! ✨",
-    body: "We're offering an exclusive discount on your order. Complete your purchase now to save!",
-    ctaButton: "Get My Discount",
-    description: "Generic special offer messaging"
+    icon: "⭐",
+    headline: "Join 10,000+ happy customers",
+    body: "Thousands of customers trust us for quality products and fast shipping. Complete your order with confidence.",
+    ctaButton: "Complete My Order",
+    description: "Trust-building message - works when discount not needed"
   },
-  cartReminder: {
-    id: "cartReminder",
+  reminder: {
+    id: "reminder",
     name: "Cart Reminder",
     tier: "starter",
     icon: "🛒",
-    headline: "Complete Your Order! 🛒",
-    body: "You have items in your cart. Finish your purchase now and get an exclusive discount!",
-    ctaButton: "Complete My Order",
-    description: "Cart abandonment reminder with incentive"
+    headline: "You have items in your cart",
+    body: "Your items are reserved and ready for checkout whenever you're ready to complete your purchase.",
+    ctaButton: "View Cart",
+    description: "Gentle reminder - no discount, just helpful nudge"
   }
 };
 

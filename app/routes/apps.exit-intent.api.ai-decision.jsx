@@ -133,7 +133,15 @@ export async function action({ request }) {
       await import('../utils/variant-engine.js');
     
     // Step 1: Determine which baseline to use (revenue/conversion × discount/no-discount)
-    const baseline = selectBaseline(signals, aiGoal);
+    let baseline = selectBaseline(signals, aiGoal);
+    
+    // CRITICAL: If aggression is 0 OR AI determines no offer needed, use pure_reminder
+    // This prevents false advertising (modal copy promising offers we don't give)
+    if (aggression === 0) {
+      baseline = 'pure_reminder';
+      console.log(`[Variant Selection] Aggression = 0 → forcing pure_reminder baseline`);
+    }
+    
     console.log(`[Variant Selection] Baseline: ${baseline}`);
     
     // Step 1.5: Determine segment (device-specific evolution)

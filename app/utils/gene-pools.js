@@ -100,6 +100,36 @@ export const genePools = {
     
     redirects: ['cart', 'checkout'],
     urgency: [true, false]
+  },
+  
+  // PURE REMINDER: No offers, no discounts, no incentives
+  // Used when AI decides customer doesn't need any offer (aggression=0 or offerAmount=0)
+  pure_reminder: {
+    offerAmounts: [0],  // No offer at all
+    
+    headlines: [
+      'You have items in your cart',
+      'Your cart is waiting',
+      'Ready to complete your order?',
+      'Don\'t forget about your items'
+    ],
+    
+    subheads: [
+      'Complete your purchase when you\'re ready',
+      'Your items are reserved',
+      'Checkout at your convenience',
+      'Your cart will be here when you return'
+    ],
+    
+    ctas: [
+      'View Cart',
+      'Go to Checkout',
+      'Complete Order',
+      'Return to Cart'
+    ],
+    
+    redirects: ['cart', 'checkout'],
+    urgency: [false]  // No urgency for reminders
   }
 };
 
