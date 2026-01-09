@@ -177,7 +177,7 @@ export const action = async ({ request }) => {
     console.log("✓ Analytics updated with conversion and revenue");
 
     // CONVERSIONS TABLE: Store order-level data for reporting
-    await storeConversion(shop, payload, exitDiscountUsed);
+    await storeConversion(shop, payload, exitDiscountUsed, session);
     console.log("✓ Conversion stored in conversions table");
 
     return new Response(null, { status: 200 });
@@ -355,7 +355,7 @@ async function classifyPromotion(promoId) {
   console.log(`✅ Promotion classified: ${promo.code} → ${classification} (${aiStrategy})`);
 }
 
-async function storeConversion(shop, orderPayload, discountUsed) {
+async function storeConversion(shop, orderPayload, discountUsed, session) {
   try {
     // Find shop record
     const shopRecord = await db.shop.findUnique({
@@ -367,11 +367,10 @@ async function storeConversion(shop, orderPayload, discountUsed) {
       return;
     }
 
-    // Get current modal settings to determine if discount was offered
-    const { admin } = await authenticate.admin({ 
-      shop,
-      accessToken: orderPayload.admin_graphql_api_id // Use order's access context
-    });
+    // Get current modal settings from database (faster and more reliable than GraphQL)
+    // We'll use the shopRecord which already has mode, plan, etc.
+    // For modal details, we'll fetch from metafields using the existing session
+    const { admin } = await authenticate.admin(session);
     
     const settingsQuery = `
       query {
