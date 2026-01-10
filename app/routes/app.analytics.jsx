@@ -1,9 +1,10 @@
-import { useLoaderData, Link, Form } from "react-router";
+import { useLoaderData, Link, Form, redirect, useFetcher } from "react-router";
 import { useState } from "react";
 import { authenticate } from "../shopify.server";
 import { hasFeature } from "../utils/featureGates";
 import { getDefaultModalLibrary } from "../utils/modalHash";
 import AppLayout from "../components/AppLayout";
+import db from "../db.server";
 
 export async function action({ request }) {
   const { admin } = await authenticate.admin(request);
@@ -11,6 +12,7 @@ export async function action({ request }) {
   try {
     const formData = await request.formData();
     const action = formData.get("action");
+    console.log('Action received:', action);
     
     if (action === "testConversion") {
       const revenue = parseFloat(formData.get("testRevenue") || "100");
@@ -97,8 +99,79 @@ export async function action({ request }) {
         }
       }
       
-      console.log(`✓ Test conversion added: $${revenue}`);
+     console.log(`✓ Test conversion added: $${revenue}`);
       return { success: true };
+    }
+    
+    // Handle variant manual intervention actions
+    const variantId = formData.get('variantId');
+    
+    if (action === 'updateStatus' && variantId) {
+      const newStatus = formData.get('status');
+      const variant = await db.variant.findUnique({
+        where: { id: variantId }
+      });
+      
+      if (!variant) {
+        return { error: 'Variant not found', success: false };
+      }
+      
+      // Handle status change
+      if (newStatus === 'alive') {
+        await db.variant.update({
+          where: { id: variantId },
+          data: { 
+            status: 'alive',
+            isChampion: false
+          }
+        });
+        return { success: true, message: 'Variant set to Active' };
+      }
+      
+      if (newStatus === 'protected') {
+        await db.variant.update({
+          where: { id: variantId },
+          data: { 
+            status: 'protected',
+            isChampion: false
+          }
+        });
+        return { success: true, message: 'Variant protected from elimination' };
+      }
+      
+      if (newStatus === 'champion') {
+        // Mark this variant as champion and all others in same baseline as non-champion
+        await db.variant.updateMany({
+          where: { 
+            shopId: variant.shopId,
+            baseline: variant.baseline,
+            segment: variant.segment
+          },
+          data: { isChampion: false }
+        });
+        
+        await db.variant.update({
+          where: { id: variantId },
+          data: { 
+            status: 'champion',
+            isChampion: true
+          }
+        });
+        
+        return { success: true, message: 'Variant set as champion' };
+      }
+    }
+    
+    if (action === 'killVariant' && variantId) {
+      await db.variant.update({
+        where: { id: variantId },
+        data: { 
+          status: 'killed'
+        }
+      });
+      
+      // Redirect to reload the page and show updated status
+      return redirect('/app/analytics?tab=variants');
     }
     
     return { success: false };
@@ -107,9 +180,8 @@ export async function action({ request }) {
     return { success: false };
   }
 }
-
 export async function loader({ request }) {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
   try {
     // Get date range from URL params
@@ -147,25 +219,64 @@ export async function loader({ request }) {
     // 2. Filter events by dateRange (7d, 30d, all)
     // 3. Recalculate impressions, clicks, conversions, revenue from filtered events
 
-    return { plan, modalLibrary, dateRange };
+    // Fetch live AI variants for Enterprise users
+    let liveVariants = [];
+    console.log('Plan tier:', plan.tier);
+    if (plan.tier === 'enterprise') {
+      try {
+        const lookupDomain = session.shop;
+        console.log('Looking up shop by domain:', lookupDomain);
+        const shopRecord = await db.shop.findUnique({
+          where: { shopifyDomain: lookupDomain }
+        });
+        console.log('Shop record found:', !!shopRecord, 'Shop ID:', shopRecord?.id);
+        
+        if (shopRecord) {
+          // Get all live variants across all baselines
+          const { getLiveVariants } = await import('../utils/variant-engine.js');
+          const baselines = ['revenue_with_discount', 'revenue_no_discount', 'conversion_with_discount', 'conversion_no_discount'];
+          
+          // Get all variants (alive, champion, protected, AND killed)
+          const allVariants = await db.variant.findMany({
+            where: {
+              shopId: shopRecord.id,
+              status: { in: ['alive', 'champion', 'protected', 'killed', 'dead'] }
+            },
+            orderBy: { profitPerImpression: 'desc' }
+          });
+          
+          liveVariants.push(...allVariants);
+        }
+      } catch (error) {
+        console.error("Error loading variants:", error);
+      }
+    }
+
+    console.log('Loader returning variants:', liveVariants?.length || 0);
+    return { plan, modalLibrary, dateRange, liveVariants };
   } catch (error) {
     console.error("Error loading analytics:", error);
     return { 
       plan: { tier: "starter" },
-      modalLibrary: getDefaultModalLibrary()
+      modalLibrary: getDefaultModalLibrary(),
+      liveVariants: []
     };
   }
 }
 
- 
 
 export default function Performance() {
-  const { plan, modalLibrary, dateRange: loaderDateRange } = useLoaderData();
+  const { plan, modalLibrary, dateRange: loaderDateRange, liveVariants } = useLoaderData();
+  const fetcher = useFetcher();
   const canAccessPerformance = plan && (plan.tier === 'pro' || plan.tier === 'enterprise');
   const canAccessAIVariants = plan && plan.tier === 'enterprise';
   
   const [activeTab, setActiveTab] = useState('modals');
   const [dateRange, setDateRange] = useState(loaderDateRange || '30d');
+  const [modalsPage, setModalsPage] = useState(1);
+  const [variantsPage, setVariantsPage] = useState(1);
+  
+  const ITEMS_PER_PAGE = 15;
   
   const handleDateRangeChange = (range) => {
     setDateRange(range);
@@ -259,7 +370,12 @@ export default function Performance() {
   }
 
    
-  const modals = modalLibrary.modals || [];
+  const modals = (modalLibrary.modals || []).slice().reverse();
+  const totalModalsPages = Math.ceil(modals.length / ITEMS_PER_PAGE);
+  const paginatedModals = modals.slice(
+    (modalsPage - 1) * ITEMS_PER_PAGE,
+    modalsPage * ITEMS_PER_PAGE
+  );
   const activeModal = modals.find(m => m.modalId === modalLibrary.currentModalId);
 
   return (
@@ -406,14 +522,14 @@ export default function Performance() {
             </tr>
           </thead>
           <tbody>
-            {modals.length === 0 ? (
+            {paginatedModals.length === 0 ? (
               <tr>
                 <td colSpan="7" style={{ padding: 32, textAlign: "center", color: "#6b7280" }}>
                   No modals created yet. Save your first modal in Settings to start tracking performance.
                 </td>
               </tr>
             ) : (
-              modals.map((modal) => {
+              paginatedModals.map((modal) => {
                 return (
                   <tr 
                     key={modal.modalId}
@@ -480,26 +596,323 @@ export default function Performance() {
           </tbody>
         </table>
       </div>
+      
+      {/* Modals Pagination */}
+      {totalModalsPages > 1 && (
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          gap: 8, 
+          marginTop: 24,
+          alignItems: 'center'
+        }}>
+          <button
+            onClick={() => setModalsPage(p => Math.max(1, p - 1))}
+            disabled={modalsPage === 1}
+            style={{
+              padding: '8px 16px',
+              background: modalsPage === 1 ? '#e5e7eb' : '#8B5CF6',
+              color: modalsPage === 1 ? '#9ca3af' : 'white',
+              border: 'none',
+              borderRadius: 4,
+              cursor: modalsPage === 1 ? 'not-allowed' : 'pointer',
+              fontWeight: 500
+            }}
+          >
+            Previous
+          </button>
+          
+          <span style={{ color: '#6b7280', fontSize: 14 }}>
+            Page {modalsPage} of {totalModalsPages}
+          </span>
+          
+          <button
+            onClick={() => setModalsPage(p => Math.min(totalModalsPages, p + 1))}
+            disabled={modalsPage === totalModalsPages}
+            style={{
+              padding: '8px 16px',
+              background: modalsPage === totalModalsPages ? '#e5e7eb' : '#8B5CF6',
+              color: modalsPage === totalModalsPages ? '#9ca3af' : 'white',
+              border: 'none',
+              borderRadius: 4,
+              cursor: modalsPage === totalModalsPages ? 'not-allowed' : 'pointer',
+              fontWeight: 500
+            }}
+          >
+            Next
+          </button>
+        </div>
+      )}
         </>
       )}
 
       {/* Tab Content - AI Variants */}
       {activeTab === 'variants' && (
-        <div style={{
-          background: "white",
-          padding: 48,
-          borderRadius: 12,
-          border: "1px solid #e5e7eb",
-          textAlign: "center"
-        }}>
-          <h2 style={{ fontSize: 24, marginBottom: 16 }}>AI Variant Testing</h2>
-          <p style={{ fontSize: 16, color: "#6b7280", marginBottom: 24 }}>
-            Track performance across all AI-generated variants and see which copy performs best.
-          </p>
-          <div style={{ fontSize: 14, color: "#6b7280" }}>
-            Coming soon - detailed variant performance analytics
-          </div>
-        </div>
+        <>
+          {!canAccessAIVariants ? (
+            <div style={{
+              background: "white",
+              padding: 48,
+              borderRadius: 12,
+              border: "1px solid #e5e7eb",
+              textAlign: "center"
+            }}>
+              <h2 style={{ fontSize: 24, marginBottom: 16 }}>AI Variant Testing</h2>
+              <p style={{ fontSize: 16, color: "#6b7280", marginBottom: 24 }}>
+                Get detailed insights into AI-generated variants and manually control which ones stay in rotation.
+              </p>
+              <span style={{
+                display: 'inline-block',
+                padding: "4px 12px",
+                background: "#8B5CF6",
+                color: "white",
+                borderRadius: 4,
+                fontSize: 12,
+                fontWeight: 600
+              }}>
+                ENTERPRISE
+              </span>
+            </div>
+          ) : liveVariants.length === 0 ? (
+            <div style={{
+              background: "white",
+              padding: 48,
+              borderRadius: 12,
+              border: "1px solid #e5e7eb",
+              textAlign: "center"
+            }}>
+              <h2 style={{ fontSize: 24, marginBottom: 16 }}>No AI Variants Yet</h2>
+              <p style={{ fontSize: 16, color: "#6b7280", marginBottom: 24 }}>
+                Switch to AI Mode in Settings to start generating and testing variants automatically.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div style={{ marginBottom: 16, color: "#6b7280", fontSize: 14 }}>
+                {liveVariants.length} variant{liveVariants.length !== 1 ? 's' : ''} total
+              </div>
+              <div style={{
+                background: "white",
+                borderRadius: 12,
+                border: "1px solid #e5e7eb",
+                overflow: "hidden"
+              }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                    <th style={{ padding: 16, textAlign: "left", fontWeight: 600 }}>Variant</th>
+                    <th style={{ padding: 16, textAlign: "left", fontWeight: 600 }}>Headline</th>
+                    <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Shown</th>
+                    <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Clicks</th>
+                    <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Orders</th>
+                    <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Revenue</th>
+                    <th style={{ padding: 16, textAlign: "center", fontWeight: 600 }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const totalVariantsPages = Math.ceil(liveVariants.length / ITEMS_PER_PAGE);
+                    const paginatedVariants = liveVariants.slice(
+                      (variantsPage - 1) * ITEMS_PER_PAGE,
+                      variantsPage * ITEMS_PER_PAGE
+                    );
+                    
+                    return paginatedVariants.map((variant) => {
+                    const conversionRate = variant.impressions > 0 
+                      ? ((variant.conversions / variant.impressions) * 100).toFixed(1) 
+                      : 0;
+                    
+                    return (
+                      <tr 
+                        key={variant.id}
+                        style={{ 
+                          borderBottom: "1px solid #e5e7eb",
+                          background: variant.isChampion ? "#f0fdf4" : variant.status === 'protected' ? "#fef3c7" : "white"
+                        }}
+                      >
+                        <td style={{ padding: 16 }}>
+                          <div style={{ fontWeight: 500, marginBottom: 4 }}>
+                            {variant.variantId}
+                          </div>
+                          <div style={{ fontSize: 12, color: "#6b7280" }}>
+                            Gen {variant.generation} · {variant.baseline}
+                          </div>
+                          {variant.isChampion && (
+                            <span style={{
+                              display: 'inline-block',
+                              marginTop: 4,
+                              padding: "2px 6px",
+                              background: "#10b981",
+                              color: "white",
+                              borderRadius: 4,
+                              fontSize: 10,
+                              fontWeight: 600
+                            }}>
+                              CHAMPION
+                            </span>
+                          )}
+                          {variant.status === 'protected' && (
+                            <span style={{
+                              display: 'inline-block',
+                              marginTop: 4,
+                              padding: "2px 6px",
+                              background: "#f59e0b",
+                              color: "white",
+                              borderRadius: 4,
+                              fontSize: 10,
+                              fontWeight: 600
+                            }}>
+                              PROTECTED
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: 16, maxWidth: 300 }}>
+                          <div style={{ fontSize: 14, marginBottom: 4 }}>
+                            {variant.headline}
+                          </div>
+                          <div style={{ fontSize: 12, color: "#6b7280" }}>
+                            {variant.cta}
+                          </div>
+                        </td>
+                        <td style={{ padding: 16, textAlign: "right" }}>
+                          {variant.impressions.toLocaleString()}
+                        </td>
+                        <td style={{ padding: 16, textAlign: "right" }}>
+                          {variant.clicks.toLocaleString()}
+                        </td>
+                        <td style={{ padding: 16, textAlign: "right" }}>
+                          {variant.conversions.toLocaleString()}
+                          <div style={{ fontSize: 12, color: "#6b7280" }}>
+                            {conversionRate}%
+                          </div>
+                        </td>
+                        <td style={{ padding: 16, textAlign: "right", fontWeight: 600, color: "#10b981" }}>
+                          ${variant.revenue.toLocaleString()}
+                        </td>
+                        <td style={{ padding: 16 }}>
+                          {variant.status === 'killed' ? (
+                            <div style={{ display: "flex", justifyContent: "center" }}>
+                              <span style={{
+                                padding: "6px 12px",
+                                background: "#6b7280",
+                                color: "white",
+                                borderRadius: 4,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                opacity: 0.6
+                              }}>
+                                Killed
+                              </span>
+                            </div>
+                          ) : (
+                            <div style={{ display: "flex", gap: 8, justifyContent: "center", alignItems: "center" }}>
+                              <Form method="post" style={{ margin: 0 }}>
+                                <input type="hidden" name="action" value="updateStatus" />
+                                <input type="hidden" name="variantId" value={variant.id} />
+                                <select
+                                  name="status"
+                                  defaultValue={variant.isChampion ? 'champion' : variant.status}
+                                  onChange={(e) => e.target.form.requestSubmit()}
+                                  style={{
+                                    padding: "6px 12px",
+                                    border: "1px solid #d1d5db",
+                                    borderRadius: 4,
+                                    fontSize: 12,
+                                    fontWeight: 500,
+                                    cursor: "pointer",
+                                    background: "white"
+                                  }}
+                                >
+                                  <option value="alive">Active</option>
+                                  <option value="protected">Protected</option>
+                                  <option value="champion">Champion</option>
+                                </select>
+                              </Form>
+                              
+                              <button
+                                type="button"
+                                style={{
+                                  padding: "6px 12px",
+                                  background: "#ef4444",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: 4,
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  cursor: "pointer"
+                                }}
+                                title="Permanently remove this variant"
+                                onClick={() => {
+                                  if (confirm('Are you sure you want to kill this variant? This action cannot be undone.')) {
+                                    fetcher.submit(
+                                      { action: 'killVariant', variantId: variant.id },
+                                      { method: 'post' }
+                                    );
+                                  }
+                                }}
+                              >
+                                Kill
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+            
+            {/* Variants Pagination */}
+            {liveVariants.length > ITEMS_PER_PAGE && (
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'center', 
+                gap: 8, 
+                marginTop: 24,
+                alignItems: 'center'
+              }}>
+                <button
+                  onClick={() => setVariantsPage(p => Math.max(1, p - 1))}
+                  disabled={variantsPage === 1}
+                  style={{
+                    padding: '8px 16px',
+                    background: variantsPage === 1 ? '#e5e7eb' : '#8B5CF6',
+                    color: variantsPage === 1 ? '#9ca3af' : 'white',
+                    border: 'none',
+                    borderRadius: 4,
+                    cursor: variantsPage === 1 ? 'not-allowed' : 'pointer',
+                    fontWeight: 500
+                  }}
+                >
+                  Previous
+                </button>
+                
+                <span style={{ color: '#6b7280', fontSize: 14 }}>
+                  Page {variantsPage} of {Math.ceil(liveVariants.length / ITEMS_PER_PAGE)}
+                </span>
+                
+                <button
+                  onClick={() => setVariantsPage(p => Math.min(Math.ceil(liveVariants.length / ITEMS_PER_PAGE), p + 1))}
+                  disabled={variantsPage === Math.ceil(liveVariants.length / ITEMS_PER_PAGE)}
+                  style={{
+                    padding: '8px 16px',
+                    background: variantsPage === Math.ceil(liveVariants.length / ITEMS_PER_PAGE) ? '#e5e7eb' : '#8B5CF6',
+                    color: variantsPage === Math.ceil(liveVariants.length / ITEMS_PER_PAGE) ? '#9ca3af' : 'white',
+                    border: 'none',
+                    borderRadius: 4,
+                    cursor: variantsPage === Math.ceil(liveVariants.length / ITEMS_PER_PAGE) ? 'not-allowed' : 'pointer',
+                    fontWeight: 500
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+            </>
+          )}
+        </>
       )}
 
       <div style={{ marginTop: 32, textAlign: "center" }}>
