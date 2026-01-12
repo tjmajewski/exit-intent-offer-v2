@@ -363,12 +363,12 @@
       modal.id = 'exit-intent-modal';
       modal.style.cssText = `
         background: white;
-        border-radius: 8px;
-        padding: 40px;
-        max-width: 500px;
+        border-radius: 16px;
+        padding: 48px 40px 40px 40px;
+        max-width: 480px;
         width: 90%;
         position: relative;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
       `;
       
       // Close button
@@ -376,34 +376,46 @@
       closeBtn.innerHTML = '&times;';
       closeBtn.style.cssText = `
         position: absolute;
-        top: 15px;
-        right: 15px;
-        background: none;
+        top: 20px;
+        right: 20px;
+        background: #f3f4f6;
         border: none;
-        font-size: 30px;
+        font-size: 24px;
         cursor: pointer;
-        color: #999;
+        color: #6b7280;
         line-height: 1;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
       `;
+      closeBtn.onmouseover = () => closeBtn.style.background = '#e5e7eb';
+      closeBtn.onmouseout = () => closeBtn.style.background = '#f3f4f6';
       closeBtn.onclick = () => this.closeModal();
       
       // Modal content
       const headline = document.createElement('h2');
       headline.textContent = this.settings.modalHeadline || 'Wait! Don\'t leave yet 🎁';
       headline.style.cssText = `
-        margin: 0 0 20px 0;
-        font-size: 28px;
-        color: ${this.settings.brandPrimaryColor || '#333'};
+        margin: 0 0 16px 0;
+        font-size: 32px;
+        font-weight: 700;
+        color: #1f2937;
         font-family: ${this.settings.brandFont || 'inherit'};
+        line-height: 1.2;
+        letter-spacing: -0.02em;
       `;
       
       const body = document.createElement('p');
       body.textContent = this.settings.modalBody || 'Complete your purchase now and get free shipping on your order!';
       body.style.cssText = `
-        margin: 0 0 30px 0;
-        font-size: 16px;
-        line-height: 1.6;
-        color: ${this.settings.brandPrimaryColor || '#666'};
+        margin: 0 0 32px 0;
+        font-size: 17px;
+        line-height: 1.7;
+        color: #6b7280;
         font-family: ${this.settings.brandFont || 'inherit'};
       `;
       
@@ -411,38 +423,84 @@
       ctaButton.id = 'modal-primary-cta';
       ctaButton.textContent = this.settings.ctaButton || 'Complete My Order';
       ctaButton.style.cssText = `
-        background: ${this.settings.brandAccentColor || '#000'};
-        color: ${this.settings.brandSecondaryColor || 'white'};
+        background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
+        color: white;
         border: none;
-        padding: 15px 40px;
-        font-size: 16px;
-        font-weight: bold;
-        border-radius: 4px;
+        padding: 18px 32px;
+        font-size: 17px;
+        font-weight: 600;
+        border-radius: 12px;
+        box-shadow: 0 4px 14px 0 rgba(139, 92, 246, 0.39);
         cursor: pointer;
         width: 100%;
         font-family: ${this.settings.brandFont || 'inherit'};
+        transition: all 0.2s ease;
       `;
       ctaButton.onclick = () => this.handleCTAClick();
+      ctaButton.onmouseover = () => {
+        ctaButton.style.transform = 'translateY(-2px)';
+        ctaButton.style.boxShadow = '0 6px 20px 0 rgba(139, 92, 246, 0.5)';
+      };
+      ctaButton.onmouseout = () => {
+        ctaButton.style.transform = 'translateY(0)';
+        ctaButton.style.boxShadow = '0 4px 14px 0 rgba(139, 92, 246, 0.39)';
+      };
       
       // Secondary button (will be shown for threshold offers)
       const secondaryButton = document.createElement('button');
       secondaryButton.id = 'modal-secondary-cta';
       secondaryButton.textContent = 'Keep Shopping';
       secondaryButton.style.cssText = `
-        background: transparent;
-        color: ${this.settings.brandPrimaryColor || '#666'};
-        border: 2px solid ${this.settings.brandPrimaryColor || '#ddd'};
-        padding: 15px 40px;
-        font-size: 16px;
-        font-weight: bold;
-        border-radius: 4px;
+        background: #f9fafb;
+        color: #6b7280;
+        border: 1px solid #e5e7eb;
+        padding: 18px 32px;
+        font-size: 17px;
+        font-weight: 600;
+        border-radius: 12px;
         cursor: pointer;
         width: 100%;
         margin-top: 12px;
         display: none;
         font-family: ${this.settings.brandFont || 'inherit'};
+        transition: all 0.2s;
       `;
+      secondaryButton.onmouseover = () => {
+        secondaryButton.style.background = '#f3f4f6';
+        secondaryButton.style.borderColor = '#d1d5db';
+      };
+      secondaryButton.onmouseout = () => {
+        secondaryButton.style.background = '#f9fafb';
+        secondaryButton.style.borderColor = '#e5e7eb';
+      };
       secondaryButton.onclick = () => this.handleSecondaryClick();
+      
+      // Powered by badge (Entry/Pro only - Enterprise can hide via plan tier)
+      const poweredBy = document.createElement('div');
+      poweredBy.id = 'modal-powered-by';
+      
+      // Hide for Enterprise tier
+      if (this.settings.plan === 'enterprise') {
+        poweredBy.style.display = 'none';
+      }
+      
+      poweredBy.innerHTML = `
+        <a href="https://resparq.ai" target="_blank" style="
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 11px;
+          color: #9ca3af;
+          text-decoration: none;
+          margin-top: 16px;
+          float: right;
+          transition: color 0.2s;
+        " onmouseover="this.style.color='#8B5CF6'" onmouseout="this.style.color='#9ca3af'">
+          <span>Powered by</span>
+          <span style="font-weight: 600; color: #8B5CF6;">ResparQ</span>
+          <span style="font-size: 13px;">⚡</span>
+        </a>
+      `;
       
       // Assemble modal
       modal.appendChild(closeBtn);
@@ -450,6 +508,7 @@
       modal.appendChild(body);
       modal.appendChild(ctaButton);
       modal.appendChild(secondaryButton);
+      modal.appendChild(poweredBy);
       overlay.appendChild(modal);
       
       // Add to page

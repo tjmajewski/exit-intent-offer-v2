@@ -137,8 +137,16 @@ export default function AppLayout({ children, plan }) {
       }}>
         {/* Logo */}
         <div style={{ padding: "0 24px", marginBottom: 32 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Exit Intent Offer</h2>
-          <p style={{ fontSize: 12, opacity: 0.7, margin: "4px 0 0 0" }}>Performance-first modals</p>
+          <img 
+            src="/resparq_outline_final.svg" 
+            alt="ResparQ" 
+            style={{ 
+              width: "100%", 
+              height: "auto",
+              maxWidth: 180
+            }} 
+          />
+          <p style={{ fontSize: 12, opacity: 0.7, margin: "8px 0 0 0" }}>Performance-first exit intent</p>
         </div>
 
         {/* Navigation */}
