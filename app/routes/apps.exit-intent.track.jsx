@@ -149,6 +149,20 @@ export async function action({ request }) {
         const statKey = event + "s";
         currentModal.stats[statKey] = (currentModal.stats[statKey] || 0) + 1;
         
+        // Add timestamped event to modal
+        if (!currentModal.stats.events) currentModal.stats.events = [];
+        currentModal.stats.events.push({
+          type: event,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Keep only last 90 days of events per modal
+        const ninetyDaysAgo = new Date();
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+        currentModal.stats.events = currentModal.stats.events.filter(e => 
+          new Date(e.timestamp) > ninetyDaysAgo
+        );
+        
         console.log(`📊 Updated ${currentModal.modalName} stats:`, currentModal.stats);
         
         // Save updated modal library

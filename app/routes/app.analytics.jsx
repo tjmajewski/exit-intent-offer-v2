@@ -1,4 +1,4 @@
-import { useLoaderData, Link, Form, redirect, useFetcher } from "react-router";
+import { useLoaderData, Link, Form, redirect, useFetcher, useNavigate } from "react-router";
 import { useState } from "react";
 import { authenticate } from "../shopify.server";
 import { hasFeature } from "../utils/featureGates";
@@ -174,6 +174,90 @@ export async function action({ request }) {
       return redirect('/app/analytics?tab=variants');
     }
     
+    // Generate test events with timestamps
+    if (action === "generateTestEvents") {
+      const shopResponse = await admin.graphql(`
+        query {
+          shop {
+            id
+            modalLibrary: metafield(namespace: "exit_intent", key: "modal_library") {
+              value
+            }
+          }
+        }
+      `);
+      
+      const shopData = await shopResponse.json();
+      const shopId = shopData.data.shop.id;
+      const modalLibrary = shopData.data.shop?.modalLibrary?.value
+        ? JSON.parse(shopData.data.shop.modalLibrary.value)
+        : null;
+      
+      if (!modalLibrary || !modalLibrary.modals) {
+        return { error: 'No modals found' };
+      }
+      
+      // Generate events for each modal spread across last 60 days
+      modalLibrary.modals.forEach(modal => {
+        modal.stats.events = [];
+        const now = Date.now();
+        
+        // Generate random events over 60 days
+        for (let i = 0; i < 50; i++) {
+          const daysAgo = Math.floor(Math.random() * 60);
+          const timestamp = new Date(now - daysAgo * 24 * 60 * 60 * 1000).toISOString();
+          
+          // Add impression
+          modal.stats.events.push({ type: 'impression', timestamp });
+          
+          // 30% chance of click
+          if (Math.random() < 0.3) {
+            modal.stats.events.push({ type: 'click', timestamp });
+            
+            // 20% chance of conversion after click
+            if (Math.random() < 0.2) {
+              modal.stats.events.push({ 
+                type: 'conversion', 
+                timestamp,
+                revenue: Math.floor(Math.random() * 100) + 20
+              });
+            }
+          }
+        }
+        
+        // Update cumulative stats
+        modal.stats.impressions = modal.stats.events.filter(e => e.type === 'impression').length;
+        modal.stats.clicks = modal.stats.events.filter(e => e.type === 'click').length;
+        modal.stats.conversions = modal.stats.events.filter(e => e.type === 'conversion').length;
+        modal.stats.revenue = modal.stats.events
+          .filter(e => e.type === 'conversion')
+          .reduce((sum, e) => sum + (e.revenue || 0), 0);
+      });
+      
+      // Save updated modal library
+      await admin.graphql(`
+        mutation UpdateModalLibrary($ownerId: ID!, $value: String!) {
+          metafieldsSet(metafields: [{
+            ownerId: $ownerId
+            namespace: "exit_intent"
+            key: "modal_library"
+            value: $value
+            type: "json"
+          }]) {
+            metafields { id }
+          }
+        }
+      `, {
+        variables: {
+          ownerId: shopId,
+          value: JSON.stringify(modalLibrary)
+        }
+      });
+      
+      console.log('✅ Generated test events for all modals');
+      return redirect('/app/analytics');
+    }
+    
     return { success: false };
   } catch (error) {
     console.error("Error in action:", error);
@@ -212,12 +296,57 @@ export async function loader({ request }) {
       ? JSON.parse(data.data.shop.modalLibrary.value)
       : getDefaultModalLibrary();
 
-    // TODO: Filter modal stats by date range when event-level tracking is implemented
-    // Currently showing all-time stats regardless of dateRange selection
-    // Need to:
-    // 1. Store timestamped events for each modal
-    // 2. Filter events by dateRange (7d, 30d, all)
-    // 3. Recalculate impressions, clicks, conversions, revenue from filtered events
+    // Filter modal stats by date range
+    console.log('📊 Filtering modals by date range:', dateRange);
+    console.log('📊 Total modals:', modalLibrary.modals?.length);
+    
+    if (modalLibrary.modals && dateRange !== 'all') {
+      const now = new Date();
+      let startDate;
+      
+      if (dateRange === '7d') {
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else if (dateRange === '30d') {
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      }
+      
+      modalLibrary.modals = modalLibrary.modals.map(modal => {
+        console.log(`📊 Modal "${modal.modalName}" has ${modal.stats.events?.length || 0} events`);
+        
+        if (!modal.stats.events || modal.stats.events.length === 0) {
+          console.log(`📊 Modal "${modal.modalName}" has no events, showing zeros`);
+          // No events yet, return modal with zero stats
+          return {
+            ...modal,
+            stats: {
+              ...modal.stats,
+              impressions: 0,
+              clicks: 0,
+              conversions: 0,
+              revenue: 0
+            }
+          };
+        }
+        
+        // Filter events by date range
+        const filteredEvents = modal.stats.events.filter(e => 
+          new Date(e.timestamp) >= startDate
+        );
+        
+        // Recalculate stats from filtered events
+        const stats = {
+          impressions: filteredEvents.filter(e => e.type === 'impression').length,
+          clicks: filteredEvents.filter(e => e.type === 'click').length,
+          conversions: filteredEvents.filter(e => e.type === 'conversion').length,
+          revenue: filteredEvents
+            .filter(e => e.type === 'conversion')
+            .reduce((sum, e) => sum + (e.revenue || 0), 0),
+          events: modal.stats.events // Keep all events for future filtering
+        };
+        
+        return { ...modal, stats };
+      });
+    }
 
     // Fetch live AI variants for Enterprise users
     let liveVariants = [];
@@ -268,6 +397,7 @@ export async function loader({ request }) {
 export default function Performance() {
   const { plan, modalLibrary, dateRange: loaderDateRange, liveVariants } = useLoaderData();
   const fetcher = useFetcher();
+  const navigate = useNavigate();
   const canAccessPerformance = plan && (plan.tier === 'pro' || plan.tier === 'enterprise');
   const canAccessAIVariants = plan && plan.tier === 'enterprise';
   
@@ -281,7 +411,7 @@ export default function Performance() {
   const handleDateRangeChange = (range) => {
     setDateRange(range);
     // Update URL to trigger loader refresh
-    window.location.href = `/app/analytics?range=${range}`;
+    navigate(`/app/analytics?range=${range}`);
   };
 
   // Starter users see locked page
@@ -403,7 +533,7 @@ export default function Performance() {
               Last 30 Days
             </button>
             <button
-              onClick={() => setDateRange('7d')}
+              onClick={() => handleDateRangeChange('7d')}
               style={{
                 padding: "8px 16px",
                 background: dateRange === '7d' ? "#8B5CF6" : "white",
@@ -418,7 +548,7 @@ export default function Performance() {
               Last 7 Days
             </button>
             <button
-              onClick={() => setDateRange('all')}
+              onClick={() => handleDateRangeChange('all')}
               style={{
                 padding: "8px 16px",
                 background: dateRange === 'all' ? "#8B5CF6" : "white",
@@ -432,12 +562,35 @@ export default function Performance() {
             >
               All Time
             </button>
+            
+            {/* DEV: Generate Test Events Button */}
+            {process.env.NODE_ENV === 'development' && (
+              <fetcher.Form method="post" style={{ display: "inline" }}>
+                <input type="hidden" name="action" value="generateTestEvents" />
+                <button
+                  type="submit"
+                  style={{
+                    padding: "8px 16px",
+                    background: "#fbbf24",
+                    color: "#1f2937",
+                    border: "none",
+                    borderRadius: 6,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    marginLeft: 8
+                  }}
+                >
+                  🔧 Generate Test Data
+                </button>
+              </fetcher.Form>
+            )}
           </div>
         </div>
         <p style={{ color: "#666", margin: 0 }}>
           Compare performance across all your modal campaigns
         </p>
-      </div>
+        </div>
 
       {/* Tab Navigation */}
       <div style={{ 
