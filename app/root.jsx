@@ -1,4 +1,5 @@
-import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
+import { Links, Meta, Outlet, Scripts, ScrollRestoration, useRouteError } from "react-router";
+import * as Sentry from "@sentry/remix";
 
 export default function App() {
   return (

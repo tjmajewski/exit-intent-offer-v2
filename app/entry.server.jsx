@@ -1,3 +1,15 @@
+import * as Sentry from "@sentry/remix";
+
+Sentry.init({
+  dsn: "https://04d33c1cefa9eb35d973213e01f78ecd@o4510700168871936.ingest.us.sentry.io/4510700170379264",
+  tracesSampleRate: 0.1,
+  environment: process.env.NODE_ENV,
+  ignoreErrors: [
+    'Non-Error promise rejection captured',
+    'ResizeObserver loop limit exceeded',
+  ],
+});
+
 import { PassThrough } from "stream";
 import { renderToPipeableStream } from "react-dom/server";
 import { ServerRouter } from "react-router";
