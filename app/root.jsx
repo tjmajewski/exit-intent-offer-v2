@@ -23,3 +23,50 @@ export default function App() {
     </html>
   );
 }
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+  
+  // Log to Sentry
+  Sentry.captureException(error);
+  
+  return (
+    <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <Meta />
+        <Links />
+      </head>
+      <body>
+        <div style={{ 
+          padding: 48, 
+          textAlign: 'center',
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: 'column'
+        }}>
+          <h1 style={{ fontSize: 24, marginBottom: 16, color: '#1f2937' }}>
+            Something went wrong
+          </h1>
+          <p style={{ color: '#6b7280', marginBottom: 24, maxWidth: 400 }}>
+            We've been notified and are working on it. Please try refreshing the page.
+          </p>
+          <a 
+            href="/" 
+            style={{ 
+              color: '#8B5CF6', 
+              textDecoration: 'underline',
+              fontSize: 16
+            }}
+          >
+            Go back home
+          </a>
+        </div>
+        <Scripts />
+      </body>
+    </html>
+  );
+}
