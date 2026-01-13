@@ -12,6 +12,11 @@
   // Get settings from the snippet (will be injected by Liquid)
   const settings = window.exitIntentSettings || {};
   
+  // Mobile detection helper
+  function isMobileDevice() {
+    return window.innerWidth <= 768 || /mobile/i.test(navigator.userAgent);
+  }
+
   // Exit intent modal manager
   class ExitIntentModal {
     constructor() {
@@ -354,43 +359,63 @@
         background: rgba(0, 0, 0, 0.7);
         display: none;
         justify-content: center;
-        align-items: center;
+        align-items: ${isMobileDevice() ? 'flex-end' : 'center'};
         z-index: 9999;
       `;
       
       // Create modal content
       const modal = document.createElement('div');
       modal.id = 'exit-intent-modal';
+      const isMobile = isMobileDevice();
       modal.style.cssText = `
         background: white;
-        border-radius: 16px;
-        padding: 48px 40px 40px 40px;
-        max-width: 480px;
-        width: 90%;
+        border-radius: ${isMobile ? '20px 20px 0 0' : '16px'};
+        padding: ${isMobile ? '32px 20px 20px 20px' : '48px 40px 40px 40px'};
+        padding-right: ${isMobile ? '60px' : '40px'};
+        max-width: ${isMobile ? '100%' : '480px'};
+        width: ${isMobile ? '100%' : '90%'};
+        max-height: ${isMobile ? '85vh' : 'none'};
+        overflow-y: ${isMobile ? 'auto' : 'visible'};
         position: relative;
         box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        transform: ${isMobile ? 'translateY(100%)' : 'scale(0.9)'};
+        transition: transform 0.3s ease-out;
       `;
+      
+      // Add swipe handle for mobile
+      if (isMobile) {
+        const swipeHandle = document.createElement('div');
+        swipeHandle.style.cssText = `
+          width: 40px;
+          height: 4px;
+          background: rgba(0, 0, 0, 0.2);
+          border-radius: 2px;
+          margin: 0 auto 20px auto;
+        `;
+        modal.appendChild(swipeHandle);
+      }
       
       // Close button
       const closeBtn = document.createElement('button');
       closeBtn.innerHTML = '&times;';
       closeBtn.style.cssText = `
         position: absolute;
-        top: 20px;
-        right: 20px;
+        top: ${isMobile ? '16px' : '20px'};
+        right: ${isMobile ? '16px' : '20px'};
         background: #f3f4f6;
         border: none;
-        font-size: 24px;
+        font-size: ${isMobile ? '28px' : '24px'};
         cursor: pointer;
         color: #6b7280;
         line-height: 1;
-        width: 32px;
-        height: 32px;
+        width: ${isMobile ? '44px' : '32px'};
+        height: ${isMobile ? '44px' : '32px'};
         border-radius: 8px;
         display: flex;
         align-items: center;
         justify-content: center;
         transition: all 0.2s;
+        z-index: 1;
       `;
       closeBtn.onmouseover = () => closeBtn.style.background = '#e5e7eb';
       closeBtn.onmouseout = () => closeBtn.style.background = '#f3f4f6';
@@ -401,20 +426,20 @@
       headline.textContent = this.settings.modalHeadline || 'Wait! Don\'t leave yet 🎁';
       headline.style.cssText = `
         margin: 0 0 16px 0;
-        font-size: 32px;
+        font-size: ${isMobile ? '24px' : '32px'};
         font-weight: 700;
         color: #1f2937;
         font-family: ${this.settings.brandFont || 'inherit'};
-        line-height: 1.2;
+        line-height: 1.3;
         letter-spacing: -0.02em;
       `;
       
       const body = document.createElement('p');
       body.textContent = this.settings.modalBody || 'Complete your purchase now and get free shipping on your order!';
       body.style.cssText = `
-        margin: 0 0 32px 0;
-        font-size: 17px;
-        line-height: 1.7;
+        margin: 0 0 ${isMobile ? '24px' : '32px'} 0;
+        font-size: ${isMobile ? '16px' : '17px'};
+        line-height: 1.6;
         color: #6b7280;
         font-family: ${this.settings.brandFont || 'inherit'};
       `;
@@ -426,15 +451,18 @@
         background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
         color: white;
         border: none;
-        padding: 18px 32px;
-        font-size: 17px;
+        padding: ${isMobile ? '16px 24px' : '18px 32px'};
+        font-size: ${isMobile ? '18px' : '17px'};
         font-weight: 600;
         border-radius: 12px;
         box-shadow: 0 4px 14px 0 rgba(139, 92, 246, 0.39);
         cursor: pointer;
         width: 100%;
+        min-height: ${isMobile ? '48px' : 'auto'};
         font-family: ${this.settings.brandFont || 'inherit'};
         transition: all 0.2s ease;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
       `;
       ctaButton.onclick = () => this.handleCTAClick();
       ctaButton.onmouseover = () => {
@@ -454,16 +482,19 @@
         background: #f9fafb;
         color: #6b7280;
         border: 1px solid #e5e7eb;
-        padding: 18px 32px;
-        font-size: 17px;
+        padding: ${isMobile ? '16px 24px' : '18px 32px'};
+        font-size: ${isMobile ? '18px' : '17px'};
         font-weight: 600;
         border-radius: 12px;
         cursor: pointer;
         width: 100%;
+        min-height: ${isMobile ? '48px' : 'auto'};
         margin-top: 12px;
         display: none;
         font-family: ${this.settings.brandFont || 'inherit'};
         transition: all 0.2s;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
       `;
       secondaryButton.onmouseover = () => {
         secondaryButton.style.background = '#f3f4f6';
@@ -501,6 +532,50 @@
           <span style="font-size: 13px;">⚡</span>
         </a>
       `;
+      
+      // Add swipe-to-dismiss for mobile
+      if (isMobile) {
+        let startY = 0;
+        let currentY = 0;
+        let isDragging = false;
+        
+        modal.addEventListener('touchstart', (e) => {
+          // Only start drag if touching the modal background (not buttons)
+          if (e.target === modal || e.target.tagName === 'H2' || e.target.tagName === 'P') {
+            startY = e.touches[0].clientY;
+            isDragging = true;
+          }
+        }, { passive: true });
+        
+        modal.addEventListener('touchmove', (e) => {
+          if (!isDragging) return;
+          currentY = e.touches[0].clientY;
+          const diff = currentY - startY;
+          
+          // Only allow downward swipes
+          if (diff > 0) {
+            modal.style.transform = `translateY(${diff}px)`;
+            modal.style.transition = 'none';
+          }
+        }, { passive: true });
+        
+        modal.addEventListener('touchend', () => {
+          if (!isDragging) return;
+          isDragging = false;
+          
+          const diff = currentY - startY;
+          
+          // If swiped down more than 100px, close modal
+          if (diff > 100) {
+            this.closeModal();
+            this.trackEvent('modal_swiped_closed');
+          } else {
+            // Reset position with animation
+            modal.style.transition = 'transform 0.3s ease-out';
+            modal.style.transform = 'translateY(0)';
+          }
+        }, { passive: true });
+      }
       
       // Assemble modal
       modal.appendChild(closeBtn);
@@ -616,8 +691,8 @@
     setupTriggers() {
       const triggers = this.settings.triggers || {};
       
-      // Exit intent trigger
-      if (triggers.exitIntent) {
+      // Exit intent trigger (desktop only)
+      if (triggers.exitIntent && !isMobileDevice()) {
         document.addEventListener('mouseout', async (e) => {
           if (e.clientY < 0 && !this.modalShown) {
             // Check if cart has items before showing
@@ -691,7 +766,23 @@
         await this.getAIDecision();
       }
       
+      // Prevent body scroll on mobile
+      if (isMobileDevice()) {
+        document.body.style.overflow = 'hidden';
+        document.body.style.position = 'fixed';
+        document.body.style.width = '100%';
+      }
+      
       this.modalElement.style.display = 'flex';
+      
+      // Trigger animation
+      requestAnimationFrame(() => {
+        const modal = this.modalElement.querySelector('#exit-intent-modal');
+        if (modal) {
+          modal.style.transform = isMobileDevice() ? 'translateY(0)' : 'scale(1)';
+        }
+      });
+      
       this.modalShown = true;
       
       // Mark as shown in session storage (won't show again this session)
@@ -856,9 +947,27 @@
     closeModal() {
       if (!this.modalElement) return;
       
-      // Remove from DOM instead of just hiding
-      this.modalElement.remove();
-      this.modalElement = null;
+      const modal = this.modalElement.querySelector('#exit-intent-modal');
+      
+      // Animate out
+      if (modal) {
+        modal.style.transform = isMobileDevice() ? 'translateY(100%)' : 'scale(0.9)';
+      }
+      
+      // Restore body scroll on mobile
+      if (isMobileDevice()) {
+        document.body.style.overflow = '';
+        document.body.style.position = '';
+        document.body.style.width = '';
+      }
+      
+      // Remove from DOM after animation
+      setTimeout(() => {
+        if (this.modalElement) {
+          this.modalElement.remove();
+          this.modalElement = null;
+        }
+      }, 300);
       
       // Track close
       this.trackEvent('closeout');
