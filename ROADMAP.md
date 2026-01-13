@@ -1,5 +1,5 @@
 ResparQ Launch Roadmap
-Updated: January 12, 2026
+Updated: January 13, 2026
 App: Exit Intent Modal with AI-Powered Cart Recovery
 
 ✅ COMPLETED FEATURES
@@ -18,108 +18,35 @@ Performance Analytics - Revenue per impression tracking, variant performance met
 Settings Organization - Fixed Advanced tab, proper AI/Manual mode detection, tier-based feature gating
 Branding - ResparQ branding across modal and admin interface
 
-Recent Additions
+Recent Additions (January 2026)
 
 Error Monitoring ✅ - Sentry integration (server + client), error boundaries, session replay
 Cart icon for Conversions nav
 Modal order reversed (newest first)
 Variant counter showing totals
 Date filtering on Performance page
+Mobile-First Modal ✅ - Bottom sheet design, swipe-to-dismiss, 48px touch targets, no body scroll, mobile-optimized typography and animations
 
 
 🚀 PRE-LAUNCH PRIORITIES (DO BEFORE LAUNCH)
-1. Mobile-First Modal (4 hours) ⏳
-Why: 60%+ of Shopify traffic is mobile. Critical for conversions.
-Requirements:
+1. Mobile-First Modal ✅ COMPLETED (January 13, 2026)
+Implementation:
 
 Bottom sheet design (slides up from bottom)
 Larger touch targets (48px minimum)
 Swipe-to-dismiss gesture
 Faster animations
 Reduced text, bigger buttons
-Separate template for mobile vs desktop detection
+Mobile-specific padding to prevent close button overlap
+Disabled desktop exit intent on mobile
+Prevented body scroll when modal open
 
-Implementation:
-javascriptconst isMobile = window.innerWidth <= 768 || /mobile/i.test(navigator.userAgent);
-if (isMobile) {
-  loadTemplate('mobile-modal.html'); // Full-screen, swipe gestures
-} else {
-  loadTemplate('desktop-modal.html'); // Centered popup
-}
-Test on:
-
-Shopify Mobile (customer-facing)
-Shop app
-Mobile Safari
-Mobile Chrome
-
-Files to modify:
+Files modified:
 
 extensions/exit-intent-modal/assets/exit-intent-modal.js
-Create new mobile-specific CSS
 
 
-2. Load Testing (2 hours) ⏳
-Why: Prevent Black Friday disasters, ensure app handles traffic spikes.
-Tool: k6 (https://k6.io)
-Install:
-bashnpm install -g k6
-Create: load-test.js in project root
-javascriptimport http from 'k6/http';
-import { check, sleep } from 'k6';
-
-export let options = {
-  stages: [
-    { duration: '2m', target: 100 },   // Ramp to 100 users
-    { duration: '5m', target: 100 },   // Stay at 100
-    { duration: '2m', target: 500 },   // Spike to 500 (Black Friday)
-    { duration: '5m', target: 500 },   // Hold spike
-    { duration: '2m', target: 0 },     // Ramp down
-  ],
-};
-
-export default function () {
-  // Test AI decision endpoint
-  let res = http.post('https://your-app.com/apps/exit-intent/api/ai-decision', 
-    JSON.stringify({
-      shop: 'test-store.myshopify.com',
-      signals: {
-        cartValue: 100,
-        deviceType: 'mobile',
-        visitFrequency: 1,
-        timeOnSite: 45,
-        pageViews: 3,
-        scrollDepth: 60
-      }
-    }),
-    { headers: { 'Content-Type': 'application/json' } }
-  );
-  
-  check(res, {
-    'status is 200': (r) => r.status === 200,
-    'response time < 500ms': (r) => r.timings.duration < 500,
-  });
-  
-  sleep(1);
-}
-Run:
-bashk6 run load-test.js
-Targets:
-
-100 requests/sec sustained ✓
-500 requests/sec peak (Black Friday) ✓
-<500ms response time ✓
-<1% error rate ✓
-
-What to test:
-
-/apps/exit-intent/api/ai-decision (most critical)
-/apps/exit-intent/api/enrich-signals
-Settings page load
-Order webhook processing
-
-
-3. Custom CSS API (Enterprise Only) (8 hours) ⏳
+2. Custom CSS API (Enterprise Only) (8 hours) ⏳
 Why: Enterprise customers want full control over modal appearance.
 Implementation:
 Database:
@@ -176,7 +103,7 @@ Limit file size (100KB max)
 Rate limit API calls
 
 
-4. Misc Bugs Cleanup (varies) ⏳
+3. Misc Bugs Cleanup (varies) ⏳
 Action: Create comprehensive list of known bugs and fix them.
 To check:
 
@@ -198,7 +125,7 @@ Test checklist:
  Modal shows/hides properly on all pages
 
 
-5. Create Website (external project) 🌐
+4. Create Website (external project) 🌐
 Platform: Webflow, Framer, or custom Next.js site
 Pages needed:
 
@@ -224,7 +151,7 @@ Promotional intelligence (unique)
 Flat pricing, not pageview-based (simpler than competitors)
 
 
-6. Update Upgrade Page (1 hour) ⏳
+5. Update Upgrade Page (1 hour) ⏳
 File: app/routes/app.upgrade.jsx
 Update:
 
@@ -240,6 +167,122 @@ Pricing suggestions:
 Starter: Free or $9/mo (basic modals, manual mode, up to 1,000 monthly visitors)
 Pro: $29/mo (AI mode, unlimited visitors, A/B testing, analytics)
 Enterprise: $99/mo (everything + manual controls, promo intelligence, custom CSS, priority support)
+
+
+🚀 DEPLOYMENT & LAUNCH CHECKLIST
+
+BEFORE DEPLOYING TO PRODUCTION:
+
+1. Load Testing (2 hours) 🔴 MUST DO BEFORE LAUNCH
+Why: Prevent Black Friday disasters, ensure app handles traffic spikes.
+Status: Setup files ready (load-test.js, LOAD_TESTING.md, PERFORMANCE_CHECKLIST.md)
+Prerequisites:
+
+App must be deployed to production first (Fly.io, Heroku, etc.)
+Cannot test on localhost
+
+Tool: k6 (https://k6.io)
+Setup:
+bashnpm install -g k6  # Or: brew install k6 (macOS)
+Run:
+bashk6 run load-test.js
+Targets:
+
+100 requests/sec sustained ✓
+500 requests/sec peak (Black Friday) ✓
+<500ms response time ✓
+<1% error rate ✓
+
+What to test:
+
+/apps/exit-intent/api/ai-decision (most critical)
+/apps/exit-intent/api/enrich-signals
+Settings page load
+Order webhook processing
+
+Performance Optimizations (do before load test):
+
+Add database indexes (see PERFORMANCE_CHECKLIST.md)
+Verify pagination on all lists
+Check for N+1 queries
+Optimize API responses (only return needed fields)
+
+Files included:
+
+load-test.js - k6 load test script
+LOAD_TESTING.md - Complete testing guide
+PERFORMANCE_CHECKLIST.md - Pre-test optimizations
+
+Red flags during test:
+
+p(95) > 1000ms - App too slow under load
+Error rate > 5% - App crashing/timing out
+Database connection errors - Increase connection pool
+
+If load test fails:
+
+Check Sentry for error patterns
+Add database indexes
+Implement caching for AI decisions
+Scale up server resources
+Fix one bottleneck at a time, re-test
+
+DEPLOYMENT STEPS:
+
+ Pre-deployment optimizations complete
+ Database indexes added
+ Load testing passed
+ Error monitoring configured
+ All bugs fixed
+ Mobile optimization verified
+ Website live
+
+TECHNICAL LAUNCH CHECKLIST:
+
+ Error monitoring (Sentry)
+ Mobile-first modal design
+ Load testing completed ← DO THIS AFTER DEPLOYING
+ All bugs fixed
+ Database optimized
+ API rate limiting
+ Security audit
+ GDPR compliance check
+
+FEATURES:
+
+ AI decision engine
+ Manual intervention controls
+ Order tracking
+ Analytics with date filtering
+ Promotional intelligence
+ Custom CSS API (Enterprise)
+ Mobile optimization
+
+CONTENT:
+
+ Website live
+ Help documentation
+ Video tutorials
+ Email templates (onboarding)
+ Support responses templated
+
+BUSINESS:
+
+ Pricing finalized
+ Payment processing set up (Shopify billing)
+ Terms of service
+ Privacy policy
+ Support process defined
+ Upgrade page updated
+
+MARKETING:
+
+ App Store listing optimized
+ Screenshots ready
+ Demo video
+ Social media accounts
+ Launch announcement drafted
+ Beta testers lined up
 
 
 📦 POST-LAUNCH PRIORITIES (AFTER LAUNCH)
@@ -542,55 +585,6 @@ ResparQ's Unique Advantages
 Feature Comparison Matrix
 FeatureResparQOptiMonkWisepopsPrivyJustunoFocusRevenueEmailMulti-channelEmail/SMSAI RecsNo Email Required✅❌❌❌❌Auto-Applied Discounts✅❌❌❌❌AI Decision Engine✅ (13 signals)❌Limited❌✅Cart Monitoring✅❌❌❌❌Promo Intelligence✅❌❌❌❌Manual Variant Control✅❌❌❌❌Revenue Tracking✅Limited✅Limited✅Starting PriceTBD$29$49$12$59
 
-📊 LAUNCH CHECKLIST
-Technical
-
- Error monitoring (Sentry)
- Mobile-first modal design
- Load testing completed
- All bugs fixed
- Database optimized
- API rate limiting
- Security audit
- GDPR compliance check
-
-Features
-
- AI decision engine
- Manual intervention controls
- Order tracking
- Analytics with date filtering
- Promotional intelligence
- Custom CSS API (Enterprise)
- Mobile optimization
-
-Content
-
- Website live
- Help documentation
- Video tutorials
- Email templates (onboarding)
- Support responses templated
-
-Business
-
- Pricing finalized
- Payment processing set up (Shopify billing)
- Terms of service
- Privacy policy
- Support process defined
- Upgrade page updated
-
-Marketing
-
- App Store listing optimized
- Screenshots ready
- Demo video
- Social media accounts
- Launch announcement drafted
- Beta testers lined up
-
-
 📈 SUCCESS METRICS
 Week 1 Goals
 
@@ -622,7 +616,6 @@ Current
 No email capture mode (intentional - not our focus)
 Limited to Shopify (no WordPress, WooCommerce, etc.)
 English only (multi-language coming later)
-Desktop-first modal (mobile optimization needed)
 No SMS recovery (Klaviyo integration will enable)
 
 Technical Debt
@@ -650,11 +643,11 @@ Display in AI Variants analytics
 
 Mobile Considerations
 
-60%+ of traffic is mobile
+60%+ of traffic is mobile ✅ HANDLED
 Mobile users have higher cart abandonment
-Touch targets must be larger
+Touch targets must be larger ✅ HANDLED (48px)
 Load time is critical
-Swipe gestures expected
+Swipe gestures expected ✅ HANDLED
 
 Customer Support
 
@@ -666,16 +659,16 @@ Monitor Sentry for errors daily
 
 🎯 NEXT SESSION PRIORITIES
 
-Mobile-first modal (highest impact)
-Load testing (prevent disasters)
-Custom CSS API (Enterprise feature)
-Bugs cleanup (polish)
-Website (external project)
-Upgrade page (quick win)
+Custom CSS API (Enterprise feature) - 8 hours
+Misc bugs cleanup (polish) - varies
+Website (external project) - TBD
+Update Upgrade Page (quick win) - 1 hour
+Deploy to production
+Load testing (MUST DO AFTER DEPLOYMENT)
 
 
 Questions? Concerns? Updates?
 Bring this document to your next Claude session for continuity!
-Last Updated: January 12, 2026
-Status: Pre-Launch Phase
-Next Milestone: Mobile-First Modal Implementation
+Last Updated: January 13, 2026
+Status: Pre-Launch Phase - Mobile optimization complete!
+Next Milestone: Custom CSS API or Upgrade Page
