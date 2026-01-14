@@ -447,7 +447,8 @@ export async function action({ request }) {
     brandPrimaryColor: formData.get("brandPrimaryColor") || "#000000",
     brandSecondaryColor: formData.get("brandSecondaryColor") || "#ffffff",
     brandAccentColor: formData.get("brandAccentColor") || "#f59e0b",
-    brandFont: formData.get("brandFont") || "system"
+    brandFont: formData.get("brandFont") || "system",
+    customCSS: formData.get("customCSS") || ""
   };
 
   console.log('=== SETTINGS BEING SAVED ===');
@@ -482,6 +483,7 @@ export async function action({ request }) {
         brandSecondaryColor: formData.get("brandSecondaryColor") || undefined,
         brandAccentColor: formData.get("brandAccentColor") || undefined,
         brandFont: formData.get("brandFont") || undefined,
+        customCSS: formData.get("customCSS") || undefined,
         updatedAt: new Date()
       },
       create: {
@@ -499,7 +501,8 @@ export async function action({ request }) {
         brandPrimaryColor: formData.get("brandPrimaryColor") || "#000000",
         brandSecondaryColor: formData.get("brandSecondaryColor") || "#ffffff",
         brandAccentColor: formData.get("brandAccentColor") || "#f59e0b",
-        brandFont: formData.get("brandFont") || "system"
+        brandFont: formData.get("brandFont") || "system",
+        customCSS: formData.get("customCSS") || ""
       }
     });
     
@@ -728,6 +731,7 @@ export default function Settings() {
   const [brandSecondaryColor, setBrandSecondaryColor] = useState(settings.brandSecondaryColor || "#ffffff");
   const [brandAccentColor, setBrandAccentColor] = useState(settings.brandAccentColor || "#f59e0b");
   const [brandFont, setBrandFont] = useState(settings.brandFont || "system");
+  const [customCSS, setCustomCSS] = useState(settings?.customCSS || '');
   const [autoDetecting, setAutoDetecting] = useState(false);
      
 
@@ -2348,6 +2352,40 @@ export default function Settings() {
                 <option value="'Lato', sans-serif">Lato</option>
                 <option value="'Montserrat', sans-serif">Montserrat</option>
               </select>
+            </div>
+
+            {/* Custom CSS Section */}
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+                Custom CSS (Advanced)
+              </label>
+              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>
+                Add custom CSS to style your modal. You can change colors, fonts, spacing, etc. 
+                <strong> You cannot change modal copy</strong> (that's controlled by AI/admin).
+              </div>
+              <textarea
+                name="customCSS"
+                value={customCSS}
+                onChange={(e) => { setCustomCSS(e.target.value); setFormChanged(true); }}
+                placeholder="/* Enter your custom CSS here... */
+#exit-intent-modal {
+  /* Add your styles */
+}"
+                style={{
+                  width: "100%",
+                  minHeight: "200px",
+                  fontFamily: "'Monaco', 'Menlo', 'Ubuntu Mono', monospace",
+                  fontSize: "12px",
+                  padding: "12px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: 6,
+                  backgroundColor: "#f9fafb",
+                  resize: "vertical"
+                }}
+              />
+              <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
+                {customCSS?.length || 0} / 102,400 characters (100KB max)
+              </div>
             </div>
 
             {/* Preview Box */}

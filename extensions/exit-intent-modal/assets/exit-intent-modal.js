@@ -17,9 +17,23 @@
     return window.innerWidth <= 768 || /mobile/i.test(navigator.userAgent);
   }
 
+  // Fetch custom CSS from shop settings
+  async function fetchCustomCSS(shopDomain) {
+    try {
+      const response = await fetch(`/apps/exit-intent/api/custom-css-public?shop=${shopDomain}`);
+      if (!response.ok) return null;
+      
+      const data = await response.json();
+      return data.customCSS || null;
+    } catch (error) {
+      console.error('[Custom CSS] Failed to fetch:', error);
+      return null;
+    }
+  }
+
   // Exit intent modal manager
   class ExitIntentModal {
-    constructor() {
+    constructor(settings = {}) {
   this.settings = settings;
   this.modalShown = false;
   this.modalElement = null;
@@ -51,6 +65,18 @@
     async init() {
       // Create modal HTML
       this.createModal();
+      
+      // Inject custom CSS if Enterprise tier
+      if (this.settings.plan === 'enterprise') {
+        const customCSS = await fetchCustomCSS(window.Shopify.shop);
+        if (customCSS) {
+          const style = document.createElement('style');
+          style.id = 'resparq-custom-css';
+          style.textContent = customCSS;
+          document.head.appendChild(style);
+          console.log('[Custom CSS] Injected custom styles');
+        }
+      }
       
       // Track cart hesitation (Enterprise signal)
       this.trackCartHesitation();
@@ -1234,14 +1260,33 @@
     setTimeout(() => clearInterval(checkInterval), 5000);
   }
 
+  // Fetch shop settings including plan tier
+  async function fetchShopSettings() {
+    try {
+      const response = await fetch(`/apps/exit-intent/api/shop-settings?shop=${window.Shopify.shop}`);
+      if (!response.ok) return { plan: 'starter' };
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('[Exit Intent] Failed to fetch settings:', error);
+      return { plan: 'starter' };
+    }
+  }
+
   // Initialize when DOM is ready
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
       fixPreviewBar();
-      new ExitIntentModal();
+      const settings = await fetchShopSettings();
+      console.log('[Exit Intent] Shop settings loaded:', settings);
+      new ExitIntentModal(settings);
     });
   } else {
-    fixPreviewBar();
-    new ExitIntentModal();
+    (async () => {
+      fixPreviewBar();
+      const settings = await fetchShopSettings();
+      console.log('[Exit Intent] Shop settings loaded:', settings);
+      new ExitIntentModal(settings);
+    })();
   }
 })();
