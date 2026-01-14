@@ -794,8 +794,8 @@ export default function Dashboard() {
               }}
             >
               {plan.tier === "starter" 
-                ? "🚀 Unlock unlimited impressions - Upgrade to Pro" 
-                : "⚡ Get A/B testing & AI - Upgrade to Enterprise"}
+                ? "Unlock 10x more impressions and AI - Upgrade to Pro" 
+                : "Unlock smarter AI & manual controls - Upgrade to Enterprise"}
             </Link>
           )}
         </div>
@@ -1411,7 +1411,8 @@ export default function Dashboard() {
                           borderRadius: 6,
                           fontSize: 16,
                           fontWeight: 500,
-                          cursor: "pointer"
+                          cursor: "default",
+                          pointerEvents: "none"
                         }}>
                           {currentModal.cta}
                         </button>

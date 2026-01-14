@@ -46,16 +46,20 @@
   this.currentVariantId = null;
   this.currentSegment = null;
   
-  // Check if modal is enabled
-  if (!this.settings.enabled) {
+  // Check if modal is enabled (default to true if not explicitly set to false)
+  if (this.settings.enabled === false) {
         console.log('Exit intent modal is disabled');
         return;
       }
       
-      // Check if already shown in this session
-      if (sessionStorage.getItem(this.sessionKey)) {
-        console.log('Exit intent modal already shown this session');
-        return;
+      // Check if already shown in this session (with fallback for blocked storage)
+      try {
+        if (sessionStorage.getItem(this.sessionKey)) {
+          console.log('Exit intent modal already shown this session');
+          return;
+        }
+      } catch (e) {
+        console.log('[Exit Intent] SessionStorage blocked (preview mode), proceeding anyway');
       }
       
       // Initialize
@@ -812,7 +816,11 @@
       this.modalShown = true;
       
       // Mark as shown in session storage (won't show again this session)
-      sessionStorage.setItem(this.sessionKey, 'true');
+      try {
+  sessionStorage.setItem(this.sessionKey, 'true');
+} catch (e) {
+  console.log('[Exit Intent] Could not set sessionStorage (preview mode)');
+}
       
       // Track impression
       this.trackEvent('impression');

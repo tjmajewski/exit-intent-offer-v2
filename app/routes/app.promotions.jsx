@@ -141,7 +141,6 @@ export default function PromotionsPage() {
             borderRadius: 12,
             border: "2px solid #f59e0b"
           }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
             <h1 style={{ fontSize: 28, marginBottom: 16 }}>Enterprise Feature</h1>
             <p style={{ fontSize: 16, color: "#78350f", marginBottom: 24 }}>
               Promotional Intelligence is only available on Enterprise plans. 

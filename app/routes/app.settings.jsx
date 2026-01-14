@@ -893,6 +893,19 @@ export default function Settings() {
           }}
         >
           Advanced
+          {plan && plan.tier === 'starter' && (
+            <span style={{
+              padding: "2px 6px",
+              background: "#8B5CF6",
+              color: "white",
+              borderRadius: 4,
+              fontSize: 11,
+              fontWeight: 600,
+              marginLeft: 8
+            }}>
+              PRO
+            </span>
+          )}
         </button>
 
         <button
@@ -1024,7 +1037,7 @@ export default function Settings() {
               fontSize: 14,
               textAlign: "center"
             }}>
-              ⭐ <strong>Upgrade to Pro</strong> to unlock AI Mode with automatic optimization.{" "}
+               <strong>Upgrade to Pro</strong> to unlock AI Mode with automatic optimization.{" "}
               <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
                 Learn more →
               </a>
@@ -1457,8 +1470,6 @@ export default function Settings() {
 
         </>
         )}
-
-        
       </>
       )}
 
@@ -1865,13 +1876,64 @@ export default function Settings() {
               </div>
             </div>
           )}
-          </>
-        )}
         </>
+        )}
+      </>
       )}
 
       {/* Advanced Tab */}
       {activeTab === 'advanced' && (
+        <>
+          {/* Upsell for Starter customers */}
+          {plan && plan.tier === 'starter' && (
+            <div style={{
+              background: 'white',
+              padding: 80,
+              borderRadius: 8,
+              border: '1px solid #e5e7eb',
+              textAlign: 'center',
+              marginBottom: 24
+            }}>
+              <div style={{
+                display: 'inline-block',
+                padding: '4px 12px',
+                background: '#f3f4f6',
+                borderRadius: 6,
+                fontSize: 13,
+                fontWeight: 600,
+                color: '#6b7280',
+                marginBottom: 24
+              }}>
+                PRO
+              </div>
+              <h2 style={{ fontSize: 28, marginBottom: 16, fontWeight: 700 }}>Advanced Settings</h2>
+              <p style={{ color: '#6b7280', marginBottom: 32, fontSize: 17, lineHeight: 1.6 }}>
+                Choose redirect destinations, set cart value conditions, and fine-tune your modal behavior. Available on Pro and Enterprise plans.
+              </p>
+              
+              <a
+                href="/app/upgrade"
+                style={{
+                  display: 'inline-block',
+                  background: 'linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)',
+                  color: 'white',
+                  padding: '14px 32px',
+                  borderRadius: 8,
+                  textDecoration: 'none',
+                  fontWeight: 600,
+                  fontSize: 16,
+                  transition: 'transform 0.2s',
+                  cursor: 'pointer'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+              >
+                Upgrade to Pro
+              </a>
+            </div>
+          )}
+          {/* Show content for Pro/Enterprise customers */}
+          {plan && (plan.tier === 'pro' || plan.tier === 'enterprise') && (
         <>
           {optimizationMode === "ai" && (
             <div style={{
@@ -1882,7 +1944,7 @@ export default function Settings() {
               textAlign: 'center',
               marginBottom: 24
             }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>🤖</div>
+              <div style={{ fontSize: 48, marginBottom: 16 }}></div>
               <h2 style={{ fontSize: 24, marginBottom: 12 }}>AI Mode Active</h2>
               <p style={{ color: '#6b7280', marginBottom: 24 }}>
                 Advanced settings are managed by AI. Switch to Manual Mode in the Quick Setup tab to access manual controls.
@@ -1998,7 +2060,7 @@ export default function Settings() {
               color: "#92400e",
               marginTop: 16
             }}>
-              ⭐ <strong>Upgrade to Pro</strong> to choose between cart and checkout redirect and A/B test which converts better.{" "}
+               <strong>Upgrade to Pro</strong> to choose between cart and checkout redirect and A/B test which converts better.{" "}
               <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
                 Learn more →
               </a>
@@ -2112,7 +2174,7 @@ export default function Settings() {
                 borderRadius: 6,
                 fontSize: 14 
               }}>
-                ⭐ <strong>Upgrade to Pro</strong> to target specific cart value ranges.{" "}
+                 <strong>Upgrade to Pro</strong> to target specific cart value ranges.{" "}
                 <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
                   Learn more →
                 </a>
@@ -2128,12 +2190,14 @@ export default function Settings() {
             fontSize: 14,
             color: "#0c4a6e"
           }}>
-            💡 <strong>Example:</strong> Set minimum to $100 and maximum to $3000 to only show the modal for mid-range carts. Combine with any trigger above!
+             <strong>Example:</strong> Set minimum to $100 and maximum to $3000 to only show the modal for mid-range carts. Combine with any trigger above!
           </div>
         </div>
           </>
           )}
         </>
+        )}
+      </>
       )}
 
       {/* Branding Tab */}
@@ -2421,7 +2485,7 @@ export default function Settings() {
             </div>
           </div>
         )}
-      </>
+        </>
       )}
 
       {/* Save Button - Appears on all tabs */}

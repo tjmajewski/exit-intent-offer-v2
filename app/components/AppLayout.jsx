@@ -186,7 +186,8 @@ export default function AppLayout({ children, plan }) {
               {item.badge && (
                 <span style={{
                   padding: "2px 6px",
-                  background: "#8B5CF6",
+                  background: item.badge === "ENTERPRISE" ? "#fbbf24" : "#8B5CF6",
+                  color: item.badge === "ENTERPRISE" ? "#78350f" : "white",
                   borderRadius: 4,
                   fontSize: 10,
                   fontWeight: 600
