@@ -7,7 +7,7 @@ export const PLAN_FEATURES = {
     abTesting: false,
     personalization: false,
     multipleTemplates: false,
-    allTriggers: false,
+    allTriggers: true,
     cartValueTargeting: false,
     redirectChoice: false,
     revenueTracking: true,

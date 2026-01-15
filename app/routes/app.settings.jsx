@@ -731,8 +731,9 @@ export default function Settings() {
   const [brandSecondaryColor, setBrandSecondaryColor] = useState(settings.brandSecondaryColor || "#ffffff");
   const [brandAccentColor, setBrandAccentColor] = useState(settings.brandAccentColor || "#f59e0b");
   const [brandFont, setBrandFont] = useState(settings.brandFont || "system");
-  const [customCSS, setCustomCSS] = useState(settings?.customCSS || '');
-  const [autoDetecting, setAutoDetecting] = useState(false);
+  const [modalHeadline, setModalHeadline] = useState(settings.modalHeadline || "Wait! Don't leave yet 🎁");
+  const [modalBody, setModalBody] = useState(settings.modalBody || "Complete your purchase now and get an exclusive discount on your order!");
+  const [ctaButton, setCtaButton] = useState(settings.ctaButton || "Complete My Order");
      
 
 
@@ -772,12 +773,19 @@ export default function Settings() {
     if (!template) return;
 
     setSelectedTemplate(templateId);
-
-    // Update form fields
-    document.querySelector('input[name="modalHeadline"]').value = template.headline;
-    document.querySelector('textarea[name="modalBody"]').value = template.body;
-    document.querySelector('input[name="ctaButton"]').value = template.ctaButton;
+    setModalHeadline(template.headline);
+    setModalBody(template.body);
+    setCtaButton(template.ctaButton);
+    setFormChanged(true);
   };
+
+  // Auto-select first template on mount if no template is selected
+  useEffect(() => {
+    if (!settings.template || !selectedTemplate) {
+      const firstTemplate = Object.keys(MODAL_TEMPLATES)[0];
+      applyTemplate(firstTemplate);
+    }
+  }, []);
 
   // Keep success message visible
   const handleFormChange = () => {
@@ -1170,7 +1178,8 @@ export default function Settings() {
               <input
                 type="text"
                 name="modalHeadline"
-                defaultValue={settings.modalHeadline}
+                value={modalHeadline}
+                onChange={(e) => { setModalHeadline(e.target.value); setFormChanged(true); }}
                 disabled={optimizationMode === "ai"}
                 style={{ 
                   width: "100%", 
@@ -1189,7 +1198,8 @@ export default function Settings() {
               </label>
               <textarea
                 name="modalBody"
-                defaultValue={settings.modalBody}
+                value={modalBody}
+                onChange={(e) => { setModalBody(e.target.value); setFormChanged(true); }}
                 rows={4}
                 disabled={optimizationMode === "ai"}
                 style={{ 
@@ -1211,7 +1221,8 @@ export default function Settings() {
               <input
                 type="text"
                 name="ctaButton"
-                defaultValue={settings.ctaButton}
+                value={ctaButton}
+                onChange={(e) => { setCtaButton(e.target.value); setFormChanged(true); }}
                 disabled={optimizationMode === "ai"}
                 style={{ 
                   width: "100%", 

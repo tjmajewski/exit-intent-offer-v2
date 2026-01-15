@@ -190,8 +190,11 @@ export default function PromotionsPage() {
               textAlign: "center",
               color: "#6b7280"
             }}>
-              <p style={{ margin: 0, fontSize: 16 }}>
-                No active site-wide promotions detected. Create a discount code in Shopify to test!
+              <p style={{ margin: 0, fontSize: 16, marginBottom: 12 }}>
+                No active site-wide promotions detected.
+              </p>
+              <p style={{ margin: 0, fontSize: 14, color: "#9ca3af" }}>
+                ResparQ will automatically detect when you run sales and adjust your AI strategy to protect margins.
               </p>
             </div>
           ) : (
