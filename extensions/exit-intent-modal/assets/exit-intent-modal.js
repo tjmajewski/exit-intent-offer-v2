@@ -341,32 +341,13 @@
         
         if ((itemCountIncreased || cartValueChanged) && !this.aiDecisionInProgress) {
           console.log('[Exit Intent] Cart changed! Items:', newItemCount, 'Value:', newCartValue);
-          this.cartItemCount = newItemCount;
-          this.lastCartValue = newCartValue;
-          this.aiDecisionInProgress = true; // Prevent race conditions
           
-          // Trigger immediately (no delay)
-          (async () => {
-            try {
-              const hasItems = await this.hasItemsInCart();
-              if (hasItems && !this.modalShown) {
-                console.log('[Exit Intent] Cart has items, getting new AI decision...');
-                
-                // Enterprise AI decides if/when/what to show
-                if (this.settings.mode === 'ai' && this.settings.plan === 'enterprise') {
-                  console.log('[Exit Intent] Triggering Enterprise AI evaluation');
-                  await this.evaluateEnterpriseCustomer();
-                } else {
-                  console.log('[Exit Intent] Showing modal (Pro/Entry tier)');
-                  this.showModal();
-                }
-              }
-            } catch (error) {
-              console.error('[Exit Intent] Error in AI decision:', error);
-            } finally {
-              this.aiDecisionInProgress = false;
-            }
-          })();
+          // If timer trigger is enabled, start the timer now
+          const triggers = this.settings.triggers || {};
+          if (triggers.timeDelay && triggers.timeDelaySeconds && !this.cartPageTimer) {
+            console.log('[Exit Intent] Starting timer after cart update');
+            this.startCartPageTimer(triggers.timeDelaySeconds);
+          }
         }
         
         // Always update tracking values
@@ -374,6 +355,30 @@
         this.lastCartValue = newCartValue;
       })
       .catch(err => console.error('[Exit Intent] Error polling cart:', err));
+  }
+
+  // Start timer after cart has items (works on any page)
+  startCartPageTimer(delaySeconds) {
+    // Check if cart has items
+    fetch('/cart.js')
+      .then(response => response.json())
+      .then(cart => {
+        if (cart.item_count === 0) {
+          console.log('[Exit Intent] Cart is empty, timer not started');
+          return;
+        }
+        
+        console.log(`[Exit Intent] Cart has items, starting ${delaySeconds}s timer`);
+        
+        // Start the timer - will show modal after delay on whatever page user is on
+        this.cartPageTimer = setTimeout(() => {
+          if (!this.modalShown) {
+            console.log(`[Exit Intent] Timer triggered after ${delaySeconds}s`);
+            this.showModal();
+          }
+        }, delaySeconds * 1000);
+      })
+      .catch(err => console.error('[Exit Intent] Error checking cart:', err));
   }
     
     createModal() {
@@ -739,6 +744,7 @@
       // Time delay trigger (after add-to-cart)
       if (triggers.timeDelay && triggers.timeDelaySeconds) {
         this.initCartMonitoring(triggers.timeDelaySeconds);
+        this.startCartPageTimer(triggers.timeDelaySeconds);
       }
       
       // Cart value trigger

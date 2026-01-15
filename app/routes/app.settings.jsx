@@ -422,7 +422,7 @@ export async function action({ request }) {
     timeDelaySeconds: parseInt(formData.get("timeDelaySeconds") || "30"),
     cartValueEnabled: formData.get("cartValueEnabled") === "on",
     cartValueMin: parseFloat(formData.get("cartValueMin") || "0"),
-    cartValueMax: parseFloat(formData.get("cartValueMax") || "1000"),
+    cartValueMax: parseFloat(formData.get("cartValueMax") || "999999"),
     discountEnabled: formData.get("discountEnabled") === "on",
     offerType: formData.get("offerType") || "percentage",
     discountPercentage: parseInt(formData.get("discountPercentage") || "10"),
@@ -484,6 +484,16 @@ export async function action({ request }) {
         brandAccentColor: formData.get("brandAccentColor") || undefined,
         brandFont: formData.get("brandFont") || undefined,
         customCSS: formData.get("customCSS") || undefined,
+        exitIntentEnabled: settings.exitIntentEnabled,
+        timeDelayEnabled: settings.timeDelayEnabled,
+        timeDelaySeconds: settings.timeDelaySeconds,
+        cartValueEnabled: settings.cartValueEnabled,
+        cartValueMin: settings.cartValueMin,
+        cartValueMax: settings.cartValueMax,
+        modalHeadline: settings.modalHeadline,
+        modalBody: settings.modalBody,
+        ctaButton: settings.ctaButton,
+        redirectDestination: settings.redirectDestination,
         updatedAt: new Date()
       },
       create: {
@@ -502,7 +512,17 @@ export async function action({ request }) {
         brandSecondaryColor: formData.get("brandSecondaryColor") || "#ffffff",
         brandAccentColor: formData.get("brandAccentColor") || "#f59e0b",
         brandFont: formData.get("brandFont") || "system",
-        customCSS: formData.get("customCSS") || ""
+        customCSS: formData.get("customCSS") || "",
+        exitIntentEnabled: settings.exitIntentEnabled,
+        timeDelayEnabled: settings.timeDelayEnabled,
+        timeDelaySeconds: settings.timeDelaySeconds,
+        cartValueEnabled: settings.cartValueEnabled,
+        cartValueMin: settings.cartValueMin,
+        cartValueMax: settings.cartValueMax,
+        modalHeadline: settings.modalHeadline,
+        modalBody: settings.modalBody,
+        ctaButton: settings.ctaButton,
+        redirectDestination: settings.redirectDestination
       }
     });
     

@@ -18,20 +18,36 @@ export async function loader({ request }) {
     });
     
     if (!shopRecord) {
-      return json({ plan: 'starter', mode: 'manual', enabled: true, triggers: { exitIntent: true } });
+      return json({ 
+        plan: 'starter', 
+        mode: 'manual', 
+        enabled: true, 
+        triggers: { 
+          exitIntent: true,
+          timeDelay: false,
+          timeDelaySeconds: 30,
+          cartValue: false,
+          minCartValue: 0,
+          maxCartValue: 1000
+        }
+      });
     }
     
   return json({ 
       plan: shopRecord.plan || 'starter',
       mode: shopRecord.mode || 'manual',
-      enabled: true,  // Modal is always enabled unless explicitly disabled
+      enabled: true,
+      modalHeadline: shopRecord.modalHeadline || "Wait! Don't leave yet 🎁",
+      modalBody: shopRecord.modalBody || "Complete your purchase now and get an exclusive discount!",
+      ctaButton: shopRecord.ctaButton || "Complete My Order",
+      redirectDestination: shopRecord.redirectDestination || "checkout",
       triggers: {
-        exitIntent: true,  // Enable exit intent by default
-        timeDelay: false,
-        timeDelaySeconds: 30,
-        cartValue: false,
-        minCartValue: 0,
-        maxCartValue: 1000
+        exitIntent: shopRecord.exitIntentEnabled ?? true,
+        timeDelay: shopRecord.timeDelayEnabled ?? false,
+        timeDelaySeconds: shopRecord.timeDelaySeconds ?? 30,
+        cartValue: shopRecord.cartValueEnabled ?? false,
+        minCartValue: shopRecord.cartValueMin ?? 0,
+        maxCartValue: shopRecord.cartValueMax ?? 1000
       }
     }, {
       headers: {

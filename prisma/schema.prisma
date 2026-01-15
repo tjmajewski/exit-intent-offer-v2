@@ -69,6 +69,20 @@ model Shop {
   brandLogoUrl        String?
   customCSS           String?  // For advanced customization
   
+  // Trigger Settings
+  exitIntentEnabled   Boolean  @default(true)
+  timeDelayEnabled    Boolean  @default(false)
+  timeDelaySeconds    Int      @default(30)
+  cartValueEnabled    Boolean  @default(false)
+  cartValueMin        Float    @default(0)
+  cartValueMax        Float    @default(999999)
+
+  // Modal Content
+  modalHeadline       String?  @default("Wait! Don't leave yet 🎁")
+  modalBody           String?  @default("Complete your purchase now and get an exclusive discount!")
+  ctaButton           String?  @default("Complete My Order")
+  redirectDestination String?  @default("checkout")
+  
   discountOffers    DiscountOffer[]
   aiDecisions       AIDecision[]
   promotions        Promotion[]
