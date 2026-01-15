@@ -494,6 +494,9 @@ export async function action({ request }) {
         modalBody: settings.modalBody,
         ctaButton: settings.ctaButton,
         redirectDestination: settings.redirectDestination,
+         discountCode: settings.discountCode,
+        discountEnabled: settings.discountEnabled,
+        offerType: settings.offerType,
         updatedAt: new Date()
       },
       create: {
@@ -719,6 +722,47 @@ export async function action({ request }) {
         }
       );
     }
+
+    // Save to database for API access
+    await db.shop.upsert({
+      where: { shopifyDomain: shopDomain },
+      update: {
+        mode: settings.mode,
+        exitIntentEnabled: settings.exitIntentEnabled,
+        timeDelayEnabled: settings.timeDelayEnabled,
+        timeDelaySeconds: settings.timeDelaySeconds,
+        cartValueEnabled: settings.cartValueEnabled,
+        cartValueMin: settings.cartValueMin,
+        cartValueMax: settings.cartValueMax,
+        modalHeadline: settings.modalHeadline,
+        modalBody: settings.modalBody,
+        ctaButton: settings.ctaButton,
+        redirectDestination: settings.redirectDestination,
+        discountCode: settings.discountCode,
+        discountEnabled: settings.discountEnabled,
+        offerType: settings.offerType,
+        updatedAt: new Date()
+      },
+      create: {
+        shopifyDomain: shopDomain,
+        mode: settings.mode,
+        exitIntentEnabled: settings.exitIntentEnabled,
+        timeDelayEnabled: settings.timeDelayEnabled,
+        timeDelaySeconds: settings.timeDelaySeconds,
+        cartValueEnabled: settings.cartValueEnabled,
+        cartValueMin: settings.cartValueMin,
+        cartValueMax: settings.cartValueMax,
+        modalHeadline: settings.modalHeadline,
+        modalBody: settings.modalBody,
+        ctaButton: settings.ctaButton,
+        redirectDestination: settings.redirectDestination,
+        discountCode: settings.discountCode,
+        discountEnabled: settings.discountEnabled,
+        offerType: settings.offerType
+      }
+    });
+
+    console.log(`✓ Settings saved to database including discount code: ${settings.discountCode}`);
 
     return { 
       success: true, 

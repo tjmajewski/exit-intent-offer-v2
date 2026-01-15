@@ -41,6 +41,9 @@ export async function loader({ request }) {
       modalBody: shopRecord.modalBody || "Complete your purchase now and get an exclusive discount!",
       ctaButton: shopRecord.ctaButton || "Complete My Order",
       redirectDestination: shopRecord.redirectDestination || "checkout",
+      discountCode: shopRecord.discountCode,
+      discountEnabled: shopRecord.discountEnabled || false,
+      offerType: shopRecord.offerType || "percentage",
       triggers: {
         exitIntent: shopRecord.exitIntentEnabled ?? true,
         timeDelay: shopRecord.timeDelayEnabled ?? false,
@@ -51,7 +54,7 @@ export async function loader({ request }) {
       }
     }, {
       headers: {
-        'Cache-Control': 'public, max-age=60' // Cache for 1 minute
+        'Cache-Control': 'public, max-age=60'
       }
     });
     

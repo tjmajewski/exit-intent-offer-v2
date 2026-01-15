@@ -82,6 +82,10 @@ model Shop {
   modalBody           String?  @default("Complete your purchase now and get an exclusive discount!")
   ctaButton           String?  @default("Complete My Order")
   redirectDestination String?  @default("checkout")
+
+  discountCode        String?
+  discountEnabled     Boolean  @default(false)
+  offerType           String?  @default("percentage")
   
   discountOffers    DiscountOffer[]
   aiDecisions       AIDecision[]
