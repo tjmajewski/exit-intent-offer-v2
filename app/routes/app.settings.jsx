@@ -11,6 +11,7 @@ import QuickSetupTab from "../components/settings/tabs/QuickSetupTab";
 import AISettingsTab from "../components/settings/tabs/AISettingsTab";
 import AdvancedTab from "../components/settings/tabs/AdvancedTab";
 import BrandingTab from "../components/settings/tabs/BrandingTab";
+import SettingsPreview from "../components/settings/SettingsPreview";
 
 export async function loader({ request }) {
   const { admin, session } = await authenticate.admin(request);
@@ -522,6 +523,7 @@ export default function Settings() {
   const actionData = useActionData();
   const navigation = useNavigation();
   const [showPreview, setShowPreview] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [formChanged, setFormChanged] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState(settings.template || "discount");
   const [showModalNaming, setShowModalNaming] = useState(false);
@@ -818,23 +820,47 @@ export default function Settings() {
       )}
 
       {/* Save Button - Appears on all tabs */}
-      <div style={{ marginTop: 32, display: "flex", alignItems: "center", gap: 16 }}>
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          style={{ 
-            padding: "12px 24px", 
-            background: isSubmitting ? "#9ca3af" : "#8B5CF6", 
-            color: "white", 
-            border: "none",
-            borderRadius: 6,
-            cursor: isSubmitting ? "not-allowed" : "pointer",
-            fontSize: 16,
-            fontWeight: 500
-          }}
-        >
-          {isSubmitting ? "Saving..." : "Save Settings"}
-        </button>
+      <div style={{ marginTop: 32 }}>
+        <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+          <button
+            type="button"
+            onClick={() => setShowPreviewModal(true)}
+            disabled={!formChanged}
+            style={{
+              padding: "16px 32px",
+              background: formChanged ? "white" : "#f3f4f6",
+              color: formChanged ? "#8B5CF6" : "#9ca3af",
+              border: formChanged ? "2px solid #8B5CF6" : "2px solid #e5e7eb",
+              borderRadius: 8,
+              fontSize: 17,
+              fontWeight: 600,
+              cursor: formChanged ? "pointer" : "not-allowed",
+              flex: 1,
+              transition: "all 0.2s"
+            }}
+          >
+            Preview Modal
+          </button>
+          
+          <button
+            type="submit"
+            disabled={!formChanged || isSubmitting}
+            style={{ 
+              padding: "16px 32px", 
+              background: (formChanged && !isSubmitting) ? "#8B5CF6" : "#9ca3af", 
+              color: "white", 
+              border: "none",
+              borderRadius: 8,
+              cursor: (formChanged && !isSubmitting) ? "pointer" : "not-allowed",
+              fontSize: 17,
+              fontWeight: 600,
+              flex: 1,
+              transition: "all 0.2s"
+            }}
+          >
+            {isSubmitting ? "Saving..." : "Save Settings"}
+          </button>
+        </div>
 
         {/* Inline Success/Error Message */}
         {showSuccessMessage && (
@@ -865,7 +891,32 @@ export default function Settings() {
       </div>
       </Form>
 
-      {/* Preview Modal */}
+      {/* Settings Preview Modal */}
+      <SettingsPreview
+        isOpen={showPreviewModal}
+        onClose={() => setShowPreviewModal(false)}
+        optimizationMode={optimizationMode}
+        modalHeadline={modalHeadline}
+        modalBody={modalBody}
+        ctaButton={ctaButton}
+        discountEnabled={settings.discountEnabled}
+        offerType={settings.offerType}
+        discountPercentage={settings.discountPercentage || 10}
+        discountAmount={settings.discountAmount || 10}
+        exitIntentEnabled={settings.exitIntentEnabled || settings.triggers?.exitIntent}
+        timeDelayEnabled={settings.timeDelayEnabled || settings.triggers?.timeDelay}
+        timeDelaySeconds={settings.timeDelaySeconds || settings.triggers?.timeDelaySeconds || 30}
+        cartValueEnabled={settings.cartValueEnabled || settings.triggers?.cartValue}
+        cartValueMin={settings.cartValueMin || settings.triggers?.minCartValue}
+        cartValueMax={settings.cartValueMax || settings.triggers?.maxCartValue}
+        brandPrimaryColor={brandPrimaryColor}
+        brandSecondaryColor={brandSecondaryColor}
+        brandAccentColor={brandAccentColor}
+        brandFont={brandFont}
+        customCSS={customCSS}
+      />
+
+      {/* Old Preview Modal */}
       {showPreview && (
         <div style={{
           position: "fixed",

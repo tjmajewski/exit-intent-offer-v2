@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Editor from "@monaco-editor/react";
 
 export default function BrandingTab({
   plan,
@@ -246,26 +247,38 @@ export default function BrandingTab({
             Add custom CSS to style your modal. You can change colors, fonts, spacing, etc. 
             <strong> You cannot change modal copy</strong> (that's controlled by AI/admin).
           </div>
-          <textarea
-            name="customCSS"
-            value={customCSS}
-            onChange={(e) => { setCustomCSS(e.target.value); setFormChanged(true); }}
-            placeholder="/* Enter your custom CSS here... */
-#exit-intent-modal {
-  /* Add your styles */
-}"
-            style={{
-              width: "100%",
-              minHeight: "200px",
-              fontFamily: "'Monaco', 'Menlo', 'Ubuntu Mono', monospace",
-              fontSize: "12px",
-              padding: "12px",
-              border: "1px solid #d1d5db",
-              borderRadius: 6,
-              backgroundColor: "#f9fafb",
-              resize: "vertical"
-            }}
-          />
+          {/* Monaco Editor */}
+          <div style={{ 
+            border: "1px solid #d1d5db", 
+            borderRadius: 6,
+            overflow: "hidden"
+          }}>
+            <Editor
+              height="300px"
+              defaultLanguage="css"
+              value={customCSS}
+              onChange={(value) => { 
+                setCustomCSS(value || ""); 
+                setFormChanged(true); 
+              }}
+              theme="vs-light"
+              options={{
+                minimap: { enabled: false },
+                fontSize: 13,
+                lineNumbers: "on",
+                scrollBeyondLastLine: false,
+                wordWrap: "on",
+                wrappingIndent: "indent",
+                automaticLayout: true,
+                tabSize: 2,
+                formatOnPaste: true,
+                formatOnType: true
+              }}
+            />
+          </div>
+          
+          {/* Hidden input to submit with form */}
+          <input type="hidden" name="customCSS" value={customCSS} />
           <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
             {customCSS?.length || 0} / 102,400 characters (100KB max)
           </div>
