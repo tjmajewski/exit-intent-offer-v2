@@ -1391,47 +1391,44 @@ export default function Dashboard() {
               boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)"
             }}>
               {(() => {
-                // If AI mode and modal library exists, show AI-generated copy
-                if (settings.mode === 'ai' && modalLibrary && modalLibrary.currentModalId) {
-                  const currentModal = modalLibrary.modals?.find(m => m.modalId === modalLibrary.currentModalId);
-                  if (currentModal) {
-                    return (
-                      <>
-                        <h2 style={{ fontSize: 24, marginTop: 0, marginBottom: 16 }}>
-                          {currentModal.headline}
-                        </h2>
-                        <p style={{ marginBottom: 24, color: "#666", lineHeight: 1.6 }}>
-                          {currentModal.body}
-                        </p>
-                        <button style={{
-                          width: "100%",
-                          padding: "12px 24px",
-                          background: "#8B5CF6",
-                          color: "white",
-                          border: "none",
-                          borderRadius: 6,
-                          fontSize: 16,
-                          fontWeight: 500,
-                          cursor: "default",
-                          pointerEvents: "none"
-                        }}>
-                          {currentModal.cta}
-                        </button>
-                        <div style={{
-                          marginTop: 16,
-                          padding: 12,
-                          background: "#f0fdf4",
-                          border: "1px solid #86efac",
-                          borderRadius: 6,
-                          fontSize: 14,
-                          textAlign: "center",
-                          color: "#166534"
-                        }}>
-                          Discount code will be auto-applied at checkout
-                        </div>
-                      </>
-                    );
-                  }
+                // If AI mode, show example AI-generated copy
+                if (settings.mode === 'ai') {
+                  return (
+                    <>
+                      <h2 style={{ fontSize: 24, marginTop: 0, marginBottom: 16 }}>
+                        Complete your order and save 15%
+                      </h2>
+                      <p style={{ marginBottom: 24, color: "#666", lineHeight: 1.6 }}>
+                        This exclusive offer is personalized for you. Get 15% off your order when you complete checkout now.
+                      </p>
+                      <button style={{
+                        width: "100%",
+                        padding: "12px 24px",
+                        background: "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)",
+                        color: "white",
+                        border: "none",
+                        borderRadius: 6,
+                        fontSize: 16,
+                        fontWeight: 500,
+                        cursor: "default",
+                        pointerEvents: "none"
+                      }}>
+                        Claim My Discount
+                      </button>
+                      <div style={{
+                        marginTop: 16,
+                        padding: 12,
+                        background: "#f0f9ff",
+                        border: "1px solid #bae6fd",
+                        borderRadius: 6,
+                        fontSize: 13,
+                        textAlign: "center",
+                        color: "#0369a1"
+                      }}>
+                        ✨ AI generates unique copy and offers for each customer
+                      </div>
+                    </>
+                  );
                 }
                 
                 // Fallback to manual settings
