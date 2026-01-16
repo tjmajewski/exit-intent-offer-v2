@@ -39,6 +39,7 @@
     "@shopify/polaris": "^13.9.5",
     "@shopify/shopify-app-react-router": "^1.0.0",
     "@shopify/shopify-app-session-storage-prisma": "^7.0.0",
+    "exceljs": "^4.4.0",
     "isbot": "^5.1.31",
     "jstat": "^1.9.6",
     "node-cron": "^4.2.1",
@@ -47,7 +48,8 @@
     "react-dom": "^18.3.1",
     "react-router": "^7.12.0",
     "react-router-dom": "^7.12.0",
-    "vite-tsconfig-paths": "^5.1.4"
+    "vite-tsconfig-paths": "^5.1.4",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@shopify/api-codegen-preset": "^1.2.0",

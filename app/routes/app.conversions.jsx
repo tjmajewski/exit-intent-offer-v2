@@ -81,34 +81,42 @@ export default function Conversions() {
     return `$${amount.toFixed(2)}`;
   };
 
-  // Export to CSV
-  const exportToCSV = () => {
-    const headers = ['Date', 'Time', 'Order #', 'Customer Email', 'Order Value', 'Modal Had Discount', 'Discount Redeemed', 'Discount Amount'];
-    const rows = conversions.map(c => [
-      formatDate(c.orderedAt),
-      formatTime(c.orderedAt),
-      c.orderNumber,
-      c.customerEmail || 'N/A',
-      c.orderValue,
-      c.modalHadDiscount ? 'Yes' : 'No',
-      c.modalHadDiscount ? (c.discountRedeemed ? 'Yes' : 'No') : 'N/A',
-      c.modalHadDiscount && c.discountAmount ? c.discountAmount : 'N/A'
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `exit-intent-conversions-${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+  // Export to Excel (via API route)
+  const exportToExcel = async () => {
+    try {
+      console.log('Starting export with range:', range);
+      
+      // Call the export API
+      const response = await fetch(`/apps/exit-intent/api/export-conversions?range=${range}`);
+      
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Export error:', errorText);
+        throw new Error(`Export failed: ${response.status} ${errorText}`);
+      }
+      
+      // Get the blob
+      const blob = await response.blob();
+      console.log('Blob size:', blob.size);
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `resparq-conversions-${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      console.log('Export successful!');
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Failed to export data: ' + error.message);
+    }
   };
 
   // Locked state for Starter
@@ -178,7 +186,7 @@ export default function Conversions() {
 
         {canExport && conversions.length > 0 && (
           <button
-            onClick={exportToCSV}
+            onClick={exportToExcel}
             style={{
               padding: '10px 20px',
               background: '#10b981',
@@ -190,7 +198,7 @@ export default function Conversions() {
               cursor: 'pointer'
             }}
           >
-            Export to CSV
+            Export to Excel
           </button>
         )}
       </div>
