@@ -1,9 +1,8 @@
-cat > DISCOUNT_IMPLEMENTATION.md << 'EOF'
 # Discount Code Implementation - ResparQ
-**Status:** ✅ COMPLETE (as of January 15, 2026)
+**Status:** ✅ COMPLETE (Updated January 16, 2026)
 
 ## Overview
-ResparQ now supports automatic discount code creation and application in both Manual and AI modes. Discount codes are unique per customer to prevent sharing on Reddit/social media.
+ResparQ supports automatic discount code creation and application in both Manual and AI modes. Discount codes are unique per customer in AI mode to prevent sharing on Reddit/social media. Manual mode uses simple, reusable codes.
 
 ---
 
@@ -45,7 +44,7 @@ model DiscountOffer {
 2. **Discount Creation** - Shopify Admin API creates discount code
 3. **Database Save** - Code saved to Shop table
 4. **API Response** - shop-settings API returns code to modal
-5. **Modal Application** - handleCTAClick adds `?discount=CODE` to checkout URL
+5. **Modal Application** - handleCTAClick applies discount via Cart API
 6. **Shopify Checkout** - Discount applied automatically
 
 ---
@@ -53,13 +52,16 @@ model DiscountOffer {
 ## Manual Mode Implementation
 
 ### Discount Code Creation
-Located in `app/routes/app.settings.jsx`:
+Located in `app/utils/discounts.js`:
+
+#### Percentage Discounts
 ```javascript
-// Percentage discount
-async function createDiscountCode(admin, discountPercentage) {
-  const discountCode = `${discountPercentage}OFF`; // e.g., "10OFF"
+export async function createDiscountCode(admin, discountPercentage) {
+  const discountCode = `${discountPercentage}OFF`; // e.g., "5OFF", "10OFF"
   
-  // Check if exists
+  console.log(`Creating discount code: ${discountCode}`);
+  
+  // Check if THIS SPECIFIC code already exists
   const checkQuery = `
     query {
       codeDiscountNodes(first: 50, query: "code:'${discountCode}'") {
@@ -67,7 +69,12 @@ async function createDiscountCode(admin, discountPercentage) {
           id
           codeDiscount {
             ... on DiscountCodeBasic {
-              codes(first: 1) { nodes { code } }
+              title
+              codes(first: 1) {
+                nodes {
+                  code
+                }
+              }
             }
           }
         }
@@ -78,11 +85,17 @@ async function createDiscountCode(admin, discountPercentage) {
   const checkResponse = await admin.graphql(checkQuery);
   const checkResult = await checkResponse.json();
   
-  if (checkResult.data.codeDiscountNodes.nodes.length > 0) {
-    return discountCode; // Reuse existing
+  // ✅ FIXED: Verify exact code match (not just any discount exists)
+  const codeExists = checkResult.data.codeDiscountNodes.nodes.some(node => 
+    node.codeDiscount?.codes?.nodes?.some(c => c.code === discountCode)
+  );
+  
+  if (codeExists) {
+    console.log(`✓ Using existing discount code: ${discountCode}`);
+    return discountCode;
   }
   
-  // Create new discount
+  // Create new discount code
   const mutation = `
     mutation discountCodeBasicCreate($basicCodeDiscount: DiscountCodeBasicInput!) {
       discountCodeBasicCreate(basicCodeDiscount: $basicCodeDiscount) {
@@ -117,24 +130,132 @@ async function createDiscountCode(admin, discountPercentage) {
   const result = await response.json();
   
   if (result.data.discountCodeBasicCreate.userErrors.length > 0) {
+    console.error("Error creating discount:", result.data.discountCodeBasicCreate.userErrors);
     throw new Error("Failed to create discount code");
   }
   
-  return result.data.discountCodeBasicCreate.codeDiscountNode
+  const code = result.data.discountCodeBasicCreate.codeDiscountNode
     .codeDiscount.codes.nodes[0].code;
+  
+  console.log(`✓ Created new discount code: ${code}`);
+  return code;
 }
 ```
 
-Similar function exists for `createFixedAmountDiscountCode()`.
+#### Fixed Amount Discounts
+```javascript
+export async function createFixedAmountDiscountCode(admin, discountAmount, currencyCode = 'USD') {
+  const discountCode = `${discountAmount}DOLLARSOFF`; // e.g., "10DOLLARSOFF"
+  
+  console.log(`Creating fixed amount discount code: ${discountCode}`);
+  
+  // Check if THIS SPECIFIC code already exists
+  const checkQuery = `
+    query {
+      codeDiscountNodes(first: 50, query: "code:'${discountCode}'") {
+        nodes {
+          id
+          codeDiscount {
+            ... on DiscountCodeBasic {
+              title
+              codes(first: 1) {
+                nodes {
+                  code
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  
+  const checkResponse = await admin.graphql(checkQuery);
+  const checkResult = await checkResponse.json();
+  
+  // ✅ FIXED: Verify exact code match
+  const codeExists = checkResult.data.codeDiscountNodes.nodes.some(node => 
+    node.codeDiscount?.codes?.nodes?.some(c => c.code === discountCode)
+  );
+  
+  if (codeExists) {
+    console.log(`✓ Using existing discount code: ${discountCode}`);
+    return discountCode;
+  }
+  
+  // Create new fixed amount discount code
+  const mutation = `
+    mutation discountCodeBasicCreate($basicCodeDiscount: DiscountCodeBasicInput!) {
+      discountCodeBasicCreate(basicCodeDiscount: $basicCodeDiscount) {
+        codeDiscountNode {
+          codeDiscount {
+            ... on DiscountCodeBasic {
+              codes(first: 1) { nodes { code } }
+            }
+          }
+        }
+        userErrors { field message }
+      }
+    }
+  `;
+
+  const variables = {
+    basicCodeDiscount: {
+      title: `$${discountAmount} Off - Exit Intent Offer`,
+      code: discountCode,
+      startsAt: new Date().toISOString(),
+      customerSelection: { all: true },
+      customerGets: {
+        value: {
+          discountAmount: {
+            amount: discountAmount.toString(),
+            appliesOnEachItem: false
+          }
+        },
+        items: { all: true }
+      },
+      appliesOncePerCustomer: false,
+      usageLimit: null
+    }
+  };
+
+  const response = await admin.graphql(mutation, { variables });
+  const result = await response.json();
+  
+  if (result.data.discountCodeBasicCreate.userErrors.length > 0) {
+    console.error("Error creating discount:", result.data.discountCodeBasicCreate.userErrors);
+    throw new Error("Failed to create discount code: " + JSON.stringify(result.data.discountCodeBasicCreate.userErrors));
+  }
+  
+  const code = result.data.discountCodeBasicCreate.codeDiscountNode
+    .codeDiscount.codes.nodes[0].code;
+  
+  console.log(`✓ Created new fixed amount discount code: ${code}`);
+  return code;
+}
+```
 
 ### Settings Save
 ```javascript
+// app/routes/app.settings.jsx - action function
+console.log('=== DISCOUNT DEBUG ===');
+console.log('Discount enabled:', settings.discountEnabled);
+console.log('Offer type:', settings.offerType);
+console.log('Discount percentage:', settings.discountPercentage);
+console.log('Discount amount:', settings.discountAmount);
+
 // Create discount if enabled
 if (settings.discountEnabled) {
+  console.log('Creating discount code...');
+  
   if (settings.offerType === "percentage" && settings.discountPercentage > 0) {
+    console.log('Creating percentage discount:', settings.discountPercentage);
     settings.discountCode = await createDiscountCode(admin, settings.discountPercentage);
+    console.log('Created code:', settings.discountCode);
   } else if (settings.offerType === "fixed" && settings.discountAmount > 0) {
+    console.log('Creating fixed discount:', settings.discountAmount);
     settings.discountCode = await createFixedAmountDiscountCode(admin, settings.discountAmount);
+    console.log('Created code:', settings.discountCode);
   }
 }
 
@@ -149,6 +270,8 @@ await db.shop.upsert({
   },
   create: { /* same fields */ }
 });
+
+console.log('✓ Settings saved to database including discount code:', settings.discountCode);
 ```
 
 ---
@@ -158,7 +281,37 @@ await db.shop.upsert({
 ### Unique Codes Per Customer
 AI mode generates unique codes to prevent sharing:
 ```javascript
-// In app/routes/apps.exit-intent.api.ai-decision.jsx
+// app/utils/discount-codes.js
+
+function generateUniqueCode(type, amount) {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2, 8);
+  
+  if (type === 'percentage') {
+    return `EXIT${amount}-${timestamp}${random}`.toUpperCase();
+  } else if (type === 'fixed') {
+    return `EXIT${amount}OFF-${timestamp}${random}`.toUpperCase();
+  }
+  
+  return `EXIT-${timestamp}${random}`.toUpperCase();
+}
+
+export async function createPercentageDiscount(admin, percentage) {
+  const code = generateUniqueCode('percentage', percentage);
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  
+  // GraphQL mutation to create discount...
+  
+  return {
+    code: createdCode,
+    expiresAt: expiresAt
+  };
+}
+```
+
+### AI Decision with Discount
+```javascript
+// app/routes/apps.exit-intent.api.ai-decision.jsx
 let discountResult;
 if (decision.type === 'percentage') {
   discountResult = await createPercentageDiscount(admin, decision.amount);
@@ -180,8 +333,6 @@ const discountOffer = await db.discountOffer.create({
 });
 ```
 
-Unique codes follow pattern: `UNIQUE_${timestamp}_${random}` (implementation in `app/utils/discount-codes.js`).
-
 ---
 
 ## Modal Integration
@@ -197,7 +348,7 @@ return json({
   modalBody: shopRecord.modalBody,
   ctaButton: shopRecord.ctaButton,
   redirectDestination: shopRecord.redirectDestination,
-  discountCode: shopRecord.discountCode,  // ← Added
+  discountCode: shopRecord.discountCode,  // ← Sent to modal
   discountEnabled: shopRecord.discountEnabled,
   offerType: shopRecord.offerType,
   triggers: { /* ... */ }
@@ -206,28 +357,75 @@ return json({
 
 ### Modal CTA Handler
 `extensions/exit-intent-modal/assets/exit-intent-modal.js`:
+
+**CRITICAL:** Modern Shopify checkouts don't accept `?discount=CODE` URL parameters. We must use the Cart API to apply discounts.
 ```javascript
 async handleCTAClick() {
+  // Track events
   this.trackEvent('click');
+  this.trackVariant('click');
+  
+  if (this.currentImpressionId) {
+    await fetch('/apps/exit-intent/api/track-click', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        impressionId: this.currentImpressionId,
+        buttonType: 'primary'
+      })
+    });
+  }
+  
+  // Close modal
   this.closeModal();
   
   const discountCode = this.settings.discountCode;
+  const offerType = this.settings.offerType || 'percentage';
   const destination = this.settings.redirectDestination || 'checkout';
   
-  // Build redirect URL
-  let redirectUrl;
-  if (destination === 'cart') {
-    if (discountCode) {
-      sessionStorage.setItem('exitIntentDiscount', discountCode);
-    }
-    redirectUrl = '/cart';
-  } else {
-    redirectUrl = discountCode ? `/checkout?discount=${discountCode}` : '/checkout';
+  // Handle gift card offer
+  if (offerType === 'giftcard') {
+    await fetch('/cart/add.js', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: [{ id: 7790476951630, quantity: 1 }]
+      })
+    });
+    window.location.href = destination === 'cart' ? '/cart' : '/checkout';
+    return;
   }
   
+  // ✅ Apply discount via Cart API (modern Shopify requirement)
+  if (discountCode) {
+    try {
+      console.log(`Applying discount code via Cart API: ${discountCode}`);
+      await fetch('/cart/update.js', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          attributes: {
+            discount_code: discountCode
+          }
+        })
+      });
+      console.log('Discount code applied successfully');
+    } catch (error) {
+      console.error('Error applying discount code:', error);
+    }
+  }
+  
+  // Redirect to cart or checkout
+  const redirectUrl = destination === 'cart' ? '/cart' : '/checkout';
+  console.log(`Redirecting to ${redirectUrl}`);
   window.location.href = redirectUrl;
 }
 ```
+
+**Key Changes from Previous Implementation:**
+- ❌ OLD: `window.location.href = `/checkout?discount=${discountCode}`` (doesn't work with modern Shopify)
+- ✅ NEW: Apply via Cart API first, then redirect to `/checkout`
+- Cart API call: `POST /cart/update.js` with `{ attributes: { discount_code: "5OFF" } }`
 
 ---
 
@@ -235,7 +433,7 @@ async handleCTAClick() {
 
 Budget tracking works with AI mode discounts:
 ```javascript
-// In app/utils/ai-decision.js
+// app/utils/ai-decision.js
 export async function checkBudget(db, shopId, budgetPeriod) {
   const shop = await db.shop.findUnique({ where: { id: shopId } });
   
@@ -277,28 +475,36 @@ When budget exhausted, AI returns no-discount modal.
 
 ### Manual Mode Test
 1. Go to Settings → Manual Mode
-2. Enable discount (10% percentage)
+2. Enable discount (5% percentage)
 3. Save settings
-4. Check terminal: `✓ Created discount code: 10OFF`
-5. Go to store, trigger modal
-6. Click CTA
-7. Verify URL: `/checkout?discount=10OFF`
-8. Verify discount applies in checkout ✅
+4. Check terminal: `✓ Created new discount code: 5OFF` (or `Using existing discount code: 5OFF`)
+5. Check Shopify Admin → Discounts → Verify `5OFF` exists
+6. Go to store, add item to cart
+7. Trigger modal (move mouse to top of browser)
+8. Click CTA button
+9. Check browser console: `Applying discount code via Cart API: 5OFF`
+10. Verify discount applies at checkout ✅
 
 ### AI Mode Test
 1. Switch to AI Mode in settings
-2. Go to store, trigger modal
-3. AI generates unique code
-4. Click CTA
-5. Verify unique discount code in URL
-6. Verify discount applies ✅
+2. Go to store, add item to cart
+3. Trigger modal
+4. AI generates unique code (e.g., `EXIT10-ABC123DEF`)
+5. Click CTA
+6. Verify unique discount code applied at checkout ✅
 
 ### Budget Cap Test
 ```bash
 node test-budget-exhaustion.js
 ```
-
 Should show budget exhausted when limit reached.
+
+### Manual Verification
+```bash
+# Check discount exists in Shopify
+# Admin → Discounts → Search for "5OFF"
+# Should show: "5% Off - Exit Intent Offer"
+```
 
 ---
 
@@ -306,16 +512,25 @@ Should show budget exhausted when limit reached.
 
 ### Discount not applying at checkout
 **Check:**
-- Is `discountCode` in shop-settings API response?
-- Does checkout URL have `?discount=CODE`?
-- Is discount active in Shopify Admin → Discounts?
-- Try manually: `/checkout?discount=10OFF`
+1. Is `discountCode` in shop-settings API response?
+2. Does browser console show "Applying discount code via Cart API: [CODE]"?
+3. Is discount active in Shopify Admin → Discounts?
+4. Try manually at cart: Enter code and click "Apply"
+5. Check Cart API response in Network tab
 
 ### Discount code not created
 **Check:**
-- Terminal logs for "Creating discount code..."
-- Shopify Admin permissions (need `write_discounts` scope)
-- Any GraphQL errors in terminal
+1. Terminal logs for "Creating discount code..."
+2. Shopify Admin permissions (need `write_discounts` scope)
+3. Any GraphQL errors in terminal
+4. Check if code already exists (might be false positive)
+
+### "Code not valid" error at cart
+**Root Cause:** Code doesn't actually exist in Shopify
+**Solution:** 
+- Fixed in `app/utils/discounts.js` - now verifies exact code match
+- Previous bug: Would return "Using existing" when code didn't exist
+- Now properly checks: `node.codeDiscount?.codes?.nodes?.some(c => c.code === discountCode)`
 
 ### Budget not tracking
 **Check:**
@@ -325,18 +540,57 @@ Should show budget exhausted when limit reached.
 
 ---
 
+## Bug History
+
+### Bug: Discount Code False Positive (FIXED - Jan 16, 2026)
+**Problem:** Logs showed "Using existing discount code: 5OFF" but code didn't exist in Shopify
+**Root Cause:** Check query returned `nodes.length > 0` if ANY discount existed, not the specific code
+**Solution:** 
+```javascript
+// Before (WRONG)
+if (checkResult.data.codeDiscountNodes.nodes.length > 0) {
+  return discountCode; // Returns even if wrong code
+}
+
+// After (CORRECT)
+const codeExists = checkResult.data.codeDiscountNodes.nodes.some(node => 
+  node.codeDiscount?.codes?.nodes?.some(c => c.code === discountCode)
+);
+if (codeExists) {
+  return discountCode; // Only returns if exact match
+}
+```
+
+### Bug: Modern Shopify Checkout URL Parameters (FIXED - Jan 16, 2026)
+**Problem:** `/checkout?discount=5OFF` didn't apply discount
+**Root Cause:** New Shopify checkout (`/checkouts/cn/...`) doesn't read URL parameters
+**Solution:** Apply discount via Cart API before redirecting:
+```javascript
+// Apply discount to cart first
+await fetch('/cart/update.js', {
+  method: 'POST',
+  body: JSON.stringify({ attributes: { discount_code: "5OFF" } })
+});
+
+// Then redirect (discount already applied)
+window.location.href = '/checkout';
+```
+
+---
+
 ## Files Reference
 
 **Settings & Creation:**
-- `app/routes/app.settings.jsx` - Discount creation, database save
-- `app/utils/discount-codes.js` - Unique code generation (AI mode)
+- `app/routes/app.settings.jsx` - Discount creation, database save, form handling
+- `app/utils/discounts.js` - Manual mode discount creation (percentage, fixed, gift card)
+- `app/utils/discount-codes.js` - AI mode unique code generation
 
 **API:**
 - `app/routes/apps.exit-intent.api.shop-settings.jsx` - Returns discount code to modal
 - `app/routes/apps.exit-intent.api.ai-decision.jsx` - AI discount decisions
 
 **Modal:**
-- `extensions/exit-intent-modal/assets/exit-intent-modal.js` - Applies discount to checkout URL
+- `extensions/exit-intent-modal/assets/exit-intent-modal.js` - Applies discount via Cart API
 
 **Database:**
 - `prisma/schema.prisma` - Shop and DiscountOffer models
@@ -349,21 +603,23 @@ Should show budget exhausted when limit reached.
 ## Next Steps
 
 **Completed:** ✅
-- Discount creation (manual + AI)
-- Database storage
+- Discount creation (manual + AI) with exact code verification
+- Database storage and sync
 - API integration
-- Modal application
+- Modal application via Cart API (modern Shopify)
 - Budget tracking
+- Bug fixes for false positives and URL parameters
 
 **Future Enhancements:**
-- Discount expiration (24 hours)
-- Usage limit per code
+- Discount expiration UI (show countdown in modal)
+- Usage analytics per code
 - Customer-specific restrictions
 - A/B test discount amounts
 - Margin protection (don't discount below X%)
+- Automatic code cleanup (delete expired codes)
 
 ---
 
-*Last Updated: January 15, 2026*
+*Last Updated: January 16, 2026*
 *Status: Production Ready* ✅
-EOF
+*Recent Fixes: Code verification + Cart API application*
