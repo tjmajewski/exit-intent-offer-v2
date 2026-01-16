@@ -11,10 +11,22 @@ export const genePools = {
       'You\'re {{percent_to_goal}}% of the way to {{amount}} off!'
     ],
     
+    headlinesWithSocialProof: [
+      '{{social_proof_count}} customers unlocked this discount',
+      'Join {{social_proof_count}} shoppers saving today',
+      'Rated {{rating}} stars - add {{threshold_remaining}} to save'
+    ],
+    
     subheads: [
       'Complete your order and save big',
       'Don\'t miss out on this exclusive offer',
       'Limited time - discount expires in 24 hours'
+    ],
+    
+    subheadsWithSocialProof: [
+      '{{social_proof_count}} orders saved with this offer',
+      'Trusted by {{social_proof_count}} happy shoppers',
+      'Join our {{rating}}-star rated community'
     ],
     
     ctas: [
@@ -28,28 +40,40 @@ export const genePools = {
   },
   
   revenue_no_discount: {
-    offerAmounts: [0],  // No discount, just incentive
+    offerAmounts: [0],  // No discount, no incentive
     
     headlines: [
-      'Almost there! Add {{threshold_remaining}} more',
-      'You\'re {{percent_to_goal}}% of the way to free shipping',
-      'Just {{threshold_remaining}} away from unlocking perks'
+      'Complete your order to unlock rewards',
+      'You\'re building a great cart!',
+      'Almost ready to checkout?'
+    ],
+    
+    headlinesWithSocialProof: [
+      '{{social_proof_count}} customers completed their orders today',
+      'Join {{social_proof_count}} satisfied shoppers',
+      'Rated {{rating}} stars by real customers'
     ],
     
     subheads: [
-      'Get free shipping on orders over {{threshold}}',
-      'Unlock free shipping and priority processing',
-      'Complete your order to qualify for free delivery'
+      'Complete your purchase with confidence',
+      'Join our community of satisfied customers',
+      'Your items are reserved and waiting'
+    ],
+    
+    subheadsWithSocialProof: [
+      '{{social_proof_count}} orders shipped this month',
+      'Trusted by {{social_proof_count}} happy customers',
+      '{{rating}}-star service guaranteed'
     ],
     
     ctas: [
-      'Add More Items',
-      'Shop More',
-      'Unlock Free Shipping'
+      'Complete My Order',
+      'Go to Checkout',
+      'Finish Shopping'
     ],
     
     redirects: ['cart', 'checkout'],
-    urgency: [true, false]
+    urgency: [false]  // No urgency without incentive
   },
   
   conversion_with_discount: {
@@ -61,10 +85,22 @@ export const genePools = {
       'Your exclusive {{amount}}% discount is ready'
     ],
     
+    headlinesWithSocialProof: [
+      '{{social_proof_count}} customers claimed this {{amount}}% off',
+      'Join {{social_proof_count}} shoppers who saved {{amount}}%',
+      'Rated {{rating}} stars - get {{amount}}% off now'
+    ],
+    
     subheads: [
       'This offer won\'t last long',
       'Join thousands of happy customers',
       'Complete your order risk-free'
+    ],
+    
+    subheadsWithSocialProof: [
+      '{{social_proof_count}} orders placed with this discount',
+      'Trusted by {{social_proof_count}} satisfied customers',
+      '{{rating}}-star rated by verified buyers'
     ],
     
     ctas: [
@@ -78,28 +114,40 @@ export const genePools = {
   },
   
   conversion_no_discount: {
-    offerAmounts: [0],  // No discount, social proof
+    offerAmounts: [0],  // No discount, social proof only
     
     headlines: [
-      '10,000+ customers trust us',
-      'Join our community of happy customers',
-      'Don\'t miss out on what everyone\'s buying'
+      'Complete your order with confidence',
+      'Join our community of satisfied customers',
+      'Your items are waiting for you'
+    ],
+    
+    headlinesWithSocialProof: [
+      '{{social_proof_count}} customers trust us',
+      'Rated {{rating}} stars by verified buyers',
+      'Join {{social_proof_count}} happy customers'
     ],
     
     subheads: [
-      'Risk-free returns and fast shipping',
-      'Rated 4.8/5 stars by verified buyers',
-      'Complete your order with confidence'
+      'Secure checkout and risk-free returns',
+      'Trusted by customers like you',
+      'Fast processing and reliable shipping'
+    ],
+    
+    subheadsWithSocialProof: [
+      '{{social_proof_count}} orders shipped and counting',
+      'Join {{social_proof_count}} satisfied shoppers',
+      'Rated {{rating}} stars by real customers'
     ],
     
     ctas: [
       'Complete My Order',
-      'Checkout Now',
-      'Join Our Customers'
+      'Checkout Securely',
+      'Finish Purchase'
     ],
     
     redirects: ['cart', 'checkout'],
-    urgency: [true, false]
+    urgency: [false]  // No urgency without incentive
   },
   
   // PURE REMINDER: No offers, no discounts, no incentives
@@ -114,11 +162,23 @@ export const genePools = {
       'Don\'t forget about your items'
     ],
     
+    headlinesWithSocialProof: [
+      '{{social_proof_count}} customers completed their orders',
+      'Join {{social_proof_count}} shoppers',
+      'Rated {{rating}} stars by verified buyers'
+    ],
+    
     subheads: [
       'Complete your purchase when you\'re ready',
       'Your items are reserved',
       'Checkout at your convenience',
       'Your cart will be here when you return'
+    ],
+    
+    subheadsWithSocialProof: [
+      '{{social_proof_count}} orders delivered successfully',
+      'Trusted by {{social_proof_count}} customers',
+      '{{rating}}-star service you can count on'
     ],
     
     ctas: [

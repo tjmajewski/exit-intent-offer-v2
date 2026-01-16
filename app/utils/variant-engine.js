@@ -3,6 +3,8 @@
 import { genePools, getRandomGene, getAllBaselines } from './gene-pools.js';
 import { generateVisualGenes } from './visual-gene-pools.js';
 import { validateVariantCopy } from './brand-safety.js';
+import { hasSocialProof, replaceSocialProofPlaceholders } from './social-proof.js';
+import { getSocialProofFromCache, setSocialProofCache } from './social-proof-cache.js';
 import { PrismaClient } from '@prisma/client';
 import jStat from 'jstat';
 
@@ -20,8 +22,17 @@ function generateVariantId() {
 /**
  * Create a single random variant from a gene pool
  */
-function createRandomVariant(baseline, segment = 'all') {
+function createRandomVariant(baseline, segment = 'all', useSocialProof = false) {
   const pool = genePools[baseline];
+  
+  // Decide which gene pools to use based on social proof availability
+  const headlinePool = useSocialProof && pool.headlinesWithSocialProof
+    ? [...pool.headlines, ...pool.headlinesWithSocialProof]
+    : pool.headlines;
+  
+  const subheadPool = useSocialProof && pool.subheadsWithSocialProof
+    ? [...pool.subheads, ...pool.subheadsWithSocialProof]
+    : pool.subheads;
   
   return {
     variantId: generateVariantId(),
@@ -31,10 +42,10 @@ function createRandomVariant(baseline, segment = 'all') {
     generation: 0,
     parents: null,
     
-    // Random genes
+    // Random genes (using appropriate pools)
     offerAmount: pool.offerAmounts[Math.floor(Math.random() * pool.offerAmounts.length)],
-    headline: pool.headlines[Math.floor(Math.random() * pool.headlines.length)],
-    subhead: pool.subheads[Math.floor(Math.random() * pool.subheads.length)],
+    headline: headlinePool[Math.floor(Math.random() * headlinePool.length)],
+    subhead: subheadPool[Math.floor(Math.random() * subheadPool.length)],
     cta: pool.ctas[Math.floor(Math.random() * pool.ctas.length)],
     redirect: pool.redirects[Math.floor(Math.random() * pool.redirects.length)],
     urgency: pool.urgency[Math.floor(Math.random() * pool.urgency.length)],
@@ -50,6 +61,55 @@ function createRandomVariant(baseline, segment = 'all') {
     deathDate: null,
     championDate: null
   };
+}
+
+/**
+ * Create a random variant with social proof support
+ * Checks cache for shop's social proof data and uses it to:
+ * 1. Decide whether to use social proof gene pools
+ * 2. Replace placeholders with actual values
+ */
+export async function createRandomVariantWithSocialProof(shopId, baseline, segment = 'all') {
+  // Try cache first
+  let shop = getSocialProofFromCache(shopId);
+  
+  // If not cached, fetch from database
+  if (!shop) {
+    shop = await db.shop.findUnique({
+      where: { id: shopId },
+      select: {
+        orderCount: true,
+        customerCount: true,
+        avgRating: true,
+        reviewCount: true,
+        socialProofEnabled: true,
+        socialProofType: true,
+        socialProofMinimum: true
+      }
+    });
+    
+    // Cache it for next time
+    if (shop) {
+      setSocialProofCache(shopId, shop);
+    }
+  }
+  
+  // Check if shop qualifies for social proof
+  const socialProofAvailable = shop?.socialProofEnabled && hasSocialProof(shop);
+  
+  // Create variant with appropriate gene pool
+  const variant = createRandomVariant(baseline, segment, socialProofAvailable);
+  
+  // Replace placeholders if this variant has social proof genes
+  if (socialProofAvailable && variant.headline.includes('{{')) {
+    variant.headline = replaceSocialProofPlaceholders(variant.headline, shop);
+  }
+  
+  if (socialProofAvailable && variant.subhead.includes('{{')) {
+    variant.subhead = replaceSocialProofPlaceholders(variant.subhead, shop);
+  }
+  
+  return variant;
 }
 
 /**
@@ -156,9 +216,13 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
       console.log(`✨ Found ${provenGenes.length} proven genes from network`);
       
       // Create 5 variants using proven genes + some random genes
+      const variantPromises = [];
       for (let i = 0; i < 5; i++) {
-        const variant = createRandomVariant(baseline, segment);
-        
+        variantPromises.push(createRandomVariantWithSocialProof(shopId, baseline, segment));
+      }
+      const createdVariants = await Promise.all(variantPromises);
+      
+      createdVariants.forEach(variant => {
         // Override with proven genes where available
         provenGenes.forEach(gene => {
           if (gene.geneType === 'offerAmount') {
@@ -177,7 +241,7 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
         });
         
         variants.push(variant);
-      }
+      });
       
       // Add 5 random exploration variants
       variants.push(...generateDiverseVariants(5, baseline, segment));

@@ -225,6 +225,108 @@ export default function AISettingsTab({
         </div>
       </div>
 
+      {/* Social Proof Settings */}
+      <div style={{ 
+        background: "white", 
+        padding: 24, 
+        borderRadius: 8, 
+        border: "1px solid #e5e7eb",
+        marginTop: 24
+      }}>
+        <h2 style={{ fontSize: 20, marginBottom: 8 }}>Social Proof Settings</h2>
+        <p style={{ fontSize: 14, color: "#666", marginBottom: 20 }}>
+          Display customer counts and ratings in your modals to build trust
+        </p>
+
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", marginBottom: 16 }}>
+            <input
+              type="checkbox"
+              name="socialProofEnabled"
+              defaultChecked={settings.socialProofEnabled ?? true}
+              onChange={(e) => setFormChanged(true)}
+              style={{ marginRight: 12, width: 20, height: 20, cursor: "pointer" }}
+            />
+            <label style={{ fontWeight: 500, fontSize: 16, cursor: "pointer" }}>
+              Enable dynamic social proof in modals
+            </label>
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+              Social Proof Type
+            </label>
+            <p style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
+              Choose which metric to display
+            </p>
+            <select
+              name="socialProofType"
+              defaultValue={settings.socialProofType || "orders"}
+              onChange={(e) => setFormChanged(true)}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                fontSize: 14
+              }}
+            >
+              <option value="orders">Order count (e.g., "5,000+ orders")</option>
+              <option value="customers">Customer count (e.g., "2,000+ customers")</option>
+              <option value="reviews">Review count (e.g., "1,500+ reviews")</option>
+            </select>
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+              Minimum threshold to show
+            </label>
+            <p style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
+              Only show social proof if your count is above this number
+            </p>
+            <input
+              type="number"
+              name="socialProofMinimum"
+              defaultValue={settings.socialProofMinimum || 100}
+              min="0"
+              step="10"
+              onChange={(e) => setFormChanged(true)}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                fontSize: 14
+              }}
+            />
+          </div>
+
+          <div style={{ 
+            marginTop: 16, 
+            padding: 12, 
+            background: "#eff6ff", 
+            borderRadius: 6,
+            fontSize: 13,
+            color: "#1e40af"
+          }}>
+            💡 <strong>How it works:</strong> We automatically fetch your store's metrics daily. If you have impressive numbers (e.g., "5,000+ orders"), they'll appear in your modals like "Join 5,000+ happy customers" to build trust.
+          </div>
+
+          {(settings.orderCount || settings.customerCount) && (
+            <div style={{ 
+              marginTop: 12, 
+              padding: 12, 
+              background: "#f0fdf4", 
+              borderRadius: 6,
+              fontSize: 13,
+              color: "#166534"
+            }}>
+              ✅ <strong>Current metrics:</strong> {settings.orderCount ? `${settings.orderCount} orders` : ''}{settings.orderCount && settings.customerCount ? ', ' : ''}{settings.customerCount ? `${settings.customerCount} customers` : ''}{settings.avgRating ? `, ${settings.avgRating.toFixed(1)}★ rating` : ''}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Control System (Pro: Locked, Enterprise: Unlocked) */}
       {(plan?.tier === 'pro' || plan?.tier === 'enterprise') && (
         <div style={{ 

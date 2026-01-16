@@ -44,6 +44,15 @@ model Shop {
   budgetStartDate   DateTime @default(now())
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  // Social Proof Fields
+  customerCount         Int?
+  orderCount            Int?
+  avgRating             Float?
+  reviewCount           Int?
+  socialProofEnabled    Boolean   @default(true)
+  socialProofType       String    @default("orders")
+  socialProofMinimum    Int       @default(100)
+  socialProofUpdatedAt  DateTime?
   
   // Copy Optimization
   copyVariants      String?  @default("{\"variants\":[],\"segmentBestVariants\":{}}")
