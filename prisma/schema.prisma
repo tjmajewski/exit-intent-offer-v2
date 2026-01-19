@@ -216,9 +216,11 @@ model VariantImpression {
   deviceType        String?
   trafficSource     String?
   cartValue         Float?
+  duringPromo       Boolean  @default(false)
   timestamp         DateTime @default(now())
-  
+
   @@index([variantId, converted])
+  @@index([shopId, duringPromo])
   @@index([shopId, timestamp])
   @@index([segment, timestamp])
 }

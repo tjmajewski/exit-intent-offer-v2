@@ -407,7 +407,15 @@ export async function recordImpression(variantId, shopId, context = {}) {
       impressions: { increment: 1 }
     }
   });
-  
+
+  // Check if there's an active promotion
+  const activePromo = await db.promotion.findFirst({
+    where: {
+      shopId: shopId,
+      status: 'active'
+    }
+  });
+
   // Create impression record
   const impression = await db.variantImpression.create({
     data: {
@@ -417,13 +425,14 @@ export async function recordImpression(variantId, shopId, context = {}) {
       deviceType: context.deviceType || null,
       trafficSource: context.trafficSource || null,
       cartValue: context.cartValue || null,
+      duringPromo: activePromo ? true : false,
       clicked: false,
       converted: false
     }
   });
-  
-  console.log(`📊 Recorded impression for variant ${variantId}`);
-  
+
+  console.log(`📊 Recorded impression for variant ${variantId}${activePromo ? ' (during promo)' : ''}`);
+
   return impression;
 }
 

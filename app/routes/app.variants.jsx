@@ -9,6 +9,11 @@ import db from "../db.server";
 export async function loader({ request }) {
   const { session } = await authenticate.admin(request);
 
+  // Get promo mode from URL
+  const url = new URL(request.url);
+  const promoMode = url.searchParams.get('promoMode') || 'no-promo';
+  const duringPromo = promoMode === 'promo';
+
   // Get shop from database
   const shop = await db.shop.findUnique({
     where: { shopifyDomain: session.shop }
@@ -22,13 +27,37 @@ export async function loader({ request }) {
   const planTier = shop.plan === 'enterprise' ? 'enterprise' : shop.plan === 'pro' ? 'pro' : 'starter';
   const plan = { tier: planTier };
 
-  // Get all variants for this shop
-  const variants = await db.variant.findMany({
+  // Get all variants for this shop with filtered impressions
+  const allVariants = await db.variant.findMany({
     where: { shopId: shop.id },
-    orderBy: [
-      { status: 'asc' },
-      { profitPerImpression: 'desc' }
-    ]
+    include: {
+      impressions: {
+        where: {
+          duringPromo: duringPromo
+        }
+      }
+    }
+  });
+
+  // Recalculate metrics based on filtered impressions
+  const variants = allVariants.map(v => {
+    const filteredImpressions = v.impressions;
+    const totalImpressions = filteredImpressions.length;
+    const totalConversions = filteredImpressions.filter(i => i.converted).length;
+    const totalRevenue = filteredImpressions.reduce((sum, i) => sum + (i.profit || 0), 0);
+    const profitPerImpression = totalImpressions > 0 ? totalRevenue / totalImpressions : 0;
+
+    return {
+      ...v,
+      impressions: totalImpressions,
+      conversions: totalConversions,
+      profitPerImpression: profitPerImpression
+    };
+  }).sort((a, b) => {
+    if (a.status !== b.status) {
+      return a.status === 'alive' || a.status === 'champion' ? -1 : 1;
+    }
+    return b.profitPerImpression - a.profitPerImpression;
   });
 
   // Group by baseline and status
@@ -105,20 +134,23 @@ export default function Variants() {
   const { shop, plan, variants, totalVariants, aliveCount, deadCount, evolutionStatus, generationStats } = data;
   const fetcher = useFetcher();
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [promoMode, setPromoMode] = useState('no-promo'); // 'no-promo' or 'promo'
   const [segment, setSegment] = useState('all');
   const [selectedVariant, setSelectedVariant] = useState(null);
+
+  // Get promo mode from URL
+  const [searchParams, setSearchParams] = useState(new URLSearchParams(typeof window !== 'undefined' ? window.location.search : ''));
+  const promoMode = searchParams.get('promoMode') || 'no-promo';
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
     if (!autoRefresh) return;
 
     const interval = setInterval(() => {
-      fetcher.load('/app/variants');
+      fetcher.load(`/app/variants?promoMode=${promoMode}`);
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [autoRefresh, fetcher]);
+  }, [autoRefresh, fetcher, promoMode]);
 
   // Use fetcher data if available, otherwise use initial data
   const displayData = fetcher.data || data;
@@ -336,7 +368,11 @@ export default function Variants() {
           {/* Promo Toggle */}
           <div style={{ display: 'flex', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
             <button
-              onClick={() => setPromoMode('no-promo')}
+              onClick={() => {
+                const newParams = new URLSearchParams(window.location.search);
+                newParams.set('promoMode', 'no-promo');
+                window.location.search = newParams.toString();
+              }}
               style={{
                 padding: '8px 20px',
                 border: 'none',
@@ -352,7 +388,11 @@ export default function Variants() {
               No Promo
             </button>
             <button
-              onClick={() => setPromoMode('promo')}
+              onClick={() => {
+                const newParams = new URLSearchParams(window.location.search);
+                newParams.set('promoMode', 'promo');
+                window.location.search = newParams.toString();
+              }}
               style={{
                 padding: '8px 20px',
                 border: 'none',
