@@ -1403,14 +1403,42 @@
     document.addEventListener('DOMContentLoaded', async () => {
       fixPreviewBar();
       const settings = await fetchShopSettings();
-      console.log('[Exit Intent] Shop settings loaded:', settings);
+
+      // Enhanced logging for AI mode
+      if (settings.mode === 'ai') {
+        console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
+        console.log('%c⚡ AI MODE ACTIVE', 'color: #8B5CF6; font-weight: bold; font-size: 14px');
+        console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
+        console.log('%cℹ️  Settings below are FALLBACK values only', 'color: #64748b; font-style: italic');
+        console.log('%cℹ️  AI will generate custom copy when modal triggers', 'color: #64748b; font-style: italic');
+        console.log('%cℹ️  Look for "🤖 AI DECISION" log when exit intent fires', 'color: #64748b; font-style: italic');
+        console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
+        console.log('[Exit Intent] Shop settings loaded:', settings);
+      } else {
+        console.log('[Exit Intent] Shop settings loaded:', settings);
+      }
+
       new ExitIntentModal(settings);
     });
   } else {
     (async () => {
       fixPreviewBar();
       const settings = await fetchShopSettings();
-      console.log('[Exit Intent] Shop settings loaded:', settings);
+
+      // Enhanced logging for AI mode
+      if (settings.mode === 'ai') {
+        console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
+        console.log('%c⚡ AI MODE ACTIVE', 'color: #8B5CF6; font-weight: bold; font-size: 14px');
+        console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
+        console.log('%cℹ️  Settings below are FALLBACK values only', 'color: #64748b; font-style: italic');
+        console.log('%cℹ️  AI will generate custom copy when modal triggers', 'color: #64748b; font-style: italic');
+        console.log('%cℹ️  Look for "🤖 AI DECISION" log when exit intent fires', 'color: #64748b; font-style: italic');
+        console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
+        console.log('[Exit Intent] Shop settings loaded:', settings);
+      } else {
+        console.log('[Exit Intent] Shop settings loaded:', settings);
+      }
+
       new ExitIntentModal(settings);
     })();
   }
