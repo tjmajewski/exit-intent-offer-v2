@@ -1,5 +1,5 @@
 import { json } from "@remix-run/node";
-import { useLoaderData, useFetcher } from "react-router";
+import { useLoaderData, useFetcher, useNavigate, useSearchParams } from "react-router";
 import { authenticate } from "../shopify.server";
 import { PrismaClient } from "@prisma/client";
 import { useEffect, useState } from "react";
@@ -143,12 +143,13 @@ export default function Variants() {
   const data = useLoaderData();
   const { shop, plan, variants, totalVariants, aliveCount, deadCount, evolutionStatus, generationStats } = data;
   const fetcher = useFetcher();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [segment, setSegment] = useState('all');
   const [selectedVariant, setSelectedVariant] = useState(null);
 
   // Get promo mode from URL
-  const [searchParams, setSearchParams] = useState(new URLSearchParams(typeof window !== 'undefined' ? window.location.search : ''));
   const promoMode = searchParams.get('promoMode') || 'no-promo';
 
   // Auto-refresh every 30 seconds
@@ -379,9 +380,7 @@ export default function Variants() {
           <div style={{ display: 'flex', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
             <button
               onClick={() => {
-                const newParams = new URLSearchParams(window.location.search);
-                newParams.set('promoMode', 'no-promo');
-                window.location.search = newParams.toString();
+                setSearchParams({ promoMode: 'no-promo' });
               }}
               style={{
                 padding: '8px 20px',
@@ -399,9 +398,7 @@ export default function Variants() {
             </button>
             <button
               onClick={() => {
-                const newParams = new URLSearchParams(window.location.search);
-                newParams.set('promoMode', 'promo');
-                window.location.search = newParams.toString();
+                setSearchParams({ promoMode: 'promo' });
               }}
               style={{
                 padding: '8px 20px',
