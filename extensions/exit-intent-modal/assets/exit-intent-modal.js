@@ -1409,11 +1409,10 @@
         console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
         console.log('%c⚡ AI MODE ACTIVE', 'color: #8B5CF6; font-weight: bold; font-size: 14px');
         console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
-        console.log('%cℹ️  Settings below are FALLBACK values only', 'color: #64748b; font-style: italic');
-        console.log('%cℹ️  AI will generate custom copy when modal triggers', 'color: #64748b; font-style: italic');
+        console.log('%cℹ️  AI will generate custom offers when modal triggers', 'color: #64748b; font-style: italic');
         console.log('%cℹ️  Look for "🤖 AI DECISION" log when exit intent fires', 'color: #64748b; font-style: italic');
         console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
-        console.log('[Exit Intent] Shop settings loaded:', settings);
+        // Don't log settings object - it's just clutter for AI mode
       } else {
         console.log('[Exit Intent] Shop settings loaded:', settings);
       }
@@ -1430,11 +1429,10 @@
         console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
         console.log('%c⚡ AI MODE ACTIVE', 'color: #8B5CF6; font-weight: bold; font-size: 14px');
         console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
-        console.log('%cℹ️  Settings below are FALLBACK values only', 'color: #64748b; font-style: italic');
-        console.log('%cℹ️  AI will generate custom copy when modal triggers', 'color: #64748b; font-style: italic');
+        console.log('%cℹ️  AI will generate custom offers when modal triggers', 'color: #64748b; font-style: italic');
         console.log('%cℹ️  Look for "🤖 AI DECISION" log when exit intent fires', 'color: #64748b; font-style: italic');
         console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
-        console.log('[Exit Intent] Shop settings loaded:', settings);
+        // Don't log settings object - it's just clutter for AI mode
       } else {
         console.log('[Exit Intent] Shop settings loaded:', settings);
       }
