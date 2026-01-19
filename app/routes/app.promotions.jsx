@@ -351,6 +351,57 @@ export default function PromotionsPage() {
           </div>
         )}
 
+        {/* Performance Impact Metrics */}
+        {intelligenceEnabled && promotions && promotions.length > 0 && (
+          <div style={{
+            background: "white",
+            border: "1px solid #e5e7eb",
+            borderRadius: 12,
+            padding: 24,
+            marginBottom: 24
+          }}>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, marginBottom: 16 }}>
+              Performance Impact
+            </h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 20 }}>
+              <div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>Total Detected</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "#1f2937" }}>
+                  {promotions.length}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>Active Now</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "#10b981" }}>
+                  {activePromotions.length}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>AI Managed</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "#3b82f6" }}>
+                  {promotions.filter(p => !p.merchantOverride && p.aiStrategy).length}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>Total Usage</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "#f59e0b" }}>
+                  {promotions.reduce((sum, p) => sum + (p.usageStats?.total || 0), 0).toLocaleString()}
+                </div>
+              </div>
+            </div>
+            <div style={{
+              marginTop: 16,
+              padding: 12,
+              background: "#f0fdf4",
+              borderRadius: 6,
+              fontSize: 13,
+              color: "#166534"
+            }}>
+              Promotional Intelligence has automatically monitored and adjusted strategies for {promotions.length} promotion{promotions.length !== 1 ? 's' : ''}, helping protect your margins during sales periods.
+            </div>
+          </div>
+        )}
+
         {/* Active Promotions */}
         <div style={{ marginBottom: 40 }}>
           <h2 style={{ fontSize: 24, marginBottom: 20 }}>Active Promotions</h2>
@@ -466,18 +517,53 @@ function PromotionCard({ promo, fetcher, isEnded = false }) {
             </div>
           </div>
 
-          {promo.aiStrategyReason && (
-            <p style={{
+          {/* Smart Recommendation / AI Reasoning */}
+          {promo.aiStrategyReason ? (
+            <div style={{
               margin: 0,
-              padding: 12,
-              background: "#f3f4f6",
-              borderRadius: 6,
+              padding: 16,
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
+              borderRadius: 8,
               fontSize: 14,
-              color: "#374151",
+              color: "#1e40af",
               marginBottom: 16
             }}>
-              <strong>AI Reasoning:</strong> {promo.aiStrategyReason}
-            </p>
+              <div style={{ fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M12 16v-4M12 8h.01"></path>
+                </svg>
+                AI Recommendation
+              </div>
+              <p style={{ margin: 0, lineHeight: 1.6 }}>{promo.aiStrategyReason}</p>
+            </div>
+          ) : (
+            <div style={{
+              margin: 0,
+              padding: 16,
+              background: "#f0fdf4",
+              border: "1px solid #86efac",
+              borderRadius: 8,
+              fontSize: 14,
+              color: "#166534",
+              marginBottom: 16
+            }}>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>
+                Smart Analysis
+              </div>
+              <p style={{ margin: 0, lineHeight: 1.6 }}>
+                {promo.amount >= 30 && promo.type === 'percentage' ? (
+                  `High discount detected (${promo.amount}%). Consider pausing exit offers to avoid margin erosion during this promotional period.`
+                ) : promo.amount >= 20 && promo.type === 'percentage' ? (
+                  `Moderate discount (${promo.amount}%). AI suggests reducing exit offers to maintain healthy margins while still capturing exits.`
+                ) : promo.amount >= 15 && promo.type === 'percentage' ? (
+                  `Small discount (${promo.amount}%). Consider continuing normal exit offers or slightly increasing to beat the promotion.`
+                ) : (
+                  'AI will monitor usage patterns and automatically adjust strategy to maximize profitability.'
+                )}
+              </p>
+            </div>
           )}
 
           {!isEnded && (

@@ -210,44 +210,69 @@ export async function loader({ request }) {
 
     // PHASE 5: Check for active site-wide promotions (Pro tier upsell)
     let promoWarning = null;
-    
-    if (plan && plan.tier === 'pro') {
-      const shopDomain = new URL(request.url).searchParams.get('shop') || request.headers.get('host');
-      
-      const shopRecord = await db.shop.findUnique({
-        where: { shopifyDomain: shopDomain }
-      });
-      
-      if (shopRecord) {
-        const activePromo = await db.promotion.findFirst({
-          where: {
-            shopId: shopRecord.id,
-            status: "active",
-            classification: "site_wide"
-          },
-          orderBy: {
-            amount: 'desc'
-          }
-        });
-        
-        if (activePromo) {
-          promoWarning = {
-            code: activePromo.code,
-            amount: activePromo.amount,
-            type: activePromo.type,
-            aiStrategy: activePromo.aiStrategy,
-            message: `Your AI is still offering discounts during your ${activePromo.amount}${activePromo.type === 'percentage' ? '%' : '$'} ${activePromo.code} promotion, potentially wasting budget.`
-          };
+    let activePromotions = null;
+
+    const shopDomain = new URL(request.url).searchParams.get('shop') || request.headers.get('host');
+    const shopRecord = await db.shop.findUnique({
+      where: { shopifyDomain: shopDomain }
+    });
+
+    if (plan && plan.tier === 'pro' && shopRecord) {
+      const activePromo = await db.promotion.findFirst({
+        where: {
+          shopId: shopRecord.id,
+          status: "active",
+          classification: "site_wide"
+        },
+        orderBy: {
+          amount: 'desc'
         }
+      });
+
+      if (activePromo) {
+        promoWarning = {
+          code: activePromo.code,
+          amount: activePromo.amount,
+          type: activePromo.type,
+          aiStrategy: activePromo.aiStrategy,
+          message: `Your AI is still offering discounts during your ${activePromo.amount}${activePromo.type === 'percentage' ? '%' : '$'} ${activePromo.code} promotion, potentially wasting budget.`
+        };
       }
     }
 
-    return { 
-      settings, 
+    // Enterprise: Load active promotions summary
+    if (plan && plan.tier === 'enterprise' && shopRecord) {
+      const promos = await db.promotion.findMany({
+        where: {
+          shopId: shopRecord.id,
+          status: "active"
+        },
+        orderBy: {
+          detectedAt: 'desc'
+        },
+        take: 3
+      });
+
+      if (promos.length > 0) {
+        activePromotions = {
+          count: promos.length,
+          promotions: promos.map(p => ({
+            code: p.code,
+            amount: p.amount,
+            type: p.type,
+            aiStrategy: p.aiStrategy || 'auto'
+          }))
+        };
+      }
+    }
+
+    return {
+      settings,
       status,
       plan,
       analytics,
       promoWarning,
+      activePromotions,
       modalLibrary
     };
   } catch (error) {
@@ -532,7 +557,7 @@ function InfoTooltip({ content }) {
 
 
 export default function Dashboard() {
-  const { settings, status, plan, analytics, promoWarning, modalLibrary } = useLoaderData();
+  const { settings, status, plan, analytics, promoWarning, activePromotions, modalLibrary } = useLoaderData();
   const fetcher = useFetcher();
   const [isEnabled, setIsEnabled] = useState(status.enabled);
 
@@ -559,10 +584,91 @@ export default function Dashboard() {
     );
   };
 
+  const getStrategyLabel = (strategy) => {
+    switch(strategy) {
+      case 'pause': return 'AI Paused';
+      case 'increase': return 'Increased Offers';
+      case 'continue': return 'Continue Normal';
+      case 'ignore': return 'Ignored';
+      default: return 'Auto';
+    }
+  };
+
+  const getStrategyColor = (strategy) => {
+    switch(strategy) {
+      case 'pause': return '#ef4444';
+      case 'increase': return '#f59e0b';
+      case 'continue': return '#10b981';
+      case 'ignore': return '#6b7280';
+      default: return '#3b82f6';
+    }
+  };
+
   return (
     <AppLayout plan={plan}>
       <div style={{ padding: 40 }}>
-      
+
+      {/* Enterprise: Promotional Intelligence Widget */}
+      {activePromotions && activePromotions.count > 0 && (
+        <div style={{
+          background: "white",
+          border: "2px solid #fbbf24",
+          borderRadius: 12,
+          padding: 20,
+          marginBottom: 24,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center"
+        }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
+                Promotional Intelligence
+              </h3>
+              <span style={{
+                padding: "3px 10px",
+                background: "#fbbf24",
+                color: "#78350f",
+                borderRadius: 6,
+                fontSize: 11,
+                fontWeight: 700
+              }}>
+                {activePromotions.count} ACTIVE
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              {activePromotions.promotions.map((promo, idx) => (
+                <div key={idx} style={{
+                  padding: "6px 12px",
+                  background: "#fef3c7",
+                  borderRadius: 6,
+                  fontSize: 13,
+                  color: "#78350f",
+                  fontWeight: 500
+                }}>
+                  {promo.code} ({promo.amount}{promo.type === 'percentage' ? '%' : '$'}) → <span style={{ color: getStrategyColor(promo.aiStrategy) }}>{getStrategyLabel(promo.aiStrategy)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <Link
+            to="/app/promotions"
+            style={{
+              padding: "10px 20px",
+              background: "#fbbf24",
+              color: "#78350f",
+              textDecoration: "none",
+              borderRadius: 8,
+              fontWeight: 600,
+              fontSize: 14,
+              whiteSpace: "nowrap"
+            }}
+          >
+            Manage →
+          </Link>
+        </div>
+      )}
+
       {/* PHASE 5: Promotional Intelligence Warning (Pro Tier Upsell) */}
       {promoWarning && (
         <div style={{
