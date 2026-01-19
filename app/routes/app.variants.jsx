@@ -27,24 +27,34 @@ export async function loader({ request }) {
   const planTier = shop.plan === 'enterprise' ? 'enterprise' : shop.plan === 'pro' ? 'pro' : 'starter';
   const plan = { tier: planTier };
 
-  // Get all variants for this shop with filtered impressions
+  // Get all variants for this shop
   const allVariants = await db.variant.findMany({
-    where: { shopId: shop.id },
-    include: {
-      impressions: {
-        where: {
-          duringPromo: duringPromo
-        }
-      }
+    where: { shopId: shop.id }
+  });
+
+  // Get filtered impressions
+  const filteredImpressions = await db.variantImpression.findMany({
+    where: {
+      shopId: shop.id,
+      duringPromo: duringPromo
     }
   });
 
+  // Group impressions by variantId
+  const impressionsByVariant = filteredImpressions.reduce((acc, imp) => {
+    if (!acc[imp.variantId]) {
+      acc[imp.variantId] = [];
+    }
+    acc[imp.variantId].push(imp);
+    return acc;
+  }, {});
+
   // Recalculate metrics based on filtered impressions
   const variants = allVariants.map(v => {
-    const filteredImpressions = v.impressions;
-    const totalImpressions = filteredImpressions.length;
-    const totalConversions = filteredImpressions.filter(i => i.converted).length;
-    const totalRevenue = filteredImpressions.reduce((sum, i) => sum + (i.profit || 0), 0);
+    const variantImpressions = impressionsByVariant[v.id] || [];
+    const totalImpressions = variantImpressions.length;
+    const totalConversions = variantImpressions.filter(i => i.converted).length;
+    const totalRevenue = variantImpressions.reduce((sum, i) => sum + (i.profit || 0), 0);
     const profitPerImpression = totalImpressions > 0 ? totalRevenue / totalImpressions : 0;
 
     return {
