@@ -11,13 +11,16 @@ export async function loader({ request }) {
 
   // Get shop from database
   const shop = await db.shop.findUnique({
-    where: { shopifyDomain: session.shop },
-    include: { plan: true }
+    where: { shopifyDomain: session.shop }
   });
 
   if (!shop) {
     return json({ variants: [], shop: null, plan: null });
   }
+
+  // Map plan string to tier
+  const planTier = shop.plan === 'enterprise' ? 'enterprise' : shop.plan === 'pro' ? 'pro' : 'starter';
+  const plan = { tier: planTier };
 
   // Get all variants for this shop
   const variants = await db.variant.findMany({
@@ -77,7 +80,7 @@ export async function loader({ request }) {
 
   return json({
     shop,
-    plan: shop.plan,
+    plan,
     variants,
     variantsByBaseline,
     totalVariants: variants.length,
