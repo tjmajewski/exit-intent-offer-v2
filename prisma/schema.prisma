@@ -77,6 +77,9 @@ model Shop {
   brandFont           String?  @default("system")
   brandLogoUrl        String?
   customCSS           String?  // For advanced customization
+
+  // Promotional Intelligence (Enterprise)
+  promotionalIntelligenceEnabled Boolean @default(true)
   
   // Trigger Settings
   exitIntentEnabled   Boolean  @default(true)
@@ -305,11 +308,13 @@ model Promotion {
   aiStrategy        String?   // "pause" | "increase" | "continue" | "ignore"
   aiStrategyReason  String?
   merchantOverride  String?
+  seenByMerchant    Boolean   @default(false)
   detectedAt        DateTime  @default(now())
   createdAt         DateTime  @default(now())
-  
+
   @@index([shopId, status])
   @@index([shopId, code])
+  @@index([shopId, seenByMerchant])
   @@index([detectedAt])
 }
 
