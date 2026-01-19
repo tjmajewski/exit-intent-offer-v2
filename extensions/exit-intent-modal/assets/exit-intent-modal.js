@@ -885,11 +885,43 @@
         
         const result = await response.json();
 
-        console.log('[AI Mode] AI decision:', result);
+        // Enhanced console logging for transparency
+        console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
+        console.log('%c🤖 AI DECISION', 'color: #8B5CF6; font-weight: bold; font-size: 16px');
+        console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
 
         if (result.decision) {
+          const dec = result.decision;
+          console.log('%c📊 Offer Type:', 'color: #10b981; font-weight: bold', dec.type?.toUpperCase() || 'UNKNOWN');
+
+          if (dec.type === 'percentage') {
+            console.log('%c💰 Discount:', 'color: #f59e0b; font-weight: bold', `${dec.amount}% OFF`);
+          } else if (dec.type === 'fixed') {
+            console.log('%c💰 Discount:', 'color: #f59e0b; font-weight: bold', `$${dec.amount} OFF`);
+          } else if (dec.type === 'threshold') {
+            console.log('%c🎯 Threshold:', 'color: #f59e0b; font-weight: bold', `Spend $${dec.threshold} → Save $${dec.amount}`);
+          }
+
+          if (dec.code) {
+            console.log('%c🎫 Discount Code:', 'color: #06b6d4; font-weight: bold', dec.code);
+          }
+
+          if (dec.variant) {
+            console.log('%c📝 Variant:', 'color: #8b5cf6; font-weight: bold', `#${dec.variant.id} (${dec.variant.segment || 'default'})`);
+            console.log('%c💬 Headline:', 'color: #6366f1', dec.variant.headline);
+            console.log('%c💬 Subhead:', 'color: #6366f1', dec.variant.subhead);
+            console.log('%c🔘 CTA:', 'color: #6366f1', dec.variant.cta);
+          }
+
+          console.log('%c📈 Variant ID:', 'color: #64748b', dec.variantId || 'N/A');
+          console.log('%c🎯 Segment:', 'color: #64748b', dec.segment || 'default');
+          console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
+
           // Update modal with AI decision (await to ensure content is ready)
           await this.updateModalWithAI(result.decision);
+        } else {
+          console.log('%c⚠️ No decision returned', 'color: #ef4444; font-weight: bold');
+          console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
         }
       } catch (error) {
         console.error('[AI Mode] Error getting AI decision:', error);

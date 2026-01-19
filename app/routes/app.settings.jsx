@@ -158,9 +158,9 @@ export async function action({ request }) {
     modalHeadline: formData.get("modalHeadline"),
     modalBody: formData.get("modalBody"),
     ctaButton: formData.get("ctaButton"),
-    // AI Mode (Pro & Enterprise): Don't auto-enable triggers - AI controls timing
+    // AI Mode: Auto-enable exit intent (primary trigger), disable time delays
     // Manual Mode: Use form values from trigger settings
-    exitIntentEnabled: mode === "ai" ? formData.get("exitIntentEnabled") === "on" : formData.get("exitIntentEnabled") === "on",
+    exitIntentEnabled: mode === "ai" ? true : formData.get("exitIntentEnabled") === "on",
     timeDelayEnabled: mode === "ai" ? false : formData.get("timeDelayEnabled") === "on",
     timeDelaySeconds: parseInt(formData.get("timeDelaySeconds") || "30"),
     cartValueEnabled: formData.get("cartValueEnabled") === "on",
@@ -180,8 +180,8 @@ export async function action({ request }) {
     budgetAmount: parseFloat(formData.get("budgetAmount") || "500"),
     budgetPeriod: formData.get("budgetPeriod") || "month",
     triggers: {
-      exitIntent: formData.get("exitIntentEnabled") === "on",
-      timeDelay: formData.get("timeDelayEnabled") === "on",
+      exitIntent: mode === "ai" ? true : formData.get("exitIntentEnabled") === "on",
+      timeDelay: mode === "ai" ? false : formData.get("timeDelayEnabled") === "on",
       timeDelaySeconds: parseInt(formData.get("timeDelaySeconds") || "30"),
       cartValue: formData.get("cartValueEnabled") === "on",
       minCartValue: parseFloat(formData.get("cartValueMin") || "0"),
