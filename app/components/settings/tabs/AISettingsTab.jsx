@@ -471,8 +471,8 @@ export default function AISettingsTab({
                 <div style={{
                   display: 'inline-block',
                   padding: '6px 16px',
-                  background: '#8B5CF6',
-                  color: 'white',
+                  background: '#fbbf24',
+                  color: '#78350f',
                   borderRadius: 6,
                   fontSize: 14,
                   fontWeight: 600,
@@ -512,13 +512,13 @@ export default function AISettingsTab({
                 Fine-tune how the AI learns and evolves
               </p>
             </div>
-            <span style={{ 
-              padding: "4px 12px", 
-              background: "#8B5CF6", 
-              color: "white", 
-              borderRadius: 4, 
+            <span style={{
+              padding: "4px 12px",
+              background: "#fbbf24",
+              color: "#78350f",
+              borderRadius: 4,
               fontSize: 12,
-              fontWeight: 600 
+              fontWeight: 600
             }}>
               ENTERPRISE
             </span>
