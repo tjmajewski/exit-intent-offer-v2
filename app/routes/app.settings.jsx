@@ -153,13 +153,15 @@ export async function action({ request }) {
   const formData = await request.formData();
 
   const mode = formData.get("mode") || "manual";
-  
+
   const settings = {
     modalHeadline: formData.get("modalHeadline"),
     modalBody: formData.get("modalBody"),
     ctaButton: formData.get("ctaButton"),
-    exitIntentEnabled: mode === "ai" ? true : formData.get("exitIntentEnabled") === "on",
-    timeDelayEnabled: mode === "ai" ? true : formData.get("timeDelayEnabled") === "on",
+    // AI Mode (Pro & Enterprise): Don't auto-enable triggers - AI controls timing
+    // Manual Mode: Use form values from trigger settings
+    exitIntentEnabled: mode === "ai" ? formData.get("exitIntentEnabled") === "on" : formData.get("exitIntentEnabled") === "on",
+    timeDelayEnabled: mode === "ai" ? false : formData.get("timeDelayEnabled") === "on",
     timeDelaySeconds: parseInt(formData.get("timeDelaySeconds") || "30"),
     cartValueEnabled: formData.get("cartValueEnabled") === "on",
     cartValueMin: parseFloat(formData.get("cartValueMin") || "0"),

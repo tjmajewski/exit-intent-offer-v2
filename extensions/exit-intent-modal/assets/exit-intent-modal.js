@@ -88,17 +88,21 @@
       // Track product dwell time (Enterprise signal)
       this.trackProductDwellTime();
       
-      // Enterprise AI evaluation (decides if/when to show)
+      // AI Mode: Set up intelligent triggers
       if (this.settings.mode === 'ai' && this.settings.plan === 'enterprise') {
+        // Enterprise AI evaluation (decides if/when to show)
         await this.evaluateEnterpriseCustomer();
-        
-        // Set up cart monitoring for add-to-cart triggers
-        const triggers = this.settings.triggers || {};
-        if (triggers.timeDelay && triggers.timeDelaySeconds) {
-          this.initCartMonitoring(triggers.timeDelaySeconds);
-        }
+
+        // Enterprise AI controls timing completely - don't set up manual triggers
+        // The AI decides: immediate, exit_intent, or delayed timing
+        console.log('[Enterprise AI] AI controls all timing decisions');
+      } else if (this.settings.mode === 'ai') {
+        // Pro AI: Use exit intent trigger (no time delays)
+        // AI determines WHAT to show, exit intent determines WHEN
+        console.log('[Pro AI] Using exit intent trigger with AI-optimized offers');
+        this.setupAITriggers();
       } else {
-        // Standard triggers for non-Enterprise tiers
+        // Manual mode: Use configured triggers
         this.setupTriggers();
       }
       
@@ -721,6 +725,31 @@
       // Store the AI decision for the modal to use
       this.enterpriseOffer = decision;
       this.showModal();
+    }
+
+    setupAITriggers() {
+      // Pro AI Mode: Use exit intent as primary trigger (no time delays)
+      // Exit intent trigger (desktop only)
+      if (!isMobileDevice()) {
+        document.addEventListener('mouseout', async (e) => {
+          if (e.clientY < 0 && !this.modalShown) {
+            // Check if cart has items before showing
+            const hasItems = await this.hasItemsInCart();
+            if (hasItems) {
+              this.showModal();
+            } else {
+              console.log('[Pro AI] Cart is empty, not showing modal');
+            }
+          }
+        });
+        console.log('[Pro AI] Exit intent trigger enabled');
+      }
+
+      // Only use cart value trigger if explicitly configured
+      const triggers = this.settings.triggers || {};
+      if (triggers.cartValue && (triggers.minCartValue || triggers.maxCartValue)) {
+        this.checkCartValue();
+      }
     }
 
     setupTriggers() {
