@@ -67,7 +67,6 @@ export default function AdvancedTab({
         textAlign: 'center',
         marginBottom: 24
       }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>🤖</div>
         <h2 style={{ fontSize: 24, marginBottom: 12 }}>AI Mode Active</h2>
         <p style={{ color: '#6b7280', marginBottom: 24 }}>
           Advanced settings are managed by AI. Switch to Manual Mode in the Quick Setup tab to access manual controls.
@@ -198,7 +197,7 @@ export default function AdvancedTab({
             color: "#92400e",
             marginTop: 16
           }}>
-            🧪 <strong>A/B Testing Tip:</strong> This is a great variable to test! Try both and see which converts better for your store.
+            <strong>Tip:</strong> This is a great variable to test! Try both and see which converts better for your store.
           </div>
         )}
       </div>
