@@ -1,4 +1,5 @@
 import { useLoaderData, useFetcher } from "react-router";
+import { useState } from "react";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import AppLayout from "../components/AppLayout";
@@ -204,6 +205,7 @@ function getStrategyLabel(strategy) {
 export default function PromotionsPage() {
   const { hasAccess, promotions, unseenCount, newPromotions, intelligenceEnabled, plan } = useLoaderData();
   const fetcher = useFetcher();
+  const [isIntelligenceEnabled, setIsIntelligenceEnabled] = useState(intelligenceEnabled);
 
   // Non-Enterprise users see upgrade page
   if (!hasAccess) {
@@ -272,12 +274,14 @@ export default function PromotionsPage() {
           }}>
             <input
               type="checkbox"
-              checked={intelligenceEnabled}
+              checked={isIntelligenceEnabled}
               onChange={(e) => {
+                const newValue = e.target.checked;
+                setIsIntelligenceEnabled(newValue);
                 fetcher.submit(
                   {
                     actionType: "toggleIntelligence",
-                    enabled: String(e.target.checked)
+                    enabled: String(newValue)
                   },
                   { method: "post" }
                 );
@@ -285,7 +289,7 @@ export default function PromotionsPage() {
               style={{ width: 20, height: 20 }}
             />
             <span style={{ fontWeight: 600, fontSize: 14 }}>
-              {intelligenceEnabled ? "Enabled" : "Disabled"}
+              {isIntelligenceEnabled ? "Enabled" : "Disabled"}
             </span>
           </label>
         </div>
@@ -338,7 +342,7 @@ export default function PromotionsPage() {
           </div>
         )}
 
-        {!intelligenceEnabled && (
+        {!isIntelligenceEnabled && (
           <div style={{
             padding: 20,
             background: "#fef3c7",
@@ -352,7 +356,7 @@ export default function PromotionsPage() {
         )}
 
         {/* Performance Impact Metrics */}
-        {intelligenceEnabled && promotions && promotions.length > 0 && (
+        {isIntelligenceEnabled && promotions && promotions.length > 0 && (
           <div style={{
             background: "white",
             border: "1px solid #e5e7eb",
