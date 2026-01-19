@@ -324,6 +324,38 @@ export default function AISettingsTab({
               ✅ <strong>Current metrics:</strong> {settings.orderCount ? `${settings.orderCount} orders` : ''}{settings.orderCount && settings.customerCount ? ', ' : ''}{settings.customerCount ? `${settings.customerCount} customers` : ''}{settings.avgRating ? `, ${settings.avgRating.toFixed(1)}★ rating` : ''}
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={async () => {
+              if (confirm('Refresh social proof metrics from Shopify? This may take a moment.')) {
+                try {
+                  const response = await fetch('/api/admin/collect-social-proof', { method: 'POST' });
+                  const data = await response.json();
+                  if (data.success) {
+                    alert('✅ Metrics updated! Refresh the page to see new values.');
+                  } else {
+                    alert('❌ Error: ' + data.error);
+                  }
+                } catch (error) {
+                  alert('❌ Error refreshing metrics: ' + error.message);
+                }
+              }
+            }}
+            style={{
+              marginTop: 12,
+              padding: '10px 16px',
+              background: '#8B5CF6',
+              color: 'white',
+              border: 'none',
+              borderRadius: 6,
+              fontSize: 14,
+              fontWeight: 500,
+              cursor: 'pointer'
+            }}
+          >
+            🔄 Refresh Metrics Now
+          </button>
         </div>
       </div>
 
