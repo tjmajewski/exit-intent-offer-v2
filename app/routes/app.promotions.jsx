@@ -19,16 +19,18 @@ export async function loader({ request }) {
     `);
 
     const data = await response.json();
-    const plan = data.data.shop?.plan?.value 
-      ? JSON.parse(data.data.shop.plan.value) 
+    const plan = data.data.shop?.plan?.value
+      ? JSON.parse(data.data.shop.plan.value)
       : { tier: "pro" };
 
     // Enterprise-only feature
     if (plan.tier !== 'enterprise') {
-      return { 
-        hasAccess: false, 
+      return {
+        hasAccess: false,
         promotions: [],
-        plan 
+        unseenCount: 0,
+        newPromotions: [],
+        plan
       };
     }
 
@@ -39,10 +41,13 @@ export async function loader({ request }) {
     });
 
     if (!shopRecord) {
-      return { 
-        hasAccess: true, 
+      return {
+        hasAccess: true,
         promotions: [],
-        plan 
+        unseenCount: 0,
+        newPromotions: [],
+        intelligenceEnabled: true,
+        plan
       };
     }
 
@@ -52,20 +57,52 @@ export async function loader({ request }) {
       orderBy: { detectedAt: 'desc' }
     });
 
-    return { 
+    // Count unseen promotions
+    const unseenCount = promotions.filter(p => !p.seenByMerchant && p.status === 'active').length;
+
+    // Get "new" promotions (detected in last 48 hours and unseen)
+    const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const newPromotions = promotions.filter(p =>
+      !p.seenByMerchant &&
+      p.status === 'active' &&
+      new Date(p.detectedAt) > twoDaysAgo
+    );
+
+    // Mark all active promotions as seen
+    if (unseenCount > 0) {
+      await db.promotion.updateMany({
+        where: {
+          shopId: shopRecord.id,
+          status: 'active',
+          seenByMerchant: false
+        },
+        data: { seenByMerchant: true }
+      });
+    }
+
+    return {
       hasAccess: true,
       promotions: promotions.map(p => ({
         ...p,
         usageStats: JSON.parse(p.usageStats),
         merchantOverride: p.merchantOverride ? JSON.parse(p.merchantOverride) : null
       })),
+      unseenCount,
+      newPromotions: newPromotions.map(p => ({
+        ...p,
+        usageStats: JSON.parse(p.usageStats),
+        merchantOverride: p.merchantOverride ? JSON.parse(p.merchantOverride) : null
+      })),
+      intelligenceEnabled: shopRecord.promotionalIntelligenceEnabled ?? true,
       plan
     };
   } catch (error) {
     console.error("Error loading promotions:", error);
-    return { 
+    return {
       hasAccess: false,
       promotions: [],
+      unseenCount: 0,
+      newPromotions: [],
       plan: { tier: "pro" }
     };
   }
@@ -73,10 +110,30 @@ export async function loader({ request }) {
 
 export async function action({ request }) {
   const { admin } = await authenticate.admin(request);
-  
+
   try {
     const formData = await request.formData();
     const actionType = formData.get("actionType");
+
+    if (actionType === "toggleIntelligence") {
+      const enabled = formData.get("enabled") === "true";
+      const shopDomain = new URL(request.url).searchParams.get('shop') || request.headers.get('host');
+
+      const shopRecord = await db.shop.findUnique({
+        where: { shopifyDomain: shopDomain }
+      });
+
+      if (shopRecord) {
+        await db.shop.update({
+          where: { id: shopRecord.id },
+          data: { promotionalIntelligenceEnabled: enabled }
+        });
+        console.log(`✅ Promotional Intelligence ${enabled ? 'enabled' : 'disabled'}`);
+      }
+
+      return { success: true };
+    }
+
     const promoId = formData.get("promoId");
 
     if (actionType === "updateStrategy") {
@@ -84,13 +141,13 @@ export async function action({ request }) {
       const customAggression = formData.get("customAggression");
 
       let merchantOverride = null;
-      
+
       if (newStrategy === "pause") {
         merchantOverride = JSON.stringify({ type: "pause" });
       } else if (newStrategy === "force_zero") {
         merchantOverride = JSON.stringify({ type: "force_zero" });
       } else if (newStrategy === "custom") {
-        merchantOverride = JSON.stringify({ 
+        merchantOverride = JSON.stringify({
           type: "custom",
           customAggression: parseInt(customAggression)
         });
@@ -98,7 +155,7 @@ export async function action({ request }) {
 
       await db.promotion.update({
         where: { id: promoId },
-        data: { 
+        data: {
           merchantOverride,
           aiStrategy: newStrategy === "auto" ? null : newStrategy
         }
@@ -123,8 +180,29 @@ export async function action({ request }) {
   }
 }
 
+// Helper functions
+function getStrategyColor(strategy) {
+  switch(strategy) {
+    case 'pause': return '#ef4444';
+    case 'increase': return '#f59e0b';
+    case 'continue': return '#10b981';
+    case 'ignore': return '#6b7280';
+    default: return '#3b82f6';
+  }
+}
+
+function getStrategyLabel(strategy) {
+  switch(strategy) {
+    case 'pause': return 'AI Paused';
+    case 'increase': return 'Increased Offers';
+    case 'continue': return 'Continue Normal';
+    case 'ignore': return 'Ignored';
+    default: return 'Auto';
+  }
+}
+
 export default function PromotionsPage() {
-  const { hasAccess, promotions, plan } = useLoaderData();
+  const { hasAccess, promotions, unseenCount, newPromotions, intelligenceEnabled, plan } = useLoaderData();
   const fetcher = useFetcher();
 
   // Non-Enterprise users see upgrade page
@@ -173,10 +251,105 @@ export default function PromotionsPage() {
   return (
     <AppLayout plan={plan}>
       <div style={{ padding: 40 }}>
-        <h1 style={{ fontSize: 32, marginBottom: 8 }}>Promotional Intelligence</h1>
-        <p style={{ color: "#666", marginBottom: 32 }}>
-          AI automatically detects your site-wide promotions and adjusts strategy to optimize revenue for your store
-        </p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+          <div>
+            <h1 style={{ fontSize: 32, marginBottom: 8 }}>Promotional Intelligence</h1>
+            <p style={{ color: "#666", marginBottom: 0 }}>
+              AI automatically detects your site-wide promotions and adjusts strategy to optimize revenue for your store
+            </p>
+          </div>
+
+          {/* Toggle */}
+          <label style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            cursor: "pointer",
+            padding: 12,
+            background: "white",
+            borderRadius: 8,
+            border: "1px solid #e5e7eb"
+          }}>
+            <input
+              type="checkbox"
+              checked={intelligenceEnabled}
+              onChange={(e) => {
+                fetcher.submit(
+                  {
+                    actionType: "toggleIntelligence",
+                    enabled: String(e.target.checked)
+                  },
+                  { method: "post" }
+                );
+              }}
+              style={{ width: 20, height: 20 }}
+            />
+            <span style={{ fontWeight: 600, fontSize: 14 }}>
+              {intelligenceEnabled ? "Enabled" : "Disabled"}
+            </span>
+          </label>
+        </div>
+
+        {/* Notification Banner for New Promotions */}
+        {newPromotions && newPromotions.length > 0 && (
+          <div style={{
+            padding: 20,
+            background: "linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)",
+            borderRadius: 8,
+            marginBottom: 24,
+            color: "#78350f",
+            border: "2px solid #f59e0b"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+              <div style={{
+                width: 32,
+                height: 32,
+                borderRadius: "50%",
+                background: "#78350f",
+                color: "#fbbf24",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: 700,
+                fontSize: 16
+              }}>
+                {newPromotions.length}
+              </div>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
+                New Promotion{newPromotions.length > 1 ? 's' : ''} Detected
+              </h3>
+            </div>
+            <p style={{ margin: 0, marginBottom: 16, fontSize: 14 }}>
+              AI detected {newPromotions.length} active promotion{newPromotions.length > 1 ? 's' : ''} and automatically adjusted your strategy.
+            </p>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              {newPromotions.map(promo => (
+                <div key={promo.id} style={{
+                  padding: "8px 16px",
+                  background: "rgba(255, 255, 255, 0.9)",
+                  borderRadius: 6,
+                  fontSize: 14,
+                  fontWeight: 600
+                }}>
+                  {promo.code} ({promo.amount}{promo.type === 'percentage' ? '%' : '$'} off) → {getStrategyLabel(promo.aiStrategy || 'auto')}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!intelligenceEnabled && (
+          <div style={{
+            padding: 20,
+            background: "#fef3c7",
+            border: "1px solid #fde68a",
+            borderRadius: 8,
+            marginBottom: 24,
+            color: "#92400e"
+          }}>
+            <strong>Promotional Intelligence is disabled.</strong> The AI will not automatically adjust your strategy when promotions are detected. Enable it above to let AI optimize your offers during sales.
+          </div>
+        )}
 
         {/* Active Promotions */}
         <div style={{ marginBottom: 40 }}>
@@ -228,26 +401,6 @@ export default function PromotionsPage() {
 }
 
 function PromotionCard({ promo, fetcher, isEnded = false }) {
-  const getStrategyColor = (strategy) => {
-    switch(strategy) {
-      case 'pause': return '#ef4444';
-      case 'increase': return '#f59e0b';
-      case 'continue': return '#10b981';
-      case 'ignore': return '#6b7280';
-      default: return '#3b82f6';
-    }
-  };
-
-  const getStrategyLabel = (strategy) => {
-    switch(strategy) {
-      case 'pause': return '⏸️ AI Paused';
-      case 'increase': return '📈 Increased Offers';
-      case 'continue': return '▶️ Continue Normal';
-      case 'ignore': return '🚫 Ignored';
-      default: return '🤖 Auto';
-    }
-  };
-
   return (
     <div style={{
       padding: 24,
@@ -281,7 +434,7 @@ function PromotionCard({ promo, fetcher, isEnded = false }) {
                 fontSize: 14,
                 fontWeight: 600
               }}>
-                🔧 Manual Override
+                Manual Override
               </span>
             )}
           </div>
@@ -349,12 +502,12 @@ function PromotionCard({ promo, fetcher, isEnded = false }) {
                   fontSize: 14
                 }}
               >
-                <option value="auto">🤖 Auto (AI decides)</option>
-                <option value="pause">⏸️ Pause AI (no modals)</option>
-                <option value="force_zero">📢 Announcement mode (0% offers)</option>
-                <option value="increase">📈 Increase offers</option>
-                <option value="continue">▶️ Continue normal</option>
-                <option value="ignore">🚫 Ignore this promo</option>
+                <option value="auto">Auto (AI decides)</option>
+                <option value="pause">Pause AI (no modals)</option>
+                <option value="force_zero">Announcement mode (0% offers)</option>
+                <option value="increase">Increase offers</option>
+                <option value="continue">Continue normal</option>
+                <option value="ignore">Ignore this promo</option>
               </select>
 
               <button

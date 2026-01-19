@@ -1,4 +1,5 @@
 import { Link, useLocation, useFetcher } from "react-router";
+import { useState, useEffect } from "react";
 
 function DevPlanSwitcher({ plan }) {
   const fetcher = useFetcher();
@@ -20,7 +21,7 @@ function DevPlanSwitcher({ plan }) {
       fontSize: 11
     }}>
       <div style={{ fontWeight: 600, marginBottom: 8, color: "#fbbf24" }}>
-        🔧 DEV MODE
+        DEV MODE
       </div>
       <fetcher.Form method="post" action="/app/dev-update-plan">
         <select
@@ -52,7 +53,18 @@ function DevPlanSwitcher({ plan }) {
 
 export default function AppLayout({ children, plan }) {
   const location = useLocation();
-  
+  const [unseenPromotions, setUnseenPromotions] = useState(0);
+
+  // Fetch unseen promotions count for Enterprise customers
+  useEffect(() => {
+    if (plan?.tier === 'enterprise') {
+      fetch('/api/promotions-count')
+        .then(res => res.json())
+        .then(data => setUnseenPromotions(data.count))
+        .catch(err => console.error('Failed to fetch promotion count:', err));
+    }
+  }, [plan?.tier]);
+
   const isActive = (path) => location.pathname === path;
   
   const getIcon = (iconName) => {
@@ -114,11 +126,12 @@ export default function AppLayout({ children, plan }) {
       icon: "cart",
       badge: plan?.tier === "starter" ? "PRO" : null
     },
-    { 
-      path: "/app/promotions", 
-      label: "Promotions", 
+    {
+      path: "/app/promotions",
+      label: "Promotions",
       icon: "promotions",
-      badge: plan?.tier !== "enterprise" ? "ENTERPRISE" : null
+      badge: plan?.tier !== "enterprise" ? "ENTERPRISE" : null,
+      notificationCount: plan?.tier === "enterprise" ? unseenPromotions : 0
     },
     ...(plan?.tier !== "enterprise" ? [{ path: "/app/upgrade", label: "Upgrade", icon: "upgrade", highlight: true }] : [])
   ];
@@ -183,21 +196,37 @@ export default function AppLayout({ children, plan }) {
                   {item.label}
                 </span>
               </div>
-              {item.badge && (
-                <span style={{
-                  padding: "2px 6px",
-                  background: item.badge === "ENTERPRISE" ? "#fbbf24" : "#8B5CF6",
-                  color: item.badge === "ENTERPRISE" ? "#78350f" : "white",
-                  borderRadius: 4,
-                  fontSize: 10,
-                  fontWeight: 600
-                }}>
-                  {item.badge}
-                </span>
-              )}
-              {item.highlight && !item.badge && (
-                <span style={{ fontSize: 12, opacity: 0.5 }}>→</span>
-              )}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {item.notificationCount > 0 && (
+                  <span style={{
+                    padding: "2px 8px",
+                    background: "#ef4444",
+                    color: "white",
+                    borderRadius: 12,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    minWidth: 20,
+                    textAlign: "center"
+                  }}>
+                    {item.notificationCount}
+                  </span>
+                )}
+                {item.badge && (
+                  <span style={{
+                    padding: "2px 6px",
+                    background: item.badge === "ENTERPRISE" ? "#fbbf24" : "#8B5CF6",
+                    color: item.badge === "ENTERPRISE" ? "#78350f" : "white",
+                    borderRadius: 4,
+                    fontSize: 10,
+                    fontWeight: 600
+                  }}>
+                    {item.badge}
+                  </span>
+                )}
+                {item.highlight && !item.badge && (
+                  <span style={{ fontSize: 12, opacity: 0.5 }}>→</span>
+                )}
+              </div>
             </Link>
           ))}
         </nav>
