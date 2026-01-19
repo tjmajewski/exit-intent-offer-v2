@@ -1056,9 +1056,29 @@
 
       // THRESHOLD OFFER: Primary CTA should encourage MORE shopping
       if (offerType === 'threshold') {
-        console.log('[Threshold Offer] Primary CTA - redirecting to collections to add more');
-        // Go back to collections/all so they can add more items
-        window.location.href = '/collections/all';
+        console.log('[Threshold Offer] Primary CTA - redirecting to continue shopping');
+
+        // Try to send them back to where they were shopping
+        // Priority: 1) Previous page if it was a product/collection, 2) /collections, 3) Homepage
+        const referrer = document.referrer;
+        const currentDomain = window.location.origin;
+
+        // If they came from a product or collection page on this site, go back there
+        if (referrer && referrer.startsWith(currentDomain) &&
+            (referrer.includes('/products/') || referrer.includes('/collections/'))) {
+          console.log('[Threshold Offer] Going back to previous shopping page:', referrer);
+          window.location.href = referrer;
+        }
+        // Otherwise try /collections (works on most themes)
+        else if (window.location.pathname !== '/collections') {
+          console.log('[Threshold Offer] Going to /collections');
+          window.location.href = '/collections';
+        }
+        // Fallback to homepage
+        else {
+          console.log('[Threshold Offer] Going to homepage');
+          window.location.href = '/';
+        }
         return;
       }
 
