@@ -94,6 +94,13 @@ export default function AppLayout({ children, plan }) {
           <path d="M12 6v6l4 2"></path>
         </svg>
       ),
+      variants: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+          <line x1="12" y1="22.08" x2="12" y2="12"></line>
+        </svg>
+      ),
       cart: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="9" cy="21" r="1"></circle>
@@ -132,6 +139,12 @@ export default function AppLayout({ children, plan }) {
       icon: "promotions",
       badge: plan?.tier !== "enterprise" ? "ENTERPRISE" : null,
       notificationCount: plan?.tier === "enterprise" ? unseenPromotions : 0
+    },
+    {
+      path: "/app/variants",
+      label: "Variants",
+      icon: "variants",
+      badge: plan?.tier !== "enterprise" ? "ENTERPRISE" : null
     },
     ...(plan?.tier !== "enterprise" ? [{ path: "/app/upgrade", label: "Upgrade", icon: "upgrade", highlight: true }] : [])
   ];
