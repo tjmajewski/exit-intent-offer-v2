@@ -57,7 +57,7 @@ export default function QuickSetupTab({
                 name="mode"
                 value="manual"
                 checked={optimizationMode === "manual"}
-                onChange={(e) => setOptimizationMode(e.target.value)}
+                onChange={(e) => { setOptimizationMode(e.target.value); setFormChanged(true); }}
                 style={{ marginRight: 12 }}
               />
               <div style={{ fontWeight: 600, fontSize: 16 }}>Manual Mode</div>
@@ -84,7 +84,7 @@ export default function QuickSetupTab({
                 name="mode"
                 value="ai"
                 checked={optimizationMode === "ai"}
-                onChange={(e) => setOptimizationMode(e.target.value)}
+                onChange={(e) => { setOptimizationMode(e.target.value); setFormChanged(true); }}
                 disabled={!canUseAIMode}
                 style={{ marginRight: 12 }}
               />

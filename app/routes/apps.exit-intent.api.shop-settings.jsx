@@ -33,7 +33,13 @@ export async function loader({ request }) {
       });
     }
     
-  return json({ 
+  console.log(`[Shop Settings API] Returning settings for ${shop}:`, {
+      plan: shopRecord.plan,
+      mode: shopRecord.mode,
+      shopId: shopRecord.id
+    });
+
+    return json({
       plan: shopRecord.plan || 'starter',
       mode: shopRecord.mode || 'manual',
       enabled: true,
