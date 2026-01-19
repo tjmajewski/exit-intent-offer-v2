@@ -54,7 +54,6 @@ export default function QuickSetupTab({
             <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
               <input
                 type="radio"
-                name="mode"
                 value="manual"
                 checked={optimizationMode === "manual"}
                 onChange={(e) => { setOptimizationMode(e.target.value); setFormChanged(true); }}
@@ -81,7 +80,6 @@ export default function QuickSetupTab({
             <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
               <input
                 type="radio"
-                name="mode"
                 value="ai"
                 checked={optimizationMode === "ai"}
                 onChange={(e) => { setOptimizationMode(e.target.value); setFormChanged(true); }}

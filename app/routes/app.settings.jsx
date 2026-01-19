@@ -742,6 +742,8 @@ export default function Settings() {
       </div>
 
       <Form method="post">
+        {/* Hidden input to always submit current mode regardless of active tab */}
+        <input type="hidden" name="mode" value={optimizationMode} />
 
         {/* Quick Setup Tab */}
       {activeTab === 'quick' && (
