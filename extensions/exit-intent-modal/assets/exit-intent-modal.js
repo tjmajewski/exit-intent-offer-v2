@@ -792,25 +792,27 @@
     
     async showModal() {
       if (this.modalShown || !this.modalElement) return;
-      
+
+      // IMPORTANT: Get AI decision BEFORE showing modal to prevent flash of manual content
       // If we have an enterprise offer stored, use it
       if (this.enterpriseOffer) {
-        this.updateModalWithAI(this.enterpriseOffer);
+        await this.updateModalWithAI(this.enterpriseOffer);
       }
       // Otherwise if AI mode is enabled, get AI decision
       else if (this.settings.mode === 'ai') {
         await this.getAIDecision();
       }
-      
+
+      // NOW show the modal after content is ready
       // Prevent body scroll on mobile
       if (isMobileDevice()) {
         document.body.style.overflow = 'hidden';
         document.body.style.position = 'fixed';
         document.body.style.width = '100%';
       }
-      
+
       this.modalElement.style.display = 'flex';
-      
+
       // Trigger animation
       requestAnimationFrame(() => {
         const modal = this.modalElement.querySelector('#exit-intent-modal');
@@ -818,7 +820,7 @@
           modal.style.transform = isMobileDevice() ? 'translateY(0)' : 'scale(1)';
         }
       });
-      
+
       this.modalShown = true;
       
       // Mark as shown in session storage (won't show again this session)
@@ -853,12 +855,12 @@
         });
         
         const result = await response.json();
-        
+
         console.log('[AI Mode] AI decision:', result);
-        
+
         if (result.decision) {
-          // Update modal with AI decision
-          this.updateModalWithAI(result.decision);
+          // Update modal with AI decision (await to ensure content is ready)
+          await this.updateModalWithAI(result.decision);
         }
       } catch (error) {
         console.error('[AI Mode] Error getting AI decision:', error);
