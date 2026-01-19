@@ -918,10 +918,18 @@
         // Show secondary button for threshold offers
         if (decision.type === 'threshold') {
           const secondaryBtn = modal.querySelector('#modal-secondary-cta');
+          const primaryBtn = modal.querySelector('#modal-primary-cta');
+
           if (secondaryBtn) {
             secondaryBtn.style.display = 'block';
+            secondaryBtn.textContent = 'Checkout Now';
           }
-          
+
+          // Update primary button text to be about shopping, not checkout
+          if (primaryBtn && primaryBtn.textContent.toLowerCase().includes('checkout')) {
+            primaryBtn.textContent = 'Keep Shopping';
+          }
+
           // Store threshold offer for cart monitor
           sessionStorage.setItem('exitIntentThresholdOffer', JSON.stringify({
             code: decision.code,
@@ -958,19 +966,20 @@
         body.textContent = `Spend $${decision.threshold} and get $${decision.amount} off your order!`;
         this.settings.discountCode = decision.code;
         this.settings.offerType = 'threshold';
-        
-        // Show "Keep Shopping" button for threshold offers
+
+        // Show secondary button for threshold offers
         const secondaryBtn = modal.querySelector('#modal-secondary-cta');
         if (secondaryBtn) {
           secondaryBtn.style.display = 'block';
+          secondaryBtn.textContent = 'Checkout Now';
         }
-        
-        // Update primary button text
+
+        // Update primary button text to encourage MORE shopping
         const primaryBtn = modal.querySelector('#modal-primary-cta');
         if (primaryBtn) {
-          primaryBtn.textContent = 'View My Cart';
+          primaryBtn.textContent = 'Keep Shopping';
         }
-        
+
         // 🆕 STORE THRESHOLD INFO FOR CART MONITORING
         sessionStorage.setItem('exitIntentThresholdOffer', JSON.stringify({
           code: decision.code,
@@ -1016,10 +1025,10 @@
  async handleCTAClick() {
       // Track button click
       this.trackEvent('click');
-      
+
       // Track variant click (both Pro and Enterprise)
       this.trackVariant('click');
-      
+
       // Track click for evolution system
       if (this.currentImpressionId) {
         try {
@@ -1036,15 +1045,23 @@
           console.error('[Click Tracking] Error:', error);
         }
       }
-      
+
       // Close modal
       this.closeModal();
-      
+
       // Get settings
       const discountCode = this.settings.discountCode;
       const offerType = this.settings.offerType || 'percentage';
       const destination = this.settings.redirectDestination || 'checkout';
-      
+
+      // THRESHOLD OFFER: Primary CTA should encourage MORE shopping
+      if (offerType === 'threshold') {
+        console.log('[Threshold Offer] Primary CTA - redirecting to collections to add more');
+        // Go back to collections/all so they can add more items
+        window.location.href = '/collections/all';
+        return;
+      }
+
       // Handle gift card offer - add product to cart
       if (offerType === 'giftcard') {
         try {
@@ -1063,15 +1080,15 @@
         } catch (error) {
           console.error('Error adding gift card to cart:', error);
         }
-        
+
         // Redirect to cart or checkout
         window.location.href = destination === 'cart' ? '/cart' : '/checkout';
         return;
       }
-      
+
       // Handle discount codes (percentage or fixed)
       let redirectUrl;
-      
+
       if (destination === 'cart') {
         // If going to cart with discount, set flag for auto-apply
         if (discountCode) {
@@ -1084,7 +1101,7 @@
         redirectUrl = discountCode ? `/checkout?discount=${discountCode}` : '/checkout';
         console.log(`Redirecting to checkout${discountCode ? ' with discount: ' + discountCode : ''}`);
       }
-      
+
       window.location.href = redirectUrl;
     }
     
@@ -1105,9 +1122,20 @@
           console.error('[Click Tracking] Error:', error);
         }
       }
-      
+
       // Close modal
       this.closeModal();
+
+      // THRESHOLD OFFER: Secondary CTA should go to checkout
+      const offerType = this.settings.offerType || 'percentage';
+      if (offerType === 'threshold') {
+        const discountCode = this.settings.discountCode;
+        const redirectUrl = discountCode ? `/checkout?discount=${discountCode}` : '/checkout';
+        console.log('[Threshold Offer] Secondary CTA - redirecting to checkout' + (discountCode ? ' with discount: ' + discountCode : ''));
+        window.location.href = redirectUrl;
+      }
+
+      // For non-threshold offers, just close the modal (current behavior)
     }
     
     async trackEvent(eventType) {
