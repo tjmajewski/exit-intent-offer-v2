@@ -1,5 +1,5 @@
 # ResparQ AI - Technical Architecture
-**Last Updated:** January 16, 2026  
+**Last Updated:** January 19, 2026
 **Audience:** Developers
 
 ---
@@ -329,13 +329,13 @@ model Shop {
   budgetEnabled     Boolean  @default(false)
   budgetAmount      Float    @default(500)
   budgetPeriod      String   @default("month")
-  
+
   // Evolution settings (Enterprise)
   mutationRate      Int      @default(15)
   crossoverRate     Int      @default(70)
   selectionPressure Int      @default(5)
   populationSize    Int      @default(10)
-  
+
   // Social Proof
   customerCount         Int?
   orderCount            Int?
@@ -345,14 +345,18 @@ model Shop {
   socialProofType       String    @default("orders")
   socialProofMinimum    Int       @default(100)
   socialProofUpdatedAt  DateTime?
-  
+
+  // Promotional Intelligence (Enterprise)
+  promotionalIntelligenceEnabled Boolean @default(true)
+
   lastEvolutionCycle DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
-  
+
   variants          Variant[]
   discountOffers    DiscountOffer[]
   aiDecisions       AIDecision[]
+  promotions        Promotion[]
 }
 ```
 
@@ -400,19 +404,22 @@ model VariantImpression {
   variantId      String
   variant        Variant  @relation(fields: [variantId], references: [id])
   shopId         String
-  
+
   segment        String?
   deviceType     String?
   trafficSource  String?
   cartValue      Float?
-  
+  duringPromo    Boolean  @default(false)
+
   clicked        Boolean  @default(false)
   converted      Boolean  @default(false)
   revenue        Float?
   discountAmount Float?
   profit         Float?
-  
+
   timestamp      DateTime @default(now())
+
+  @@index([shopId, duringPromo])
 }
 ```
 
@@ -439,19 +446,45 @@ model DiscountOffer {
 ```prisma
 model MetaLearningGene {
   id          String   @id @default(uuid())
-  
+
   baseline    String
   geneType    String
   geneValue   String
-  
+
   sampleSize           Int
   avgProfitPerImpression Float
   confidenceLevel      Float
-  
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
+
   @@unique([baseline, geneType, geneValue])
+}
+```
+
+**Promotion** (Enterprise)
+```prisma
+model Promotion {
+  id              String   @id @default(uuid())
+  shopId          String
+  shop            Shop     @relation(fields: [shopId], references: [id])
+
+  discountCode    String
+  discountType    String
+  discountAmount  Float
+  startDate       DateTime?
+  endDate         DateTime?
+
+  strategy        String   @default("ignore")
+  seenByMerchant  Boolean  @default(false)
+
+  totalRevenue    Float    @default(0)
+  totalOffers     Int      @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([shopId, seenByMerchant])
 }
 ```
 
@@ -639,6 +672,32 @@ model MetaLearningGene {
 
 ---
 
+### 6. GET `/api/promotions-count`
+
+**Purpose:** Get count of unseen promotions for notification badge (Enterprise)
+
+**Authentication:** Requires Shopify admin session
+
+**Process:**
+1. Authenticate admin
+2. Find shop by session.shop
+3. Count promotions with `seenByMerchant: false`
+4. Return count
+
+**Response:**
+```json
+{
+  "count": 3
+}
+```
+
+**Usage:**
+- Called by NavigationMenu component to show notification badge
+- Polled periodically for real-time updates
+- Resets when merchant visits promotions page
+
+---
+
 ## Data Flow
 
 ### Impression Flow
@@ -727,6 +786,226 @@ model MetaLearningGene {
    ↓
 10. Update shop.lastEvolutionCycle
 ```
+
+---
+
+## Variant Performance Analysis (Enterprise)
+
+### Component-Based View Architecture
+
+**Page:** `app.variants.jsx`
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│  AppLayout (Shopify Polaris)                                │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Statistics Cards (4 cards)                          │  │
+│  │  - Total Variants | Active | Eliminated | Max Gen   │  │
+│  └───────────────────────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Filters                                              │  │
+│  │  - Promo Toggle (No Promo / During Promo)            │  │
+│  │  - Segment Dropdown (All / Desktop / Mobile / etc)   │  │
+│  └───────────────────────────────────────────────────────┘  │
+│  ┌──────────┬──────────┬──────────┐                         │
+│  │ Headlines│ Subheads │   CTAs   │                         │
+│  │          │          │          │                         │
+│  │ [Elite]  │ [Elite]  │ [Elite]  │                         │
+│  │ CVR: 8%  │ CVR: 7%  │ CVR: 9%  │                         │
+│  │ Rev: $5k │ Rev: $4k │ Rev: $6k │                         │
+│  │ vs Avg:  │ vs Avg:  │ vs Avg:  │                         │
+│  │ +150%    │ +120%    │ +180%    │                         │
+│  │          │          │          │                         │
+│  │ [Strong] │ [Strong] │ [Strong] │                         │
+│  │ ...      │ ...      │ ...      │                         │
+│  └──────────┴──────────┴──────────┘                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Data Flow:**
+```
+1. Loader runs on page load
+   ↓
+2. Read URL params: ?promo=no-promo&segment=all
+   ↓
+3. Fetch shop and all variant impressions
+   ↓
+4. Filter impressions by promo context:
+   - promo=no-promo → duringPromo = false
+   - promo=during-promo → duringPromo = true
+   - promo=all → no filter
+   ↓
+5. Filter impressions by segment (future):
+   - segment=desktop → deviceType = 'desktop'
+   - segment=mobile → deviceType = 'mobile'
+   - segment=all → no filter
+   ↓
+6. Aggregate performance by component:
+   - Group by headline → calculate CVR, revenue, impressions
+   - Group by subhead → calculate CVR, revenue, impressions
+   - Group by cta → calculate CVR, revenue, impressions
+   ↓
+7. Calculate performance tiers:
+   - Elite: revenue >= avgRevenue * 1.5
+   - Strong: revenue >= avgRevenue * 1.1
+   - Average: revenue >= avgRevenue * 0.9
+   - Poor: revenue < avgRevenue * 0.9
+   ↓
+8. Sort by revenue (descending)
+   ↓
+9. Return top 10 per component
+```
+
+**React Architecture:**
+```javascript
+// app.variants.jsx
+export async function loader({ request }) {
+  const url = new URL(request.url);
+  const promoFilter = url.searchParams.get('promo') || 'all';
+  const segmentFilter = url.searchParams.get('segment') || 'all';
+
+  // Build where clause for impressions
+  const where = { shopId };
+
+  if (promoFilter === 'no-promo') {
+    where.duringPromo = false;
+  } else if (promoFilter === 'during-promo') {
+    where.duringPromo = true;
+  }
+
+  // Fetch filtered impressions
+  const impressions = await db.variantImpression.findMany({
+    where,
+    include: { variant: true }
+  });
+
+  // Aggregate by component
+  const headlineStats = aggregateByComponent(impressions, 'headline');
+  const subheadStats = aggregateByComponent(impressions, 'subhead');
+  const ctaStats = aggregateByComponent(impressions, 'cta');
+
+  return json({
+    headlines: headlineStats.slice(0, 10),
+    subheads: subheadStats.slice(0, 10),
+    ctas: ctaStats.slice(0, 10),
+    stats: { totalVariants, activeVariants, ... }
+  });
+}
+
+function aggregateByComponent(impressions, componentType) {
+  const grouped = {};
+
+  impressions.forEach(imp => {
+    const key = imp.variant[componentType];
+    if (!grouped[key]) {
+      grouped[key] = {
+        text: key,
+        impressions: 0,
+        conversions: 0,
+        revenue: 0,
+        variantCount: new Set()
+      };
+    }
+
+    grouped[key].impressions++;
+    if (imp.converted) grouped[key].conversions++;
+    if (imp.revenue) grouped[key].revenue += imp.revenue;
+    grouped[key].variantCount.add(imp.variantId);
+  });
+
+  // Calculate metrics
+  const results = Object.values(grouped).map(item => ({
+    text: item.text,
+    conversionRate: (item.conversions / item.impressions) * 100,
+    impressions: item.impressions,
+    revenue: item.revenue,
+    variantCount: item.variantCount.size
+  }));
+
+  // Sort by revenue
+  return results.sort((a, b) => b.revenue - a.revenue);
+}
+```
+
+**UI Components:**
+```javascript
+// Promo Toggle (uses URL params)
+<ChoiceList
+  title="Promo Context"
+  choices={[
+    { label: 'All', value: 'all' },
+    { label: 'No Promo', value: 'no-promo' },
+    { label: 'During Promotions', value: 'during-promo' }
+  ]}
+  selected={[promoFilter]}
+  onChange={(value) => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('promo', value[0]);
+    setSearchParams(newParams);
+  }}
+/>
+
+// Segment Dropdown (uses URL params)
+<Select
+  label="Customer Segment"
+  options={[
+    { label: 'All Customers', value: 'all' },
+    { label: 'Desktop Only', value: 'desktop' },
+    { label: 'Mobile Only', value: 'mobile' },
+    // ... more segments
+  ]}
+  value={segmentFilter}
+  onChange={(value) => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('segment', value);
+    setSearchParams(newParams);
+  }}
+/>
+
+// Component Card
+<Card>
+  <Box borderColor={tierColor} borderWidth="2">
+    <BlockStack gap="200">
+      <Badge tone={tierBadgeTone}>{tier}</Badge>
+      <Text variant="headingMd">{text}</Text>
+      <InlineGrid columns={2} gap="200">
+        <Text>CVR: {conversionRate}%</Text>
+        <Text>Rev: ${revenue}</Text>
+        <Text>Imp: {impressions}</Text>
+        <Text>vs Avg: {vsAverage}%</Text>
+      </InlineGrid>
+    </BlockStack>
+  </Box>
+</Card>
+```
+
+**Performance Tier Colors:**
+- Elite (Green): `success` tone, green border
+- Strong (Blue): `info` tone, blue border
+- Average (Gray): default tone, gray border
+- Poor (Red): `critical` tone, red border
+
+**URL Parameter State Management:**
+```javascript
+import { useSearchParams } from '@remix-run/react';
+
+const [searchParams, setSearchParams] = useSearchParams();
+const promoFilter = searchParams.get('promo') || 'all';
+const segmentFilter = searchParams.get('segment') || 'all';
+
+// Update URL when filter changes (triggers loader re-run)
+const newParams = new URLSearchParams(searchParams);
+newParams.set('promo', 'no-promo');
+setSearchParams(newParams);
+```
+
+**Key Benefits:**
+- Real-time filtering without manual state management
+- URL is shareable and bookmarkable
+- Browser back/forward works correctly
+- Loader automatically re-runs on URL change
+- Clean separation of concerns
 
 ---
 

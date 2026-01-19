@@ -1,5 +1,5 @@
 # Pro vs Enterprise - Feature Comparison
-**Last Updated:** January 16, 2026
+**Last Updated:** January 19, 2026
 
 ---
 
@@ -168,6 +168,12 @@
 - Scans for discount codes active site-wide
 - Tracks: Code, amount, expiration
 
+**Notification System:**
+- Notification badge in sidebar showing unseen promotions count
+- Notification banner on promotions page for new detections
+- Dashboard widget showing active promotions summary (up to 3)
+- "Seen" status tracking for each promotion
+
 **Three strategies (merchant chooses):**
 
 **A. Pause AI**
@@ -185,12 +191,82 @@
 - Example: Set aggression to 8 during sale
 - Use case: Manual control of strategy
 
+**D. Ignore Promo**
+- Continue normal operation
+- Use case: Small discount doesn't affect strategy
+
+**Performance Metrics:**
+- Shows revenue impact for each promotion
+- Smart recommendations based on discount levels:
+  - High discount (30%+): Suggests pausing to avoid margin erosion
+  - Moderate discount (20-30%): Suggests reducing offers
+  - Low discount (<20%): Suggests continuing normal operation
+
+**Feature Toggle:**
+- Enable/disable promotional intelligence
+- Persists merchant preference
+- Shows warning banner when disabled
+
 **Pro Tier Alternative:**
 - Detects promo and shows warning
 - Merchant manually adjusts settings
 - No automatic strategy changes
+- No notification system or dashboard widget
 
-### 6. Advanced Analytics
+### 6. Variant Performance Analysis
+
+**Component-Based View:**
+- Side-by-side columns showing top Headlines, Subheads, and CTAs
+- Performance tier indicators (Elite/Strong/Average/Poor) based on revenue
+- Color-coded borders (Green/Blue/Gray/Red) for quick assessment
+- Shows up to 10 top performers per component
+
+**Performance Metrics per Component:**
+- Conversion rate percentage
+- Total impressions count
+- Revenue impact in dollars
+- Performance vs average (as percentage)
+- Number of variants using that component
+
+**Interactive Features:**
+- Click any component to view full variant details in modal
+- Hover effects for better UX
+- Auto-refresh every 30 seconds (optional)
+
+**Filtering Options:**
+- **Promo Context Toggle**: Filter by "No Promo" vs "During Promotions"
+  - Shows how variants perform in different promotional contexts
+  - Recalculates all metrics based on filtered impressions
+  - Helps identify which copy works best during sales
+
+- **Customer Segment Filter** (Dropdown):
+  - All Customers (default)
+  - Desktop Only
+  - Mobile Only
+  - Logged In
+  - Guest
+  - Returning Visitors
+  - First-Time Visitors
+  - High Cart Value
+  - *Note: Full segment tracking to be implemented*
+
+**Statistics Dashboard:**
+- Total variants count
+- Active variants count
+- Eliminated variants count
+- Max generation reached
+
+**Value Insights:**
+- Visual indicators show which copy drives the most revenue
+- "vs Average" metric highlights top performers
+- Easy identification of winning headlines, subheads, and CTAs
+- Revenue impact displayed in absolute dollars
+
+**Pro Tier Alternative:**
+- No access to Variant Performance page
+- Limited to basic analytics dashboard
+
+### 7. Additional Advanced Analytics
 
 **Variant Lineage Tracking**
 - See parent-child relationships

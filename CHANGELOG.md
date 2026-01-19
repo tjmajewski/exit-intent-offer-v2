@@ -1,5 +1,56 @@
 # @shopify/shopify-app-template-react-router
 
+## ResparQ AI - January 19, 2026
+
+### Added
+- **Promotional Intelligence Enhancements**:
+  - Notification badge in sidebar showing unseen promotions count
+  - Notification banner on promotions page for new detections
+  - Dashboard widget displaying up to 3 active promotions
+  - "Seen" tracking for promotions with merchant visibility status
+  - Performance metrics showing revenue impact per promotion
+  - Smart recommendations based on discount levels (30%+, 20-30%, <20%)
+  - Feature toggle to enable/disable promotional intelligence
+  - New "Ignore Promo" strategy option
+
+- **Variant Performance Analysis Page**:
+  - Complete redesign with component-based view
+  - Three-column layout showing top Headlines, Subheads, and CTAs
+  - Performance tier indicators (Elite/Strong/Average/Poor)
+  - Color-coded borders (Green/Blue/Gray/Red) for visual assessment
+  - Performance metrics per component (CVR, impressions, revenue, vs average)
+  - Interactive component cards with click-to-view details
+  - Promo context filtering (All/No Promo/During Promotions)
+  - Customer segment dropdown (All/Desktop/Mobile/etc.)
+  - Statistics dashboard showing variant counts and max generation
+  - Auto-refresh capability (every 30 seconds)
+
+- **Database Enhancements**:
+  - Added `promotionalIntelligenceEnabled` field to Shop model
+  - Added `seenByMerchant` field to Promotion model
+  - Added `duringPromo` field to VariantImpression model for context tracking
+  - Added index on `[shopId, duringPromo]` for performance
+  - Added index on `[shopId, seenByMerchant]` for notification queries
+
+- **API Endpoints**:
+  - New `/api/promotions-count` endpoint for notification badge polling
+
+### Changed
+- Variants page now uses AppLayout with Polaris components (removed emojis)
+- Promo context and segment filtering now use URL parameters for state management
+- Navigation improved with proper useSearchParams implementation
+- Dashboard widget shows promotional intelligence status and active promotions
+
+### Fixed
+- Navigation issues with URL parameter state management
+- Plan relation error in variants loader (removed invalid include)
+
+### Documentation
+- Updated AI_PRO_VS_ENTERPRISE.md with new features and notification system details
+- Updated AI_TECHNICAL_ARCHITECTURE.md with database schema changes and new architecture
+- Updated AI_SYSTEM_COMPLETE_GUIDE.md with Enterprise features documentation
+- Updated all documentation dates to January 19, 2026
+
 ## 2025.10.10
 
 - [#95](https://github.com/Shopify/shopify-app-template-react-router/pull/95) Swap the product link for [admin intents](https://shopify.dev/docs/apps/build/admin/admin-intents).
