@@ -887,7 +887,7 @@
 
         // Enhanced console logging for transparency
         console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
-        console.log('%c🤖 AI DECISION', 'color: #8B5CF6; font-weight: bold; font-size: 16px');
+        console.log('%c AI DECISION', 'color: #8B5CF6; font-weight: bold; font-size: 16px');
         console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
 
         if (result.decision) {

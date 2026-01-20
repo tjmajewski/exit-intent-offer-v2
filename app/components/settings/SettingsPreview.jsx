@@ -197,7 +197,7 @@ export default function SettingsPreview({
                     alignItems: 'center',
                     gap: '4px'
                   }}>
-                    🤖 AI Mode
+                   AI Mode
                   </div>
                 )}
 
