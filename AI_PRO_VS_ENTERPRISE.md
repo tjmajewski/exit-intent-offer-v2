@@ -241,14 +241,13 @@
 
 - **Customer Segment Filter** (Dropdown):
   - All Customers (default)
-  - Desktop Only
-  - Mobile Only
-  - Logged In
-  - Guest
-  - Returning Visitors
-  - First-Time Visitors
-  - High Cart Value
-  - *Note: Full segment tracking to be implemented*
+  - **Device Type**: Desktop, Mobile, Tablet
+  - **Account Status**: Logged In, Guest
+  - **Visitor Type**: First-Time Visitors, Returning Visitors
+  - **Cart Value**: High Value ($100+), Low Value (<$50)
+  - **Traffic Source**: Paid Traffic, Organic Traffic
+  - Recalculates all metrics based on selected segment
+  - Combine with promo filter for deeper insights
 
 **Statistics Dashboard:**
 - Total variants count

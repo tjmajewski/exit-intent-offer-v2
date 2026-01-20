@@ -9,10 +9,10 @@ import db from "../db.server";
 export async function loader({ request }) {
   const { session } = await authenticate.admin(request);
 
-  // Get promo mode from URL
+  // Get filters from URL
   const url = new URL(request.url);
-  const promoMode = url.searchParams.get('promoMode') || 'no-promo';
-  const duringPromo = promoMode === 'promo';
+  const promoFilter = url.searchParams.get('promo') || 'all';
+  const segmentFilter = url.searchParams.get('segment') || 'all';
 
   // Get shop from database
   const shop = await db.shop.findUnique({
@@ -29,14 +29,76 @@ export async function loader({ request }) {
 
   // Get all variants for this shop
   const allVariants = await db.variant.findMany({
-    where: { shopId: shop.id }
+    where: { shopId: shop.id },
+    include: {
+      impressionRecords: true
+    }
   });
+
+  // Build where clause for filtered impressions
+  const whereClause = { shopId: shop.id };
+
+  // Apply promo context filter
+  if (promoFilter === 'no-promo') {
+    whereClause.duringPromo = false;
+  } else if (promoFilter === 'during-promo') {
+    whereClause.duringPromo = true;
+  }
+
+  // Apply segment filter
+  if (segmentFilter !== 'all') {
+    switch (segmentFilter) {
+      case 'desktop':
+        whereClause.deviceType = 'desktop';
+        break;
+      case 'mobile':
+        whereClause.deviceType = 'mobile';
+        break;
+      case 'tablet':
+        whereClause.deviceType = 'tablet';
+        break;
+      case 'logged-in':
+        whereClause.accountStatus = 'logged_in';
+        break;
+      case 'guest':
+        whereClause.accountStatus = 'guest';
+        break;
+      case 'first-time':
+        whereClause.visitFrequency = 1;
+        break;
+      case 'returning':
+        whereClause.visitFrequency = { gte: 2 };
+        break;
+      case 'high-value':
+        whereClause.cartValue = { gte: 100 };
+        break;
+      case 'low-value':
+        whereClause.cartValue = { lt: 50 };
+        break;
+      case 'paid-traffic':
+        whereClause.trafficSource = 'paid';
+        break;
+      case 'organic-traffic':
+        whereClause.trafficSource = 'organic';
+        break;
+    }
+  }
 
   // Get filtered impressions
   const filteredImpressions = await db.variantImpression.findMany({
-    where: {
-      shopId: shop.id,
-      duringPromo: duringPromo
+    where: whereClause,
+    include: {
+      variant: {
+        select: {
+          id: true,
+          variantId: true,
+          headline: true,
+          subhead: true,
+          cta: true,
+          offerAmount: true,
+          baseline: true
+        }
+      }
     }
   });
 
@@ -82,6 +144,99 @@ export async function loader({ request }) {
     }
     return acc;
   }, {});
+
+  // Aggregate performance by component (headlines, subheads, CTAs)
+  function aggregateByComponent(impressions, componentType) {
+    const grouped = {};
+
+    impressions.forEach(imp => {
+      if (!imp.variant) return;
+      const key = imp.variant[componentType];
+      if (!key) return;
+
+      if (!grouped[key]) {
+        grouped[key] = {
+          text: key,
+          impressions: 0,
+          conversions: 0,
+          revenue: 0,
+          variantCount: new Set()
+        };
+      }
+
+      grouped[key].impressions++;
+      if (imp.converted) grouped[key].conversions++;
+      if (imp.revenue) grouped[key].revenue += imp.revenue;
+      grouped[key].variantCount.add(imp.variantId);
+    });
+
+    // Calculate metrics
+    const results = Object.values(grouped).map(item => ({
+      text: item.text,
+      conversionRate: item.impressions > 0 ? (item.conversions / item.impressions) * 100 : 0,
+      impressions: item.impressions,
+      conversions: item.conversions,
+      revenue: item.revenue,
+      variantCount: item.variantCount.size
+    }));
+
+    // Sort by revenue (descending)
+    return results.sort((a, b) => b.revenue - a.revenue);
+  }
+
+  // Get component stats
+  const headlineStats = aggregateByComponent(filteredImpressions, 'headline');
+  const subheadStats = aggregateByComponent(filteredImpressions, 'subhead');
+  const ctaStats = aggregateByComponent(filteredImpressions, 'cta');
+
+  // Calculate average revenue for tier calculation
+  const avgHeadlineRevenue = headlineStats.length > 0
+    ? headlineStats.reduce((sum, h) => sum + h.revenue, 0) / headlineStats.length
+    : 0;
+  const avgSubheadRevenue = subheadStats.length > 0
+    ? subheadStats.reduce((sum, s) => sum + s.revenue, 0) / subheadStats.length
+    : 0;
+  const avgCtaRevenue = ctaStats.length > 0
+    ? ctaStats.reduce((sum, c) => sum + c.revenue, 0) / ctaStats.length
+    : 0;
+
+  // Add performance tier to each component
+  function addPerformanceTier(stats, avgRevenue) {
+    return stats.map(item => {
+      let tier, tierColor, tierBadgeTone;
+      const vsAverage = avgRevenue > 0 ? ((item.revenue - avgRevenue) / avgRevenue) * 100 : 0;
+
+      if (item.revenue >= avgRevenue * 1.5) {
+        tier = 'Elite';
+        tierColor = 'success';
+        tierBadgeTone = 'success';
+      } else if (item.revenue >= avgRevenue * 1.1) {
+        tier = 'Strong';
+        tierColor = 'info';
+        tierBadgeTone = 'info';
+      } else if (item.revenue >= avgRevenue * 0.9) {
+        tier = 'Average';
+        tierColor = 'default';
+        tierBadgeTone = undefined;
+      } else {
+        tier = 'Poor';
+        tierColor = 'critical';
+        tierBadgeTone = 'critical';
+      }
+
+      return {
+        ...item,
+        tier,
+        tierColor,
+        tierBadgeTone,
+        vsAverage: vsAverage.toFixed(1)
+      };
+    });
+  }
+
+  const headlinesWithTiers = addPerformanceTier(headlineStats, avgHeadlineRevenue).slice(0, 10);
+  const subheadsWithTiers = addPerformanceTier(subheadStats, avgSubheadRevenue).slice(0, 10);
+  const ctasWithTiers = addPerformanceTier(ctaStats, avgCtaRevenue).slice(0, 10);
 
   // Get recent impressions for activity feed
   const recentImpressions = await db.variantImpression.findMany({
@@ -135,6 +290,15 @@ export async function loader({ request }) {
     generationStats: {
       max: maxGeneration,
       avg: avgGeneration
+    },
+    componentStats: {
+      headlines: headlinesWithTiers,
+      subheads: subheadsWithTiers,
+      ctas: ctasWithTiers
+    },
+    filters: {
+      promo: promoFilter,
+      segment: segmentFilter
     }
   });
 }
@@ -150,7 +314,7 @@ export default function Variants() {
   const [selectedVariant, setSelectedVariant] = useState(null);
 
   // Get promo mode from URL
-  const promoMode = searchParams.get('promoMode') || 'no-promo';
+  const promoMode = searchParams.get('promo') || 'all';
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
@@ -380,7 +544,29 @@ export default function Variants() {
           <div style={{ display: 'flex', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
             <button
               onClick={() => {
-                setSearchParams({ promoMode: 'no-promo' });
+                const newParams = new URLSearchParams(searchParams);
+                newParams.set('promo', 'all');
+                setSearchParams(newParams);
+              }}
+              style={{
+                padding: '8px 20px',
+                border: 'none',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: 14,
+                background: promoMode === 'all' ? '#111' : 'transparent',
+                color: promoMode === 'all' ? '#fff' : '#666',
+                transition: 'all 0.2s'
+              }}
+            >
+              All
+            </button>
+            <button
+              onClick={() => {
+                const newParams = new URLSearchParams(searchParams);
+                newParams.set('promo', 'no-promo');
+                setSearchParams(newParams);
               }}
               style={{
                 padding: '8px 20px',
@@ -398,7 +584,9 @@ export default function Variants() {
             </button>
             <button
               onClick={() => {
-                setSearchParams({ promoMode: 'promo' });
+                const newParams = new URLSearchParams(searchParams);
+                newParams.set('promo', 'during-promo');
+                setSearchParams(newParams);
               }}
               style={{
                 padding: '8px 20px',
@@ -407,19 +595,23 @@ export default function Variants() {
                 cursor: 'pointer',
                 fontWeight: 600,
                 fontSize: 14,
-                background: promoMode === 'promo' ? '#111' : 'transparent',
-                color: promoMode === 'promo' ? '#fff' : '#666',
+                background: promoMode === 'during-promo' ? '#111' : 'transparent',
+                color: promoMode === 'during-promo' ? '#fff' : '#666',
                 transition: 'all 0.2s'
               }}
             >
-              Promo
+              During Promo
             </button>
           </div>
 
           {/* Segment Filter */}
           <select
-            value={segment}
-            onChange={(e) => setSegment(e.target.value)}
+            value={searchParams.get('segment') || 'all'}
+            onChange={(e) => {
+              const newParams = new URLSearchParams(searchParams);
+              newParams.set('segment', e.target.value);
+              setSearchParams(newParams);
+            }}
             style={{
               padding: '10px 16px',
               borderRadius: 8,
@@ -431,13 +623,27 @@ export default function Variants() {
             }}
           >
             <option value="all">All Customers</option>
-            <option value="desktop">Desktop Only</option>
-            <option value="mobile">Mobile Only</option>
-            <option value="logged-in">Logged In</option>
-            <option value="guest">Guest</option>
-            <option value="returning">Returning Visitors</option>
-            <option value="first-time">First-Time Visitors</option>
-            <option value="high-aov">High Cart Value</option>
+            <optgroup label="Device Type">
+              <option value="desktop">Desktop Only</option>
+              <option value="mobile">Mobile Only</option>
+              <option value="tablet">Tablet Only</option>
+            </optgroup>
+            <optgroup label="Account Status">
+              <option value="logged-in">Logged In</option>
+              <option value="guest">Guest</option>
+            </optgroup>
+            <optgroup label="Visitor Type">
+              <option value="first-time">First-Time Visitors</option>
+              <option value="returning">Returning Visitors</option>
+            </optgroup>
+            <optgroup label="Cart Value">
+              <option value="high-value">High Value ($100+)</option>
+              <option value="low-value">Low Value (&lt;$50)</option>
+            </optgroup>
+            <optgroup label="Traffic Source">
+              <option value="paid-traffic">Paid Traffic</option>
+              <option value="organic-traffic">Organic Traffic</option>
+            </optgroup>
           </select>
 
           <div style={{ marginLeft: 'auto', fontSize: 13, color: '#666' }}>

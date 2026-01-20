@@ -51,6 +51,46 @@
 - Updated AI_SYSTEM_COMPLETE_GUIDE.md with Enterprise features documentation
 - Updated all documentation dates to January 19, 2026
 
+## ResparQ AI - January 19, 2026 (Evening Update - Segment Tracking)
+
+### Added
+- **Complete Segment Tracking Implementation**:
+  - Added `accountStatus` field to VariantImpression (guest/logged_in)
+  - Added `visitFrequency` field to VariantImpression (first-time=1, returning=2+)
+  - Full segment filtering in variants loader supporting:
+    - Device Type (Desktop, Mobile, Tablet)
+    - Account Status (Logged In, Guest)
+    - Visitor Type (First-Time, Returning)
+    - Cart Value (High Value $100+, Low Value <$50)
+    - Traffic Source (Paid, Organic)
+  - Comprehensive segment dropdown UI with organized categories
+  - URL parameter-based segment filtering with state preservation
+  - Database indexes on `deviceType` and `accountStatus` for performance
+
+- **Component Aggregation System**:
+  - Implemented `aggregateByComponent()` function for headlines, subheads, CTAs
+  - Performance tier calculation (Elite/Strong/Average/Poor)
+  - Revenue-based sorting and tier assignment
+  - Component stats returned in loader response
+  - Top 10 components per category display
+
+### Changed
+- Promo toggle updated to use consistent `promo` parameter (was `promoMode`)
+- Added "All" option to promo filter for viewing all data
+- Segment dropdown now uses URL search params for filtering
+- All filters preserve other parameters when changed
+- Variants page now fully supports combined promo + segment filtering
+
+### Fixed
+- URL parameter consistency between UI and loader
+- Search params preservation when changing filters
+
+### Documentation
+- Removed "(Coming Soon)" from segment filtering documentation
+- Added comprehensive segment filter options to all docs
+- Updated database schema documentation with new fields
+- Updated technical architecture with complete segment filtering logic
+
 ## 2025.10.10
 
 - [#95](https://github.com/Shopify/shopify-app-template-react-router/pull/95) Swap the product link for [admin intents](https://shopify.dev/docs/apps/build/admin/admin-intents).

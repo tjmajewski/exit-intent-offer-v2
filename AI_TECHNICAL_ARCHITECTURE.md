@@ -406,9 +406,11 @@ model VariantImpression {
   shopId         String
 
   segment        String?
-  deviceType     String?
-  trafficSource  String?
+  deviceType     String?  // desktop, mobile, tablet
+  trafficSource  String?  // paid, organic, social, direct, email
   cartValue      Float?
+  accountStatus  String?  // guest, logged_in
+  visitFrequency Int?     // 1 = first-time, 2+ = returning
   duringPromo    Boolean  @default(false)
 
   clicked        Boolean  @default(false)
@@ -420,6 +422,8 @@ model VariantImpression {
   timestamp      DateTime @default(now())
 
   @@index([shopId, duringPromo])
+  @@index([shopId, deviceType])
+  @@index([shopId, accountStatus])
 }
 ```
 
@@ -836,9 +840,18 @@ model Promotion {
    - promo=during-promo → duringPromo = true
    - promo=all → no filter
    ↓
-5. Filter impressions by segment (future):
+5. Filter impressions by segment:
    - segment=desktop → deviceType = 'desktop'
    - segment=mobile → deviceType = 'mobile'
+   - segment=tablet → deviceType = 'tablet'
+   - segment=logged-in → accountStatus = 'logged_in'
+   - segment=guest → accountStatus = 'guest'
+   - segment=first-time → visitFrequency = 1
+   - segment=returning → visitFrequency >= 2
+   - segment=high-value → cartValue >= 100
+   - segment=low-value → cartValue < 50
+   - segment=paid-traffic → trafficSource = 'paid'
+   - segment=organic-traffic → trafficSource = 'organic'
    - segment=all → no filter
    ↓
 6. Aggregate performance by component:

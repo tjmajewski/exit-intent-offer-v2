@@ -203,19 +203,21 @@ model VariantImpression {
   variantId         String
   variant           Variant  @relation(fields: [variantId], references: [id])
   shopId            String
-  
+
   // Outcome
   clicked           Boolean  @default(false)
   converted         Boolean  @default(false)
   revenue           Float?
   discountAmount    Float?
   profit            Float?   // revenue - discountAmount
-  
+
   // Context
   segment           String   @default("all")
-  deviceType        String?
-  trafficSource     String?
+  deviceType        String?  // desktop, mobile, tablet
+  trafficSource     String?  // paid, organic, social, direct, email
   cartValue         Float?
+  accountStatus     String?  // guest, logged_in
+  visitFrequency    Int?     // 1 = first-time, 2+ = returning
   duringPromo       Boolean  @default(false)
   timestamp         DateTime @default(now())
 
@@ -223,6 +225,8 @@ model VariantImpression {
   @@index([shopId, duringPromo])
   @@index([shopId, timestamp])
   @@index([segment, timestamp])
+  @@index([shopId, deviceType])
+  @@index([shopId, accountStatus])
 }
 
 model MetaLearningGene {

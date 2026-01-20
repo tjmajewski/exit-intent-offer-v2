@@ -385,11 +385,17 @@ Each component shows:
 - Shows how copy performs with vs without site-wide promotions
 - All metrics recalculate based on filtered impressions
 
-**2. Customer Segment Dropdown** (Coming Soon)
+**2. Customer Segment Dropdown**
 - Filter by customer segment
-- Options: All / Desktop / Mobile / Logged In / Guest / etc.
+- Options organized by category:
+  - **Device Type**: Desktop, Mobile, Tablet
+  - **Account Status**: Logged In, Guest
+  - **Visitor Type**: First-Time, Returning
+  - **Cart Value**: High Value ($100+), Low Value (<$50)
+  - **Traffic Source**: Paid Traffic, Organic Traffic
 - See which copy works best for each audience
 - Optimize separately for different customer types
+- All metrics recalculate based on selected segment
 
 #### How to Use
 
@@ -398,24 +404,36 @@ Each component shows:
    - View loads automatically with current data
 
 2. **Filter by Promo Context**
-   - Toggle between "No Promo" and "During Promotions"
-   - See how copy performs in different contexts
+   - Toggle between "All", "No Promo", and "During Promotions"
+   - See how copy performs in different promotional contexts
    - Example: Headlines that work during sales vs normal periods
 
-3. **Identify Top Performers**
+3. **Filter by Customer Segment**
+   - Select from dropdown to filter by specific audience
+   - Examples:
+     - Desktop vs Mobile: See if different copy works on different devices
+     - Logged In vs Guest: Understand account status impact
+     - First-Time vs Returning: Optimize for visitor familiarity
+     - High Value vs Low Value: Tailor messaging to cart size
+     - Paid vs Organic: See how traffic source affects performance
+   - Combine with promo filter for deeper insights
+
+4. **Identify Top Performers**
    - Look for Elite (green) components
    - Check "vs Average" metric for lift
    - Note revenue impact in dollars
 
-4. **Find Patterns**
+5. **Find Patterns**
    - Compare Elite headlines vs Poor headlines
    - What makes them different?
    - Use insights to inform brand voice
+   - Test hypotheses by filtering different segments
 
-5. **Track Trends**
+6. **Track Trends**
    - Page refreshes automatically every 30 seconds (optional)
    - See performance change in real-time
    - Monitor impact of new variants
+   - Watch how segment performance evolves
 
 #### Statistics Dashboard
 
