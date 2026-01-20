@@ -15,7 +15,8 @@ export const loader = async ({ request }) => {
 export default function App() {
   const { apiKey } = useLoaderData();
 
-  // Polaris i18n configuration  const i18n = {
+  // Polaris i18n configuration
+  const i18n = {
     Polaris: {
       Avatar: {
         label: "Avatar",
