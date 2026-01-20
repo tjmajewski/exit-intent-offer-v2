@@ -3,7 +3,6 @@ import { useLoaderData, useFetcher, useNavigate, useSearchParams, Form } from "r
 import { authenticate } from "../shopify.server";
 import { PrismaClient } from "@prisma/client";
 import { useEffect, useState, useCallback } from "react";
-import { Tabs, Card, Badge, Text, BlockStack, InlineGrid, Box } from "@shopify/polaris";
 import AppLayout from "../components/AppLayout";
 import db from "../db.server";
 
@@ -410,20 +409,6 @@ export default function Variants() {
     setSearchParams(newParams);
   }, [searchParams, setSearchParams]);
 
-  // Define tabs
-  const tabs = [
-    {
-      id: 'component-analysis',
-      content: 'Component Analysis',
-      panelID: 'component-analysis-panel',
-    },
-    {
-      id: 'manage-variants',
-      content: 'Manage Variants',
-      panelID: 'manage-variants-panel',
-    },
-  ];
-
   // Auto-refresh every 30 seconds
   useEffect(() => {
     if (!autoRefresh) return;
@@ -759,10 +744,52 @@ export default function Variants() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <Tabs tabs={tabs} selected={selectedTab} onSelect={handleTabChange}>
-          {/* Tab 0: Component Analysis */}
-          {selectedTab === 0 && (
+        {/* Custom Tabs */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{
+            display: 'flex',
+            borderBottom: '2px solid #e5e7eb',
+            gap: 8
+          }}>
+            <button
+              onClick={() => handleTabChange(0)}
+              style={{
+                padding: '12px 24px',
+                border: 'none',
+                background: 'transparent',
+                borderBottom: selectedTab === 0 ? '2px solid #008060' : '2px solid transparent',
+                marginBottom: -2,
+                cursor: 'pointer',
+                fontWeight: selectedTab === 0 ? 600 : 400,
+                fontSize: 14,
+                color: selectedTab === 0 ? '#008060' : '#666',
+                transition: 'all 0.2s'
+              }}
+            >
+              Component Analysis
+            </button>
+            <button
+              onClick={() => handleTabChange(1)}
+              style={{
+                padding: '12px 24px',
+                border: 'none',
+                background: 'transparent',
+                borderBottom: selectedTab === 1 ? '2px solid #008060' : '2px solid transparent',
+                marginBottom: -2,
+                cursor: 'pointer',
+                fontWeight: selectedTab === 1 ? 600 : 400,
+                fontSize: 14,
+                color: selectedTab === 1 ? '#008060' : '#666',
+                transition: 'all 0.2s'
+              }}
+            >
+              Manage Variants
+            </button>
+          </div>
+        </div>
+
+        {/* Tab Content */}
+        {selectedTab === 0 && (
             <div style={{ paddingTop: 24 }}>
               {filteredVariants.length === 0 ? (
                 <div style={{ background: 'white', padding: 60, borderRadius: 12, border: '1px solid #e5e7eb', textAlign: 'center' }}>
@@ -973,7 +1000,6 @@ export default function Variants() {
               )}
             </div>
           )}
-        </Tabs>
 
         {/* Modal for Variant Details */}
         {selectedVariant && (
