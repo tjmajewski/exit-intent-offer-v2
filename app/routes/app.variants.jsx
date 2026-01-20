@@ -1,10 +1,94 @@
-import { json } from "@remix-run/node";
-import { useLoaderData, useFetcher, useNavigate, useSearchParams } from "react-router";
+import { json, redirect } from "@remix-run/node";
+import { useLoaderData, useFetcher, useNavigate, useSearchParams, Form } from "react-router";
 import { authenticate } from "../shopify.server";
 import { PrismaClient } from "@prisma/client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { Tabs, Card, Badge, Text, BlockStack, InlineGrid, Box } from "@shopify/polaris";
 import AppLayout from "../components/AppLayout";
 import db from "../db.server";
+
+export async function action({ request }) {
+  const { session } = await authenticate.admin(request);
+
+  try {
+    const formData = await request.formData();
+    const action = formData.get("action");
+    const variantId = formData.get('variantId');
+
+    if (action === 'updateStatus' && variantId) {
+      const newStatus = formData.get('status');
+      const variant = await db.variant.findUnique({
+        where: { id: variantId }
+      });
+
+      if (!variant) {
+        return json({ error: 'Variant not found', success: false });
+      }
+
+      // Handle status change
+      if (newStatus === 'alive') {
+        await db.variant.update({
+          where: { id: variantId },
+          data: {
+            status: 'alive',
+            isChampion: false
+          }
+        });
+        return json({ success: true, message: 'Variant set to Active' });
+      }
+
+      if (newStatus === 'protected') {
+        await db.variant.update({
+          where: { id: variantId },
+          data: {
+            status: 'protected',
+            isChampion: false
+          }
+        });
+        return json({ success: true, message: 'Variant protected from evolution' });
+      }
+
+      if (newStatus === 'champion') {
+        // Clear any existing champion for this baseline + segment combo
+        await db.variant.updateMany({
+          where: {
+            shopId: variant.shopId,
+            baseline: variant.baseline,
+            segment: variant.segment
+          },
+          data: { isChampion: false }
+        });
+
+        await db.variant.update({
+          where: { id: variantId },
+          data: {
+            status: 'champion',
+            isChampion: true
+          }
+        });
+
+        return json({ success: true, message: 'Variant set as champion' });
+      }
+    }
+
+    if (action === 'killVariant' && variantId) {
+      await db.variant.update({
+        where: { id: variantId },
+        data: {
+          status: 'killed'
+        }
+      });
+
+      // Redirect to reload the page and show updated status
+      return redirect('/app/variants?tab=1');
+    }
+
+    return json({ success: false, error: 'Invalid action' });
+  } catch (error) {
+    console.error('Action error:', error);
+    return json({ error: error.message, success: false }, { status: 500 });
+  }
+}
 
 export async function loader({ request }) {
   const { session } = await authenticate.admin(request);
@@ -305,7 +389,7 @@ export async function loader({ request }) {
 
 export default function Variants() {
   const data = useLoaderData();
-  const { shop, plan, variants, totalVariants, aliveCount, deadCount, evolutionStatus, generationStats } = data;
+  const { shop, plan, variants, totalVariants, aliveCount, deadCount, evolutionStatus, generationStats, componentStats } = data;
   const fetcher = useFetcher();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -313,8 +397,32 @@ export default function Variants() {
   const [segment, setSegment] = useState('all');
   const [selectedVariant, setSelectedVariant] = useState(null);
 
+  // Get tab index from URL (default to 0 = Component Analysis)
+  const selectedTab = parseInt(searchParams.get('tab') || '0');
+
   // Get promo mode from URL
   const promoMode = searchParams.get('promo') || 'all';
+
+  // Handle tab change
+  const handleTabChange = useCallback((selectedTabIndex) => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('tab', selectedTabIndex.toString());
+    setSearchParams(newParams);
+  }, [searchParams, setSearchParams]);
+
+  // Define tabs
+  const tabs = [
+    {
+      id: 'component-analysis',
+      content: 'Component Analysis',
+      panelID: 'component-analysis-panel',
+    },
+    {
+      id: 'manage-variants',
+      content: 'Manage Variants',
+      panelID: 'manage-variants-panel',
+    },
+  ];
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
@@ -651,56 +759,221 @@ export default function Variants() {
           </div>
         </div>
 
-        {filteredVariants.length === 0 ? (
-          <div style={{ background: 'white', padding: 60, borderRadius: 12, border: '1px solid #e5e7eb', textAlign: 'center' }}>
-            <h3 style={{ fontSize: 20, marginBottom: 8 }}>No variants yet</h3>
-            <p style={{ color: '#666' }}>Variants will appear once you start getting traffic in AI mode.</p>
-          </div>
-        ) : (
-          <>
-            {/* 3-Column Layout */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 24 }}>
-              {/* Headlines Column */}
-              <div>
-                <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>
-                  Headlines
-                  <span style={{ fontSize: 14, fontWeight: 400, color: '#666', marginLeft: 8 }}>
-                    (Top {performance.headlines.length})
-                  </span>
-                </h3>
-                {performance.headlines.map((item, i) => (
-                  <ComponentCard key={i} item={item} type="headline" />
-                ))}
-              </div>
+        {/* Tabs */}
+        <Tabs tabs={tabs} selected={selectedTab} onSelect={handleTabChange}>
+          {/* Tab 0: Component Analysis */}
+          {selectedTab === 0 && (
+            <div style={{ paddingTop: 24 }}>
+              {filteredVariants.length === 0 ? (
+                <div style={{ background: 'white', padding: 60, borderRadius: 12, border: '1px solid #e5e7eb', textAlign: 'center' }}>
+                  <h3 style={{ fontSize: 20, marginBottom: 8 }}>No variants yet</h3>
+                  <p style={{ color: '#666' }}>Variants will appear once you start getting traffic in AI mode.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 24 }}>
+                  {/* Headlines Column */}
+                  <div>
+                    <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>
+                      Headlines
+                      <span style={{ fontSize: 14, fontWeight: 400, color: '#666', marginLeft: 8 }}>
+                        (Top {performance.headlines.length})
+                      </span>
+                    </h3>
+                    {performance.headlines.map((item, i) => (
+                      <ComponentCard key={i} item={item} type="headline" />
+                    ))}
+                  </div>
 
-              {/* Subheads Column */}
-              <div>
-                <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>
-                  Subheads
-                  <span style={{ fontSize: 14, fontWeight: 400, color: '#666', marginLeft: 8 }}>
-                    (Top {performance.subheads.length})
-                  </span>
-                </h3>
-                {performance.subheads.map((item, i) => (
-                  <ComponentCard key={i} item={item} type="subhead" />
-                ))}
-              </div>
+                  {/* Subheads Column */}
+                  <div>
+                    <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>
+                      Subheads
+                      <span style={{ fontSize: 14, fontWeight: 400, color: '#666', marginLeft: 8 }}>
+                        (Top {performance.subheads.length})
+                      </span>
+                    </h3>
+                    {performance.subheads.map((item, i) => (
+                      <ComponentCard key={i} item={item} type="subhead" />
+                    ))}
+                  </div>
 
-              {/* CTAs Column */}
-              <div>
-                <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>
-                  CTAs
-                  <span style={{ fontSize: 14, fontWeight: 400, color: '#666', marginLeft: 8 }}>
-                    (Top {performance.ctas.length})
-                  </span>
-                </h3>
-                {performance.ctas.map((item, i) => (
-                  <ComponentCard key={i} item={item} type="cta" />
-                ))}
-              </div>
+                  {/* CTAs Column */}
+                  <div>
+                    <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>
+                      CTAs
+                      <span style={{ fontSize: 14, fontWeight: 400, color: '#666', marginLeft: 8 }}>
+                        (Top {performance.ctas.length})
+                      </span>
+                    </h3>
+                    {performance.ctas.map((item, i) => (
+                      <ComponentCard key={i} item={item} type="cta" />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          </>
-        )}
+          )}
+
+          {/* Tab 1: Manage Variants */}
+          {selectedTab === 1 && (
+            <div style={{ paddingTop: 24 }}>
+              {displayVariants.length === 0 ? (
+                <div style={{ background: 'white', padding: 60, borderRadius: 12, border: '1px solid #e5e7eb', textAlign: 'center' }}>
+                  <h3 style={{ fontSize: 20, marginBottom: 8 }}>No variants yet</h3>
+                  <p style={{ color: '#666' }}>Variants will appear once you start getting traffic in AI mode.</p>
+                </div>
+              ) : (
+                <div style={{
+                  background: "white",
+                  borderRadius: 8,
+                  border: "1px solid #e5e7eb",
+                  overflow: "hidden"
+                }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                        <th style={{ padding: 16, textAlign: "left", fontWeight: 600 }}>Variant</th>
+                        <th style={{ padding: 16, textAlign: "left", fontWeight: 600 }}>Headline</th>
+                        <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Shown</th>
+                        <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Orders</th>
+                        <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Revenue</th>
+                        <th style={{ padding: 16, textAlign: "center", fontWeight: 600 }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayVariants
+                        .filter(v => v.status !== 'killed')
+                        .map((variant) => {
+                          const conversionRate = variant.impressions > 0
+                            ? ((variant.conversions / variant.impressions) * 100).toFixed(1)
+                            : 0;
+                          const revenue = (variant.profitPerImpression * variant.impressions);
+
+                          return (
+                            <tr
+                              key={variant.id}
+                              style={{
+                                borderBottom: "1px solid #e5e7eb",
+                                background: variant.isChampion ? "#f0fdf4" : variant.status === 'protected' ? "#fef3c7" : "white"
+                              }}
+                            >
+                              <td style={{ padding: 16 }}>
+                                <div style={{ fontWeight: 500, marginBottom: 4 }}>
+                                  {variant.variantId}
+                                </div>
+                                <div style={{ fontSize: 12, color: "#6b7280" }}>
+                                  Gen {variant.generation} · {variant.baseline}
+                                </div>
+                                {variant.isChampion && (
+                                  <span style={{
+                                    display: 'inline-block',
+                                    marginTop: 4,
+                                    padding: "2px 6px",
+                                    background: "#10b981",
+                                    color: "white",
+                                    borderRadius: 4,
+                                    fontSize: 10,
+                                    fontWeight: 600
+                                  }}>
+                                    CHAMPION
+                                  </span>
+                                )}
+                                {variant.status === 'protected' && (
+                                  <span style={{
+                                    display: 'inline-block',
+                                    marginTop: 4,
+                                    padding: "2px 6px",
+                                    background: "#f59e0b",
+                                    color: "white",
+                                    borderRadius: 4,
+                                    fontSize: 10,
+                                    fontWeight: 600
+                                  }}>
+                                    PROTECTED
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: 16, maxWidth: 300 }}>
+                                <div style={{ fontSize: 14, marginBottom: 4 }}>
+                                  {variant.headline}
+                                </div>
+                                <div style={{ fontSize: 12, color: "#6b7280" }}>
+                                  {variant.cta}
+                                </div>
+                              </td>
+                              <td style={{ padding: 16, textAlign: "right" }}>
+                                {variant.impressions.toLocaleString()}
+                              </td>
+                              <td style={{ padding: 16, textAlign: "right" }}>
+                                {variant.conversions.toLocaleString()}
+                                <div style={{ fontSize: 12, color: "#6b7280" }}>
+                                  {conversionRate}%
+                                </div>
+                              </td>
+                              <td style={{ padding: 16, textAlign: "right", fontWeight: 600, color: "#10b981" }}>
+                                ${revenue.toFixed(0)}
+                              </td>
+                              <td style={{ padding: 16 }}>
+                                <div style={{ display: "flex", gap: 8, justifyContent: "center", alignItems: "center" }}>
+                                  <Form method="post" style={{ margin: 0 }}>
+                                    <input type="hidden" name="action" value="updateStatus" />
+                                    <input type="hidden" name="variantId" value={variant.id} />
+                                    <select
+                                      name="status"
+                                      defaultValue={variant.isChampion ? 'champion' : variant.status}
+                                      onChange={(e) => e.target.form.requestSubmit()}
+                                      style={{
+                                        padding: "6px 12px",
+                                        border: "1px solid #d1d5db",
+                                        borderRadius: 4,
+                                        fontSize: 12,
+                                        fontWeight: 500,
+                                        cursor: "pointer",
+                                        background: "white"
+                                      }}
+                                    >
+                                      <option value="alive">Active</option>
+                                      <option value="protected">Protected</option>
+                                      <option value="champion">Champion</option>
+                                    </select>
+                                  </Form>
+
+                                  <button
+                                    type="button"
+                                    style={{
+                                      padding: "6px 12px",
+                                      background: "#ef4444",
+                                      color: "white",
+                                      border: "none",
+                                      borderRadius: 4,
+                                      fontSize: 12,
+                                      fontWeight: 600,
+                                      cursor: "pointer"
+                                    }}
+                                    title="Permanently remove this variant"
+                                    onClick={() => {
+                                      if (confirm('Are you sure you want to kill this variant? This action cannot be undone.')) {
+                                        fetcher.submit(
+                                          { action: 'killVariant', variantId: variant.id },
+                                          { method: 'post' }
+                                        );
+                                      }
+                                    }}
+                                  >
+                                    Kill
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </Tabs>
 
         {/* Modal for Variant Details */}
         {selectedVariant && (
