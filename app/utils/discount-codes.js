@@ -1,22 +1,177 @@
 // Generate unique discount code
-function generateUniqueCode(type, amount) {
+function generateUniqueCode(type, amount, prefix = 'EXIT') {
   const timestamp = Date.now().toString(36);
   const random = Math.random().toString(36).substring(2, 8);
-  
+
   if (type === 'percentage') {
-    return `EXIT${amount}-${timestamp}${random}`.toUpperCase();
+    return `${prefix}${amount}-${timestamp}${random}`.toUpperCase();
   } else if (type === 'fixed') {
-    return `EXIT${amount}OFF-${timestamp}${random}`.toUpperCase();
+    return `${prefix}${amount}OFF-${timestamp}${random}`.toUpperCase();
   } else if (type === 'threshold') {
-    return `EXITSPEND${amount.threshold}-${timestamp}${random}`.toUpperCase();
+    return `${prefix}SPEND${amount.threshold}-${timestamp}${random}`.toUpperCase();
   }
-  
-  return `EXIT-${timestamp}${random}`.toUpperCase();
+
+  return `${prefix}-${timestamp}${random}`.toUpperCase();
+}
+
+/**
+ * Main function to create discount code based on shop's mode setting
+ * Supports both generic (reusable) and unique (per-session) modes
+ */
+export async function createDiscountCode(admin, shop, options = {}) {
+  const { cartValue, type, amount } = options;
+
+  const discountType = type || shop.offerType || 'percentage';
+  const discountAmount = amount || (discountType === 'percentage' ? 10 : 10);
+
+  // MODE: Generic - Reuse existing code
+  if (shop.discountCodeMode === 'generic' && shop.genericDiscountCode) {
+    console.log(`Using generic discount code: ${shop.genericDiscountCode}`);
+
+    return {
+      code: shop.genericDiscountCode,
+      amount: discountAmount,
+      type: discountType,
+      expiresAt: null, // No expiry for generic codes
+      mode: 'generic'
+    };
+  }
+
+  // MODE: Unique - Generate new code with 24h expiry
+  const prefix = shop.discountCodePrefix || 'EXIT';
+  let result;
+
+  if (discountType === 'percentage') {
+    result = await createPercentageDiscount(admin, discountAmount, prefix);
+  } else if (discountType === 'fixed') {
+    result = await createFixedDiscount(admin, discountAmount, prefix);
+  } else {
+    throw new Error(`Unsupported discount type: ${discountType}`);
+  }
+
+  return {
+    code: result.code,
+    amount: discountAmount,
+    type: discountType,
+    expiresAt: result.expiresAt,
+    mode: 'unique'
+  };
+}
+
+/**
+ * Create or verify generic discount code exists in Shopify
+ * Should be called when merchant saves settings with generic mode
+ */
+export async function createGenericDiscountCode(admin, code, type, amount) {
+  // First check if code already exists
+  const existingCode = await checkDiscountCodeExists(admin, code);
+
+  if (existingCode) {
+    console.log(`Generic code ${code} already exists, reusing it`);
+    return { code, exists: true };
+  }
+
+  // Create new generic code with no expiry
+  const mutation = `
+    mutation discountCodeBasicCreate($basicCodeDiscount: DiscountCodeBasicInput!) {
+      discountCodeBasicCreate(basicCodeDiscount: $basicCodeDiscount) {
+        codeDiscountNode {
+          id
+          codeDiscount {
+            ... on DiscountCodeBasic {
+              codes(first: 1) {
+                nodes {
+                  code
+                }
+              }
+            }
+          }
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+  `;
+
+  const variables = {
+    basicCodeDiscount: {
+      title: type === 'percentage'
+        ? `${amount}% Off - Generic Exit Intent`
+        : `$${amount} Off - Generic Exit Intent`,
+      code: code,
+      startsAt: new Date().toISOString(),
+      // No endsAt - generic codes don't expire
+      customerSelection: {
+        all: true
+      },
+      customerGets: {
+        value: type === 'percentage'
+          ? { percentage: amount / 100 }
+          : {
+              discountAmount: {
+                amount: Math.round(amount).toString(),
+                appliesOnEachItem: false
+              }
+            }
+        ,
+        items: {
+          all: true
+        }
+      }
+      // No usage limit for generic codes - can be reused
+    }
+  };
+
+  const response = await admin.graphql(mutation, { variables });
+  const result = await response.json();
+
+  if (result.data.discountCodeBasicCreate.userErrors.length > 0) {
+    console.error("Error creating generic discount:", result.data.discountCodeBasicCreate.userErrors);
+    throw new Error("Failed to create generic discount code");
+  }
+
+  const createdCode = result.data.discountCodeBasicCreate.codeDiscountNode
+    .codeDiscount.codes.nodes[0].code;
+
+  console.log(`✓ Created generic discount: ${createdCode} (no expiry)`);
+
+  return { code: createdCode, exists: false };
+}
+
+/**
+ * Check if a discount code already exists in Shopify
+ */
+async function checkDiscountCodeExists(admin, code) {
+  const query = `
+    query {
+      codeDiscountNodes(first: 1, query: "code:${code}") {
+        nodes {
+          id
+          codeDiscount {
+            ... on DiscountCodeBasic {
+              codes(first: 1) {
+                nodes {
+                  code
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const response = await admin.graphql(query);
+  const result = await response.json();
+
+  return result.data.codeDiscountNodes.nodes.length > 0;
 }
 
 // Create percentage discount with 24h expiration
-export async function createPercentageDiscount(admin, percentage) {
-  const code = generateUniqueCode('percentage', percentage);
+export async function createPercentageDiscount(admin, percentage, prefix = 'EXIT') {
+  const code = generateUniqueCode('percentage', percentage, prefix);
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
   
   const mutation = `
@@ -84,8 +239,8 @@ export async function createPercentageDiscount(admin, percentage) {
 }
 
 // Create fixed amount discount with 24h expiration
-export async function createFixedDiscount(admin, amount) {
-  const code = generateUniqueCode('fixed', amount);
+export async function createFixedDiscount(admin, amount, prefix = 'EXIT') {
+  const code = generateUniqueCode('fixed', amount, prefix);
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   
   const mutation = `
