@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 export default function AISettingsTab({
   canUseAIMode,
   optimizationMode,
@@ -13,6 +15,10 @@ export default function AISettingsTab({
   selectionPressure,
   setSelectionPressure
 }) {
+  // State for discount code mode to show/hide input fields
+  const [aiDiscountCodeMode, setAiDiscountCodeMode] = useState(
+    settings.aiDiscountCodeMode || "unique"
+  );
   if (!canUseAIMode) {
     return (
       <div style={{
@@ -164,16 +170,16 @@ export default function AISettingsTab({
                   type="radio"
                   name="aiDiscountCodeMode"
                   value="generic"
-                  defaultChecked={settings.aiDiscountCodeMode === "generic"}
+                  checked={aiDiscountCodeMode === "generic"}
                   style={{ marginRight: 12, marginTop: 4 }}
-                  onChange={(e) => setFormChanged(true)}
+                  onChange={(e) => { setAiDiscountCodeMode("generic"); setFormChanged(true); }}
                 />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 500, marginBottom: 4 }}>Generic Code (Same for everyone)</div>
                   <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
                     AI uses a single reusable code for all customers. Easy to track and no expiry.
                   </div>
-                  {settings.aiDiscountCodeMode === "generic" && (
+                  {aiDiscountCodeMode === "generic" && (
                     <input
                       type="text"
                       name="aiGenericDiscountCode"
@@ -200,16 +206,16 @@ export default function AISettingsTab({
                   type="radio"
                   name="aiDiscountCodeMode"
                   value="unique"
-                  defaultChecked={settings.aiDiscountCodeMode === "unique" || !settings.aiDiscountCodeMode}
+                  checked={aiDiscountCodeMode === "unique"}
                   style={{ marginRight: 12, marginTop: 4 }}
-                  onChange={(e) => setFormChanged(true)}
+                  onChange={(e) => { setAiDiscountCodeMode("unique"); setFormChanged(true); }}
                 />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 500, marginBottom: 4 }}>Unique Codes (One per customer)</div>
                   <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
                     AI generates unique codes with 24-hour expiry. Creates urgency and prevents code sharing.
                   </div>
-                  {(settings.aiDiscountCodeMode === "unique" || !settings.aiDiscountCodeMode) && (
+                  {aiDiscountCodeMode === "unique" && (
                     <div>
                       <label style={{ display: "block", fontSize: 13, color: "#666", marginBottom: 4 }}>
                         Code Prefix (optional)

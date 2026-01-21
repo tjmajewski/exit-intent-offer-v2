@@ -25,6 +25,11 @@ export default function QuickSetupTab({
   canUseAllTriggers,
   canUseCartValue
 }) {
+  // State for discount code mode to show/hide input fields
+  const [manualDiscountCodeMode, setManualDiscountCodeMode] = useState(
+    settings.manualDiscountCodeMode || "unique"
+  );
+
   return (
     <>
       {/* Optimization Mode Selector */}
@@ -340,15 +345,16 @@ export default function QuickSetupTab({
                     type="radio"
                     name="manualDiscountCodeMode"
                     value="generic"
-                    defaultChecked={settings.manualDiscountCodeMode === "generic"}
+                    checked={manualDiscountCodeMode === "generic"}
                     style={{ marginRight: 12, marginTop: 4 }}
+                    onChange={(e) => { setManualDiscountCodeMode("generic"); setFormChanged(true); }}
                   />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 500, marginBottom: 4 }}>Generic Code (Same for everyone)</div>
                     <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
                       Use a single code for all customers. Easy to track and no expiry.
                     </div>
-                    {settings.manualDiscountCodeMode === "generic" && (
+                    {manualDiscountCodeMode === "generic" && (
                       <input
                         type="text"
                         name="manualGenericDiscountCode"
@@ -362,7 +368,7 @@ export default function QuickSetupTab({
                           fontSize: 16,
                           textTransform: "uppercase"
                         }}
-                        onChange={(e) => e.target.value = e.target.value.toUpperCase()}
+                        onChange={(e) => { e.target.value = e.target.value.toUpperCase(); setFormChanged(true); }}
                       />
                     )}
                   </div>
@@ -375,15 +381,16 @@ export default function QuickSetupTab({
                     type="radio"
                     name="manualDiscountCodeMode"
                     value="unique"
-                    defaultChecked={settings.manualDiscountCodeMode === "unique" || !settings.manualDiscountCodeMode}
+                    checked={manualDiscountCodeMode === "unique"}
                     style={{ marginRight: 12, marginTop: 4 }}
+                    onChange={(e) => { setManualDiscountCodeMode("unique"); setFormChanged(true); }}
                   />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 500, marginBottom: 4 }}>Unique Codes (One per customer)</div>
                     <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
                       Generate unique codes with 24-hour expiry. Creates urgency and prevents code sharing.
                     </div>
-                    {(settings.manualDiscountCodeMode === "unique" || !settings.manualDiscountCodeMode) && (
+                    {manualDiscountCodeMode === "unique" && (
                       <div>
                         <label style={{ display: "block", fontSize: 13, color: "#666", marginBottom: 4 }}>
                           Code Prefix (optional)
@@ -402,7 +409,7 @@ export default function QuickSetupTab({
                             width: 120,
                             textTransform: "uppercase"
                           }}
-                          onChange={(e) => e.target.value = e.target.value.toUpperCase()}
+                          onChange={(e) => { e.target.value = e.target.value.toUpperCase(); setFormChanged(true); }}
                         />
                         <span style={{ marginLeft: 8, fontSize: 13, color: "#666" }}>
                           -ABC123
