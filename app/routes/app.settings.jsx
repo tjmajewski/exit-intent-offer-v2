@@ -518,6 +518,9 @@ export async function action({ request }) {
         discountCode: settings.discountCode,
         discountEnabled: settings.discountEnabled,
         offerType: settings.offerType,
+        discountCodeMode: settings.discountCodeMode,
+        genericDiscountCode: settings.genericDiscountCode,
+        discountCodePrefix: settings.discountCodePrefix,
         updatedAt: new Date()
       },
       create: {
@@ -535,7 +538,10 @@ export async function action({ request }) {
         redirectDestination: settings.redirectDestination,
         discountCode: settings.discountCode,
         discountEnabled: settings.discountEnabled,
-        offerType: settings.offerType
+        offerType: settings.offerType,
+        discountCodeMode: settings.discountCodeMode,
+        genericDiscountCode: settings.genericDiscountCode,
+        discountCodePrefix: settings.discountCodePrefix
       }
     });
 

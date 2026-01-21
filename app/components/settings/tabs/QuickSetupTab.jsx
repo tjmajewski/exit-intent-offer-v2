@@ -352,7 +352,7 @@ export default function QuickSetupTab({
                       <input
                         type="text"
                         name="genericDiscountCode"
-                        defaultValue={settings.genericDiscountCode || "SAVE15"}
+                        defaultValue={settings.genericDiscountCode || ""}
                         placeholder="e.g., SAVE15"
                         maxLength="20"
                         style={{
