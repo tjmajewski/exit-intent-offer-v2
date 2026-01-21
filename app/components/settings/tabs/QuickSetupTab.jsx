@@ -30,6 +30,11 @@ export default function QuickSetupTab({
     settings.manualDiscountCodeMode || "unique"
   );
 
+  // State for offer type
+  const [offerType, setOfferType] = useState(
+    settings.offerType || "percentage"
+  );
+
   return (
     <>
       {/* Optimization Mode Selector */}
@@ -433,8 +438,9 @@ export default function QuickSetupTab({
                     type="radio"
                     name="offerType"
                     value="percentage"
-                    defaultChecked={settings.offerType === "percentage" || !settings.offerType}
+                    checked={offerType === "percentage"}
                     style={{ marginRight: 12, marginTop: 4 }}
+                    onChange={(e) => { setOfferType("percentage"); setFormChanged(true); }}
                   />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 500, marginBottom: 4 }}>Percentage Off</div>
@@ -447,13 +453,14 @@ export default function QuickSetupTab({
                       defaultValue={settings.discountPercentage || 10}
                       min="1"
                       max="100"
-                      style={{ 
-                        padding: "8px 12px", 
+                      style={{
+                        padding: "8px 12px",
                         border: "1px solid #d1d5db",
                         borderRadius: 6,
                         width: 100,
                         fontSize: 16
                       }}
+                      onChange={() => setFormChanged(true)}
                     />
                     <span style={{ marginLeft: 8, color: "#666" }}>%</span>
                   </div>
@@ -467,8 +474,9 @@ export default function QuickSetupTab({
                     type="radio"
                     name="offerType"
                     value="fixed"
-                    defaultChecked={settings.offerType === "fixed"}
+                    checked={offerType === "fixed"}
                     style={{ marginRight: 12, marginTop: 4 }}
+                    onChange={(e) => { setOfferType("fixed"); setFormChanged(true); }}
                   />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 500, marginBottom: 4 }}>Dollar Amount Off</div>
@@ -482,13 +490,14 @@ export default function QuickSetupTab({
                       defaultValue={settings.discountAmount || 10}
                       min="1"
                       step="1"
-                      style={{ 
-                        padding: "8px 12px", 
+                      style={{
+                        padding: "8px 12px",
                         border: "1px solid #d1d5db",
                         borderRadius: 6,
                         width: 100,
                         fontSize: 16
                       }}
+                      onChange={() => setFormChanged(true)}
                     />
                   </div>
                 </label>
