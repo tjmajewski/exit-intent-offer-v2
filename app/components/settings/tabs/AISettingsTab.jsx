@@ -162,9 +162,9 @@ export default function AISettingsTab({
               <label style={{ display: "flex", alignItems: "flex-start", cursor: "pointer" }}>
                 <input
                   type="radio"
-                  name="discountCodeMode"
+                  name="aiDiscountCodeMode"
                   value="generic"
-                  defaultChecked={settings.discountCodeMode === "generic"}
+                  defaultChecked={settings.aiDiscountCodeMode === "generic"}
                   style={{ marginRight: 12, marginTop: 4 }}
                   onChange={(e) => setFormChanged(true)}
                 />
@@ -173,11 +173,11 @@ export default function AISettingsTab({
                   <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
                     AI uses a single reusable code for all customers. Easy to track and no expiry.
                   </div>
-                  {settings.discountCodeMode === "generic" && (
+                  {settings.aiDiscountCodeMode === "generic" && (
                     <input
                       type="text"
-                      name="genericDiscountCode"
-                      defaultValue={settings.genericDiscountCode || ""}
+                      name="aiGenericDiscountCode"
+                      defaultValue={settings.aiGenericDiscountCode || ""}
                       placeholder="e.g., SAVE15"
                       maxLength="20"
                       style={{
@@ -198,9 +198,9 @@ export default function AISettingsTab({
               <label style={{ display: "flex", alignItems: "flex-start", cursor: "pointer" }}>
                 <input
                   type="radio"
-                  name="discountCodeMode"
+                  name="aiDiscountCodeMode"
                   value="unique"
-                  defaultChecked={settings.discountCodeMode === "unique" || !settings.discountCodeMode}
+                  defaultChecked={settings.aiDiscountCodeMode === "unique" || !settings.aiDiscountCodeMode}
                   style={{ marginRight: 12, marginTop: 4 }}
                   onChange={(e) => setFormChanged(true)}
                 />
@@ -209,15 +209,15 @@ export default function AISettingsTab({
                   <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
                     AI generates unique codes with 24-hour expiry. Creates urgency and prevents code sharing.
                   </div>
-                  {(settings.discountCodeMode === "unique" || !settings.discountCodeMode) && (
+                  {(settings.aiDiscountCodeMode === "unique" || !settings.aiDiscountCodeMode) && (
                     <div>
                       <label style={{ display: "block", fontSize: 13, color: "#666", marginBottom: 4 }}>
                         Code Prefix (optional)
                       </label>
                       <input
                         type="text"
-                        name="discountCodePrefix"
-                        defaultValue={settings.discountCodePrefix || "EXIT"}
+                        name="aiDiscountCodePrefix"
+                        defaultValue={settings.aiDiscountCodePrefix || "EXIT"}
                         placeholder="EXIT"
                         maxLength="10"
                         style={{

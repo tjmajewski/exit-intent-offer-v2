@@ -49,9 +49,9 @@ export async function action({ request }) {
       budgetEnabled,
       budgetAmount,
       budgetPeriod,
-      discountCodeMode,
-      genericDiscountCode,
-      discountCodePrefix,
+      aiDiscountCodeMode,
+      aiGenericDiscountCode,
+      aiDiscountCodePrefix,
       offerType
     } = settings;
     
@@ -223,20 +223,20 @@ export async function action({ request }) {
     let discountResult;
     let offerAmount = decision.amount;
 
-    // MODE: Generic - Reuse the same code for all customers
-    if (discountCodeMode === 'generic' && genericDiscountCode) {
-      console.log(`[AI Mode] Using generic discount code: ${genericDiscountCode}`);
+    // MODE: Generic - Reuse the same code for all customers (AI mode uses AI-specific settings)
+    if (aiDiscountCodeMode === 'generic' && aiGenericDiscountCode) {
+      console.log(`[AI Mode] Using generic discount code: ${aiGenericDiscountCode}`);
 
       // For generic codes, we don't create a new Shopify discount (it already exists)
       // Just return the code with no expiry
       discountResult = {
-        code: genericDiscountCode,
+        code: aiGenericDiscountCode,
         expiresAt: null // Generic codes don't expire
       };
     }
     // MODE: Unique - Create new code with 24h expiry (default behavior)
     else {
-      const prefix = discountCodePrefix || 'EXIT';
+      const prefix = aiDiscountCodePrefix || 'EXIT';
       console.log(`[AI Mode] Creating unique discount code with prefix: ${prefix}`);
 
       if (decision.type === 'percentage') {
@@ -258,7 +258,7 @@ export async function action({ request }) {
         amount: offerAmount,
         cartValue: signals.cartValue,
         expiresAt: discountResult.expiresAt,
-        mode: discountCodeMode === 'generic' ? 'generic' : 'unique',
+        mode: aiDiscountCodeMode === 'generic' ? 'generic' : 'unique',
         redeemed: false
       }
     });
