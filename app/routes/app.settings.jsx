@@ -4,7 +4,8 @@ import { authenticate } from "../shopify.server";
 import { hasFeature } from "../utils/featureGates";
 import { getAvailableTemplates, MODAL_TEMPLATES } from "../utils/templates";
 import { generateModalHash, getDefaultModalLibrary, findModalByHash, getNextModalName } from "../utils/modalHash";
- import { createDiscountCode, createFixedAmountDiscountCode, createGiftCard } from "../utils/discounts";
+ import { createDiscountCode as createOldDiscountCode, createFixedAmountDiscountCode, createGiftCard } from "../utils/discounts";
+import { createGenericDiscountCode } from "../utils/discount-codes";
 import { getTriggerDisplay, getDiscountDisplay } from "../utils/settingsHelpers";
 import AppLayout from "../components/AppLayout";
 import QuickSetupTab from "../components/settings/tabs/QuickSetupTab";
@@ -171,6 +172,9 @@ export async function action({ request }) {
     discountPercentage: parseInt(formData.get("discountPercentage") || "10"),
     discountAmount: parseFloat(formData.get("discountAmount") || "10"),
     discountCode: null,
+    discountCodeMode: formData.get("discountCodeMode") || "unique",
+    genericDiscountCode: formData.get("genericDiscountCode") || null,
+    discountCodePrefix: formData.get("discountCodePrefix") || "EXIT",
     redirectDestination: formData.get("redirectDestination") || "checkout",
     template: formData.get("template") || "discount",
     mode: formData.get("mode") || "manual",
@@ -240,6 +244,9 @@ export async function action({ request }) {
          discountCode: settings.discountCode,
         discountEnabled: settings.discountEnabled,
         offerType: settings.offerType,
+        discountCodeMode: settings.discountCodeMode,
+        genericDiscountCode: settings.genericDiscountCode,
+        discountCodePrefix: settings.discountCodePrefix,
         updatedAt: new Date()
       },
       create: {
@@ -268,7 +275,10 @@ export async function action({ request }) {
         modalHeadline: settings.modalHeadline,
         modalBody: settings.modalBody,
         ctaButton: settings.ctaButton,
-        redirectDestination: settings.redirectDestination
+        redirectDestination: settings.redirectDestination,
+        discountCodeMode: settings.discountCodeMode,
+        genericDiscountCode: settings.genericDiscountCode,
+        discountCodePrefix: settings.discountCodePrefix
       }
     });
     
@@ -277,28 +287,52 @@ export async function action({ request }) {
     // Debug logging
     console.log('=== DISCOUNT DEBUG ===');
     console.log('Discount enabled:', settings.discountEnabled);
+    console.log('Discount mode:', settings.discountCodeMode);
     console.log('Offer type:', settings.offerType);
     console.log('Discount percentage:', settings.discountPercentage);
     console.log('Discount amount:', settings.discountAmount);
-    
-    // Create discount code based on offer type
+
+    // Create discount code based on mode and offer type
     if (settings.discountEnabled) {
       console.log('Creating discount code...');
-      
-      if (settings.offerType === "percentage" && settings.discountPercentage > 0) {
-        console.log('Creating percentage discount:', settings.discountPercentage);
-        settings.discountCode = await createDiscountCode(admin, settings.discountPercentage);
-        console.log('Created code:', settings.discountCode);
-      } else if (settings.offerType === "fixed" && settings.discountAmount > 0) {
-        console.log('Creating fixed amount discount:', settings.discountAmount);
-        settings.discountCode = await createFixedAmountDiscountCode(admin, settings.discountAmount);
-        console.log('Created code:', settings.discountCode);
- } else if (settings.offerType === "giftcard" && settings.discountAmount > 0) {
-        console.log('Creating gift card:', settings.discountAmount);
-        settings.discountCode = await createGiftCard(admin, settings.discountAmount);
-        console.log('Created gift card code:', settings.discountCode);
+
+      // MODE: Generic - Create or verify generic code
+      if (settings.discountCodeMode === "generic" && settings.genericDiscountCode) {
+        console.log('Creating generic discount code:', settings.genericDiscountCode);
+
+        const discountAmount = settings.offerType === "percentage"
+          ? settings.discountPercentage
+          : settings.discountAmount;
+
+        const result = await createGenericDiscountCode(
+          admin,
+          settings.genericDiscountCode,
+          settings.offerType,
+          discountAmount
+        );
+
+        settings.discountCode = result.code;
+        console.log('Generic code ready:', settings.discountCode, result.exists ? '(reused)' : '(created)');
+      }
+      // MODE: Unique - Create unique code with 24h expiry (current behavior)
+      else if (settings.discountCodeMode === "unique") {
+        if (settings.offerType === "percentage" && settings.discountPercentage > 0) {
+          console.log('Creating unique percentage discount:', settings.discountPercentage);
+          settings.discountCode = await createOldDiscountCode(admin, settings.discountPercentage);
+          console.log('Created code:', settings.discountCode);
+        } else if (settings.offerType === "fixed" && settings.discountAmount > 0) {
+          console.log('Creating unique fixed amount discount:', settings.discountAmount);
+          settings.discountCode = await createFixedAmountDiscountCode(admin, settings.discountAmount);
+          console.log('Created code:', settings.discountCode);
+        } else if (settings.offerType === "giftcard" && settings.discountAmount > 0) {
+          console.log('Creating gift card:', settings.discountAmount);
+          settings.discountCode = await createGiftCard(admin, settings.discountAmount);
+          console.log('Created gift card code:', settings.discountCode);
+        } else {
+          console.log('No discount code created - conditions not met');
+        }
       } else {
-        console.log('No discount code created - conditions not met');
+        console.log('Generic mode selected but no generic code provided');
       }
     } else {
       console.log('Discount not enabled');

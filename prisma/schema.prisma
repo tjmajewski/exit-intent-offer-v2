@@ -98,7 +98,12 @@ model Shop {
   discountCode        String?
   discountEnabled     Boolean  @default(false)
   offerType           String?  @default("percentage")
-  
+
+  // Discount Code Mode (All plans, both Manual and AI)
+  discountCodeMode    String   @default("unique") // "unique" or "generic"
+  genericDiscountCode String?  // The generic code (if mode = generic)
+  discountCodePrefix  String?  @default("EXIT") // Prefix for unique codes
+
   discountOffers    DiscountOffer[]
   aiDecisions       AIDecision[]
   promotions        Promotion[]
@@ -115,11 +120,12 @@ model DiscountOffer {
   offerType       String
   amount          Float
   cartValue       Float?
-  expiresAt       DateTime
+  mode            String    @default("unique") // "unique" or "generic"
+  expiresAt       DateTime? // Nullable for generic codes (no expiry)
   redeemed        Boolean   @default(false)
   redeemedAt      DateTime?
   createdAt       DateTime  @default(now())
-  
+
   @@index([shopId, expiresAt])
   @@index([shopId, redeemed])
 }
