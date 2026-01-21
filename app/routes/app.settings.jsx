@@ -172,9 +172,14 @@ export async function action({ request }) {
     discountPercentage: parseInt(formData.get("discountPercentage") || "10"),
     discountAmount: parseFloat(formData.get("discountAmount") || "10"),
     discountCode: null,
-    discountCodeMode: formData.get("discountCodeMode") || "unique",
-    genericDiscountCode: formData.get("genericDiscountCode") || null,
-    discountCodePrefix: formData.get("discountCodePrefix") || "EXIT",
+    // Manual mode discount settings
+    manualDiscountCodeMode: formData.get("manualDiscountCodeMode") || "unique",
+    manualGenericDiscountCode: formData.get("manualGenericDiscountCode") || null,
+    manualDiscountCodePrefix: formData.get("manualDiscountCodePrefix") || "EXIT",
+    // AI mode discount settings
+    aiDiscountCodeMode: formData.get("aiDiscountCodeMode") || "unique",
+    aiGenericDiscountCode: formData.get("aiGenericDiscountCode") || null,
+    aiDiscountCodePrefix: formData.get("aiDiscountCodePrefix") || "EXIT",
     redirectDestination: formData.get("redirectDestination") || "checkout",
     template: formData.get("template") || "discount",
     mode: formData.get("mode") || "manual",
@@ -244,9 +249,12 @@ export async function action({ request }) {
          discountCode: settings.discountCode,
         discountEnabled: settings.discountEnabled,
         offerType: settings.offerType,
-        discountCodeMode: settings.discountCodeMode,
-        genericDiscountCode: settings.genericDiscountCode,
-        discountCodePrefix: settings.discountCodePrefix,
+        manualDiscountCodeMode: settings.manualDiscountCodeMode,
+        manualGenericDiscountCode: settings.manualGenericDiscountCode,
+        manualDiscountCodePrefix: settings.manualDiscountCodePrefix,
+        aiDiscountCodeMode: settings.aiDiscountCodeMode,
+        aiGenericDiscountCode: settings.aiGenericDiscountCode,
+        aiDiscountCodePrefix: settings.aiDiscountCodePrefix,
         updatedAt: new Date()
       },
       create: {
@@ -287,18 +295,34 @@ export async function action({ request }) {
     // Debug logging
     console.log('=== DISCOUNT DEBUG ===');
     console.log('Discount enabled:', settings.discountEnabled);
-    console.log('Discount mode:', settings.discountCodeMode);
+    console.log('App mode:', settings.mode);
+    console.log('Manual discount mode:', settings.manualDiscountCodeMode);
+    console.log('AI discount mode:', settings.aiDiscountCodeMode);
     console.log('Offer type:', settings.offerType);
     console.log('Discount percentage:', settings.discountPercentage);
     console.log('Discount amount:', settings.discountAmount);
 
     // Create discount code based on mode and offer type
+    // Use manual settings for manual mode, AI settings for AI mode
     if (settings.discountEnabled) {
       console.log('Creating discount code...');
 
+      // Determine which settings to use based on app mode
+      const discountCodeMode = settings.mode === "ai"
+        ? settings.aiDiscountCodeMode
+        : settings.manualDiscountCodeMode;
+      const genericDiscountCode = settings.mode === "ai"
+        ? settings.aiGenericDiscountCode
+        : settings.manualGenericDiscountCode;
+      const discountCodePrefix = settings.mode === "ai"
+        ? settings.aiDiscountCodePrefix
+        : settings.manualDiscountCodePrefix;
+
+      console.log(`Using ${settings.mode} mode settings:`, { discountCodeMode, genericDiscountCode, discountCodePrefix });
+
       // MODE: Generic - Create or verify generic code
-      if (settings.discountCodeMode === "generic" && settings.genericDiscountCode) {
-        console.log('Creating generic discount code:', settings.genericDiscountCode);
+      if (discountCodeMode === "generic" && genericDiscountCode) {
+        console.log('Creating generic discount code:', genericDiscountCode);
 
         const discountAmount = settings.offerType === "percentage"
           ? settings.discountPercentage
@@ -306,7 +330,7 @@ export async function action({ request }) {
 
         const result = await createGenericDiscountCode(
           admin,
-          settings.genericDiscountCode,
+          genericDiscountCode,
           settings.offerType,
           discountAmount
         );
@@ -315,7 +339,7 @@ export async function action({ request }) {
         console.log('Generic code ready:', settings.discountCode, result.exists ? '(reused)' : '(created)');
       }
       // MODE: Unique - Create unique code with 24h expiry (current behavior)
-      else if (settings.discountCodeMode === "unique") {
+      else if (discountCodeMode === "unique") {
         if (settings.offerType === "percentage" && settings.discountPercentage > 0) {
           console.log('Creating unique percentage discount:', settings.discountPercentage);
           settings.discountCode = await createOldDiscountCode(admin, settings.discountPercentage);
@@ -518,6 +542,12 @@ export async function action({ request }) {
         discountCode: settings.discountCode,
         discountEnabled: settings.discountEnabled,
         offerType: settings.offerType,
+        manualDiscountCodeMode: settings.manualDiscountCodeMode,
+        manualGenericDiscountCode: settings.manualGenericDiscountCode,
+        manualDiscountCodePrefix: settings.manualDiscountCodePrefix,
+        aiDiscountCodeMode: settings.aiDiscountCodeMode,
+        aiGenericDiscountCode: settings.aiGenericDiscountCode,
+        aiDiscountCodePrefix: settings.aiDiscountCodePrefix,
         updatedAt: new Date()
       },
       create: {
@@ -535,7 +565,10 @@ export async function action({ request }) {
         redirectDestination: settings.redirectDestination,
         discountCode: settings.discountCode,
         discountEnabled: settings.discountEnabled,
-        offerType: settings.offerType
+        offerType: settings.offerType,
+        discountCodeMode: settings.discountCodeMode,
+        genericDiscountCode: settings.genericDiscountCode,
+        discountCodePrefix: settings.discountCodePrefix
       }
     });
 

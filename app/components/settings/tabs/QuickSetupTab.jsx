@@ -338,9 +338,9 @@ export default function QuickSetupTab({
                 <label style={{ display: "flex", alignItems: "flex-start", cursor: "pointer" }}>
                   <input
                     type="radio"
-                    name="discountCodeMode"
+                    name="manualDiscountCodeMode"
                     value="generic"
-                    defaultChecked={settings.discountCodeMode === "generic"}
+                    defaultChecked={settings.manualDiscountCodeMode === "generic"}
                     style={{ marginRight: 12, marginTop: 4 }}
                   />
                   <div style={{ flex: 1 }}>
@@ -348,11 +348,11 @@ export default function QuickSetupTab({
                     <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
                       Use a single code for all customers. Easy to track and no expiry.
                     </div>
-                    {settings.discountCodeMode === "generic" && (
+                    {settings.manualDiscountCodeMode === "generic" && (
                       <input
                         type="text"
-                        name="genericDiscountCode"
-                        defaultValue={settings.genericDiscountCode || "SAVE15"}
+                        name="manualGenericDiscountCode"
+                        defaultValue={settings.manualGenericDiscountCode || ""}
                         placeholder="e.g., SAVE15"
                         maxLength="20"
                         style={{
@@ -373,9 +373,9 @@ export default function QuickSetupTab({
                 <label style={{ display: "flex", alignItems: "flex-start", cursor: "pointer" }}>
                   <input
                     type="radio"
-                    name="discountCodeMode"
+                    name="manualDiscountCodeMode"
                     value="unique"
-                    defaultChecked={settings.discountCodeMode === "unique" || !settings.discountCodeMode}
+                    defaultChecked={settings.manualDiscountCodeMode === "unique" || !settings.manualDiscountCodeMode}
                     style={{ marginRight: 12, marginTop: 4 }}
                   />
                   <div style={{ flex: 1 }}>
@@ -383,15 +383,15 @@ export default function QuickSetupTab({
                     <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
                       Generate unique codes with 24-hour expiry. Creates urgency and prevents code sharing.
                     </div>
-                    {(settings.discountCodeMode === "unique" || !settings.discountCodeMode) && (
+                    {(settings.manualDiscountCodeMode === "unique" || !settings.manualDiscountCodeMode) && (
                       <div>
                         <label style={{ display: "block", fontSize: 13, color: "#666", marginBottom: 4 }}>
                           Code Prefix (optional)
                         </label>
                         <input
                           type="text"
-                          name="discountCodePrefix"
-                          defaultValue={settings.discountCodePrefix || "EXIT"}
+                          name="manualDiscountCodePrefix"
+                          defaultValue={settings.manualDiscountCodePrefix || "EXIT"}
                           placeholder="EXIT"
                           maxLength="10"
                           style={{

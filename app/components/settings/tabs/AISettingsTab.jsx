@@ -151,6 +151,96 @@ export default function AISettingsTab({
           )}
         </div>
 
+        {/* Discount Code Type - Only show if aggression > 0 */}
+        {aggressionLevel > 0 && (
+          <div style={{ marginBottom: 24 }}>
+            <label style={{ display: "block", marginBottom: 12, fontWeight: 500, fontSize: 16 }}>
+              Discount Code Type
+            </label>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "flex", alignItems: "flex-start", cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  name="aiDiscountCodeMode"
+                  value="generic"
+                  defaultChecked={settings.aiDiscountCodeMode === "generic"}
+                  style={{ marginRight: 12, marginTop: 4 }}
+                  onChange={(e) => setFormChanged(true)}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 500, marginBottom: 4 }}>Generic Code (Same for everyone)</div>
+                  <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
+                    AI uses a single reusable code for all customers. Easy to track and no expiry.
+                  </div>
+                  {settings.aiDiscountCodeMode === "generic" && (
+                    <input
+                      type="text"
+                      name="aiGenericDiscountCode"
+                      defaultValue={settings.aiGenericDiscountCode || ""}
+                      placeholder="e.g., SAVE15"
+                      maxLength="20"
+                      style={{
+                        padding: "8px 12px",
+                        border: "1px solid #d1d5db",
+                        borderRadius: 6,
+                        fontSize: 16,
+                        textTransform: "uppercase"
+                      }}
+                      onChange={(e) => { e.target.value = e.target.value.toUpperCase(); setFormChanged(true); }}
+                    />
+                  )}
+                </div>
+              </label>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "flex", alignItems: "flex-start", cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  name="aiDiscountCodeMode"
+                  value="unique"
+                  defaultChecked={settings.aiDiscountCodeMode === "unique" || !settings.aiDiscountCodeMode}
+                  style={{ marginRight: 12, marginTop: 4 }}
+                  onChange={(e) => setFormChanged(true)}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 500, marginBottom: 4 }}>Unique Codes (One per customer)</div>
+                  <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
+                    AI generates unique codes with 24-hour expiry. Creates urgency and prevents code sharing.
+                  </div>
+                  {(settings.aiDiscountCodeMode === "unique" || !settings.aiDiscountCodeMode) && (
+                    <div>
+                      <label style={{ display: "block", fontSize: 13, color: "#666", marginBottom: 4 }}>
+                        Code Prefix (optional)
+                      </label>
+                      <input
+                        type="text"
+                        name="aiDiscountCodePrefix"
+                        defaultValue={settings.aiDiscountCodePrefix || "EXIT"}
+                        placeholder="EXIT"
+                        maxLength="10"
+                        style={{
+                          padding: "8px 12px",
+                          border: "1px solid #d1d5db",
+                          borderRadius: 6,
+                          fontSize: 16,
+                          width: 120,
+                          textTransform: "uppercase"
+                        }}
+                        onChange={(e) => { e.target.value = e.target.value.toUpperCase(); setFormChanged(true); }}
+                      />
+                      <span style={{ marginLeft: 8, fontSize: 13, color: "#666" }}>
+                        -ABC123
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </label>
+            </div>
+          </div>
+        )}
+
         {/* Budget Controls */}
         <div style={{ 
           padding: 20, 

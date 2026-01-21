@@ -99,10 +99,20 @@ model Shop {
   discountEnabled     Boolean  @default(false)
   offerType           String?  @default("percentage")
 
-  // Discount Code Mode (All plans, both Manual and AI)
-  discountCodeMode    String   @default("unique") // "unique" or "generic"
-  genericDiscountCode String?  // The generic code (if mode = generic)
-  discountCodePrefix  String?  @default("EXIT") // Prefix for unique codes
+  // Manual Mode Discount Settings (Independent)
+  manualDiscountCodeMode    String   @default("unique") // "unique" or "generic"
+  manualGenericDiscountCode String?  // The generic code for manual mode
+  manualDiscountCodePrefix  String?  @default("EXIT") // Prefix for unique codes in manual mode
+
+  // AI Mode Discount Settings (Independent)
+  aiDiscountCodeMode    String   @default("unique") // "unique" or "generic"
+  aiGenericDiscountCode String?  // The generic code for AI mode
+  aiDiscountCodePrefix  String?  @default("EXIT") // Prefix for unique codes in AI mode
+
+  // DEPRECATED: Old shared fields (kept for backwards compatibility, can be removed after migration)
+  discountCodeMode    String?  @default("unique")
+  genericDiscountCode String?
+  discountCodePrefix  String?
 
   discountOffers    DiscountOffer[]
   aiDecisions       AIDecision[]
