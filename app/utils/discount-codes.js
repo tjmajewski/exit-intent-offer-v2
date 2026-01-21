@@ -311,8 +311,8 @@ export async function createFixedDiscount(admin, amount, prefix = 'EXIT') {
 }
 
 // Create threshold discount (spend $X get $Y off) with 24h expiration
-export async function createThresholdDiscount(admin, threshold, discountAmount) {
-  const code = generateUniqueCode('threshold', { threshold, amount: discountAmount });
+export async function createThresholdDiscount(admin, threshold, discountAmount, prefix = 'EXIT') {
+  const code = generateUniqueCode('threshold', { threshold, amount: discountAmount }, prefix);
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   
   const mutation = `

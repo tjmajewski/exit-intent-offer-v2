@@ -43,7 +43,17 @@ export async function action({ request }) {
       return json({ error: "AI mode not enabled" }, { status: 400 });
     }
     
-    const { aiGoal, aggression, budgetEnabled, budgetAmount, budgetPeriod } = settings;
+    const {
+      aiGoal,
+      aggression,
+      budgetEnabled,
+      budgetAmount,
+      budgetPeriod,
+      discountCodeMode,
+      genericDiscountCode,
+      discountCodePrefix,
+      offerType
+    } = settings;
     
     // Find or create shop in database
     let shopRecord = await db.shop.findUnique({
@@ -209,17 +219,34 @@ export async function action({ request }) {
       });
     }
     
-    // Create discount code based on type
+    // Create discount code based on type and mode
     let discountResult;
     let offerAmount = decision.amount;
-    
-    if (decision.type === 'percentage') {
-      discountResult = await createPercentageDiscount(admin, decision.amount);
-    } else if (decision.type === 'fixed') {
-      discountResult = await createFixedDiscount(admin, decision.amount);
-    } else if (decision.type === 'threshold') {
-      discountResult = await createThresholdDiscount(admin, decision.threshold, decision.amount);
-      offerAmount = decision.amount; // Store discount amount, not threshold
+
+    // MODE: Generic - Reuse the same code for all customers
+    if (discountCodeMode === 'generic' && genericDiscountCode) {
+      console.log(`[AI Mode] Using generic discount code: ${genericDiscountCode}`);
+
+      // For generic codes, we don't create a new Shopify discount (it already exists)
+      // Just return the code with no expiry
+      discountResult = {
+        code: genericDiscountCode,
+        expiresAt: null // Generic codes don't expire
+      };
+    }
+    // MODE: Unique - Create new code with 24h expiry (default behavior)
+    else {
+      const prefix = discountCodePrefix || 'EXIT';
+      console.log(`[AI Mode] Creating unique discount code with prefix: ${prefix}`);
+
+      if (decision.type === 'percentage') {
+        discountResult = await createPercentageDiscount(admin, decision.amount, prefix);
+      } else if (decision.type === 'fixed') {
+        discountResult = await createFixedDiscount(admin, decision.amount, prefix);
+      } else if (decision.type === 'threshold') {
+        discountResult = await createThresholdDiscount(admin, decision.threshold, decision.amount, prefix);
+        offerAmount = decision.amount; // Store discount amount, not threshold
+      }
     }
     
     // Track discount offer in database
@@ -231,6 +258,7 @@ export async function action({ request }) {
         amount: offerAmount,
         cartValue: signals.cartValue,
         expiresAt: discountResult.expiresAt,
+        mode: discountCodeMode === 'generic' ? 'generic' : 'unique',
         redeemed: false
       }
     });
