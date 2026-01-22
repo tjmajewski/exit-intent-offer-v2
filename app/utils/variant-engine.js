@@ -5,10 +5,18 @@ import { generateVisualGenes } from './visual-gene-pools.js';
 import { validateVariantCopy } from './brand-safety.js';
 import { hasSocialProof, replaceSocialProofPlaceholders } from './social-proof.js';
 import { getSocialProofFromCache, setSocialProofCache } from './social-proof-cache.js';
-import { PrismaClient } from '@prisma/client';
-import jStat from 'jstat';
 
-const db = new PrismaClient();
+// Helper to get db instance (dynamic import for React Router 7 compatibility)
+let dbInstance = null;
+async function getDb() {
+  if (!dbInstance) {
+    const { default: db } = await import('../db.server.js');
+    dbInstance = db;
+  }
+  return dbInstance;
+}
+// import db from '../db.server.js';
+import jStat from 'jstat';
 
 /**
  * Generate a unique variant ID
@@ -75,7 +83,7 @@ export async function createRandomVariantWithSocialProof(shopId, baseline, segme
   
   // If not cached, fetch from database
   if (!shop) {
-    shop = await db.shop.findUnique({
+    shop = await (await getDb()).shop.findUnique({
       where: { id: shopId },
       select: {
         orderCount: true,
@@ -169,7 +177,7 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
   console.log(`🌱 Seeding initial population for shop ${shopId}, baseline ${baseline}, segment ${segment}`);
   
   // Check if shop is new
-  const shop = await db.shop.findUnique({
+  const shop = await (await getDb()).shop.findUnique({
     where: { id: shopId },
     include: {
       variants: {
@@ -189,7 +197,7 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
   }
   
   // Count total impressions across all variants
-  const totalImpressions = await db.variantImpression.count({
+  const totalImpressions = await (await getDb()).variantImpression.count({
     where: { shopId: shopId }
   });
   
@@ -200,7 +208,7 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
     console.log('🆕 New store detected - checking for proven genes from network...');
     
     // Query top-performing genes from meta-learning
-    const provenGenes = await db.metaLearningGene.findMany({
+    const provenGenes = await (await getDb()).metaLearningGene.findMany({
       where: {
         baseline: baseline,
         sampleSize: { gte: 3 }, // At least 3 stores used this gene
@@ -261,7 +269,7 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
   // Save variants to database
   const createdVariants = [];
   for (const variantData of variants) {
-    const created = await db.variant.create({
+    const created = await (await getDb()).variant.create({
       data: {
         shopId: shopId,
         ...variantData
@@ -279,7 +287,7 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
  * Get live variants for a shop/baseline/segment
  */
 export async function getLiveVariants(shopId, baseline, segment = 'all') {
-  return await db.variant.findMany({
+  return await (await getDb()).variant.findMany({
     where: {
       shopId: shopId,
       baseline: baseline,
@@ -401,7 +409,7 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
  */
 export async function recordImpression(variantId, shopId, context = {}) {
   // Update variant impression count
-  await db.variant.update({
+  await (await getDb()).variant.update({
     where: { id: variantId },
     data: {
       impressions: { increment: 1 }
@@ -409,7 +417,7 @@ export async function recordImpression(variantId, shopId, context = {}) {
   });
 
   // Check if there's an active promotion
-  const activePromo = await db.promotion.findFirst({
+  const activePromo = await (await getDb()).promotion.findFirst({
     where: {
       shopId: shopId,
       status: 'active'
@@ -417,7 +425,7 @@ export async function recordImpression(variantId, shopId, context = {}) {
   });
 
   // Create impression record
-  const impression = await db.variantImpression.create({
+  const impression = await (await getDb()).variantImpression.create({
     data: {
       variantId: variantId,
       shopId: shopId,
@@ -440,13 +448,13 @@ export async function recordImpression(variantId, shopId, context = {}) {
  * Record a click on a variant
  */
 export async function recordClick(impressionId) {
-  const impression = await db.variantImpression.update({
+  const impression = await (await getDb()).variantImpression.update({
     where: { id: impressionId },
     data: { clicked: true }
   });
   
   // Update variant click count
-  await db.variant.update({
+  await (await getDb()).variant.update({
     where: { id: impression.variantId },
     data: {
       clicks: { increment: 1 }
@@ -464,7 +472,7 @@ export async function recordClick(impressionId) {
 export async function recordConversion(impressionId, revenue, discountAmount = 0) {
   const profit = revenue - discountAmount;
   
-  const impression = await db.variantImpression.update({
+  const impression = await (await getDb()).variantImpression.update({
     where: { id: impressionId },
     data: {
       converted: true,
@@ -475,7 +483,7 @@ export async function recordConversion(impressionId, revenue, discountAmount = 0
   });
   
   // Update variant performance
-  const variant = await db.variant.findUnique({
+  const variant = await (await getDb()).variant.findUnique({
     where: { id: impression.variantId }
   });
   
@@ -489,7 +497,7 @@ export async function recordConversion(impressionId, revenue, discountAmount = 0
   const profitPerConversion = aov - (discountAmount / newConversions);
   const profitPerImpression = profitPerConversion * cvr;
   
-  await db.variant.update({
+  await (await getDb()).variant.update({
     where: { id: impression.variantId },
     data: {
       conversions: newConversions,
@@ -709,7 +717,7 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
   console.log('='.repeat(80));
   
   // Load shop's evolution settings
-  const shop = await db.shop.findUnique({
+  const shop = await (await getDb()).shop.findUnique({
     where: { id: shopId },
     select: {
       mutationRate: true,
@@ -781,7 +789,7 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
     console.log(`\n💀 Killing ${dying.length} variant(s)`);
     
     for (const variant of dying) {
-      await db.variant.update({
+      await (await getDb()).variant.update({
         where: { id: variant.id },
         data: {
           status: 'dead',
@@ -804,7 +812,7 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
     for (let i = 0; i < needToBreed; i++) {
       const childData = await breedNewVariant(liveVariants, baseline, segment, shopId, evolutionSettings);
       
-      const newVariant = await db.variant.create({
+      const newVariant = await (await getDb()).variant.create({
         data: {
           shopId: shopId,
           ...childData
@@ -822,7 +830,7 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
   if (newChampion) {
     // Dethrone old champion if exists
     if (champion && champion.id !== newChampion.id) {
-      await db.variant.update({
+      await (await getDb()).variant.update({
         where: { id: champion.id },
         data: { status: 'alive', championDate: null }
       });
@@ -830,7 +838,7 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
     }
     
     // Crown new champion
-    await db.variant.update({
+    await (await getDb()).variant.update({
       where: { id: newChampion.id },
       data: { status: 'champion', championDate: new Date() }
     });
@@ -838,7 +846,7 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
   }
   
   // Step 6: Update shop's last evolution cycle timestamp
-  await db.shop.update({
+  await (await getDb()).shop.update({
     where: { id: shopId },
     data: { lastEvolutionCycle: new Date() }
   });

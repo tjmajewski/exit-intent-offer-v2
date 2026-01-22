@@ -1,5 +1,4 @@
 import { json } from "@remix-run/node";
-import db from "../db.server.js";
 
 export async function action({ request }) {
   try {

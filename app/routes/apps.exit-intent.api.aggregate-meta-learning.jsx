@@ -1,15 +1,13 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { PrismaClient } from "@prisma/client";
-import { 
-  aggregateSignalCorrelations, 
+import {
+  aggregateSignalCorrelations,
   aggregateCopyPatterns,
-  saveMetaInsight 
+  saveMetaInsight
 } from "../utils/meta-learning.js";
 
-const db = new PrismaClient();
-
 export async function action({ request }) {
+  const { default: db } = await import("../db.server.js");
   try {
     // This endpoint should be protected - only admins or cron jobs
     await authenticate.admin(request);

@@ -20,8 +20,7 @@ export async function loader({ request }) {
   // Load settings AND plan from shop metafields
   try {
     // Import database client
-    const { PrismaClient } = await import("@prisma/client");
-    const db = new PrismaClient();
+    const { default: db } = await import("../db.server.js");
     
     // Load brand settings from database
     const shopRecord = await db.shop.findUnique({
@@ -211,9 +210,8 @@ export async function action({ request }) {
 
   try {
     // Import database client
-    const { PrismaClient } = await import("@prisma/client");
-    const db = new PrismaClient();
-    
+    const { default: db } = await import("../db.server.js");
+
     // Get shop domain
     const shopDomain = session.shop;
     

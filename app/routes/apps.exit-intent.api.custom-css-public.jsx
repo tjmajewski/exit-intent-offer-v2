@@ -1,10 +1,8 @@
 import { json } from "@remix-run/node";
-import { PrismaClient } from "@prisma/client";
-
-const db = new PrismaClient();
 
 // Public endpoint - no authentication required (called by modal JavaScript)
 export async function loader({ request }) {
+  const { default: db } = await import("../db.server.js");
   const url = new URL(request.url);
   const shop = url.searchParams.get('shop');
   

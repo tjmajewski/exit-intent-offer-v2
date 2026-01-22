@@ -1,16 +1,14 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { PrismaClient } from "@prisma/client";
-import { 
-  aggregateSignalCorrelations, 
+import {
+  aggregateSignalCorrelations,
   aggregateCopyPatterns,
   getMetaInsight,
   shouldUseMetaLearning
 } from "../utils/meta-learning.js";
 
-const db = new PrismaClient();
-
 export async function action({ request }) {
+  const { default: db } = await import("../db.server.js");
   try {
     await authenticate.public.appProxy(request);
     const body = await request.json();

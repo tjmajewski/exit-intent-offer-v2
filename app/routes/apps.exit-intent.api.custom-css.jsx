@@ -1,8 +1,5 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { PrismaClient } from "@prisma/client";
-
-const db = new PrismaClient();
 
 // Sanitize CSS to prevent XSS attacks
 function sanitizeCSS(css) {
@@ -43,6 +40,7 @@ function validateCSS(css) {
 }
 
 export async function action({ request }) {
+  const { default: db } = await import("../db.server.js");
   const { admin, session } = await authenticate.admin(request);
   
   try {
@@ -77,9 +75,7 @@ export async function action({ request }) {
         updatedAt: new Date()
       }
     });
-    
-    console.log(`[Custom CSS] Updated for shop: ${session.shop}`);
-    
+
     return json({ 
       success: true,
       message: "Custom CSS saved successfully" 
@@ -94,6 +90,7 @@ export async function action({ request }) {
 }
 
 export async function loader({ request }) {
+  const { default: db } = await import("../db.server.js");
   const { admin, session } = await authenticate.admin(request);
   
   try {

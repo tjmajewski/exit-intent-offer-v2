@@ -2,8 +2,7 @@
 // Runs nightly to aggregate gene performance across all stores
 // Builds network intelligence for new stores
 
-import { PrismaClient } from '@prisma/client';
-const db = new PrismaClient();
+import db from '../db.server.js';
 
 /**
  * Aggregate gene performance across all stores

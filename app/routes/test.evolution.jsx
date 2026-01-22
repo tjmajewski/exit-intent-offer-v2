@@ -1,10 +1,9 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { PrismaClient } from "@prisma/client";
 
 export async function loader({ request }) {
+  const { default: db } = await import("../db.server.js");
   const { session } = await authenticate.admin(request);
-  const db = new PrismaClient();
   
   // Get shop
   const shop = await db.shop.findUnique({

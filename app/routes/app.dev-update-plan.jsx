@@ -1,8 +1,8 @@
 import { redirect } from "@remix-run/node";
 import { authenticate } from "../shopify.server.js";
-import { PrismaClient } from "@prisma/client";
 
 export async function action({ request }) {
+  const { default: db } = await import("../db.server.js");
   const { session, admin } = await authenticate.admin(request);
   const formData = await request.formData();
   const tier = formData.get("tier");
@@ -52,18 +52,14 @@ export async function action({ request }) {
   });
   
   // Also update database for consistency
-  const db = new PrismaClient();
-  
   await db.shop.upsert({
     where: { shopifyDomain: session.shop },
     update: { plan: tier },
-    create: { 
+    create: {
       shopifyDomain: session.shop,
       plan: tier
     }
   });
-  
-  await db.$disconnect();
   
   return redirect(request.headers.get("Referer") || "/app");
 }

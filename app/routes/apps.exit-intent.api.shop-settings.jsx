@@ -1,18 +1,16 @@
 import { json } from "@remix-run/node";
-import { PrismaClient } from "@prisma/client";
-
-const db = new PrismaClient();
 
 // Public endpoint - returns shop settings for modal initialization
 export async function loader({ request }) {
   const url = new URL(request.url);
   const shop = url.searchParams.get('shop');
-  
+
   if (!shop) {
     return json({ plan: 'starter', mode: 'manual', enabled: true, triggers: { exitIntent: true } }, { status: 400 });
   }
-  
+
   try {
+    const { default: db } = await import("../db.server.js");
     const shopRecord = await db.shop.findUnique({
       where: { shopifyDomain: shop }
     });
@@ -32,12 +30,6 @@ export async function loader({ request }) {
         }
       });
     }
-    
-  console.log(`[Shop Settings API] Returning settings for ${shop}:`, {
-      plan: shopRecord.plan,
-      mode: shopRecord.mode,
-      shopId: shopRecord.id
-    });
 
     return json({
       plan: shopRecord.plan || 'starter',

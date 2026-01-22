@@ -1,8 +1,5 @@
-import { PrismaClient } from "@prisma/client";
-
-const db = new PrismaClient();
-
 export async function action({ request }) {
+  const { default: db } = await import("../app/db.server.js");
   try {
     const now = new Date();
     
@@ -16,8 +13,6 @@ export async function action({ request }) {
       }
     });
     
-    console.log(`Found ${expiredOffers.length} expired offers to clean up`);
-    
     // Delete expired offers (this frees up budget)
     const deleteResult = await db.discountOffer.deleteMany({
       where: {
@@ -27,8 +22,6 @@ export async function action({ request }) {
         redeemed: false
       }
     });
-    
-    console.log(`✓ Cleaned up ${deleteResult.count} expired offers`);
     
     // Calculate reclaimed budget by shop
     const reclaimedByShop = {};
