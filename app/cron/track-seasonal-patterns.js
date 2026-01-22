@@ -20,7 +20,7 @@ async function trackSeasonalPatterns() {
     }
   }
   
-  console.log('\n✅ Seasonal tracking complete\n');
+  console.log('\n Seasonal tracking complete\n');
   await db.$disconnect();
 }
 

@@ -2,21 +2,21 @@
  * Collect store metrics from Shopify
  */
 export async function collectStoreMetrics(admin, shopifyDomain) {
-  console.log(`📊 Collecting social proof metrics for ${shopifyDomain}`);
+  console.log(` Collecting social proof metrics for ${shopifyDomain}`);
 
   try {
     // Get customer count
     const customerCount = await getCustomerCount(admin);
-    console.log(`  ✅ Customers: ${customerCount}`);
+    console.log(`   Customers: ${customerCount}`);
 
     // Get order count (better for social proof)
     const orderCount = await getOrderCount(admin);
-    console.log(`  ✅ Orders: ${orderCount}`);
+    console.log(`   Orders: ${orderCount}`);
 
     // Get product reviews (if available)
     const reviews = await getReviewMetrics(admin);
     if (reviews) {
-      console.log(`  ✅ Reviews: ${reviews.count} (avg: ${reviews.avgRating})`);
+      console.log(`   Reviews: ${reviews.count} (avg: ${reviews.avgRating})`);
     }
 
     // Update shop record
@@ -32,7 +32,7 @@ export async function collectStoreMetrics(admin, shopifyDomain) {
       }
     });
     
-    console.log(`  ✅ Social proof updated for ${shopifyDomain}`);
+    console.log(`   Social proof updated for ${shopifyDomain}`);
     
     return {
       customerCount,
@@ -41,7 +41,7 @@ export async function collectStoreMetrics(admin, shopifyDomain) {
       reviewCount: reviews?.count
     };
   } catch (error) {
-    console.error(`  ❌ Error collecting metrics: ${error.message}`);
+    console.error(`   Error collecting metrics: ${error.message}`);
     return null;
   }
 }
@@ -102,7 +102,7 @@ async function getReviewMetrics(admin) {
     // Shopify doesn't have a native reviews API in GraphQL
     // This would need integration with review app APIs
     // For now, return null and let merchants manually configure
-    console.log('  ⚠️ Reviews require review app integration (Judge.me, Yotpo, etc.)');
+    console.log('   Reviews require review app integration (Judge.me, Yotpo, etc.)');
     return null;
   } catch (error) {
     console.error('Error fetching reviews:', error);
@@ -199,7 +199,7 @@ export function hasSocialProof(shop) {
  * Test social proof formatting
  */
 export function testSocialProofFormatting() {
-  console.log('🧪 Testing Social Proof Formatting');
+  console.log(' Testing Social Proof Formatting');
   console.log('===================================\n');
   
   const testCases = [
@@ -212,11 +212,11 @@ export function testSocialProofFormatting() {
   
   testCases.forEach(test => {
     const result = formatSocialProof(test.count);
-    const passed = result === test.expected ? '✅' : '❌';
+    const passed = result === test.expected ? '' : '';
     console.log(`${passed} ${test.count} orders → ${result || 'null'} (${test.reason})`);
   });
   
-  console.log('\n🧪 Testing Rating Formatting');
+  console.log('\n Testing Rating Formatting');
   console.log('=============================\n');
   
   const ratingTests = [
@@ -228,7 +228,7 @@ export function testSocialProofFormatting() {
   
   ratingTests.forEach(test => {
     const result = formatRating(test.rating);
-    const passed = result === test.expected ? '✅' : '❌';
+    const passed = result === test.expected ? '' : '';
     console.log(`${passed} ${test.rating} stars → ${result || 'null'} (${test.reason})`);
   });
 }

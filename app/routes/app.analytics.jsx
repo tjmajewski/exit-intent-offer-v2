@@ -99,7 +99,7 @@ export async function action({ request }) {
         }
       }
       
-     console.log(`✓ Test conversion added: $${revenue}`);
+     console.log(` Test conversion added: $${revenue}`);
       return { success: true };
     }
     
@@ -254,7 +254,7 @@ export async function action({ request }) {
         }
       });
       
-      console.log('✅ Generated test events for all modals');
+      console.log(' Generated test events for all modals');
       return redirect('/app/analytics');
     }
     
@@ -297,8 +297,8 @@ export async function loader({ request }) {
       : getDefaultModalLibrary();
 
     // Filter modal stats by date range
-    console.log('📊 Filtering modals by date range:', dateRange);
-    console.log('📊 Total modals:', modalLibrary.modals?.length);
+    console.log(' Filtering modals by date range:', dateRange);
+    console.log(' Total modals:', modalLibrary.modals?.length);
     
     if (modalLibrary.modals && dateRange !== 'all') {
       const now = new Date();
@@ -311,10 +311,10 @@ export async function loader({ request }) {
       }
       
       modalLibrary.modals = modalLibrary.modals.map(modal => {
-        console.log(`📊 Modal "${modal.modalName}" has ${modal.stats.events?.length || 0} events`);
+        console.log(` Modal "${modal.modalName}" has ${modal.stats.events?.length || 0} events`);
         
         if (!modal.stats.events || modal.stats.events.length === 0) {
-          console.log(`📊 Modal "${modal.modalName}" has no events, showing zeros`);
+          console.log(` Modal "${modal.modalName}" has no events, showing zeros`);
           // No events yet, return modal with zero stats
           return {
             ...modal,
@@ -581,7 +581,7 @@ export default function Performance() {
                     marginLeft: 8
                   }}
                 >
-                  🔧 Generate Test Data
+                   Generate Test Data
                 </button>
               </fetcher.Form>
             )}

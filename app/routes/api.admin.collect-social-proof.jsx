@@ -13,7 +13,7 @@ export async function action({ request }) {
   try {
     const { admin, session } = await authenticate.admin(request);
     
-    console.log('🔄 Collecting social proof metrics...');
+    console.log(' Collecting social proof metrics...');
     
     // Collect metrics for this shop
     const metrics = await collectStoreMetrics(admin, session.shop);
@@ -21,7 +21,7 @@ export async function action({ request }) {
     // Clear cache so next variant creation uses fresh data
     clearAllSocialProofCache();
     
-    console.log('✅ Social proof collection complete');
+    console.log(' Social proof collection complete');
     
     return json({
       success: true,
@@ -30,7 +30,7 @@ export async function action({ request }) {
     });
     
   } catch (error) {
-    console.error('❌ Social proof collection failed:', error);
+    console.error(' Social proof collection failed:', error);
     return json({
       success: false,
       error: error.message

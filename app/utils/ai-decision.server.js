@@ -35,7 +35,7 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
     if (activePromo) {
       // PRO TIER: Detect but don't act (upsell opportunity)
       if (plan === 'pro') {
-        console.log(`⚠️ [Pro] Site-wide promo detected but no action taken: ${activePromo.code} - ${activePromo.amount}%`);
+        console.log(` [Pro] Site-wide promo detected but no action taken: ${activePromo.code} - ${activePromo.amount}%`);
         activePromoWarning = {
           code: activePromo.code,
           amount: activePromo.amount,
@@ -46,12 +46,12 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
       
       // ENTERPRISE TIER: Detect and auto-optimize
       if (plan === 'enterprise') {
-        console.log(`🎯 [Enterprise] Active site-wide promo: ${activePromo.code} - ${activePromo.amount}%`);
+        console.log(` [Enterprise] Active site-wide promo: ${activePromo.code} - ${activePromo.amount}%`);
         
         // Check if merchant has manually overridden
         if (activePromo.merchantOverride) {
           const override = JSON.parse(activePromo.merchantOverride);
-          console.log(`🔧 Merchant override active: ${override.type}`);
+          console.log(` Merchant override active: ${override.type}`);
           
           if (override.type === 'pause') {
             return null; // Don't show modal
@@ -113,7 +113,7 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
     const currentCart = cartValue || signals.cartValue || 0;
     const cart = analyzeCartComposition(signals);
     
-    console.log('🎯 REVENUE MODE TRIGGERED');
+    console.log(' REVENUE MODE TRIGGERED');
     console.log('Cart composition:', cart);
     
     // HIGH-TICKET SINGLE ITEM: Encourage accessories, not second big item
@@ -226,8 +226,8 @@ export function enterpriseAI(signals, aggression, aiGoal = 'revenue') {
   const cartValue = signals.cartValue || 0;
   const cart = analyzeCartComposition(signals);
   
-  console.log('💎 [Enterprise AI] Cart analysis:', cart);
-  console.log('💎 [Enterprise AI] Propensity:', propensity);
+  console.log(' [Enterprise AI] Cart analysis:', cart);
+  console.log(' [Enterprise AI] Propensity:', propensity);
   
   // High propensity (>75) = likely to buy anyway
   if (propensity > 75) {

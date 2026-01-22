@@ -167,7 +167,7 @@ export async function retireLosingVariants(prisma, shopId) {
 function getDefaultVariant(segment) {
   return {
     id: `default_${segment}`,
-    headline: "Wait! Don't Miss Out 🎁",
+    headline: "Wait! Don't Miss Out ",
     body: "Complete your order now and save!",
     cta: "Get My Discount",
     segment: segment
@@ -237,21 +237,21 @@ function getTemplatesForSegment(segment) {
   if (device === 'mobile') {
     if (source === 'paid') {
       return [
-        { headline: "Limited Time! 🔥", body: "Your exclusive offer expires soon", cta: "Claim Discount" },
-        { headline: "Exclusive Deal 🎁", body: "Complete your order & save now", cta: "Get My Offer" },
-        { headline: "Smart Shoppers Save 💰", body: "Don't miss this special discount", cta: "Apply Savings" }
+        { headline: "Limited Time! ", body: "Your exclusive offer expires soon", cta: "Claim Discount" },
+        { headline: "Exclusive Deal ", body: "Complete your order & save now", cta: "Get My Offer" },
+        { headline: "Smart Shoppers Save ", body: "Don't miss this special discount", cta: "Apply Savings" }
       ];
     } else if (source === 'social') {
       return [
-        { headline: "Treat Yourself! 🎉", body: "You deserve this special offer", cta: "Get Deal" },
-        { headline: "Perfect Timing! ✨", body: "Complete your order with savings", cta: "Claim Offer" },
-        { headline: "Don't Miss Out! 🔥", body: "Limited deal just for you", cta: "Save Now" }
+        { headline: "Treat Yourself! ", body: "You deserve this special offer", cta: "Get Deal" },
+        { headline: "Perfect Timing! ", body: "Complete your order with savings", cta: "Claim Offer" },
+        { headline: "Don't Miss Out! ", body: "Limited deal just for you", cta: "Save Now" }
       ];
     } else {
       return [
-        { headline: "Wait! Special Offer 🎁", body: "Complete your order & save", cta: "Get Discount" },
-        { headline: "Before You Go... 💝", body: "Here's an exclusive deal for you", cta: "Claim Savings" },
-        { headline: "One More Thing! ⭐", body: "Don't forget your special offer", cta: "Apply Deal" }
+        { headline: "Wait! Special Offer ", body: "Complete your order & save", cta: "Get Discount" },
+        { headline: "Before You Go... ", body: "Here's an exclusive deal for you", cta: "Claim Savings" },
+        { headline: "One More Thing! ", body: "Don't forget your special offer", cta: "Apply Deal" }
       ];
     }
   }
@@ -260,27 +260,27 @@ function getTemplatesForSegment(segment) {
   if (device === 'desktop') {
     if (source === 'paid') {
       return [
-        { headline: "Exclusive Offer Inside 🎯", body: "You've earned a special discount on your order", cta: "Claim My Discount" },
-        { headline: "Limited Time Savings 🔥", body: "Complete your purchase with this exclusive deal", cta: "Get My Offer" },
-        { headline: "Special Discount Unlocked 💎", body: "Apply this offer to your order right now", cta: "Apply Savings" }
+        { headline: "Exclusive Offer Inside ", body: "You've earned a special discount on your order", cta: "Claim My Discount" },
+        { headline: "Limited Time Savings ", body: "Complete your purchase with this exclusive deal", cta: "Get My Offer" },
+        { headline: "Special Discount Unlocked ", body: "Apply this offer to your order right now", cta: "Apply Savings" }
       ];
     } else if (source === 'organic' || source === 'direct') {
       return [
-        { headline: "Still Deciding? 💭", body: "Here's a special offer to help you complete your order", cta: "View Discount" },
-        { headline: "Welcome Back! 🌟", body: "Complete your order with this exclusive thank-you offer", cta: "Get My Deal" },
-        { headline: "Your Exclusive Offer ✨", body: "Don't miss out on this special discount for your cart", cta: "Claim Offer" }
+        { headline: "Still Deciding? ", body: "Here's a special offer to help you complete your order", cta: "View Discount" },
+        { headline: "Welcome Back! ", body: "Complete your order with this exclusive thank-you offer", cta: "Get My Deal" },
+        { headline: "Your Exclusive Offer ", body: "Don't miss out on this special discount for your cart", cta: "Claim Offer" }
       ];
     } else {
       return [
-        { headline: "Wait! Before You Go... 🎁", body: "Complete your order now and unlock savings", cta: "Get Discount" },
-        { headline: "One Last Thing 💝", body: "Here's an exclusive offer just for you", cta: "Claim Savings" },
-        { headline: "Special Offer Available ⭐", body: "Apply this discount to your order today", cta: "Apply Deal" }
+        { headline: "Wait! Before You Go... ", body: "Complete your order now and unlock savings", cta: "Get Discount" },
+        { headline: "One Last Thing ", body: "Here's an exclusive offer just for you", cta: "Claim Savings" },
+        { headline: "Special Offer Available ", body: "Apply this discount to your order today", cta: "Apply Deal" }
       ];
     }
   }
   
   // Fallback
   return [
-    { headline: "Wait! Don't Miss Out 🎁", body: "Complete your order now and save", cta: "Get My Discount" }
+    { headline: "Wait! Don't Miss Out ", body: "Complete your order now and save", cta: "Get My Discount" }
   ];
 }

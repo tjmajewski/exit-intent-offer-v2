@@ -5,7 +5,7 @@ export const action = async ({ request }) => {
   try {
     const { topic, shop, session, payload } = await authenticate.webhook(request);
 
-    console.log("📦 Webhook received:", topic);
+    console.log(" Webhook received:", topic);
     console.log("Shop:", shop);
     console.log("Order ID:", payload.id);
     console.log("Order total:", payload.total_price);
@@ -84,7 +84,7 @@ export const action = async ({ request }) => {
             }
           });
 
-          console.log(`📊 Promotion usage tracked: ${dc.code} (Total: ${stats.total})`);
+          console.log(` Promotion usage tracked: ${dc.code} (Total: ${stats.total})`);
 
           // Classify promotion if not yet classified
           if (!promo.classification) {
@@ -108,7 +108,7 @@ export const action = async ({ request }) => {
 
     // If gift card voucher found, create real gift card
     if (giftCardVoucher) {
-      console.log("🎁 Gift card voucher found in order!");
+      console.log(" Gift card voucher found in order!");
       
       // Get gift card amount from settings (we'll need to query this)
       const settingsQuery = `
@@ -162,23 +162,23 @@ export const action = async ({ request }) => {
       const giftCardResult = await giftCardResponse.json();
       
       if (giftCardResult.data.giftCardCreate.giftCard) {
-        console.log("✓ Gift card created:", giftCardResult.data.giftCardCreate.giftCard.maskedCode);
+        console.log(" Gift card created:", giftCardResult.data.giftCardCreate.giftCard.maskedCode);
       } else {
         console.error("Gift card creation failed:", giftCardResult.data.giftCardCreate.userErrors);
       }
     }
 
     const orderValue = parseFloat(payload.total_price);
-    console.log(`🎉 Exit intent discount redeemed: ${exitDiscountUsed.code}`);
-    console.log(`💰 Order value: $${orderValue}`);
+    console.log(` Exit intent discount redeemed: ${exitDiscountUsed.code}`);
+    console.log(` Order value: $${orderValue}`);
     
     // Update analytics and modal library
     await updateAnalytics(session, orderValue);
-    console.log("✓ Analytics updated with conversion and revenue");
+    console.log(" Analytics updated with conversion and revenue");
 
     // CONVERSIONS TABLE: Store order-level data for reporting
     await storeConversion(shop, payload, exitDiscountUsed, session);
-    console.log("✓ Conversion stored in conversions table");
+    console.log(" Conversion stored in conversions table");
 
     return new Response(null, { status: 200 });
   } catch (error) {
@@ -234,7 +234,7 @@ async function updateAnalytics(session, revenue) {
     revenue: revenue
   });
 
-  console.log("📊 New analytics:", analytics);
+  console.log(" New analytics:", analytics);
 
   // Save updated analytics
   const analyticsMutation = `
@@ -274,7 +274,7 @@ async function updateAnalytics(session, revenue) {
       currentModal.stats.conversions = (currentModal.stats.conversions || 0) + 1;
       currentModal.stats.revenue = (currentModal.stats.revenue || 0) + revenue;
       
-      console.log(`📊 Updated ${currentModal.modalName} stats:`, currentModal.stats);
+      console.log(` Updated ${currentModal.modalName} stats:`, currentModal.stats);
       
       // Save updated modal library
       const modalLibraryMutation = `
@@ -352,7 +352,7 @@ async function classifyPromotion(promoId) {
     }
   });
 
-  console.log(`✅ Promotion classified: ${promo.code} → ${classification} (${aiStrategy})`);
+  console.log(` Promotion classified: ${promo.code} → ${classification} (${aiStrategy})`);
 }
 
 async function storeConversion(shop, orderPayload, discountUsed, session) {
@@ -419,7 +419,7 @@ async function storeConversion(shop, orderPayload, discountUsed, session) {
       }
     });
 
-    console.log(`✓ Conversion stored: Order ${orderPayload.order_number} ($${orderPayload.total_price})`);
+    console.log(` Conversion stored: Order ${orderPayload.order_number} ($${orderPayload.total_price})`);
   } catch (error) {
     console.error("Error storing conversion:", error);
     // Don't throw - we don't want to fail the webhook if conversion storage fails

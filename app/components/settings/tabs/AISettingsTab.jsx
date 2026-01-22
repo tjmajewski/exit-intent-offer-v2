@@ -74,7 +74,7 @@ export default function AISettingsTab({
         border: '1px solid #e5e7eb',
         textAlign: 'center'
       }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>🎯</div>
+        <div style={{ fontSize: 48, marginBottom: 16 }}></div>
         <h2 style={{ fontSize: 24, marginBottom: 12 }}>Manual Mode Active</h2>
         <p style={{ color: '#6b7280', marginBottom: 24 }}>
           You're currently in Manual Mode. Switch to AI Mode in the Quick Setup tab to access AI optimization settings.

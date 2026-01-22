@@ -18,7 +18,7 @@ export async function loader({ request }) {
   const { evolutionCycle } = await import("../utils/variant-engine.js");
   
   // Run evolution cycle for first baseline
-  console.log("\n🧪 TEST: Running evolution cycle with custom settings...");
+  console.log("\n TEST: Running evolution cycle with custom settings...");
   
   try {
     const result = await evolutionCycle(shop.id, 'conversion_with_discount', 'all');

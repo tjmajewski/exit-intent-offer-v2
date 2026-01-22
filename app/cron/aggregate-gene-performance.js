@@ -9,7 +9,7 @@ import db from '../db.server.js';
  * Identifies which specific genes (offers, headlines, etc) perform best
  */
 export async function aggregateGenePerformance() {
-  console.log('\n📊 [Gene Aggregation] Starting gene performance aggregation...');
+  console.log('\n [Gene Aggregation] Starting gene performance aggregation...');
   console.log('='.repeat(80));
   
   // Get all shops that contribute to meta-learning (opted in, have variants)
@@ -23,7 +23,7 @@ export async function aggregateGenePerformance() {
   console.log(`Found ${shops.length} shops to aggregate`);
   
   if (shops.length < 3) {
-    console.log('⚠️ Need at least 3 shops for meaningful aggregation. Skipping.');
+    console.log(' Need at least 3 shops for meaningful aggregation. Skipping.');
     return;
   }
   
@@ -144,7 +144,7 @@ export async function aggregateGenePerformance() {
     }
   }
   
-  console.log(`\n✅ Saved ${savedCount} gene performance records`);
+  console.log(`\n Saved ${savedCount} gene performance records`);
   console.log('='.repeat(80) + '\n');
   
   return { aggregated: savedCount };

@@ -86,7 +86,7 @@ export async function loader({ request }) {
         }
       });
 
-      console.log('✓ Created default plan:', plan.tier);
+      console.log(' Created default plan:', plan.tier);
     }
 
     // Check if usage needs to be reset
@@ -116,7 +116,7 @@ export async function loader({ request }) {
         });
 
         plan = resetResult.plan;
-        console.log('✓ Usage reset saved to metafields');
+        console.log(' Usage reset saved to metafields');
       }
     }
 
@@ -394,7 +394,7 @@ export async function action({ request }) {
           }
         });
 
-        console.log(`✓ Switched plan to: ${newTier}`);
+        console.log(` Switched plan to: ${newTier}`);
         return { success: true, planSwitched: true };
       }
     }
@@ -429,7 +429,7 @@ export async function action({ request }) {
           }
         });
 
-        console.log(`✓ Set reset date to yesterday - refresh page to trigger reset`);
+        console.log(` Set reset date to yesterday - refresh page to trigger reset`);
         return { success: true, testResetReady: true };
       }
     }
@@ -680,7 +680,7 @@ export default function Dashboard() {
           boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
         }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-            <div style={{ fontSize: 32 }}>⚠️</div>
+            <div style={{ fontSize: 32 }}></div>
             <div style={{ flex: 1 }}>
               <h3 style={{ 
                 margin: 0, 
@@ -707,7 +707,7 @@ export default function Dashboard() {
                 marginBottom: 16
               }}>
                 <p style={{ margin: 0, fontSize: 14, color: "#92400e", marginBottom: 12 }}>
-                  <strong>💡 What Enterprise AI would do automatically:</strong>
+                  <strong> What Enterprise AI would do automatically:</strong>
                 </p>
                 <ul style={{ margin: 0, paddingLeft: 20, color: "#78350f", fontSize: 14 }}>
                   {promoWarning.aiStrategy === 'pause' && (
@@ -771,7 +771,7 @@ export default function Dashboard() {
               {/* Plan Switcher */}
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
                 <label style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
-                  🔧 Dev: Switch Plan
+                   Dev: Switch Plan
                 </label>
                 <select
                   value={plan.tier}
@@ -796,7 +796,7 @@ export default function Dashboard() {
               {/* Test Reset Button */}
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
                 <label style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
-                  🔧 Dev: Test Reset
+                   Dev: Test Reset
                 </label>
                 <button
                   onClick={() => {
@@ -963,7 +963,7 @@ export default function Dashboard() {
 
               {isOverLimit && (
                 <div style={{ marginTop: 8, fontSize: 13, color: "#991b1b" }}>
-                  ⚠️ Monthly limit reached. {plan.tier === "starter" ? "Upgrade to Pro for 10,000 sessions/month" : "Upgrade to Enterprise for unlimited sessions"}.{" "}
+                   Monthly limit reached. {plan.tier === "starter" ? "Upgrade to Pro for 10,000 sessions/month" : "Upgrade to Enterprise for unlimited sessions"}.{" "}
                   <Link to="/app/upgrade" style={{ color: "#7c3aed", textDecoration: "underline" }}>
                     Upgrade now →
                   </Link>
@@ -971,7 +971,7 @@ export default function Dashboard() {
               )}
               {isNearLimit && !isOverLimit && (
                 <div style={{ marginTop: 8, fontSize: 13, color: "#92400e" }}>
-                  ⚡ You're at {Math.round(percentage)}% of your monthly limit.
+                   You're at {Math.round(percentage)}% of your monthly limit.
                 </div>
               )}
             </div>
@@ -1288,7 +1288,7 @@ export default function Dashboard() {
     marginBottom: 32
   }}>
     <div style={{ fontSize: 24, fontWeight: 600, marginBottom: 8, color: "#1f2937" }}>
-      🚀 Grow Sales with Pro
+       Grow Sales with Pro
     </div>
     <div style={{ fontSize: 16, color: "#6b7280", marginBottom: 24, lineHeight: 1.6 }}>
       Upgrade to get:
@@ -1330,7 +1330,7 @@ export default function Dashboard() {
     marginBottom: 32
   }}>
     <div style={{ fontSize: 24, fontWeight: 600, marginBottom: 8, color: "#1f2937" }}>
-      ⚡ Maximize Results with Enterprise
+       Maximize Results with Enterprise
     </div>
     <div style={{ fontSize: 16, color: "#6b7280", marginBottom: 24, lineHeight: 1.6 }}>
       Get even better performance:
@@ -1531,7 +1531,7 @@ export default function Dashboard() {
                         textAlign: "center",
                         color: "#0369a1"
                       }}>
-                        ✨ AI generates unique copy and offers for each customer
+                         AI generates unique copy and offers for each customer
                       </div>
                     </>
                   );
@@ -1613,7 +1613,7 @@ export default function Dashboard() {
           borderRadius: 8
         }}>
           <h3 style={{ marginTop: 0, marginBottom: 12 }}>
-            🚀 Get Started
+             Get Started
           </h3>
           <p style={{ marginBottom: 16, color: "#92400e" }}>
             Configure your exit intent modal to start recovering abandoned carts and growing revenue.

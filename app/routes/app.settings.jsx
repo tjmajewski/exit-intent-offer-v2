@@ -53,7 +53,7 @@ export async function loader({ request }) {
     
     // Default settings if none exist
     const defaultSettings = {
-      modalHeadline: "Wait! Don't leave yet 🎁",
+      modalHeadline: "Wait! Don't leave yet ",
       modalBody: "Complete your purchase now and get an exclusive discount on your order!",
       ctaButton: "Complete My Order",
       exitIntentEnabled: true,
@@ -126,7 +126,7 @@ export async function loader({ request }) {
     console.error("Error loading settings:", error);
     return { 
       settings: {
-        modalHeadline: "Wait! Don't leave yet 🎁",
+        modalHeadline: "Wait! Don't leave yet ",
         modalBody: "Complete your purchase now and get an exclusive discount on your order!",
         ctaButton: "Complete My Order",
         exitIntentEnabled: true,
@@ -288,7 +288,7 @@ export async function action({ request }) {
       }
     });
     
-    console.log(`✓ Shop settings saved to database for ${shopDomain}`);
+    console.log(` Shop settings saved to database for ${shopDomain}`);
     
     // Debug logging
     console.log('=== DISCOUNT DEBUG ===');
@@ -570,7 +570,7 @@ export async function action({ request }) {
       }
     });
 
-    console.log(`✓ Settings saved to database including discount code: ${settings.discountCode}`);
+    console.log(` Settings saved to database including discount code: ${settings.discountCode}`);
 
     return { 
       success: true, 
@@ -605,7 +605,7 @@ export default function Settings() {
   const [brandAccentColor, setBrandAccentColor] = useState(settings.brandAccentColor || "#f59e0b");
   const [brandFont, setBrandFont] = useState(settings.brandFont || "system");
   const [customCSS, setCustomCSS] = useState(settings.customCSS || "");
-  const [modalHeadline, setModalHeadline] = useState(settings.modalHeadline || "Wait! Don't leave yet 🎁");
+  const [modalHeadline, setModalHeadline] = useState(settings.modalHeadline || "Wait! Don't leave yet ");
   const [modalBody, setModalBody] = useState(settings.modalBody || "Complete your purchase now and get an exclusive discount on your order!");
   const [ctaButton, setCtaButton] = useState(settings.ctaButton || "Complete My Order");
      
@@ -941,7 +941,7 @@ export default function Settings() {
             fontSize: 14,
             fontWeight: 500
           }}>
-            ✓ {actionData.message}
+             {actionData.message}
           </div>
         )}
 
@@ -954,7 +954,7 @@ export default function Settings() {
             fontSize: 14,
             fontWeight: 500
           }}>
-            ✗ {actionData.message}
+             {actionData.message}
           </div>
         )}
       </div>

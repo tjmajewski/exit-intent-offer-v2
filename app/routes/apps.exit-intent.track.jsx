@@ -15,7 +15,7 @@ export async function action({ request }) {
 
     const { event } = await request.json();
     
-    console.log("📊 Analytics event received:", event);
+    console.log(" Analytics event received:", event);
     
     if (!event || !["impression", "click", "closeout", "conversion"].includes(event)) {
       return new Response(JSON.stringify({ error: "Invalid event type" }), { 
@@ -46,7 +46,7 @@ export async function action({ request }) {
       const usageCheck = checkUsageLimit(plan, "impressionsThisMonth");
       
       if (!usageCheck.allowed) {
-        console.log("⚠️ Impression limit reached:", usageCheck);
+        console.log(" Impression limit reached:", usageCheck);
         return new Response(JSON.stringify({ 
           error: "Monthly impression limit reached",
           limit: usageCheck.limit,
@@ -99,7 +99,7 @@ export async function action({ request }) {
       new Date(e.timestamp) > ninetyDaysAgo
     );
     
-    console.log("📊 Updated analytics:", currentAnalytics);
+    console.log(" Updated analytics:", currentAnalytics);
 
     // Save updated analytics
     await admin.graphql(
@@ -163,7 +163,7 @@ export async function action({ request }) {
           new Date(e.timestamp) > ninetyDaysAgo
         );
         
-        console.log(`📊 Updated ${currentModal.modalName} stats:`, currentModal.stats);
+        console.log(` Updated ${currentModal.modalName} stats:`, currentModal.stats);
         
         // Save updated modal library
         await admin.graphql(
@@ -195,7 +195,7 @@ export async function action({ request }) {
       plan.usage = plan.usage || {};
       plan.usage.impressionsThisMonth = (plan.usage.impressionsThisMonth || 0) + 1;
       
-      console.log(`📊 Usage updated: ${plan.usage.impressionsThisMonth}/${PLAN_FEATURES[plan.tier].impressionLimit || '∞'}`);
+      console.log(` Usage updated: ${plan.usage.impressionsThisMonth}/${PLAN_FEATURES[plan.tier].impressionLimit || '∞'}`);
       
       // Save updated plan with usage
       await admin.graphql(
@@ -230,7 +230,7 @@ export async function action({ request }) {
       headers: { "Content-Type": "application/json" }
     });
   } catch (error) {
-    console.error("❌ Analytics error:", error);
+    console.error(" Analytics error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), { 
       status: 500,
       headers: { "Content-Type": "application/json" }

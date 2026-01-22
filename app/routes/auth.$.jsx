@@ -54,9 +54,9 @@ export const loader = async ({ request }) => {
         }
       });
 
-      console.log("✓ Default plan set:", defaultPlan.tier);
+      console.log(" Default plan set:", defaultPlan.tier);
     } else {
-      console.log("✓ Existing plan found");
+      console.log(" Existing plan found");
     }
   } catch (error) {
     console.error("Error setting default plan:", error);

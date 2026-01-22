@@ -135,7 +135,7 @@ export async function createGenericDiscountCode(admin, code, type, amount) {
   const createdCode = result.data.discountCodeBasicCreate.codeDiscountNode
     .codeDiscount.codes.nodes[0].code;
 
-  console.log(`✓ Created generic discount: ${createdCode} (no expiry)`);
+  console.log(` Created generic discount: ${createdCode} (no expiry)`);
 
   return { code: createdCode, exists: false };
 }
@@ -230,7 +230,7 @@ export async function createPercentageDiscount(admin, percentage, prefix = 'EXIT
   const createdCode = result.data.discountCodeBasicCreate.codeDiscountNode
     .codeDiscount.codes.nodes[0].code;
   
-  console.log(`✓ Created percentage discount: ${createdCode} (expires in 24h)`);
+  console.log(` Created percentage discount: ${createdCode} (expires in 24h)`);
   
   return {
     code: createdCode,
@@ -302,7 +302,7 @@ export async function createFixedDiscount(admin, amount, prefix = 'EXIT') {
   const createdCode = result.data.discountCodeBasicCreate.codeDiscountNode
     .codeDiscount.codes.nodes[0].code;
   
-  console.log(`✓ Created fixed discount: ${createdCode} (expires in 24h)`);
+  console.log(` Created fixed discount: ${createdCode} (expires in 24h)`);
   
   return {
     code: createdCode,
@@ -379,7 +379,7 @@ export async function createThresholdDiscount(admin, threshold, discountAmount, 
   const createdCode = result.data.discountCodeBasicCreate.codeDiscountNode
     .codeDiscount.codes.nodes[0].code;
   
-  console.log(`✓ Created threshold discount: ${createdCode} (spend $${threshold} get $${discountAmount} off, expires in 24h)`);
+  console.log(` Created threshold discount: ${createdCode} (spend $${threshold} get $${discountAmount} off, expires in 24h)`);
   
   return {
     code: createdCode,

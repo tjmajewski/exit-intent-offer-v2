@@ -129,7 +129,7 @@ export async function action({ request }) {
           where: { id: shopRecord.id },
           data: { promotionalIntelligenceEnabled: enabled }
         });
-        console.log(`✅ Promotional Intelligence ${enabled ? 'enabled' : 'disabled'}`);
+        console.log(` Promotional Intelligence ${enabled ? 'enabled' : 'disabled'}`);
       }
 
       return { success: true };
@@ -162,7 +162,7 @@ export async function action({ request }) {
         }
       });
 
-      console.log(`✅ Promotion strategy updated: ${promoId} → ${newStrategy}`);
+      console.log(` Promotion strategy updated: ${promoId} → ${newStrategy}`);
     }
 
     if (actionType === "endPromo") {
@@ -171,7 +171,7 @@ export async function action({ request }) {
         data: { status: "ended" }
       });
 
-      console.log(`✅ Promotion ended: ${promoId}`);
+      console.log(` Promotion ended: ${promoId}`);
     }
 
     return { success: true };
