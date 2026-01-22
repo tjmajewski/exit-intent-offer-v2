@@ -140,7 +140,7 @@ export default function QuickSetupTab({
           marginBottom: 24
         }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-            <div style={{ fontSize: 40 }}>🤖</div>
+            <div style={{ fontSize: 40 }}></div>
             <div style={{ flex: 1 }}>
               <h3 style={{ fontSize: 18, marginBottom: 8, color: "#8B5CF6", fontWeight: 600 }}>
                 AI Mode Enabled
@@ -518,7 +518,7 @@ export default function QuickSetupTab({
               fontSize: 14,
               color: "#1e40af"
             }}>
-              💡 <strong>Tip:</strong> If discount is disabled, the modal will still show but won't include a discount offer. Great for simple cart reminders or announcements!
+               <strong>Tip:</strong> If discount is disabled, the modal will still show but won't include a discount offer. Great for simple cart reminders or announcements!
             </div>
           </div>
 
@@ -612,7 +612,7 @@ export default function QuickSetupTab({
                   borderRadius: 6,
                   fontSize: 14 
                 }}>
-                  ⭐ <strong>Upgrade to Pro</strong> to unlock time delay triggers and cart value targeting.{" "}
+                   <strong>Upgrade to Pro</strong> to unlock time delay triggers and cart value targeting.{" "}
                   <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
                     Learn more →
                   </a>

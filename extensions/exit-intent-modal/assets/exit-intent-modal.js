@@ -462,7 +462,7 @@
       
       // Modal content
       const headline = document.createElement('h2');
-      headline.textContent = this.settings.modalHeadline || 'Wait! Don\'t leave yet 🎁';
+      headline.textContent = this.settings.modalHeadline || 'Wait! Don\'t leave yet ';
       headline.style.cssText = `
         margin: 0 0 16px 0;
         font-size: ${isMobile ? '24px' : '32px'};
@@ -568,7 +568,7 @@
         " onmouseover="this.style.color='#8B5CF6'" onmouseout="this.style.color='#9ca3af'">
           <span>Powered by</span>
           <span style="font-weight: 600; color: #8B5CF6;">ResparQ</span>
-          <span style="font-size: 13px;">⚡</span>
+          <span style="font-size: 13px;"></span>
         </a>
       `;
       
@@ -892,35 +892,35 @@
 
         if (result.decision) {
           const dec = result.decision;
-          console.log('%c📊 Offer Type:', 'color: #10b981; font-weight: bold', dec.type?.toUpperCase() || 'UNKNOWN');
+          console.log('%c Offer Type:', 'color: #10b981; font-weight: bold', dec.type?.toUpperCase() || 'UNKNOWN');
 
           if (dec.type === 'percentage') {
-            console.log('%c💰 Discount:', 'color: #f59e0b; font-weight: bold', `${dec.amount}% OFF`);
+            console.log('%c Discount:', 'color: #f59e0b; font-weight: bold', `${dec.amount}% OFF`);
           } else if (dec.type === 'fixed') {
-            console.log('%c💰 Discount:', 'color: #f59e0b; font-weight: bold', `$${dec.amount} OFF`);
+            console.log('%c Discount:', 'color: #f59e0b; font-weight: bold', `$${dec.amount} OFF`);
           } else if (dec.type === 'threshold') {
-            console.log('%c🎯 Threshold:', 'color: #f59e0b; font-weight: bold', `Spend $${dec.threshold} → Save $${dec.amount}`);
+            console.log('%c Threshold:', 'color: #f59e0b; font-weight: bold', `Spend $${dec.threshold} → Save $${dec.amount}`);
           }
 
           if (dec.code) {
-            console.log('%c🎫 Discount Code:', 'color: #06b6d4; font-weight: bold', dec.code);
+            console.log('%c Discount Code:', 'color: #06b6d4; font-weight: bold', dec.code);
           }
 
           if (dec.variant) {
-            console.log('%c📝 Variant:', 'color: #8b5cf6; font-weight: bold', `#${dec.variant.id} (${dec.variant.segment || 'default'})`);
-            console.log('%c💬 Headline:', 'color: #6366f1', dec.variant.headline);
-            console.log('%c💬 Subhead:', 'color: #6366f1', dec.variant.subhead);
-            console.log('%c🔘 CTA:', 'color: #6366f1', dec.variant.cta);
+            console.log('%c Variant:', 'color: #8b5cf6; font-weight: bold', `#${dec.variant.id} (${dec.variant.segment || 'default'})`);
+            console.log('%c Headline:', 'color: #6366f1', dec.variant.headline);
+            console.log('%c Subhead:', 'color: #6366f1', dec.variant.subhead);
+            console.log('%c CTA:', 'color: #6366f1', dec.variant.cta);
           }
 
-          console.log('%c📈 Variant ID:', 'color: #64748b', dec.variantId || 'N/A');
-          console.log('%c🎯 Segment:', 'color: #64748b', dec.segment || 'default');
+          console.log('%c Variant ID:', 'color: #64748b', dec.variantId || 'N/A');
+          console.log('%c Segment:', 'color: #64748b', dec.segment || 'default');
           console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
 
           // Update modal with AI decision (await to ensure content is ready)
           await this.updateModalWithAI(result.decision);
         } else {
-          console.log('%c⚠️ No decision returned', 'color: #ef4444; font-weight: bold');
+          console.log('%c No decision returned', 'color: #ef4444; font-weight: bold');
           console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
         }
       } catch (error) {
@@ -1015,17 +1015,17 @@
         body.textContent = this.settings.modalBody || "Your items are waiting for you. Complete your purchase now!";
         this.settings.discountCode = null;
       } else if (decision.type === 'percentage') {
-        headline.textContent = `Get ${decision.amount}% Off Your Order! 🎁`;
+        headline.textContent = `Get ${decision.amount}% Off Your Order! `;
         body.textContent = 'Complete your purchase now and save!';
         this.settings.discountCode = decision.code;
         this.settings.offerType = 'percentage';
       } else if (decision.type === 'fixed') {
-        headline.textContent = `Get $${decision.amount} Off Your Order! 🎁`;
+        headline.textContent = `Get $${decision.amount} Off Your Order! `;
         body.textContent = 'Complete your purchase now and save!';
         this.settings.discountCode = decision.code;
         this.settings.offerType = 'fixed';
       } else if (decision.type === 'threshold') {
-        headline.textContent = `Special Offer for You! 💰`;
+        headline.textContent = `Special Offer for You! `;
         body.textContent = `Spend $${decision.threshold} and get $${decision.amount} off your order!`;
         this.settings.discountCode = decision.code;
         this.settings.offerType = 'threshold';
@@ -1407,10 +1407,10 @@
       // Enhanced logging for AI mode
       if (settings.mode === 'ai') {
         console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
-        console.log('%c⚡ AI MODE ACTIVE', 'color: #8B5CF6; font-weight: bold; font-size: 14px');
+        console.log('%c AI MODE ACTIVE', 'color: #8B5CF6; font-weight: bold; font-size: 14px');
         console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
         console.log('%cℹ️  AI will generate custom offers when modal triggers', 'color: #64748b; font-style: italic');
-        console.log('%cℹ️  Look for "🤖 AI DECISION" log when exit intent fires', 'color: #64748b; font-style: italic');
+        console.log('%cℹ️  Look for " AI DECISION" log when exit intent fires', 'color: #64748b; font-style: italic');
         console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
         // Don't log settings object - it's just clutter for AI mode
       } else {
@@ -1427,10 +1427,10 @@
       // Enhanced logging for AI mode
       if (settings.mode === 'ai') {
         console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
-        console.log('%c⚡ AI MODE ACTIVE', 'color: #8B5CF6; font-weight: bold; font-size: 14px');
+        console.log('%c AI MODE ACTIVE', 'color: #8B5CF6; font-weight: bold; font-size: 14px');
         console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
         console.log('%cℹ️  AI will generate custom offers when modal triggers', 'color: #64748b; font-style: italic');
-        console.log('%cℹ️  Look for "🤖 AI DECISION" log when exit intent fires', 'color: #64748b; font-style: italic');
+        console.log('%cℹ️  Look for " AI DECISION" log when exit intent fires', 'color: #64748b; font-style: italic');
         console.log('%c════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
         // Don't log settings object - it's just clutter for AI mode
       } else {

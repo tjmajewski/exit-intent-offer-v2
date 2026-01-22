@@ -7,7 +7,7 @@ import db from '../db.server.js';
  * Run evolution cycle for all eligible shops
  */
 export async function runEvolutionCycle() {
-  console.log('\n⏰ [Evolution Cron] Starting scheduled evolution check...');
+  console.log('\n [Evolution Cron] Starting scheduled evolution check...');
   console.log('='.repeat(80));
   
   // Get all shops in AI mode (Pro or Enterprise)
@@ -18,7 +18,7 @@ export async function runEvolutionCycle() {
     }
   });
   
-  console.log(`📊 Found ${shops.length} shops in AI mode`);
+  console.log(` Found ${shops.length} shops in AI mode`);
   
   if (shops.length === 0) {
     console.log('No shops to process. Exiting.');
@@ -32,7 +32,7 @@ export async function runEvolutionCycle() {
   let totalCycles = 0;
   
   for (const shop of shops) {
-    console.log(`\n🏪 Checking shop: ${shop.shopifyDomain}`);
+    console.log(`\n Checking shop: ${shop.shopifyDomain}`);
     
     for (const baseline of baselines) {
       // Count impressions since last evolution cycle
@@ -50,21 +50,21 @@ export async function runEvolutionCycle() {
       
       // Trigger evolution if 100+ new impressions
       if (impressionsSinceLastCycle >= 100) {
-        console.log(`  🔥 Triggering evolution cycle for ${baseline}!`);
+        console.log(`   Triggering evolution cycle for ${baseline}!`);
         
         try {
           const result = await evolutionCycle(shop.id, baseline, 'all');
-          console.log(`  ✅ Cycle complete: ${result.killed} killed, ${result.bred} bred`);
+          console.log(`   Cycle complete: ${result.killed} killed, ${result.bred} bred`);
           totalCycles++;
         } catch (error) {
-          console.error(`  ❌ Evolution failed for ${baseline}:`, error.message);
+          console.error(`   Evolution failed for ${baseline}:`, error.message);
         }
       }
     }
   }
   
   console.log('\n' + '='.repeat(80));
-  console.log(`✅ [Evolution Cron] Complete. Ran ${totalCycles} evolution cycles.`);
+  console.log(` [Evolution Cron] Complete. Ran ${totalCycles} evolution cycles.`);
   console.log('='.repeat(80) + '\n');
 }
 

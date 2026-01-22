@@ -109,7 +109,7 @@ export function checkAndResetUsage(plan, shopId, admin) {
 
   // Check if we're past the reset date
   if (now >= resetDate) {
-    console.log(`🔄 Resetting usage - reset date was ${resetDate.toISOString()}`);
+    console.log(` Resetting usage - reset date was ${resetDate.toISOString()}`);
 
     // Reset usage
     plan.usage.impressionsThisMonth = 0;
@@ -121,7 +121,7 @@ export function checkAndResetUsage(plan, shopId, admin) {
     
     plan.usage.resetDate = nextReset.toISOString();
 
-    console.log(`✓ Usage reset complete. Next reset: ${nextReset.toISOString()}`);
+    console.log(` Usage reset complete. Next reset: ${nextReset.toISOString()}`);
 
     return { needsReset: true, plan };
   }

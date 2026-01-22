@@ -335,7 +335,7 @@ export default function Upgrade() {
                         flexShrink: 0,
                         marginTop: -2
                       }}>
-                        {feature.included ? "✓" : "✗"}
+                        {feature.included ? "" : ""}
                       </span>
                       <span style={{ fontSize: 14, lineHeight: "1.5", color: "#374151" }}>{feature.name}</span>
                     </div>

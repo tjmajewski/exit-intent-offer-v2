@@ -59,7 +59,7 @@ export default function SettingsPreview({
   const isAIMode = optimizationMode === 'ai';
   const displayHeadline = isAIMode 
     ? "AI will generate optimized copy" 
-    : (modalHeadline || "Wait! Don't leave yet 🎁");
+    : (modalHeadline || "Wait! Don't leave yet ");
   const displayBody = isAIMode 
     ? "The AI will test different headlines, body text, and CTAs to find what converts best for your audience."
     : (modalBody || "Complete your purchase now and get free shipping on your order!");
@@ -285,7 +285,7 @@ export default function SettingsPreview({
                 }}>
                   <span>Powered by </span>
                   <span style={{ fontWeight: '600', color: '#8B5CF6' }}>ResparQ</span>
-                  <span style={{ fontSize: '13px' }}> ⚡</span>
+                  <span style={{ fontSize: '13px' }}> </span>
                 </div>
               </div>
             </div>

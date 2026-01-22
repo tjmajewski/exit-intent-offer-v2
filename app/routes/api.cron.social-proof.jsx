@@ -20,7 +20,7 @@ export async function loader({ request }) {
     return json({ error: 'Unauthorized' }, { status: 401 });
   }
   
-  console.log('🔄 Starting social proof collection for all shops...');
+  console.log(' Starting social proof collection for all shops...');
   
   try {
     // Get all shops
@@ -58,7 +58,7 @@ export async function loader({ request }) {
       }
     }
     
-    console.log('✅ Social proof collection complete');
+    console.log(' Social proof collection complete');
     
     return json({
       success: true,
@@ -67,7 +67,7 @@ export async function loader({ request }) {
     });
     
   } catch (error) {
-    console.error('❌ Social proof collection failed:', error);
+    console.error(' Social proof collection failed:', error);
     return json({
       success: false,
       error: error.message

@@ -153,7 +153,7 @@
 
       // Check if threshold is met
       if (currentTotal >= offer.threshold && !this.bannerShown) {
-        console.log('[Cart Monitor] 🎉 Threshold met! Showing banner');
+        console.log('[Cart Monitor]  Threshold met! Showing banner');
         
         // Show banner on cart page
         if (isCartPage) {
@@ -172,8 +172,8 @@
         // Still qualified - do nothing (already showing banner)
         
       } else if (currentTotal < offer.threshold && this.bannerShown) {
-        // 🚨 DROPPED BELOW THRESHOLD - Lost qualification!
-        console.log('[Cart Monitor] ⚠️ Cart dropped below threshold - removing qualification');
+        //  DROPPED BELOW THRESHOLD - Lost qualification!
+        console.log('[Cart Monitor]  Cart dropped below threshold - removing qualification');
         
         // Remove qualification banner and show progress
         if (isCartPage) {
@@ -254,7 +254,7 @@
             background: rgba(255,255,255,0.3);
           }
         </style>
-        <span>🎉 Congratulations! You qualified for $${offer.discount} off! Code <strong>${offer.code}</strong> has been applied at checkout.</span>
+        <span> Congratulations! You qualified for $${offer.discount} off! Code <strong>${offer.code}</strong> has been applied at checkout.</span>
         <button class="close-banner" onclick="this.parentElement.remove()">×</button>
       `;
 
@@ -322,7 +322,7 @@
               background: rgba(255,255,255,0.3);
             }
           </style>
-          <span>💰 Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!</span>
+          <span> Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!</span>
           <button class="close-banner" onclick="this.parentElement.remove()">×</button>
         `;
         
@@ -330,7 +330,7 @@
         console.log('[Cart Monitor] Progress banner displayed');
       } else {
         // Update existing banner
-        banner.querySelector('span').textContent = `💰 Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!`;
+        banner.querySelector('span').textContent = ` Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!`;
       }
     }
 
@@ -386,7 +386,7 @@
               background: rgba(255,255,255,0.3);
             }
           </style>
-          <span>💰 Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!</span>
+          <span> Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!</span>
           <button class="close-banner" onclick="this.parentElement.remove()">×</button>
         `;
         
@@ -394,7 +394,7 @@
         console.log('[Cart Monitor] Progress banner displayed');
       } else {
         // Update existing banner
-        banner.querySelector('span').textContent = `💰 Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!`;
+        banner.querySelector('span').textContent = ` Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!`;
       }
     }
 
@@ -450,7 +450,7 @@
               background: rgba(255,255,255,0.3);
             }
           </style>
-          <span>💰 Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!</span>
+          <span> Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!</span>
           <button class="close-banner" onclick="this.parentElement.remove()">×</button>
         `;
         
@@ -458,7 +458,7 @@
         console.log('[Cart Monitor] Progress banner displayed');
       } else {
         // Update existing banner
-        banner.querySelector('span').textContent = `💰 Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!`;
+        banner.querySelector('span').textContent = ` Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!`;
       }
     }
 
@@ -498,7 +498,7 @@
 
         existingCTA.innerHTML = `
           <div style="text-align: center; padding: 12px;">
-            <div style="font-size: 18px; margin-bottom: 4px;">🎉 You Qualified!</div>
+            <div style="font-size: 18px; margin-bottom: 4px;"> You Qualified!</div>
             <div style="font-size: 14px; opacity: 0.9;">$${offer.discount} off applied at checkout</div>
           </div>
         `;
@@ -514,7 +514,7 @@
         existingCTA.innerHTML = `
           <div style="text-align: center; padding: 12px;">
             <div style="font-size: 16px; font-weight: 600; margin-bottom: 4px;">
-              Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off! 🎁
+              Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off! 
             </div>
             <div style="font-size: 13px; opacity: 0.9;">
               ${this.getProgressBar(currentTotal, offer.threshold)}

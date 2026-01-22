@@ -33,7 +33,7 @@ export async function createDiscountCode(admin, discountPercentage) {
   );
   
   if (codeExists) {
-    console.log(`✓ Using existing discount code: ${discountCode}`);
+    console.log(` Using existing discount code: ${discountCode}`);
     return discountCode;
   }
   
@@ -93,7 +93,7 @@ export async function createDiscountCode(admin, discountPercentage) {
   const code = result.data.discountCodeBasicCreate.codeDiscountNode
     .codeDiscount.codes.nodes[0].code;
   
-  console.log(`✓ Created new discount code: ${code}`);
+  console.log(` Created new discount code: ${code}`);
   return code;
 }
 
@@ -136,7 +136,7 @@ export async function createFixedAmountDiscountCode(admin, discountAmount, curre
   );
   
   if (codeExists) {
-    console.log(`✓ Using existing discount code: ${discountCode}`);
+    console.log(` Using existing discount code: ${discountCode}`);
     return discountCode;
   }
   
@@ -199,7 +199,7 @@ export async function createFixedAmountDiscountCode(admin, discountAmount, curre
   const code = result.data.discountCodeBasicCreate.codeDiscountNode
     .codeDiscount.codes.nodes[0].code;
   
-  console.log(`✓ Created new fixed amount discount code: ${code}`);
+  console.log(` Created new fixed amount discount code: ${code}`);
   return code;
 }
 
@@ -242,7 +242,7 @@ export async function createGiftCard(admin, giftCardAmount) {
   }
   
   const giftCardCode = result.data.giftCardCreate.giftCard.id;
-  console.log(`✓ Created gift card: ${giftCardCode}`);
+  console.log(` Created gift card: ${giftCardCode}`);
   
   return giftCardCode;
 }

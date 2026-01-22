@@ -174,7 +174,7 @@ function generateDiverseVariants(count, baseline, segment = 'all') {
  * EXISTING STORES: Random exploration
  */
 export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
-  console.log(`🌱 Seeding initial population for shop ${shopId}, baseline ${baseline}, segment ${segment}`);
+  console.log(` Seeding initial population for shop ${shopId}, baseline ${baseline}, segment ${segment}`);
   
   // Check if shop is new
   const shop = await (await getDb()).shop.findUnique({
@@ -192,7 +192,7 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
   
   // Check if variants already exist for this baseline/segment
   if (shop.variants.length > 0) {
-    console.log(`⚠️ Variants already exist for ${baseline}/${segment}. Skipping seed.`);
+    console.log(` Variants already exist for ${baseline}/${segment}. Skipping seed.`);
     return shop.variants;
   }
   
@@ -221,7 +221,7 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
     });
     
     if (provenGenes.length >= 3) {
-      console.log(`✨ Found ${provenGenes.length} proven genes from network`);
+      console.log(` Found ${provenGenes.length} proven genes from network`);
       
       // Create 5 variants using proven genes + some random genes
       const variantPromises = [];
@@ -254,15 +254,15 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
       // Add 5 random exploration variants
       variants.push(...generateDiverseVariants(5, baseline, segment));
       
-      console.log('✅ Created 5 proven + 5 random variants');
+      console.log(' Created 5 proven + 5 random variants');
     } else {
-      console.log('⚠️ Not enough proven genes found, using random seed');
+      console.log(' Not enough proven genes found, using random seed');
       variants = generateDiverseVariants(10, baseline, segment);
     }
   }
   // EXISTING STORE: Pure random exploration
   else {
-    console.log('🎲 Existing store - generating diverse random variants');
+    console.log(' Existing store - generating diverse random variants');
     variants = generateDiverseVariants(10, baseline, segment);
   }
   
@@ -278,7 +278,7 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
     createdVariants.push(created);
   }
   
-  console.log(`✅ Created ${createdVariants.length} generation 0 variants`);
+  console.log(` Created ${createdVariants.length} generation 0 variants`);
   
   return createdVariants;
 }
@@ -303,7 +303,7 @@ export async function getLiveVariants(shopId, baseline, segment = 'all') {
  * Creates 10 variants for each of the 4 baselines
  */
 export async function initializeShopVariants(shopId, segment = 'all') {
-  console.log(`🎬 Initializing all baselines for shop ${shopId}`);
+  console.log(` Initializing all baselines for shop ${shopId}`);
   
   const baselines = getAllBaselines();
   const results = {};
@@ -316,7 +316,7 @@ export async function initializeShopVariants(shopId, segment = 'all') {
         count: variants.length
       };
     } catch (error) {
-      console.error(`❌ Failed to seed ${baseline}:`, error);
+      console.error(` Failed to seed ${baseline}:`, error);
       results[baseline] = {
         success: false,
         error: error.message
@@ -328,7 +328,7 @@ export async function initializeShopVariants(shopId, segment = 'all') {
     .filter(r => r.success)
     .reduce((sum, r) => sum + r.count, 0);
   
-  console.log(`✅ Initialized ${totalVariants} variants across ${baselines.length} baselines`);
+  console.log(` Initialized ${totalVariants} variants across ${baselines.length} baselines`);
   
   return results;
 }
@@ -366,7 +366,7 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
   
   // Champion gets 70% of traffic
   if (champion && Math.random() < 0.7) {
-    console.log(`👑 Champion ${champion.variantId} selected (70% traffic)`);
+    console.log(` Champion ${champion.variantId} selected (70% traffic)`);
     return champion;
   }
   
@@ -399,7 +399,7 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
   samples.sort((a, b) => b.sample - a.sample);
   
   const winner = samples[0].variant;
-  console.log(`🎲 Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)})`);
+  console.log(` Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)})`);
   
   return winner;
 }
@@ -439,7 +439,7 @@ export async function recordImpression(variantId, shopId, context = {}) {
     }
   });
 
-  console.log(`📊 Recorded impression for variant ${variantId}${activePromo ? ' (during promo)' : ''}`);
+  console.log(` Recorded impression for variant ${variantId}${activePromo ? ' (during promo)' : ''}`);
 
   return impression;
 }
@@ -461,7 +461,7 @@ export async function recordClick(impressionId) {
     }
   });
   
-  console.log(`👆 Recorded click for impression ${impressionId}`);
+  console.log(` Recorded click for impression ${impressionId}`);
   
   return impression;
 }
@@ -506,7 +506,7 @@ export async function recordConversion(impressionId, revenue, discountAmount = 0
     }
   });
   
-  console.log(`💰 Recorded conversion for impression ${impressionId}: $${revenue} revenue, $${discountAmount} discount`);
+  console.log(` Recorded conversion for impression ${impressionId}: $${revenue} revenue, $${discountAmount} discount`);
   
   return impression;
 }
@@ -594,7 +594,7 @@ async function breedNewVariant(parents, baseline, segment = 'all', shopId = null
   const parent1 = weightedRandomSelection(parents, v => v.profitPerImpression + 1);
   const parent2 = weightedRandomSelection(parents, v => v.profitPerImpression + 1);
   
-  console.log(`🧬 Breeding from parents: ${parent1.variantId} (Gen ${parent1.generation}) + ${parent2.variantId} (Gen ${parent2.generation})`);
+  console.log(` Breeding from parents: ${parent1.variantId} (Gen ${parent1.generation}) + ${parent2.variantId} (Gen ${parent2.generation})`);
   console.log(`   Settings: ${(crossoverRate*100).toFixed(0)}% crossover, ${(mutationRate*100).toFixed(0)}% mutation`);
   
   // Crossover: Inherit genes from both parents based on crossoverRate
@@ -623,7 +623,7 @@ async function breedNewVariant(parents, baseline, segment = 'all', shopId = null
   });
   
   if (mutations.length > 0) {
-    console.log(`  ⚡ Mutations in: ${mutations.join(', ')}`);
+    console.log(`   Mutations in: ${mutations.join(', ')}`);
   }
   
   const newGeneration = Math.max(parent1.generation, parent2.generation) + 1;
@@ -660,7 +660,7 @@ async function breedNewVariant(parents, baseline, segment = 'all', shopId = null
     );
     
     if (!validation.valid) {
-      console.log(`  ⚠️ Brand safety violation, re-breeding...`);
+      console.log(`   Brand safety violation, re-breeding...`);
       console.log(`     ${validation.violations.join(', ')}`);
       // Recursively breed again until valid
       return await breedNewVariant(parents, baseline, segment, shopId);
@@ -701,7 +701,7 @@ function detectChampion(liveVariants) {
     });
   
   if (beatsAll) {
-    console.log(`👑 New champion detected: ${topPerformer.variantId} (Gen ${topPerformer.generation})`);
+    console.log(` New champion detected: ${topPerformer.variantId} (Gen ${topPerformer.generation})`);
     return topPerformer;
   }
   
@@ -713,7 +713,7 @@ function detectChampion(liveVariants) {
  * Runs every 100 impressions
  */
 export async function evolutionCycle(shopId, baseline, segment = 'all') {
-  console.log(`\n🧬 EVOLUTION CYCLE: Shop ${shopId}, Baseline ${baseline}, Segment ${segment}`);
+  console.log(`\n EVOLUTION CYCLE: Shop ${shopId}, Baseline ${baseline}, Segment ${segment}`);
   console.log('='.repeat(80));
   
   // Load shop's evolution settings
@@ -734,16 +734,16 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
     populationSize: shop?.populationSize || 10
   };
   
-  console.log(`⚙️  Evolution Settings: Mutation ${evolutionSettings.mutationRate}%, Crossover ${evolutionSettings.crossoverRate}%, Pressure ${evolutionSettings.selectionPressure}/10, Pop ${evolutionSettings.populationSize}`);
+  console.log(`  Evolution Settings: Mutation ${evolutionSettings.mutationRate}%, Crossover ${evolutionSettings.crossoverRate}%, Pressure ${evolutionSettings.selectionPressure}/10, Pop ${evolutionSettings.populationSize}`);
   
   let liveVariants = await getLiveVariants(shopId, baseline, segment);
   
   if (liveVariants.length === 0) {
-    console.log('⚠️ No live variants found. Skipping evolution.');
+    console.log(' No live variants found. Skipping evolution.');
     return;
   }
   
-  console.log(`📊 Current population: ${liveVariants.length} live variants`);
+  console.log(` Current population: ${liveVariants.length} live variants`);
   
   // Step 1: Calculate profit/impression for all variants
   liveVariants.forEach(v => {
@@ -778,7 +778,7 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
       const test = bayesianCompare(topPerformer, variant);
       
       if (test.probability > confidenceThreshold) {
-        console.log(`💀 Marking for death: ${variant.variantId} (${test.probability.toFixed(3)} confidence it's worse)`);
+        console.log(` Marking for death: ${variant.variantId} (${test.probability.toFixed(3)} confidence it's worse)`);
         dying.push(variant);
       }
     });
@@ -786,7 +786,7 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
   
   // Step 3: Kill variants
   if (dying.length > 0) {
-    console.log(`\n💀 Killing ${dying.length} variant(s)`);
+    console.log(`\n Killing ${dying.length} variant(s)`);
     
     for (const variant of dying) {
       await (await getDb()).variant.update({
@@ -807,7 +807,7 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
   const needToBreed = targetPopulation - liveVariants.length;
   
   if (needToBreed > 0 && liveVariants.length >= 2) {
-    console.log(`\n🧬 Breeding ${needToBreed} new variant(s)`);
+    console.log(`\n Breeding ${needToBreed} new variant(s)`);
     
     for (let i = 0; i < needToBreed; i++) {
       const childData = await breedNewVariant(liveVariants, baseline, segment, shopId, evolutionSettings);
@@ -819,7 +819,7 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
         }
       });
       
-      console.log(`  ✅ Born: ${newVariant.variantId} (Gen ${newVariant.generation})`);
+      console.log(`   Born: ${newVariant.variantId} (Gen ${newVariant.generation})`);
       liveVariants.push(newVariant);
     }
   }
@@ -834,7 +834,7 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
         where: { id: champion.id },
         data: { status: 'alive', championDate: null }
       });
-      console.log(`  👑 Dethroned: ${champion.variantId}`);
+      console.log(`   Dethroned: ${champion.variantId}`);
     }
     
     // Crown new champion
@@ -842,7 +842,7 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
       where: { id: newChampion.id },
       data: { status: 'champion', championDate: new Date() }
     });
-    console.log(`  👑 Crowned: ${newChampion.variantId}`);
+    console.log(`   Crowned: ${newChampion.variantId}`);
   }
   
   // Step 6: Update shop's last evolution cycle timestamp
@@ -851,7 +851,7 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
     data: { lastEvolutionCycle: new Date() }
   });
   
-  console.log(`\n✅ Evolution cycle complete. Population: ${liveVariants.length}`);
+  console.log(`\n Evolution cycle complete. Population: ${liveVariants.length}`);
   console.log('='.repeat(80) + '\n');
   
   return {
@@ -866,13 +866,13 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
  * Test variant creation (for development)
  */
 export async function testVariantCreation() {
-  console.log('🧪 Testing Variant Creation');
+  console.log(' Testing Variant Creation');
   console.log('===========================\n');
   
   // Test 1: Create random variant
   console.log('Test 1: Random variant creation');
   const randomVariant = createRandomVariant('conversion_with_discount', 'mobile');
-  console.log('✅ Random variant:', {
+  console.log(' Random variant:', {
     variantId: randomVariant.variantId,
     baseline: randomVariant.baseline,
     genes: {
@@ -887,7 +887,7 @@ export async function testVariantCreation() {
   // Test 2: Create diverse variants
   console.log('\nTest 2: Diverse variant generation (Latin Hypercube Sampling)');
   const diverseVariants = generateDiverseVariants(10, 'revenue_with_discount', 'desktop');
-  console.log(`✅ Created ${diverseVariants.length} diverse variants`);
+  console.log(` Created ${diverseVariants.length} diverse variants`);
   console.log('Offer distribution:', 
     [...new Set(diverseVariants.map(v => v.offerAmount))].sort()
   );
@@ -905,5 +905,5 @@ export async function testVariantCreation() {
     }, {})
   );
   
-  console.log('\n✅ All tests passed!');
+  console.log('\n All tests passed!');
 }

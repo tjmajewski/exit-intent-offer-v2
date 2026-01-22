@@ -5,7 +5,7 @@ export const action = async ({ request }) => {
   try {
     const { topic, shop, session, payload } = await authenticate.webhook(request);
 
-    console.log("🎯 Discount webhook received:", topic);
+    console.log(" Discount webhook received:", topic);
     console.log("Shop:", shop);
     console.log("Discount code:", payload.code);
     console.log("Discount value:", payload.value);
@@ -40,7 +40,7 @@ export const action = async ({ request }) => {
       }
     });
 
-    console.log(`✅ Promotion created: ${discountCode} - ${discountValue}${discountType === 'percentage' ? '%' : '$'} off`);
+    console.log(` Promotion created: ${discountCode} - ${discountValue}${discountType === 'percentage' ? '%' : '$'} off`);
 
     return new Response(null, { status: 200 });
   } catch (error) {

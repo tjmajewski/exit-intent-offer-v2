@@ -235,7 +235,7 @@ export function getAllBaselines() {
 
 // Example usage and stats
 export function printGenePoolStats() {
-  console.log('🧬 Gene Pool Statistics:');
+  console.log(' Gene Pool Statistics:');
   console.log('========================');
   
   getAllBaselines().forEach(baseline => {

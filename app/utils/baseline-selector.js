@@ -16,7 +16,7 @@ export function selectBaseline(signals, aiGoal = 'revenue') {
   
   // If site-wide promo is active, avoid discount baselines
   if (hasPromoActive) {
-    console.log('⚠️ Site-wide promo active - using no-discount baseline');
+    console.log(' Site-wide promo active - using no-discount baseline');
     return aiGoal === 'revenue' ? 'revenue_no_discount' : 'conversion_no_discount';
   }
   
@@ -24,11 +24,11 @@ export function selectBaseline(signals, aiGoal = 'revenue') {
   if (aiGoal === 'revenue') {
     if (highPropensity) {
       // Customer is ready to buy - upsell without discount
-      console.log('💰 Revenue mode + high propensity → revenue_no_discount');
+      console.log(' Revenue mode + high propensity → revenue_no_discount');
       return 'revenue_no_discount';
     } else {
       // Customer needs incentive to add more
-      console.log('💰 Revenue mode + needs incentive → revenue_with_discount');
+      console.log(' Revenue mode + needs incentive → revenue_with_discount');
       return 'revenue_with_discount';
     }
   }
@@ -37,17 +37,17 @@ export function selectBaseline(signals, aiGoal = 'revenue') {
   if (aiGoal === 'conversion') {
     if (highPropensity) {
       // Customer is likely to convert - use social proof
-      console.log('🎯 Conversion mode + high propensity → conversion_no_discount');
+      console.log(' Conversion mode + high propensity → conversion_no_discount');
       return 'conversion_no_discount';
     } else {
       // Customer needs incentive to complete purchase
-      console.log('🎯 Conversion mode + needs incentive → conversion_with_discount');
+      console.log(' Conversion mode + needs incentive → conversion_with_discount');
       return 'conversion_with_discount';
     }
   }
   
   // Default fallback (shouldn't reach here)
-  console.warn('⚠️ Unknown aiGoal, defaulting to conversion_with_discount');
+  console.warn(' Unknown aiGoal, defaulting to conversion_with_discount');
   return 'conversion_with_discount';
 }
 
@@ -94,7 +94,7 @@ export function needsIncentive(signals) {
  * Test baseline selection with sample signals
  */
 export function testBaselineSelection() {
-  console.log('🧪 Testing Baseline Selection');
+  console.log(' Testing Baseline Selection');
   console.log('==============================\n');
   
   const testCases = [
@@ -132,7 +132,7 @@ export function testBaselineSelection() {
   
   testCases.forEach(test => {
     const result = selectBaseline(test.signals, test.aiGoal);
-    const passed = result === test.expected ? '✅' : '❌';
+    const passed = result === test.expected ? '' : '';
     console.log(`${passed} ${test.name}`);
     console.log(`   Expected: ${test.expected}`);
     console.log(`   Got: ${result}`);

@@ -106,7 +106,7 @@ export async function action({ request }) {
       const budgetCheck = await checkBudget(db, shopRecord.id, budgetPeriod);
       
       if (!budgetCheck.hasRoom) {
-        console.log(`⚠️ Budget exhausted for ${shop}. Showing no-discount modal.`);
+        console.log(` Budget exhausted for ${shop}. Showing no-discount modal.`);
         
         // Log AI decision
         await db.aIDecision.create({
@@ -132,7 +132,7 @@ export async function action({ request }) {
         });
       }
       
-      console.log(`✓ Budget check passed. Remaining: $${budgetCheck.remaining}`);
+      console.log(` Budget check passed. Remaining: $${budgetCheck.remaining}`);
     }
     
     // NEW: Use variant-based evolution system
@@ -271,7 +271,7 @@ export async function action({ request }) {
       }
     });
     
-    console.log(`✓ AI offer created: ${discountResult.code} (${decision.type}, $${offerAmount})`);
+    console.log(` AI offer created: ${discountResult.code} (${decision.type}, $${offerAmount})`);
     
     // Variant copy is already in decision object from variant genes
     // No need for separate copy variant selection
