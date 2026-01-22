@@ -1,9 +1,6 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { collectStoreMetrics } from "../utils/social-proof";
-import { PrismaClient } from '@prisma/client';
-
-const db = new PrismaClient();
 
 /**
  * Cron job to collect social proof metrics for all shops
@@ -12,6 +9,7 @@ const db = new PrismaClient();
  * GET /api/cron/social-proof?secret=YOUR_SECRET_KEY
  */
 export async function loader({ request }) {
+  const { default: db } = await import("../db.server.js");
   const url = new URL(request.url);
   const secret = url.searchParams.get('secret');
   

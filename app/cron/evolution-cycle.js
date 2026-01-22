@@ -1,8 +1,7 @@
 // Evolution Cycle Cron Job
 // Runs every 5 minutes, checks if any shop has 100+ new impressions since last cycle
 
-import { PrismaClient } from '@prisma/client';
-const db = new PrismaClient();
+import db from '../db.server.js';
 
 /**
  * Run evolution cycle for all eligible shops

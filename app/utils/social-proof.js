@@ -1,29 +1,26 @@
-import { PrismaClient } from '@prisma/client';
-
-const db = new PrismaClient();
-
 /**
  * Collect store metrics from Shopify
  */
 export async function collectStoreMetrics(admin, shopifyDomain) {
   console.log(`📊 Collecting social proof metrics for ${shopifyDomain}`);
-  
+
   try {
     // Get customer count
     const customerCount = await getCustomerCount(admin);
     console.log(`  ✅ Customers: ${customerCount}`);
-    
+
     // Get order count (better for social proof)
     const orderCount = await getOrderCount(admin);
     console.log(`  ✅ Orders: ${orderCount}`);
-    
+
     // Get product reviews (if available)
     const reviews = await getReviewMetrics(admin);
     if (reviews) {
       console.log(`  ✅ Reviews: ${reviews.count} (avg: ${reviews.avgRating})`);
     }
-    
+
     // Update shop record
+    const { default: db } = await import('../db.server.js');
     const shop = await db.shop.update({
       where: { shopifyDomain },
       data: {

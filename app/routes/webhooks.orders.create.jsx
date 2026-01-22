@@ -410,7 +410,7 @@ async function storeConversion(shop, orderPayload, discountUsed, session) {
         orderedAt: new Date(orderPayload.created_at),
         modalId: modalLibrary.currentModalId || 'unknown',
         modalName: currentModal?.modalName || 'Unknown Modal',
-        variantId: null, // TODO: Track variant from impression
+        variantId: null, // Only tracked in AI mode via variant impressions
         modalHadDiscount: modalHadDiscount,
         discountCode: discountUsed?.code || null,
         discountRedeemed: !!discountUsed,

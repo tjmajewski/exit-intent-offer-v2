@@ -1,11 +1,9 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { PrismaClient } from "@prisma/client";
 import { trackVariantPerformance } from "../utils/copy-variants.js";
 
-const db = new PrismaClient();
-
 export async function action({ request }) {
+  const { default: db } = await import("../db.server.js");
   try {
     await authenticate.public.appProxy(request);
     const body = await request.json();
@@ -25,9 +23,7 @@ export async function action({ request }) {
     }
     
     await trackVariantPerformance(db, shopRecord.id, variantId, event, revenue || 0);
-    
-    console.log(`[Track Variant] ${event} tracked for variant ${variantId}`);
-    
+
     return json({ success: true });
   } catch (error) {
     console.error("[Track Variant] Error:", error);

@@ -1,11 +1,9 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { PrismaClient } from "@prisma/client";
 import { initializeCopyVariants } from "../utils/copy-variants.js";
 
-const db = new PrismaClient();
-
 export async function action({ request }) {
+  const { default: db } = await import("../db.server.js");
   try {
     await authenticate.public.appProxy(request);
     const { shop } = await request.json();

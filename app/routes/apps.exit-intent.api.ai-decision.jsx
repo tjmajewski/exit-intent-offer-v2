@@ -1,14 +1,12 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { PrismaClient } from "@prisma/client";
-import { determineOffer, checkBudget, enterpriseAI } from "../utils/ai-decision";
 import { createPercentageDiscount, createFixedDiscount, createThresholdDiscount } from "../utils/discount-codes";
 import { getMetaInsight, shouldUseMetaLearning } from "../utils/meta-learning.js";
 
-const db = new PrismaClient();
-
 export async function action({ request }) {
-  try {
+  const { default: db } = await import("../db.server.js");
+  const { determineOffer, checkBudget, enterpriseAI } = await import("../utils/ai-decision.server.js");
+  try{
     const { admin } = await authenticate.public.appProxy(request);
     const { shop, signals } = await request.json();
     
