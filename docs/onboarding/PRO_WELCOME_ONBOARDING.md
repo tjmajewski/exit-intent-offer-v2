@@ -124,8 +124,10 @@ Each template has optimized copy and layout for its specific purpose.
 
 #### Discount Settings
 - **Discount Type**: Percentage or fixed amount
-- **Discount Code**: Your Shopify discount code
-- **Auto-Apply**: Automatically apply code at checkout (recommended)
+- **How It Works**: Resparq automatically creates the discount code in Shopify when you save
+  - Percentage codes: `15OFF`, `20OFF`, etc.
+  - Fixed amount codes: `10DOLLARSOFF`, `25DOLLARSOFF`, etc.
+- **Auto-Apply**: Automatically apply code at checkout (recommended - enabled by default)
 
 ### Advanced Tab (NEW IN PRO)
 

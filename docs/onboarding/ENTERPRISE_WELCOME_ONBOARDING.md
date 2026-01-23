@@ -174,8 +174,10 @@ Configure baseline modal elements:
 
 #### Discount Settings
 - **Discount Type**: Percentage or fixed amount
-- **Discount Code**: Shopify code (or AI-generated)
-- **Auto-Apply**: Automatic code application
+- **How Codes Are Created**: Resparq automatically creates discount codes in Shopify when you save
+  - Generic codes: `15OFF`, `20OFF`, etc. (reusable)
+  - Or AI can generate unique codes with 24-hour expiry (see AI Discount Code Mode below)
+- **Auto-Apply**: Codes are automatically applied at checkout
 
 ### Advanced Tab
 

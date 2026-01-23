@@ -105,10 +105,14 @@ This is where you'll configure the core elements of your offer:
 - **Percentage Discount**: e.g., 10%, 15%, 20%
 - **Fixed Amount Discount**: e.g., $5, $10, $25
 
-**Discount Code**
-- Enter the Shopify discount code you've created in your Shopify admin
-- Must match exactly (case-sensitive)
-- Tip: Create the code in Shopify first, then paste it here
+**How Discount Codes Work**
+- Resparq **automatically creates the discount code in Shopify** when you save your settings
+- You don't need to manually create anything in Shopify
+- The code format is automatic:
+  - Percentage: `15OFF`, `20OFF`, etc.
+  - Fixed amount: `10DOLLARSOFF`, `25DOLLARSOFF`, etc.
+- If the code already exists, Resparq will use it
+- The discount is automatically applied at checkout for your customers
 
 **Redirect Destination**
 - Choose where customers go after clicking your CTA button
@@ -116,15 +120,17 @@ This is where you'll configure the core elements of your offer:
   - **Checkout**: Send directly to checkout (recommended for higher conversion)
   - **Cart**: Send to cart page (gives customers a chance to review)
 
-### Branding Tab
+### Branding Tab (Locked - Enterprise Only)
 
-Customize the look and feel of your modal (limited customization on Starter):
+The Branding tab is visible in your settings, but it's locked on the Starter plan. When you click on it, you'll see an upgrade screen.
 
-- **Modal Headline**: Edit the main headline text
-- **Modal Body**: Edit the supporting body copy
-- **CTA Button**: Edit the button text
+**What's Available on Enterprise:**
+- Custom colors (primary, secondary, accent)
+- Custom fonts
+- Logo upload
+- Custom CSS for complete design control
 
-Note: Advanced branding options (colors, fonts, custom CSS) are available on Enterprise tier.
+To access branding customization, you'll need to upgrade to the Enterprise plan ($299/month).
 
 ---
 
@@ -204,12 +210,8 @@ Great modal copy follows this formula:
 
 ## Common Questions
 
-### How do I create a discount code in Shopify?
-1. Go to Shopify Admin → Discounts
-2. Click "Create discount"
-3. Choose "Discount code"
-4. Set your parameters (percentage or fixed amount)
-5. Copy the exact code and paste it into Resparq settings
+### How do discount codes work?
+You don't need to manually create discount codes! Resparq automatically creates them in your Shopify admin when you save your modal settings. Just set your discount percentage or fixed amount in Resparq, click Save, and the code is created automatically. You can view it in Shopify Admin → Discounts if you want to verify.
 
 ### What happens when I reach 1,000 impressions?
 - Your modal will stop showing to new visitors
@@ -268,12 +270,13 @@ We're here to support you every step of the way!
 - **Support**: Contact us through the Shopify App Store or your Resparq dashboard
 
 ### Best Practices Checklist
-- [ ] Create your discount code in Shopify first
-- [ ] Set up your modal headline, body, and CTA
+- [ ] Set up your modal headline, body, and CTA in Quick Setup
+- [ ] Choose your discount type and amount (Resparq creates the code automatically)
 - [ ] Configure exit intent and/or time delay trigger
 - [ ] Set cart value thresholds (optional but recommended)
 - [ ] Enable your modal with the toggle switch
 - [ ] Monitor your dashboard daily for first 7 days
+- [ ] Verify the discount code was created in Shopify Admin → Discounts
 - [ ] Adjust your offer based on conversion rate after 100+ impressions
 
 ---
