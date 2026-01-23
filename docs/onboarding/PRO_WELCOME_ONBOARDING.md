@@ -165,19 +165,47 @@ Recommendation: Start at level 5, monitor conversion rate and revenue, adjust ac
 Choose how discount codes are generated:
 
 **Generic Codes (Default)**
-- Same discount code reused for all customers
-- Simpler to manage
-- Must create code in Shopify first
-- No expiration
+- **Format**: Simple, clean codes like `15OFF`, `20OFF`, or `10DOLLARSOFF`
+- **How it works**: Resparq creates ONE discount code in Shopify when you save settings
+- **Reusability**: The same code is shown to every customer who sees your modal
+- **Expiration**: Never expires - works forever
+- **Usage limit**: Unlimited - can be used by multiple customers, multiple times
+- **Code sharing**: Customers can share the code (it's the same for everyone)
+- **When to use**:
+  - You want simplicity
+  - You're okay with customers potentially sharing the code
+  - You don't need urgency messaging
+  - You want one clean code in your Shopify admin
 
 **Unique Codes with 24-Hour Expiry**
-- AI generates unique codes for each customer
-- Codes expire after 24 hours
-- Creates urgency
-- Automatic cleanup (no manual management needed)
-- Prevents code sharing
+- **Format**: Randomly generated codes like `EXIT15-lg9xyz8abc` (includes timestamp + random characters)
+- **How it works**: Resparq generates a NEW unique code for each customer who sees the modal
+- **Reusability**: Each customer gets their own unique code
+- **Expiration**: Expires 24 hours after creation (creates urgency!)
+- **Usage limit**: Can only be used ONCE (one-time use per code)
+- **Code sharing**: Not effective - code expires quickly and is single-use
+- **Automatic cleanup**: Expired codes are automatically cleaned up by Shopify
+- **When to use**:
+  - You want to create urgency ("Use within 24 hours!")
+  - You want to prevent code sharing on social media/deal sites
+  - You want to track individual customer conversions more precisely
+  - You're okay with having many codes in Shopify admin (auto-managed)
 
-Recommendation: Use unique codes for higher conversion rates and urgency.
+**Comparison Example:**
+
+*Generic Mode:*
+- Customer A sees modal → Gets code `SAVE15`
+- Customer B sees modal → Gets code `SAVE15` (same code)
+- Customer C sees modal → Gets code `SAVE15` (same code)
+- Result: All customers have the same code, can share it anywhere
+
+*Unique Mode:*
+- Customer A sees modal → Gets code `EXIT15-a1b2c3` (expires in 24h, one-time use)
+- Customer B sees modal → Gets code `EXIT15-d4e5f6` (different code, expires in 24h)
+- Customer C sees modal → Gets code `EXIT15-g7h8i9` (different code, expires in 24h)
+- Result: Each customer has their own time-limited, single-use code
+
+**Recommendation**: Use unique codes for higher conversion rates (urgency effect) and to prevent code sharing. Use generic codes for simplicity and if you want the code to be easily shareable.
 
 #### Budget Cap System
 

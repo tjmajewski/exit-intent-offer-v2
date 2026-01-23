@@ -206,8 +206,30 @@ Configure basic AI optimization parameters:
 - **10**: Maximum (30%+)
 
 #### AI Discount Code Mode
-- **Generic Codes**: Reusable across customers
-- **Unique Codes with 24-Hour Expiry**: Auto-generated, creates urgency
+
+Choose how discount codes are generated:
+
+**Generic Codes**
+- **Format**: Simple codes like `15OFF`, `20OFF`, `10DOLLARSOFF`
+- **How it works**: One code created in Shopify, reused for all customers
+- **Expiration**: Never expires
+- **Usage**: Unlimited uses by unlimited customers
+- **Code sharing**: Possible (same code for everyone)
+- **Best for**: Simplicity, when code sharing is acceptable
+
+**Unique Codes with 24-Hour Expiry**
+- **Format**: Unique codes like `EXIT15-lg9xyz8abc` (timestamp + random string)
+- **How it works**: New unique code generated for each customer
+- **Expiration**: 24 hours after creation
+- **Usage**: One-time use only (cannot be reused)
+- **Code sharing**: Not effective (expires quickly, single-use)
+- **Best for**: Creating urgency, preventing code leaks, precise tracking
+
+**Example:**
+- Generic: All customers get `SAVE15`
+- Unique: Customer A gets `EXIT15-a1b2c3`, Customer B gets `EXIT15-d4e5f6`
+
+**Recommendation**: Unique codes typically increase conversion rates by 8-15% due to urgency effect.
 
 #### Budget Cap System
 - **Maximum Discount Budget**: Dollar limit

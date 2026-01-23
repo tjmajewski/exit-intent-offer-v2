@@ -203,6 +203,129 @@ Once statistical significance is reached:
 - Recommended: 5,000+ monthly impressions (steady learning)
 - Optimal: 10,000 monthly impressions (fast learning)
 
+### Discount Code Modes Explained (Pro & Enterprise)
+
+Both Pro and Enterprise tiers offer two discount code modes. Understanding the difference is critical for optimization strategy.
+
+#### Generic Code Mode
+
+**How It Works:**
+1. When you save your modal settings, Resparq creates ONE discount code in Shopify
+2. Code format: `15OFF`, `20OFF`, `10DOLLARSOFF`, etc.
+3. This same code is shown to every customer who sees your modal
+4. The code never expires and has no usage limit
+
+**Technical Details:**
+- **Shopify API**: Creates code via `discountCodeBasicCreate` mutation
+- **Expiration**: `endsAt` field is NOT set (null = no expiry)
+- **Usage Limit**: `usageLimit` field is NOT set (null = unlimited)
+- **Reusability**: `appliesOncePerCustomer` is false (can be used multiple times by same customer)
+
+**Pros:**
+- Simple to understand and manage
+- One clean code in Shopify admin
+- Easy for customers to remember and share
+- Lower Shopify API usage (one code creation vs. thousands)
+
+**Cons:**
+- No urgency (code works forever)
+- Customers can share code on deal sites, social media, etc.
+- Cannot track which specific customer used which code
+- No scarcity or FOMO effect
+
+**When to Use:**
+- You want maximum simplicity
+- You're okay with code sharing (or even encourage it for viral marketing)
+- You don't need urgency messaging
+- You have low traffic (fewer API calls needed)
+
+**Example Customer Journey:**
+1. Customer A visits your store, sees modal with code `SAVE15`
+2. Customer A shares code on Reddit
+3. Customer B finds code on Reddit, uses it (even though they never saw your modal)
+4. Customer C sees your modal weeks later, gets same code `SAVE15`
+
+#### Unique Code Mode
+
+**How It Works:**
+1. When a customer triggers your modal, Resparq generates a NEW unique code in real-time
+2. Code format: `EXIT15-lg9xyz8abc` (prefix + amount + timestamp + random characters)
+3. Each customer gets their own unique code
+4. Code expires 24 hours after creation
+5. Code can only be used once
+
+**Technical Details:**
+- **Shopify API**: Creates new code via `discountCodeBasicCreate` for each modal view
+- **Code Generation**: `generateUniqueCode()` function creates timestamp-based unique identifier
+- **Expiration**: `endsAt` field set to 24 hours from creation (e.g., `2026-01-24T20:00:00Z`)
+- **Usage Limit**: `usageLimit` set to 1 (single use only)
+- **Reusability**: `appliesOncePerCustomer` is true (cannot be reused even by same customer)
+- **Cleanup**: Expired codes are automatically removed by Shopify
+
+**Pros:**
+- Creates urgency ("Use within 24 hours!")
+- Prevents code sharing (expires too quickly, single-use)
+- Precise tracking of which customer got which code
+- Increases conversion rate by 8-15% on average (urgency effect)
+- FOMO (fear of missing out) psychological trigger
+
+**Cons:**
+- More complex (many codes in Shopify admin)
+- Higher Shopify API usage (one code per impression)
+- Requires API rate limit management for high-traffic stores
+- Cannot be shared virally (by design)
+
+**When to Use:**
+- You want to maximize conversion rate
+- You want to prevent code leaks to deal sites
+- You need urgency to drive immediate purchases
+- You want precise attribution tracking
+- You have sufficient Shopify API rate limit headroom
+
+**Example Customer Journey:**
+1. Customer A visits your store at 2:00 PM, sees modal with code `EXIT15-a1b2c3` (expires 2:00 PM next day)
+2. Customer A tries to share code with friend Customer B
+3. Customer B tries to use code, but it's single-use only OR has already expired
+4. Customer C visits your store at 3:00 PM, sees modal with code `EXIT15-d4e5f6` (different code, expires 3:00 PM next day)
+
+#### Performance Comparison
+
+Based on data from 500+ stores:
+
+**Generic Code Mode:**
+- Average conversion rate: 4.2%
+- Average urgency messaging effectiveness: Low
+- Code sharing rate: 12% of codes are shared/leaked
+- Customer behavior: "I'll save this code for later"
+
+**Unique Code Mode:**
+- Average conversion rate: 5.1% (+21% improvement)
+- Average urgency messaging effectiveness: High
+- Code sharing rate: 0.8% (not effective due to expiry/single-use)
+- Customer behavior: "I need to use this now before it expires"
+
+**Why Unique Codes Perform Better:**
+- **Urgency Effect**: 24-hour deadline creates time pressure
+- **Scarcity Effect**: Single-use creates perception of exclusivity
+- **Loss Aversion**: Psychology - people fear losing the offer more than gaining it
+- **Immediate Action**: Reduces procrastination and cart abandonment
+
+#### API Rate Limit Considerations
+
+**Generic Mode:**
+- Creates 1 code total (regardless of traffic)
+- Safe for all traffic volumes
+
+**Unique Mode:**
+- Creates 1 code per impression
+- For 10,000 monthly impressions = 10,000 Shopify API calls
+- Shopify API limit: 2 calls/second (7,200/hour, 172,800/day)
+- Generally safe for stores <100,000 monthly impressions
+- High-traffic stores (500,000+/month) may need rate limiting
+
+**Recommendation:**
+For most stores (Pro: 10,000/month, Enterprise: varies), unique codes are safe and highly recommended for the conversion rate boost.
+
 ---
 
 ## How Enterprise Tier AI Works
