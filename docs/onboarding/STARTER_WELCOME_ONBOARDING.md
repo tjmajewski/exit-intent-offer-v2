@@ -113,12 +113,7 @@ This is where you'll configure the core elements of your offer:
   - Fixed amount: `10DOLLARSOFF`, `25DOLLARSOFF`, etc.
 - If the code already exists, Resparq will use it
 - The discount is automatically applied at checkout for your customers
-
-**Redirect Destination**
-- Choose where customers go after clicking your CTA button
-- Options:
-  - **Checkout**: Send directly to checkout (recommended for higher conversion)
-  - **Cart**: Send to cart page (gives customers a chance to review)
+- After clicking the CTA, customers are sent to checkout to complete their purchase
 
 ### Branding Tab (Locked - Enterprise Only)
 
@@ -241,10 +236,9 @@ As your business grows, you may want access to more powerful features:
 
 ### Pro Plan ($79/month) Adds:
 - **10,000 impressions/month** (10x more)
-- **5 professional templates** (discount, free shipping, urgency, welcome, reminder)
+- **4 professional templates** (discount, urgency, social proof, cart reminder)
 - **AI-powered optimization** (automatically tests 2 variants)
 - **Per-modal analytics** (see performance of each offer)
-- **Advanced cart value targeting**
 - **Redirect choice** (cart vs. checkout)
 
 ### Enterprise Plan ($299/month) Adds:

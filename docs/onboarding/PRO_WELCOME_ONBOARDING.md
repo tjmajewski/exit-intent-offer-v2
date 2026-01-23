@@ -14,10 +14,9 @@ Your Pro plan is a significant upgrade from Starter, giving you access to:
 
 ### Core Enhancements
 - **10,000 Monthly Impressions**: 10x more than Starter - show offers to up to 10,000 visitors per month
-- **5 Professional Templates**: Choose from discount, free-shipping, urgency, welcome, and reminder templates
+- **4 Professional Templates**: Choose from discount, urgency, social proof, and cart reminder templates
 - **AI-Powered Optimization**: Automatically test 2 variants to find your best-performing offer
 - **Per-Modal Analytics**: See detailed performance metrics for each modal variant
-- **Advanced Cart Value Targeting**: Precise control over who sees your offers
 - **Redirect Choice**: Choose between sending customers to checkout or cart
 - **Revenue Tracking**: Comprehensive tracking across all your modals
 - **Budget Cap Controls**: Set maximum discount spend limits (weekly/monthly)
@@ -107,13 +106,12 @@ Configure the basics of your modal:
 - **CTA Button Text**: Call-to-action button text
 
 #### Template Selection (NEW IN PRO)
-Choose from 5 professionally designed templates:
+Choose from 4 professionally designed templates:
 
 1. **Discount**: Classic percentage or fixed amount discount offer
-2. **Free Shipping**: Offer free shipping on orders
-3. **Urgency**: Create urgency with limited-time language
-4. **Welcome**: Welcome first-time visitors with a special offer
-5. **Reminder**: Remind returning visitors about their cart
+2. **Urgency**: Create urgency with limited-time language
+3. **Social Proof**: Build trust with customer testimonials and order counts
+4. **Cart Reminder**: Remind returning visitors about their cart
 
 Each template has optimized copy and layout for its specific purpose.
 
@@ -348,7 +346,7 @@ Once you've found a winning formula:
 - Keep AI mode running to continuously optimize
 - Consider upgrading to Enterprise for 10 variants (more testing power)
 - Increase your budget cap if ROI is positive
-- Expand to more templates (test Free Shipping vs. Discount)
+- Expand to more templates (test Urgency vs. Discount vs. Social Proof)
 
 ### AI Mode Best Practices
 
@@ -366,7 +364,7 @@ Once you've found a winning formula:
 
 ---
 
-## Understanding the 5 Pro Templates
+## Understanding the 4 Pro Templates
 
 ### 1. Discount Template
 **Best For**: General purpose, works for all stores
@@ -375,18 +373,9 @@ Once you've found a winning formula:
 - Body: "Get [X]% off your order"
 - CTA: "Claim My Discount"
 
-**When to Use**: Default template, proven to work
+**When to Use**: Default template, proven to work for most stores
 
-### 2. Free Shipping Template
-**Best For**: Stores with high shipping costs or average order value above $50
-**Copy Formula**:
-- Headline: "Free Shipping on Your Order!"
-- Body: "We'll cover shipping if you order today"
-- CTA: "Get Free Shipping"
-
-**When to Use**: When shipping cost is a friction point
-
-### 3. Urgency Template
+### 2. Urgency Template
 **Best For**: Creating FOMO (fear of missing out)
 **Copy Formula**:
 - Headline: "Limited Time Offer"
@@ -395,29 +384,30 @@ Once you've found a winning formula:
 
 **When to Use**: Seasonal sales, product launches, inventory clearance
 
-### 4. Welcome Template
-**Best For**: First-time visitors
+### 3. Social Proof Template
+**Best For**: Building trust and credibility
 **Copy Formula**:
-- Headline: "Welcome to [Store Name]!"
-- Body: "Enjoy [X]% off your first order"
-- CTA: "Get My Welcome Offer"
+- Headline: "Join 10,000+ Happy Customers"
+- Body: "Thousands trust us for quality products and fast shipping"
+- CTA: "Complete My Order"
 
-**When to Use**: New customer acquisition campaigns
+**When to Use**: When you need to build trust without offering a discount, works well for established stores
 
-### 5. Reminder Template
+### 4. Cart Reminder Template
 **Best For**: Returning visitors with items in cart
 **Copy Formula**:
 - Headline: "You Left Something Behind"
-- Body: "Complete your order and save [X]%"
-- CTA: "Finish My Order"
+- Body: "Your items are reserved and ready for checkout"
+- CTA: "View My Cart"
 
-**When to Use**: Retargeting campaigns, cart abandonment
+**When to Use**: Retargeting campaigns, cart abandonment recovery
 
 ### Template Testing Strategy
 
 **Week 1-2**: Test Discount template only (establish baseline)
-**Week 3-4**: Test Free Shipping template (compare to discount)
-**Week 5+**: Rotate Urgency and Welcome based on campaigns
+**Week 3-4**: Test Urgency template (compare to discount for time-sensitive campaigns)
+**Week 5-6**: Test Social Proof template (works well for established stores)
+**Week 7+**: Test Cart Reminder for returning visitors
 
 **AI Tip**: When AI mode is active, it will automatically test variations of whichever template you've selected.
 
@@ -459,38 +449,40 @@ Setting the right budget cap is crucial for profitability.
 
 ## Advanced Cart Value Targeting
 
-Pro tier gives you precise control over who sees offers.
+Pro tier gives you control over WHEN to show modals based on cart value.
+
+**Important Note**: Cart value targeting determines WHO sees the modal (the trigger), but does NOT influence what offer the AI shows. The AI uses the same discount aggression level for all cart values.
 
 ### Targeting Strategy Examples
 
 #### Strategy 1: Protect High-Value Carts
-- **Goal**: Don't discount large orders (they're likely to convert anyway)
+- **Goal**: Don't show modals to large orders (they're likely to convert anyway)
 - **Settings**:
   - Minimum: $25 (filter out tiny carts)
   - Maximum: $200 (don't show to large carts)
-- **Result**: Focus discounts on mid-range abandoners
+- **Result**: Save your discount budget for mid-range abandoners
 
-#### Strategy 2: Rescue Low-Intent Browsers
-- **Goal**: Convert window shoppers with small carts
+#### Strategy 2: Focus on Window Shoppers
+- **Goal**: Target visitors with small carts
 - **Settings**:
   - Minimum: $15
   - Maximum: $75
-  - Aggression: 7/10 (more generous offer)
-- **Result**: Turn browsers into buyers
+- **Result**: Convert browsers into buyers
 
 #### Strategy 3: Premium Strategy
-- **Goal**: Only show to qualified leads
+- **Goal**: Only show to high-intent shoppers
 - **Settings**:
   - Minimum: $100
   - Maximum: $500
-  - Aggression: 3/10 (conservative offer)
-- **Result**: Nudge high-intent shoppers without eroding margin
+- **Result**: Focus on qualified leads
 
 ### Combining with Time Delays
 
-**Low-Value Carts** ($0-50): Show after 30 seconds (quick decision)
-**Mid-Value Carts** ($50-150): Show after 45 seconds (more consideration)
-**High-Value Carts** ($150+): Show after 60 seconds (careful decision)
+**Low-Value Carts** ($0-50): Show after 30 seconds
+**Mid-Value Carts** ($50-150): Show after 45 seconds
+**High-Value Carts** ($150+): Show after 60 seconds
+
+**Note**: Time delays work in conjunction with cart value - both conditions must be met for the modal to show.
 
 ---
 

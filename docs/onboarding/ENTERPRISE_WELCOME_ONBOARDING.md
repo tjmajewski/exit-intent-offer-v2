@@ -15,7 +15,7 @@ Enterprise is our flagship offering with no limitations:
 ### Unlimited Scale
 - **Unlimited Monthly Impressions**: No caps, no limits, no worries
 - **Unlimited Variants**: Test as many modals as you want
-- **Unlimited Templates**: All 6 templates plus custom design capability
+- **4 Professional Templates**: All templates available (discount, urgency, social proof, cart reminder)
 
 ### Advanced AI & Testing
 - **10 Simultaneous Variants**: AI tests up to 10 different offers at once
@@ -31,7 +31,7 @@ Enterprise is our flagship offering with no limitations:
 
 ### Brand & Customization
 - **Full Brand Customization**: Custom colors, fonts, CSS, logo
-- **6 Professional Templates**: Discount, free-shipping, urgency, welcome, reminder, plus custom
+- **4 Professional Templates**: Discount, urgency, social proof, cart reminder
 - **Layout Control**: Customize modal layout and design
 - **Visual Genes**: AI evolves color schemes, button styles, typography, animations
 
@@ -450,7 +450,7 @@ View all modals with comprehensive metrics:
 **Filtering:**
 - Date range: 7 days, 30 days, all-time
 - Status filter: All, active, champions, protected, killed
-- Template filter: All, discount, free-shipping, etc.
+- Template filter: All, discount, urgency, social, reminder
 - Pagination: 15 per page
 
 **Sorting:**
@@ -1261,7 +1261,7 @@ Resparq aggregates anonymized performance data across all participating stores t
 - [ ] Export conversions monthly (for reporting and reconciliation)
 - [ ] Review modal snapshots (verify correct offers are shown)
 - [ ] Adjust AI settings quarterly based on performance
-- [ ] Test different templates monthly (discount, free shipping, urgency, etc.)
+- [ ] Test different templates monthly (discount, urgency, social proof, reminder)
 - [ ] Optimize brand design quarterly (colors, layout, fonts)
 - [ ] Enable meta-learning contribution (help improve platform)
 - [ ] Schedule monthly strategy review with team
@@ -1326,7 +1326,7 @@ Typically 4-8 weeks with consistent traffic. High-traffic stores (50,000+ monthl
 Yes. In Analytics → AI Variants, you can promote any variant to Champion and protect it from elimination. You can also kill all AI variants and create your own in Settings.
 
 ### How does AI handle multiple templates simultaneously?
-AI evolves variants within each template separately. If you enable both Discount and Free Shipping templates, AI will optimize each independently, then determine which template performs better overall.
+AI evolves variants within each template separately. If you enable both Discount and Urgency templates, AI will optimize each independently, then determine which template performs better overall.
 
 ### What if I want to completely override AI?
 Go to Settings → AI Settings and disable AI mode. Then manually configure your modal. You maintain full control at all times.
