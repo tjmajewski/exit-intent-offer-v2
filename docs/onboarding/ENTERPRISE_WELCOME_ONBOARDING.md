@@ -21,8 +21,7 @@ Enterprise is our flagship offering with no limitations:
 - **10 Simultaneous Variants**: AI tests up to 10 different offers at once
 - **Genetic Algorithm Evolution**: Sophisticated AI that combines winning elements
 - **Full AI Control System**: Fine-tune mutation rate, crossover rate, selection pressure, and population size
-- **Manual Variant Control**: Promote champions, protect variants, kill underperformers
-- **A/B Testing**: Create and manage your own test variants
+- **Manual Variant Control**: Promote champions, protect variants, kill underperformers from AI-generated variants
 
 ### Enterprise Intelligence
 - **Promotional Intelligence**: Auto-detect site-wide promotions and optimize strategy automatically
@@ -40,7 +39,6 @@ Enterprise is our flagship offering with no limitations:
 - **Modal Snapshots**: See exact modal shown to each customer at conversion time
 - **Export to Excel**: Download all conversion data with one click
 - **Recent Activity Feed**: Real-time conversion tracking on dashboard
-- **Unlimited Historical Data**: No data retention limits
 
 ### All Pro Features Included
 - Budget cap controls
@@ -553,7 +551,6 @@ Click "Export to Excel" button:
 **Filtering & Pagination:**
 - Date range: 7 days, 30 days, all-time
 - Pagination: 25 conversions per page
-- Unlimited historical data retention
 
 ---
 
@@ -723,7 +720,6 @@ Join 847 customers who ordered today
 - Update frequently (every 4 hours minimum)
 - Set realistic minimum thresholds
 - Match metric to your brand (luxury = customers, fast-moving = orders)
-- A/B test placement
 
 **Don't:**
 - Inflate numbers (customers will notice)
@@ -1215,16 +1211,12 @@ Resparq aggregates anonymized performance data across all participating stores t
 - Example: "Emoji in headlines increase CVR by 12% for fashion stores"
 - AI incorporates emoji more often for fashion stores
 
-**2. Industry Benchmarks**
-- Compare your performance to similar stores
-- Dashboard shows "You're in top 25% of fashion stores"
-
-**3. Seasonal Optimization**
+**2. Seasonal Optimization**
 - Meta-learning identifies seasonal patterns
 - Example: "Urgency messaging performs 34% better during Black Friday"
 - AI automatically adjusts for seasonality
 
-**4. Segment-Specific Insights**
+**3. Segment-Specific Insights**
 - Mobile vs. desktop
 - Paid vs. organic traffic
 - New vs. returning visitors
@@ -1274,31 +1266,15 @@ Enterprise customers receive priority support.
 
 ### How to Access Support
 
-**1. In-App Support Widget**
-- Click "Support" in your Resparq dashboard
-- Enterprise customers are prioritized (flagged automatically)
-- Response time: 4 hours (business hours)
-
-**2. Email Support**
-- Email: enterprise-support@resparq.io
-- Include your store URL
-- Priority response: 4 hours
-
-**3. Dedicated Slack Channel (Available on Request)**
-- Direct access to Resparq engineering team
-- Real-time troubleshooting
-- Contact support to request access
-
-**4. Quarterly Strategy Calls**
-- Enterprise customers receive quarterly strategy review calls
-- 30 minutes with optimization specialist
-- Review performance, discuss strategy, get recommendations
-- Schedule via support widget
+**Email Support**
+- Email: support@resparq.ai
+- Include your store URL in your message
+- Priority response for Enterprise customers
 
 ### What Support Can Help With
 
 **Technical Issues:**
-- Modal not displaying
+- Modal not displaying correctly
 - Discount codes not applying
 - Data discrepancies
 - Integration problems
@@ -1306,14 +1282,8 @@ Enterprise customers receive priority support.
 **Strategy & Optimization:**
 - AI settings recommendations
 - Performance analysis
-- A/B testing strategy
+- Variant optimization strategy
 - Promotional intelligence configuration
-
-**Custom Development (Available):**
-- Custom integrations
-- Advanced analytics
-- API access
-- White-label options
 
 ---
 
@@ -1322,8 +1292,8 @@ Enterprise customers receive priority support.
 ### How long until AI finds optimal variants?
 Typically 4-8 weeks with consistent traffic. High-traffic stores (50,000+ monthly impressions) may see results in 2-3 weeks.
 
-### Can I manually create variants instead of relying on AI?
-Yes. In Analytics → AI Variants, you can promote any variant to Champion and protect it from elimination. You can also kill all AI variants and create your own in Settings.
+### Can I manually control AI-generated variants?
+Yes. In Analytics → AI Variants, you can promote any variant to Champion and protect it from elimination. You can also kill underperforming variants. However, you cannot manually create custom variants from scratch - all variants are AI-generated, but you have full control over which ones stay active.
 
 ### How does AI handle multiple templates simultaneously?
 AI evolves variants within each template separately. If you enable both Discount and Urgency templates, AI will optimize each independently, then determine which template performs better overall.
@@ -1346,8 +1316,8 @@ Each Resparq subscription is per-store. Enterprise customers with multiple store
 ### How does meta-learning protect my competitive advantage?
 All data is anonymized and aggregated across hundreds of stores. No store can identify another store's data. Insights are universal best practices (e.g., "urgency language increases CVR"), not specific to your offers or brand.
 
-### What if I hit technical limits (API rate limits, data limits)?
-Enterprise has no impression limits, variant limits, or data retention limits. If you're pushing 1M+ monthly impressions, contact support to ensure infrastructure can handle your scale.
+### What if I hit technical limits (API rate limits)?
+Enterprise has no impression limits or variant limits. If you're pushing 1M+ monthly impressions, contact support to ensure infrastructure can handle your scale.
 
 ---
 

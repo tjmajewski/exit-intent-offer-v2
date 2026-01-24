@@ -243,10 +243,11 @@ As your business grows, you may want access to more powerful features:
 
 ### Enterprise Plan ($299/month) Adds:
 - **Unlimited impressions**
-- **Advanced A/B testing** (test up to 10 variants simultaneously)
+- **AI tests 10 variants simultaneously** (vs. 2 on Pro)
 - **Full brand customization** (colors, fonts, custom CSS)
 - **Social proof integration** (show recent orders to build trust)
 - **Promotional intelligence** (auto-optimize during site-wide sales)
+- **Manual variant control** (promote champions, protect, kill underperformers)
 - **Export to Excel** (download all conversion data)
 - **Priority support**
 

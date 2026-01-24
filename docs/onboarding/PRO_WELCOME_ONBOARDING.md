@@ -544,7 +544,7 @@ Ready for the ultimate optimization power?
 ### Enterprise ($299/month) Adds:
 - **Unlimited Impressions**: No more monthly limits
 - **10 Simultaneous Variants**: 5x more testing power
-- **A/B Testing Control**: Manual variant management (promote, protect, kill)
+- **Manual Variant Control**: Promote champions, protect variants, kill underperformers
 - **Full Brand Customization**: Colors, fonts, custom CSS, logo
 - **Social Proof Enabled**: Show recent orders, customer counts, reviews
 - **Promotional Intelligence**: Auto-optimize during site-wide sales
@@ -553,7 +553,7 @@ Ready for the ultimate optimization power?
 - **Modal Snapshots**: See exact modal shown at conversion time
 - **Advanced Analytics**: Per-variant performance tables
 - **Recent Activity Feed**: Real-time conversion tracking on dashboard
-- **Priority Support**: Dedicated support channel
+- **Priority Support**: Email support at support@resparq.ai
 
 To upgrade, click "Upgrade Plan" in Settings.
 
