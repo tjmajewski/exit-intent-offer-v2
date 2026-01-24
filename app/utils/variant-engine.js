@@ -720,21 +720,32 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
   const shop = await (await getDb()).shop.findUnique({
     where: { id: shopId },
     select: {
+      plan: true,
       mutationRate: true,
       crossoverRate: true,
       selectionPressure: true,
       populationSize: true
     }
   });
-  
+
+  // Apply tier-based population size limits
+  let populationSize = shop?.populationSize || 10;
+  if (shop?.plan === 'pro') {
+    // Pro tier: max 2 variants
+    populationSize = Math.min(populationSize, 2);
+  } else if (shop?.plan === 'enterprise') {
+    // Enterprise tier: max 20 variants
+    populationSize = Math.min(populationSize, 20);
+  }
+
   const evolutionSettings = {
     mutationRate: shop?.mutationRate || 15,
     crossoverRate: shop?.crossoverRate || 70,
     selectionPressure: shop?.selectionPressure || 5,
-    populationSize: shop?.populationSize || 10
+    populationSize: populationSize
   };
-  
-  console.log(`  Evolution Settings: Mutation ${evolutionSettings.mutationRate}%, Crossover ${evolutionSettings.crossoverRate}%, Pressure ${evolutionSettings.selectionPressure}/10, Pop ${evolutionSettings.populationSize}`);
+
+  console.log(`  Evolution Settings: Mutation ${evolutionSettings.mutationRate}%, Crossover ${evolutionSettings.crossoverRate}%, Pressure ${evolutionSettings.selectionPressure}/10, Pop ${evolutionSettings.populationSize} (Tier: ${shop?.plan || 'unknown'})`);
   
   let liveVariants = await getLiveVariants(shopId, baseline, segment);
   

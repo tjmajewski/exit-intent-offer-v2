@@ -214,7 +214,29 @@ export async function action({ request }) {
 
     // Get shop domain
     const shopDomain = session.shop;
-    
+
+    // Fetch existing shop to get plan tier for validation
+    const existingShop = await db.shop.findUnique({
+      where: { shopifyDomain: shopDomain },
+      select: { plan: true }
+    });
+
+    // Apply tier-based population size limits
+    let populationSize = parseInt(formData.get("populationSize")) || 10;
+    const planTier = existingShop?.plan || 'pro'; // Default to pro if new shop
+
+    if (planTier === 'pro') {
+      // Pro tier: max 2 variants
+      populationSize = Math.min(populationSize, 2);
+      console.log(`[Pro Tier] Population size capped at 2 (requested: ${formData.get("populationSize")})`);
+    } else if (planTier === 'enterprise') {
+      // Enterprise tier: max 20 variants
+      populationSize = Math.min(populationSize, 20);
+      if (populationSize > 20) {
+        console.log(`[Enterprise Tier] Population size capped at 20 (requested: ${formData.get("populationSize")})`);
+      }
+    }
+
     // Update or create shop record in database
     await db.shop.upsert({
       where: { shopifyDomain: shopDomain },
@@ -228,7 +250,7 @@ export async function action({ request }) {
         mutationRate: parseInt(formData.get("mutationRate")) || 15,
         crossoverRate: parseInt(formData.get("crossoverRate")) || 70,
         selectionPressure: parseInt(formData.get("selectionPressure")) || 5,
-        populationSize: parseInt(formData.get("populationSize")) || 10,
+        populationSize: populationSize,
         brandPrimaryColor: formData.get("brandPrimaryColor") || undefined,
         brandSecondaryColor: formData.get("brandSecondaryColor") || undefined,
         brandAccentColor: formData.get("brandAccentColor") || undefined,
@@ -266,7 +288,7 @@ export async function action({ request }) {
         mutationRate: parseInt(formData.get("mutationRate")) || 15,
         crossoverRate: parseInt(formData.get("crossoverRate")) || 70,
         selectionPressure: parseInt(formData.get("selectionPressure")) || 5,
-        populationSize: parseInt(formData.get("populationSize")) || 10,
+        populationSize: populationSize,
         brandPrimaryColor: formData.get("brandPrimaryColor") || "#000000",
         brandSecondaryColor: formData.get("brandSecondaryColor") || "#ffffff",
         brandAccentColor: formData.get("brandAccentColor") || "#f59e0b",
