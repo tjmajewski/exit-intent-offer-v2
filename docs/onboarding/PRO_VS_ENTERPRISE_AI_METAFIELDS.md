@@ -66,7 +66,7 @@ Pro tier uses a **simplified A/B testing approach** with AI-generated variants.
 #### Step 1: Baseline Modal
 
 You configure your baseline modal in Settings:
-- Template (discount, free shipping, urgency, welcome, reminder)
+- Template (discount, urgency, social proof, cart reminder)
 - Headline
 - Body copy
 - CTA button text
