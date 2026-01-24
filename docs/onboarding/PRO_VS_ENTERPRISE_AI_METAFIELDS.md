@@ -33,7 +33,7 @@ This document explains:
 
 | Feature | Pro Tier | Enterprise Tier |
 |---------|----------|-----------------|
-| **Simultaneous Variants** | 2 | Up to 10 |
+| **Simultaneous Variants** | 2 | Up to 20 |
 | **AI Algorithm** | Basic A/B testing | Genetic algorithm evolution |
 | **Optimization Goal** | Revenue or Conversions | Revenue or Conversions |
 | **Aggression Control** | 0-10 scale | 0-10 scale |
@@ -53,7 +53,7 @@ This document explains:
 
 **Pro Tier**: AI automatically tests 2 variants with fixed parameters. Great for getting started with AI optimization.
 
-**Enterprise Tier**: AI uses sophisticated genetic algorithm to evolve 10+ variants simultaneously with full control over evolution parameters. Best for scaling businesses that need maximum optimization power.
+**Enterprise Tier**: AI uses sophisticated genetic algorithm to evolve up to 20 variants simultaneously with full control over evolution parameters. Best for scaling businesses that need maximum optimization power.
 
 ---
 
@@ -354,7 +354,7 @@ You configure baseline modal and AI settings. AI then creates an initial populat
 - 5 variants (low traffic stores)
 - 10 variants (default, medium-high traffic)
 - 15 variants (high traffic)
-- 20 variants (very high traffic)
+- 20 variants (maximum, very high traffic)
 
 **Example: Population of 10 Variants**
 
@@ -1486,7 +1486,7 @@ Based on aggregate data from 500+ stores over 12 months:
 
 **1. More Variants Tested**
 - Pro: 2 variants = limited exploration
-- Enterprise: 10 variants = comprehensive exploration
+- Enterprise: up to 20 variants = comprehensive exploration
 
 **2. Genetic Algorithm**
 - Pro: Simple A/B testing
@@ -1625,7 +1625,7 @@ If Enterprise generates $2,640+ more revenue than Pro, it pays for itself.
 
 **Scenario 2: Traffic Decline**
 - Monthly impressions dropped below 5,000
-- Enterprise's 10-variant testing requires high traffic
+- Enterprise's large-scale variant testing requires high traffic
 - Pro's 2-variant testing is more appropriate for low traffic
 
 **Scenario 3: Simplified Strategy**
@@ -1648,7 +1648,7 @@ If Enterprise generates $2,640+ more revenue than Pro, it pays for itself.
 - Best for $10k-100k/month stores
 
 **Enterprise Tier AI:**
-- Genetic algorithm evolution with up to 10 variants
+- Genetic algorithm evolution with up to 20 variants
 - Full parameter control (innovation, learning, quality, population size)
 - Copy + visual evolution (colors, layout, fonts, animation)
 - Manual variant control (champion, protect, kill)
