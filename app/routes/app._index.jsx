@@ -1273,10 +1273,13 @@ export default function Dashboard() {
           
           <div style={{ fontSize: 16, color: "#6b7280", marginBottom: 16, lineHeight: 1.6 }}>
             {(() => {
-              // Show actual variant count from modalLibrary, or tier-based default
-              const variantCount = modalLibrary?.modals?.length || (plan.tier === 'enterprise' ? 12 : 2);
+              const variantCount = modalLibrary?.modals?.length || 0;
               const maxVariants = plan.tier === 'enterprise' ? 20 : 2;
-              return `Your AI is testing ${Math.min(variantCount, maxVariants)} different offer${variantCount > 1 ? 's' : ''} to find what works best`;
+              const displayCount = Math.min(variantCount, maxVariants);
+              if (displayCount === 0) {
+                return 'Create your first offer variant to start AI testing';
+              }
+              return `Your AI is testing ${displayCount} different variant${displayCount > 1 ? 's' : ''} to find what works best`;
             })()}
           </div>
           
