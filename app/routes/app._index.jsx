@@ -399,6 +399,104 @@ export async function action({ request }) {
       }
     }
 
+    // SEED: Populate dashboard with realistic test data for screenshots
+    if (actionType === "seedAnalytics") {
+      const now = new Date();
+      const events = [];
+
+      // Generate 30 days of realistic events
+      for (let day = 0; day < 30; day++) {
+        const date = new Date(now);
+        date.setDate(date.getDate() - day);
+
+        // More events on recent days, fewer on older days
+        const dailyImpressions = Math.floor(Math.random() * 40) + 20 + (30 - day);
+        const dailyClicks = Math.floor(dailyImpressions * (0.15 + Math.random() * 0.15));
+        const dailyConversions = Math.floor(dailyClicks * (0.25 + Math.random() * 0.15));
+
+        // Add impressions
+        for (let i = 0; i < dailyImpressions; i++) {
+          const eventTime = new Date(date);
+          eventTime.setHours(Math.floor(Math.random() * 24));
+          eventTime.setMinutes(Math.floor(Math.random() * 60));
+          events.push({
+            type: 'impression',
+            event: 'impression',
+            timestamp: eventTime.toISOString()
+          });
+        }
+
+        // Add clicks
+        for (let i = 0; i < dailyClicks; i++) {
+          const eventTime = new Date(date);
+          eventTime.setHours(Math.floor(Math.random() * 24));
+          eventTime.setMinutes(Math.floor(Math.random() * 60));
+          events.push({
+            type: 'click',
+            event: 'click',
+            timestamp: eventTime.toISOString()
+          });
+        }
+
+        // Add conversions with revenue
+        for (let i = 0; i < dailyConversions; i++) {
+          const eventTime = new Date(date);
+          eventTime.setHours(Math.floor(Math.random() * 24));
+          eventTime.setMinutes(Math.floor(Math.random() * 60));
+          const revenue = 45 + Math.random() * 180;
+          events.push({
+            type: 'conversion',
+            event: 'conversion',
+            revenue: parseFloat(revenue.toFixed(2)),
+            timestamp: eventTime.toISOString()
+          });
+        }
+      }
+
+      // Sort events by timestamp (newest first for display)
+      events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+      // Calculate totals
+      const totalImpressions = events.filter(e => e.type === 'impression').length;
+      const totalClicks = events.filter(e => e.type === 'click').length;
+      const totalConversions = events.filter(e => e.type === 'conversion').length;
+      const totalRevenue = events
+        .filter(e => e.type === 'conversion')
+        .reduce((sum, e) => sum + (e.revenue || 0), 0);
+
+      const analyticsData = {
+        impressions: totalImpressions,
+        clicks: totalClicks,
+        closeouts: Math.floor(totalImpressions * 0.7),
+        conversions: totalConversions,
+        revenue: parseFloat(totalRevenue.toFixed(2)),
+        events: events.slice(0, 500) // Keep last 500 events to avoid metafield size limits
+      };
+
+      await admin.graphql(`
+        mutation SeedAnalytics($ownerId: ID!, $value: String!) {
+          metafieldsSet(metafields: [{
+            ownerId: $ownerId
+            namespace: "exit_intent"
+            key: "analytics"
+            value: $value
+            type: "json"
+          }]) {
+            metafields { id }
+            userErrors { field message }
+          }
+        }
+      `, {
+        variables: {
+          ownerId: shopId,
+          value: JSON.stringify(analyticsData)
+        }
+      });
+
+      console.log(` Seeded analytics: ${totalImpressions} impressions, ${totalClicks} clicks, ${totalConversions} conversions, $${totalRevenue.toFixed(2)} revenue`);
+      return { success: true, analyticsSeeded: true };
+    }
+
     // TEST: Force reset by setting reset date to yesterday
     if (actionType === "testReset") {
       const currentPlan = shopData.data.shop?.plan?.value 
@@ -791,6 +889,34 @@ export default function Dashboard() {
                   <option value="pro">Pro ($79/mo)</option>
                   <option value="enterprise">Enterprise ($299/mo)</option>
                 </select>
+              </div>
+
+              {/* Seed Analytics Button */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                <label style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
+                   Dev: Seed Data
+                </label>
+                <button
+                  onClick={() => {
+                    fetcher.submit(
+                      { actionType: "seedAnalytics" },
+                      { method: "post" }
+                    );
+                    setTimeout(() => window.location.reload(), 1000);
+                  }}
+                  style={{
+                    padding: "8px 12px",
+                    border: "2px solid #10b981",
+                    borderRadius: 6,
+                    background: "white",
+                    color: "#10b981",
+                    fontWeight: 600,
+                    fontSize: 14,
+                    cursor: "pointer"
+                  }}
+                >
+                  Seed Analytics
+                </button>
               </div>
 
               {/* Test Reset Button */}
