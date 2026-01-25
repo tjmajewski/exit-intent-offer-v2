@@ -1,5 +1,5 @@
-import { useLoaderData, Link, Form, useNavigation, redirect } from "react-router";
-import { useState } from "react";
+import { useLoaderData, useActionData, Link, Form, useNavigation } from "react-router";
+import { useState, useEffect } from "react";
 import { authenticate } from "../shopify.server";
 import { PLAN_FEATURES } from "../utils/featureGates";
 import { createSubscription, getActiveSubscription, tierFromSubscriptionName } from "../utils/billing.server";
@@ -64,8 +64,8 @@ export async function action({ request }) {
       isTest
     );
 
-    // Redirect merchant to Shopify's charge approval page
-    return redirect(confirmationUrl);
+    // Return URL to client — client redirects via _top to escape iframe
+    return { confirmationUrl };
   } catch (error) {
     console.error("[Billing] Error creating subscription:", error);
     return { error: error.message };
@@ -74,10 +74,18 @@ export async function action({ request }) {
 
 export default function Upgrade() {
   const { plan, activeSubscription } = useLoaderData();
+  const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const submittingTier = isSubmitting ? navigation.formData?.get("tier") : null;
   const [billingCycle, setBillingCycle] = useState("monthly");
+
+  // Redirect to Shopify billing approval page (must break out of iframe)
+  useEffect(() => {
+    if (actionData?.confirmationUrl) {
+      window.open(actionData.confirmationUrl, "_top");
+    }
+  }, [actionData]);
 
   const plans = [
     {
