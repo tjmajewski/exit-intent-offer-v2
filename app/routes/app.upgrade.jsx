@@ -1,7 +1,8 @@
-import { useLoaderData, Link } from "react-router";
+import { useLoaderData, Link, Form, useNavigation, redirect } from "react-router";
 import { useState } from "react";
 import { authenticate } from "../shopify.server";
 import { PLAN_FEATURES } from "../utils/featureGates";
+import { createSubscription, getActiveSubscription, tierFromSubscriptionName } from "../utils/billing.server";
 import AppLayout from "../components/AppLayout";
 
 export async function loader({ request }) {
@@ -23,15 +24,59 @@ export async function loader({ request }) {
       ? JSON.parse(data.data.shop.plan.value)
       : { tier: "starter" };
 
-    return { plan };
+    // Check active Shopify subscription
+    let activeSubscription = null;
+    try {
+      activeSubscription = await getActiveSubscription(admin);
+    } catch (e) {
+      console.error("Error checking subscription:", e);
+    }
+
+    return { plan, activeSubscription };
   } catch (error) {
     console.error("Error loading upgrade page:", error);
-    return { plan: { tier: "starter" } };
+    return { plan: { tier: "starter" }, activeSubscription: null };
+  }
+}
+
+export async function action({ request }) {
+  const { admin, session } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const tier = formData.get("tier");
+  const billingCycle = formData.get("billingCycle");
+
+  if (!["starter", "pro", "enterprise"].includes(tier)) {
+    return { error: "Invalid plan tier" };
+  }
+
+  try {
+    const appUrl = process.env.SHOPIFY_APP_URL || "";
+    const returnUrl = `${appUrl}/app/billing-callback?tier=${tier}&cycle=${billingCycle}`;
+
+    // test: true for development, set to false for production
+    const isTest = process.env.NODE_ENV !== "production";
+
+    const { confirmationUrl } = await createSubscription(
+      admin,
+      tier,
+      billingCycle,
+      returnUrl,
+      isTest
+    );
+
+    // Redirect merchant to Shopify's charge approval page
+    return redirect(confirmationUrl);
+  } catch (error) {
+    console.error("[Billing] Error creating subscription:", error);
+    return { error: error.message };
   }
 }
 
 export default function Upgrade() {
-  const { plan } = useLoaderData();
+  const { plan, activeSubscription } = useLoaderData();
+  const navigation = useNavigation();
+  const isSubmitting = navigation.state === "submitting";
+  const submittingTier = isSubmitting ? navigation.formData?.get("tier") : null;
   const [billingCycle, setBillingCycle] = useState("monthly");
 
   const plans = [
@@ -290,31 +335,45 @@ export default function Upgrade() {
                     Current Plan
                   </div>
                 ) : (
-                  <button style={{
-                    width: "100%",
-                    padding: "14px 24px",
-                    background: "linear-gradient(90deg, #8B5CF6 0%, #a78bfa 100%)",
-                    color: "white",
-                    border: "none",
-                    borderRadius: 8,
-                    fontSize: 16,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    marginBottom: 28,
-                    transition: "all 0.2s",
-                    boxShadow: "0 4px 15px rgba(139, 92, 246, 0.3)"
-                  }}
-                  onMouseOver={(e) => {
-                    e.target.style.transform = "translateY(-1px)";
-                    e.target.style.boxShadow = "0 6px 20px rgba(139, 92, 246, 0.4)";
-                  }}
-                  onMouseOut={(e) => {
-                    e.target.style.transform = "translateY(0)";
-                    e.target.style.boxShadow = "0 4px 15px rgba(139, 92, 246, 0.3)";
-                  }}
-                  >
-                    Start Free Trial
-                  </button>
+                  <Form method="post">
+                    <input type="hidden" name="tier" value={planOption.tier} />
+                    <input type="hidden" name="billingCycle" value={billingCycle} />
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      style={{
+                        width: "100%",
+                        padding: "14px 24px",
+                        background: isSubmitting && submittingTier === planOption.tier
+                          ? "#6b7280"
+                          : "linear-gradient(90deg, #8B5CF6 0%, #a78bfa 100%)",
+                        color: "white",
+                        border: "none",
+                        borderRadius: 8,
+                        fontSize: 16,
+                        fontWeight: 600,
+                        cursor: isSubmitting ? "wait" : "pointer",
+                        marginBottom: 28,
+                        transition: "all 0.2s",
+                        boxShadow: isSubmitting ? "none" : "0 4px 15px rgba(139, 92, 246, 0.3)",
+                        opacity: isSubmitting && submittingTier !== planOption.tier ? 0.5 : 1
+                      }}
+                      onMouseOver={(e) => {
+                        if (!isSubmitting) {
+                          e.target.style.transform = "translateY(-1px)";
+                          e.target.style.boxShadow = "0 6px 20px rgba(139, 92, 246, 0.4)";
+                        }
+                      }}
+                      onMouseOut={(e) => {
+                        e.target.style.transform = "translateY(0)";
+                        e.target.style.boxShadow = isSubmitting ? "none" : "0 4px 15px rgba(139, 92, 246, 0.3)";
+                      }}
+                    >
+                      {isSubmitting && submittingTier === planOption.tier
+                        ? "Redirecting to Shopify..."
+                        : "Start Free Trial"}
+                    </button>
+                  </Form>
                 )}
 
                 {/* Features List */}
