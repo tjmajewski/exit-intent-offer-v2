@@ -404,15 +404,23 @@ export async function action({ request }) {
       const now = new Date();
       const events = [];
 
+      // Realistic e-commerce metrics:
+      // - Modal shown to ~3-5% of site visitors who show exit intent
+      // - Click rate: 15-25% of impressions
+      // - Conversion rate: 2-4% of impressions (8-15% of clicks)
+      // - Average order value: $65-120
+
       // Generate 30 days of realistic events
       for (let day = 0; day < 30; day++) {
         const date = new Date(now);
         date.setDate(date.getDate() - day);
 
-        // More events on recent days, fewer on older days
-        const dailyImpressions = Math.floor(Math.random() * 40) + 20 + (30 - day);
-        const dailyClicks = Math.floor(dailyImpressions * (0.15 + Math.random() * 0.15));
-        const dailyConversions = Math.floor(dailyClicks * (0.25 + Math.random() * 0.15));
+        // Realistic daily volume: 30-80 impressions/day for a medium store
+        const dailyImpressions = Math.floor(Math.random() * 50) + 30;
+        // Click rate: 18-28%
+        const dailyClicks = Math.floor(dailyImpressions * (0.18 + Math.random() * 0.10));
+        // Conversion rate from impressions: 2.5-4% (realistic for exit intent)
+        const dailyConversions = Math.floor(dailyImpressions * (0.025 + Math.random() * 0.015));
 
         // Add impressions
         for (let i = 0; i < dailyImpressions; i++) {
@@ -438,12 +446,12 @@ export async function action({ request }) {
           });
         }
 
-        // Add conversions with revenue
+        // Add conversions with realistic AOV ($65-135)
         for (let i = 0; i < dailyConversions; i++) {
           const eventTime = new Date(date);
           eventTime.setHours(Math.floor(Math.random() * 24));
           eventTime.setMinutes(Math.floor(Math.random() * 60));
-          const revenue = 45 + Math.random() * 180;
+          const revenue = 65 + Math.random() * 70; // $65-135 AOV
           events.push({
             type: 'conversion',
             event: 'conversion',
