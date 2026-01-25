@@ -224,16 +224,26 @@ export async function loader({ request }) {
   const subheadsWithTiers = addPerformanceTier(subheadStats, avgSubheadRevenue).slice(0, 10);
   const ctasWithTiers = addPerformanceTier(ctaStats, avgCtaRevenue).slice(0, 10);
 
+  // Total variants is all-time count
   const totalVariants = variants.length;
-  const aliveCount = variants.filter(v => v.status === 'alive' || v.status === 'champion').length;
+
+  // Active variants capped at current populationSize setting
+  const maxVariants = plan.tier === 'enterprise' ? 20 : 2;
+  const populationLimit = Math.min(shop.populationSize || maxVariants, maxVariants);
+  const activeVariants = variants.filter(v => v.status === 'alive' || v.status === 'champion');
+  const aliveCount = Math.min(activeVariants.length, populationLimit);
+
+  // Eliminated is all-time
   const deadCount = variants.filter(v => v.status === 'killed').length;
 
-  const maxGeneration = variants.length > 0 ? Math.max(...variants.map(v => v.generation)) : 0;
+  // For display, show variants up to populationLimit
+  const displayVariants = variants.slice(0, populationLimit);
+  const maxGeneration = displayVariants.length > 0 ? Math.max(...displayVariants.map(v => v.generation)) : 0;
 
   return json({
     shop,
     plan,
-    variants,
+    variants: displayVariants,
     totalVariants,
     aliveCount,
     deadCount,

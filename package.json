@@ -20,7 +20,8 @@
     "prisma": "prisma",
     "graphql-codegen": "graphql-codegen",
     "vite": "vite",
-    "typecheck": "react-router typegen && tsc --noEmit"
+    "typecheck": "react-router typegen && tsc --noEmit",
+    "seed:screenshots": "node seed-screenshot-data.mjs"
   },
   "type": "module",
   "engines": {
@@ -28,7 +29,7 @@
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
-    "@prisma/client": "^6.16.3",
+    "@prisma/client": "^5.22.0",
     "@react-router/dev": "^7.9.3",
     "@react-router/fs-routes": "^7.9.3",
     "@react-router/node": "^7.9.3",
@@ -43,7 +44,7 @@
     "isbot": "^5.1.31",
     "jstat": "^1.9.6",
     "node-cron": "^4.2.1",
-    "prisma": "^6.16.3",
+    "prisma": "^5.22.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router": "^7.12.0",

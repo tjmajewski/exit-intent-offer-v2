@@ -214,7 +214,8 @@ export async function loader({ request }) {
 
     const shopDomain = new URL(request.url).searchParams.get('shop') || request.headers.get('host');
     const shopRecord = await db.shop.findUnique({
-      where: { shopifyDomain: shopDomain }
+      where: { shopifyDomain: shopDomain },
+      select: { id: true, populationSize: true }
     });
 
     if (plan && plan.tier === 'pro' && shopRecord) {
@@ -273,7 +274,8 @@ export async function loader({ request }) {
       analytics,
       promoWarning,
       activePromotions,
-      modalLibrary
+      modalLibrary,
+      populationSize: shopRecord?.populationSize || 0
     };
   } catch (error) {
     console.error("Error loading dashboard:", error);
@@ -300,7 +302,8 @@ export async function loader({ request }) {
           clicks: 0,
           conversions: 0
         }
-      }
+      },
+      populationSize: 0
     };
   }
 }
@@ -397,6 +400,112 @@ export async function action({ request }) {
         console.log(` Switched plan to: ${newTier}`);
         return { success: true, planSwitched: true };
       }
+    }
+
+    // SEED: Populate dashboard with realistic test data for screenshots
+    if (actionType === "seedAnalytics") {
+      const now = new Date();
+      const events = [];
+
+      // Realistic e-commerce metrics:
+      // - Modal shown to ~3-5% of site visitors who show exit intent
+      // - Click rate: 15-25% of impressions
+      // - Conversion rate: 2-4% of impressions (8-15% of clicks)
+      // - Average order value: $65-120
+
+      // Generate 30 days of realistic events
+      for (let day = 0; day < 30; day++) {
+        const date = new Date(now);
+        date.setDate(date.getDate() - day);
+
+        // Realistic daily volume: 30-80 impressions/day for a medium store
+        const dailyImpressions = Math.floor(Math.random() * 50) + 30;
+        // Click rate: 18-28%
+        const dailyClicks = Math.floor(dailyImpressions * (0.18 + Math.random() * 0.10));
+        // Conversion rate from impressions: 2.5-4% (realistic for exit intent)
+        const dailyConversions = Math.floor(dailyImpressions * (0.025 + Math.random() * 0.015));
+
+        // Add impressions
+        for (let i = 0; i < dailyImpressions; i++) {
+          const eventTime = new Date(date);
+          eventTime.setHours(Math.floor(Math.random() * 24));
+          eventTime.setMinutes(Math.floor(Math.random() * 60));
+          events.push({
+            type: 'impression',
+            event: 'impression',
+            timestamp: eventTime.toISOString()
+          });
+        }
+
+        // Add clicks
+        for (let i = 0; i < dailyClicks; i++) {
+          const eventTime = new Date(date);
+          eventTime.setHours(Math.floor(Math.random() * 24));
+          eventTime.setMinutes(Math.floor(Math.random() * 60));
+          events.push({
+            type: 'click',
+            event: 'click',
+            timestamp: eventTime.toISOString()
+          });
+        }
+
+        // Add conversions with realistic AOV ($65-135)
+        for (let i = 0; i < dailyConversions; i++) {
+          const eventTime = new Date(date);
+          eventTime.setHours(Math.floor(Math.random() * 24));
+          eventTime.setMinutes(Math.floor(Math.random() * 60));
+          const revenue = 65 + Math.random() * 70; // $65-135 AOV
+          events.push({
+            type: 'conversion',
+            event: 'conversion',
+            revenue: parseFloat(revenue.toFixed(2)),
+            timestamp: eventTime.toISOString()
+          });
+        }
+      }
+
+      // Sort events by timestamp (newest first for display)
+      events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+      // Calculate totals
+      const totalImpressions = events.filter(e => e.type === 'impression').length;
+      const totalClicks = events.filter(e => e.type === 'click').length;
+      const totalConversions = events.filter(e => e.type === 'conversion').length;
+      const totalRevenue = events
+        .filter(e => e.type === 'conversion')
+        .reduce((sum, e) => sum + (e.revenue || 0), 0);
+
+      const analyticsData = {
+        impressions: totalImpressions,
+        clicks: totalClicks,
+        closeouts: Math.floor(totalImpressions * 0.7),
+        conversions: totalConversions,
+        revenue: parseFloat(totalRevenue.toFixed(2)),
+        events: events.slice(0, 500) // Keep last 500 events to avoid metafield size limits
+      };
+
+      await admin.graphql(`
+        mutation SeedAnalytics($ownerId: ID!, $value: String!) {
+          metafieldsSet(metafields: [{
+            ownerId: $ownerId
+            namespace: "exit_intent"
+            key: "analytics"
+            value: $value
+            type: "json"
+          }]) {
+            metafields { id }
+            userErrors { field message }
+          }
+        }
+      `, {
+        variables: {
+          ownerId: shopId,
+          value: JSON.stringify(analyticsData)
+        }
+      });
+
+      console.log(` Seeded analytics: ${totalImpressions} impressions, ${totalClicks} clicks, ${totalConversions} conversions, $${totalRevenue.toFixed(2)} revenue`);
+      return { success: true, analyticsSeeded: true };
     }
 
     // TEST: Force reset by setting reset date to yesterday
@@ -557,7 +666,7 @@ function InfoTooltip({ content }) {
 
 
 export default function Dashboard() {
-  const { settings, status, plan, analytics, promoWarning, activePromotions, modalLibrary } = useLoaderData();
+  const { settings, status, plan, analytics, promoWarning, activePromotions, modalLibrary, populationSize } = useLoaderData();
   const fetcher = useFetcher();
   const [isEnabled, setIsEnabled] = useState(status.enabled);
 
@@ -791,6 +900,34 @@ export default function Dashboard() {
                   <option value="pro">Pro ($79/mo)</option>
                   <option value="enterprise">Enterprise ($299/mo)</option>
                 </select>
+              </div>
+
+              {/* Seed Analytics Button */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                <label style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
+                   Dev: Seed Data
+                </label>
+                <button
+                  onClick={() => {
+                    fetcher.submit(
+                      { actionType: "seedAnalytics" },
+                      { method: "post" }
+                    );
+                    setTimeout(() => window.location.reload(), 1000);
+                  }}
+                  style={{
+                    padding: "8px 12px",
+                    border: "2px solid #10b981",
+                    borderRadius: 6,
+                    background: "white",
+                    color: "#10b981",
+                    fontWeight: 600,
+                    fontSize: 14,
+                    cursor: "pointer"
+                  }}
+                >
+                  Seed Analytics
+                </button>
               </div>
 
               {/* Test Reset Button */}
@@ -1138,26 +1275,14 @@ export default function Dashboard() {
           </div>
           
           <div style={{ fontSize: 16, color: "#6b7280", marginBottom: 16, lineHeight: 1.6 }}>
-            {modalLibrary && modalLibrary.modals && modalLibrary.modals.length > 0 ? (
-              <>
-                Your AI is testing {modalLibrary.modals.length} different offer{modalLibrary.modals.length > 1 ? 's' : ''} to find what works best
-                {modalLibrary.currentModalId && (() => {
-                  const currentModal = modalLibrary.modals.find(m => m.modalId === modalLibrary.currentModalId);
-                  return currentModal && currentModal.headline ? (
-                    <div style={{ marginTop: 12, padding: 16, background: "#f0fdf4", borderRadius: 8, border: "1px solid #86efac" }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: "#166534", marginBottom: 4 }}>
-                        Current best performer:
-                      </div>
-                      <div style={{ fontSize: 14, color: "#166534" }}>
-                        "{currentModal.headline}"
-                      </div>
-                    </div>
-                  ) : null;
-                })()}
-              </>
-            ) : (
-              'Your AI is learning from customer behavior to optimize your offers'
-            )}
+            {(() => {
+              const maxVariants = plan.tier === 'enterprise' ? 20 : 2;
+              const displayCount = Math.min(populationSize || 0, maxVariants);
+              if (displayCount === 0) {
+                return 'Configure AI variants in Settings to start testing';
+              }
+              return `Your AI is testing ${displayCount} different variant${displayCount > 1 ? 's' : ''} to find what works best`;
+            })()}
           </div>
           
           <div style={{ display: "flex", gap: 16 }}>
@@ -1195,88 +1320,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Enterprise: Advanced AI Testing Status */}
-      {plan && plan.tier === 'enterprise' && settings && settings.mode === 'ai' && (
-        <div style={{
-          background: "white",
-          border: "2px solid #fbbf24",
-          borderRadius: 12,
-          padding: 32,
-          marginBottom: 32
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-            <div style={{ fontSize: 24, fontWeight: 600, color: "#1f2937" }}>
-              Advanced AI Testing
-            </div>
-            <span style={{
-              padding: "4px 12px",
-              background: "#fbbf24",
-              color: "#78350f",
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 600
-            }}>
-              Enterprise Active
-            </span>
-          </div>
-          
-          <div style={{ 
-            padding: 20, 
-            background: "#fef3c7", 
-            borderRadius: 8,
-            marginBottom: 16
-          }}>
-            <div style={{ fontSize: 14, color: "#92400e", marginBottom: 8 }}>
-              <strong>AI is testing {modalLibrary?.modals?.length || 0} different offers</strong>
-            </div>
-            <div style={{ fontSize: 13, color: "#92400e" }}>
-              {analytics.last30Days.impressions} impressions collected this period
-            </div>
-          </div>
-          
-          {modalLibrary && modalLibrary.currentModalId && modalLibrary.modals && modalLibrary.modals.length > 0 && (() => {
-            const currentModal = modalLibrary.modals.find(m => m.modalId === modalLibrary.currentModalId);
-            if (!currentModal) return null;
-            
-            return (
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 16, fontWeight: 600, color: "#1f2937", marginBottom: 12 }}>
-                  Current Champion
-                </div>
-                <div style={{ 
-                  padding: 16, 
-                  background: "#f0fdf4", 
-                  borderRadius: 8,
-                  border: "1px solid #86efac"
-                }}>
-                  <div style={{ fontSize: 14, color: "#166534", marginBottom: 4 }}>
-                    <strong>"{currentModal.headline}"</strong>
-                  </div>
-                  <div style={{ fontSize: 13, color: "#166534" }}>
-                    {currentModal.body}
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-          
-          <Link
-            to="/app/variants"
-            style={{
-              display: "inline-block",
-              padding: "12px 24px",
-              background: "#fbbf24",
-              color: "#78350f",
-              textDecoration: "none",
-              borderRadius: 8,
-              fontWeight: 600,
-              fontSize: 14
-            }}
-          >
-            View All Variants →
-          </Link>
-        </div>
-      )}
 
       {/* Tier-Specific Upsell */}
 {plan && plan.tier === "starter" && (
