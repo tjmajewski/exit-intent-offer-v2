@@ -32,7 +32,7 @@ export const PLAN_FEATURES = {
   },
   enterprise: {
     name: "Enterprise",
-    price: 299,
+    price: 199,
     autoApplyDiscount: true,
     abTesting: true,
     personalization: true,
