@@ -214,7 +214,8 @@ export async function loader({ request }) {
 
     const shopDomain = new URL(request.url).searchParams.get('shop') || request.headers.get('host');
     const shopRecord = await db.shop.findUnique({
-      where: { shopifyDomain: shopDomain }
+      where: { shopifyDomain: shopDomain },
+      select: { id: true, populationSize: true }
     });
 
     if (plan && plan.tier === 'pro' && shopRecord) {
@@ -273,7 +274,8 @@ export async function loader({ request }) {
       analytics,
       promoWarning,
       activePromotions,
-      modalLibrary
+      modalLibrary,
+      populationSize: shopRecord?.populationSize || 0
     };
   } catch (error) {
     console.error("Error loading dashboard:", error);
@@ -300,7 +302,8 @@ export async function loader({ request }) {
           clicks: 0,
           conversions: 0
         }
-      }
+      },
+      populationSize: 0
     };
   }
 }
@@ -663,7 +666,7 @@ function InfoTooltip({ content }) {
 
 
 export default function Dashboard() {
-  const { settings, status, plan, analytics, promoWarning, activePromotions, modalLibrary } = useLoaderData();
+  const { settings, status, plan, analytics, promoWarning, activePromotions, modalLibrary, populationSize } = useLoaderData();
   const fetcher = useFetcher();
   const [isEnabled, setIsEnabled] = useState(status.enabled);
 
@@ -1273,11 +1276,10 @@ export default function Dashboard() {
           
           <div style={{ fontSize: 16, color: "#6b7280", marginBottom: 16, lineHeight: 1.6 }}>
             {(() => {
-              const variantCount = modalLibrary?.modals?.length || 0;
               const maxVariants = plan.tier === 'enterprise' ? 20 : 2;
-              const displayCount = Math.min(variantCount, maxVariants);
+              const displayCount = Math.min(populationSize || 0, maxVariants);
               if (displayCount === 0) {
-                return 'Create your first offer variant to start AI testing';
+                return 'Configure AI variants in Settings to start testing';
               }
               return `Your AI is testing ${displayCount} different variant${displayCount > 1 ? 's' : ''} to find what works best`;
             })()}
