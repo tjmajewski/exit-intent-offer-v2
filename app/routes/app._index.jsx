@@ -1272,26 +1272,12 @@ export default function Dashboard() {
           </div>
           
           <div style={{ fontSize: 16, color: "#6b7280", marginBottom: 16, lineHeight: 1.6 }}>
-            {modalLibrary && modalLibrary.modals && modalLibrary.modals.length > 0 ? (
-              <>
-                Your AI is testing {modalLibrary.modals.length} different offer{modalLibrary.modals.length > 1 ? 's' : ''} to find what works best
-                {modalLibrary.currentModalId && (() => {
-                  const currentModal = modalLibrary.modals.find(m => m.modalId === modalLibrary.currentModalId);
-                  return currentModal && currentModal.headline ? (
-                    <div style={{ marginTop: 12, padding: 16, background: "#f0fdf4", borderRadius: 8, border: "1px solid #86efac" }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: "#166534", marginBottom: 4 }}>
-                        Current best performer:
-                      </div>
-                      <div style={{ fontSize: 14, color: "#166534" }}>
-                        "{currentModal.headline}"
-                      </div>
-                    </div>
-                  ) : null;
-                })()}
-              </>
-            ) : (
-              'Your AI is learning from customer behavior to optimize your offers'
-            )}
+            {(() => {
+              // Show actual variant count from modalLibrary, or tier-based default
+              const variantCount = modalLibrary?.modals?.length || (plan.tier === 'enterprise' ? 12 : 2);
+              const maxVariants = plan.tier === 'enterprise' ? 20 : 2;
+              return `Your AI is testing ${Math.min(variantCount, maxVariants)} different offer${variantCount > 1 ? 's' : ''} to find what works best`;
+            })()}
           </div>
           
           <div style={{ display: "flex", gap: 16 }}>
@@ -1329,88 +1315,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Enterprise: Advanced AI Testing Status */}
-      {plan && plan.tier === 'enterprise' && settings && settings.mode === 'ai' && (
-        <div style={{
-          background: "white",
-          border: "2px solid #fbbf24",
-          borderRadius: 12,
-          padding: 32,
-          marginBottom: 32
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-            <div style={{ fontSize: 24, fontWeight: 600, color: "#1f2937" }}>
-              Advanced AI Testing
-            </div>
-            <span style={{
-              padding: "4px 12px",
-              background: "#fbbf24",
-              color: "#78350f",
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 600
-            }}>
-              Enterprise Active
-            </span>
-          </div>
-          
-          <div style={{ 
-            padding: 20, 
-            background: "#fef3c7", 
-            borderRadius: 8,
-            marginBottom: 16
-          }}>
-            <div style={{ fontSize: 14, color: "#92400e", marginBottom: 8 }}>
-              <strong>AI is testing {modalLibrary?.modals?.length || 0} different offers</strong>
-            </div>
-            <div style={{ fontSize: 13, color: "#92400e" }}>
-              {analytics.last30Days.impressions} impressions collected this period
-            </div>
-          </div>
-          
-          {modalLibrary && modalLibrary.currentModalId && modalLibrary.modals && modalLibrary.modals.length > 0 && (() => {
-            const currentModal = modalLibrary.modals.find(m => m.modalId === modalLibrary.currentModalId);
-            if (!currentModal) return null;
-            
-            return (
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 16, fontWeight: 600, color: "#1f2937", marginBottom: 12 }}>
-                  Current Champion
-                </div>
-                <div style={{ 
-                  padding: 16, 
-                  background: "#f0fdf4", 
-                  borderRadius: 8,
-                  border: "1px solid #86efac"
-                }}>
-                  <div style={{ fontSize: 14, color: "#166534", marginBottom: 4 }}>
-                    <strong>"{currentModal.headline}"</strong>
-                  </div>
-                  <div style={{ fontSize: 13, color: "#166534" }}>
-                    {currentModal.body}
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-          
-          <Link
-            to="/app/variants"
-            style={{
-              display: "inline-block",
-              padding: "12px 24px",
-              background: "#fbbf24",
-              color: "#78350f",
-              textDecoration: "none",
-              borderRadius: 8,
-              fontWeight: 600,
-              fontSize: 14
-            }}
-          >
-            View All Variants →
-          </Link>
-        </div>
-      )}
 
       {/* Tier-Specific Upsell */}
 {plan && plan.tier === "starter" && (
