@@ -224,21 +224,26 @@ export async function loader({ request }) {
   const subheadsWithTiers = addPerformanceTier(subheadStats, avgSubheadRevenue).slice(0, 10);
   const ctasWithTiers = addPerformanceTier(ctaStats, avgCtaRevenue).slice(0, 10);
 
-  // Cap variants at populationSize setting
+  // Total variants is all-time count
+  const totalVariants = variants.length;
+
+  // Active variants capped at current populationSize setting
   const maxVariants = plan.tier === 'enterprise' ? 20 : 2;
   const populationLimit = Math.min(shop.populationSize || maxVariants, maxVariants);
-  const cappedVariants = variants.slice(0, populationLimit);
+  const activeVariants = variants.filter(v => v.status === 'alive' || v.status === 'champion');
+  const aliveCount = Math.min(activeVariants.length, populationLimit);
 
-  const totalVariants = cappedVariants.length;
-  const aliveCount = cappedVariants.filter(v => v.status === 'alive' || v.status === 'champion').length;
-  const deadCount = cappedVariants.filter(v => v.status === 'killed').length;
+  // Eliminated is all-time
+  const deadCount = variants.filter(v => v.status === 'killed').length;
 
-  const maxGeneration = cappedVariants.length > 0 ? Math.max(...cappedVariants.map(v => v.generation)) : 0;
+  // For display, show variants up to populationLimit
+  const displayVariants = variants.slice(0, populationLimit);
+  const maxGeneration = displayVariants.length > 0 ? Math.max(...displayVariants.map(v => v.generation)) : 0;
 
   return json({
     shop,
     plan,
-    variants: cappedVariants,
+    variants: displayVariants,
     totalVariants,
     aliveCount,
     deadCount,
