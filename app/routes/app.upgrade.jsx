@@ -1,18 +1,8 @@
-import { useLoaderData, useActionData, Link, Form, useNavigation } from "react-router";
+import { useLoaderData, useNavigation, Link } from "react-router";
 import { useState } from "react";
-import { authenticate, BILLING_PLANS } from "../shopify.server";
+import { authenticate } from "../shopify.server";
 import { PLAN_FEATURES } from "../utils/featureGates";
 import AppLayout from "../components/AppLayout";
-
-// Map tier + cycle to billing plan name defined in shopify.server.js
-const PLAN_NAME_MAP = {
-  "starter-monthly": BILLING_PLANS.STARTER_MONTHLY,
-  "starter-annual": BILLING_PLANS.STARTER_ANNUAL,
-  "pro-monthly": BILLING_PLANS.PRO_MONTHLY,
-  "pro-annual": BILLING_PLANS.PRO_ANNUAL,
-  "enterprise-monthly": BILLING_PLANS.ENTERPRISE_MONTHLY,
-  "enterprise-annual": BILLING_PLANS.ENTERPRISE_ANNUAL,
-};
 
 export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
@@ -40,39 +30,10 @@ export async function loader({ request }) {
   }
 }
 
-export async function action({ request }) {
-  const { billing } = await authenticate.admin(request);
-  const formData = await request.formData();
-  const tier = formData.get("tier");
-  const billingCycle = formData.get("billingCycle");
-
-  if (!["starter", "pro", "enterprise"].includes(tier)) {
-    return { error: "Invalid plan tier" };
-  }
-
-  const planKey = `${tier}-${billingCycle}`;
-  const planName = PLAN_NAME_MAP[planKey];
-
-  if (!planName) {
-    return { error: "Invalid plan configuration" };
-  }
-
-  // billing.request() handles the Shopify approval redirect automatically,
-  // including escaping the embedded app iframe via App Bridge
-  const appUrl = process.env.SHOPIFY_APP_URL || new URL(request.url).origin;
-  await billing.request({
-    plan: planName,
-    isTest: true,
-    returnUrl: `${appUrl}/app/billing-callback?tier=${tier}&cycle=${billingCycle}`,
-  });
-}
-
 export default function Upgrade() {
   const { plan } = useLoaderData();
-  const actionData = useActionData();
   const navigation = useNavigation();
-  const isSubmitting = navigation.state === "submitting";
-  const submittingTier = isSubmitting ? navigation.formData?.get("tier") : null;
+  const isNavigating = navigation.state === "loading";
   const [billingCycle, setBillingCycle] = useState("monthly");
 
   const plans = [
@@ -331,45 +292,31 @@ export default function Upgrade() {
                     Current Plan
                   </div>
                 ) : (
-                  <Form method="post" reloadDocument>
-                    <input type="hidden" name="tier" value={planOption.tier} />
-                    <input type="hidden" name="billingCycle" value={billingCycle} />
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      style={{
-                        width: "100%",
-                        padding: "14px 24px",
-                        background: isSubmitting && submittingTier === planOption.tier
-                          ? "#6b7280"
-                          : "linear-gradient(90deg, #8B5CF6 0%, #a78bfa 100%)",
-                        color: "white",
-                        border: "none",
-                        borderRadius: 8,
-                        fontSize: 16,
-                        fontWeight: 600,
-                        cursor: isSubmitting ? "wait" : "pointer",
-                        marginBottom: 28,
-                        transition: "all 0.2s",
-                        boxShadow: isSubmitting ? "none" : "0 4px 15px rgba(139, 92, 246, 0.3)",
-                        opacity: isSubmitting && submittingTier !== planOption.tier ? 0.5 : 1
-                      }}
-                      onMouseOver={(e) => {
-                        if (!isSubmitting) {
-                          e.target.style.transform = "translateY(-1px)";
-                          e.target.style.boxShadow = "0 6px 20px rgba(139, 92, 246, 0.4)";
-                        }
-                      }}
-                      onMouseOut={(e) => {
-                        e.target.style.transform = "translateY(0)";
-                        e.target.style.boxShadow = isSubmitting ? "none" : "0 4px 15px rgba(139, 92, 246, 0.3)";
-                      }}
-                    >
-                      {isSubmitting && submittingTier === planOption.tier
-                        ? "Redirecting to Shopify..."
-                        : "Start Free Trial"}
-                    </button>
-                  </Form>
+                  <Link
+                    to={`/app/subscribe?tier=${planOption.tier}&cycle=${billingCycle}`}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: "14px 24px",
+                      background: isNavigating
+                        ? "#6b7280"
+                        : "linear-gradient(90deg, #8B5CF6 0%, #a78bfa 100%)",
+                      color: "white",
+                      border: "none",
+                      borderRadius: 8,
+                      fontSize: 16,
+                      fontWeight: 600,
+                      cursor: isNavigating ? "wait" : "pointer",
+                      marginBottom: 28,
+                      transition: "all 0.2s",
+                      boxShadow: "0 4px 15px rgba(139, 92, 246, 0.3)",
+                      textAlign: "center",
+                      textDecoration: "none",
+                      boxSizing: "border-box"
+                    }}
+                  >
+                    Start Free Trial
+                  </Link>
                 )}
 
                 {/* Features List */}
