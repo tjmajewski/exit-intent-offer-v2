@@ -1,5 +1,5 @@
 import { useLoaderData, Link } from "react-router";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { authenticate } from "../shopify.server";
 import { PLAN_FEATURES } from "../utils/featureGates";
 import AppLayout from "../components/AppLayout";
@@ -33,6 +33,26 @@ export async function loader({ request }) {
 export default function Upgrade() {
   const { plan } = useLoaderData();
   const [billingCycle, setBillingCycle] = useState("monthly");
+  const [loadingTier, setLoadingTier] = useState(null);
+
+  const handleSubscribe = useCallback(async (tier) => {
+    setLoadingTier(tier);
+    try {
+      const response = await fetch(
+        `/app/api/create-subscription?tier=${tier}&cycle=${billingCycle}`
+      );
+      const data = await response.json();
+      if (data.confirmationUrl) {
+        open(data.confirmationUrl, "_top");
+      } else {
+        console.error("[Billing] No confirmationUrl returned:", data);
+        setLoadingTier(null);
+      }
+    } catch (error) {
+      console.error("[Billing] Error creating subscription:", error);
+      setLoadingTier(null);
+    }
+  }, [billingCycle]);
 
   const plans = [
     {
@@ -290,29 +310,32 @@ export default function Upgrade() {
                     Current Plan
                   </div>
                 ) : (
-                  <a
-                    href={`/app/subscribe?tier=${planOption.tier}&cycle=${billingCycle}`}
+                  <button
+                    onClick={() => handleSubscribe(planOption.tier)}
+                    disabled={loadingTier !== null}
                     style={{
                       display: "block",
                       width: "100%",
                       padding: "14px 24px",
-                      background: "linear-gradient(90deg, #8B5CF6 0%, #a78bfa 100%)",
+                      background: loadingTier === planOption.tier
+                        ? "linear-gradient(90deg, #6d46c4 0%, #8b6fc0 100%)"
+                        : "linear-gradient(90deg, #8B5CF6 0%, #a78bfa 100%)",
                       color: "white",
                       border: "none",
                       borderRadius: 8,
                       fontSize: 16,
                       fontWeight: 600,
-                      cursor: "pointer",
+                      cursor: loadingTier !== null ? "wait" : "pointer",
                       marginBottom: 28,
                       transition: "all 0.2s",
                       boxShadow: "0 4px 15px rgba(139, 92, 246, 0.3)",
                       textAlign: "center",
-                      textDecoration: "none",
-                      boxSizing: "border-box"
+                      boxSizing: "border-box",
+                      opacity: loadingTier !== null && loadingTier !== planOption.tier ? 0.5 : 1
                     }}
                   >
-                    Start Free Trial
-                  </a>
+                    {loadingTier === planOption.tier ? "Redirecting..." : "Start Free Trial"}
+                  </button>
                 )}
 
                 {/* Features List */}
