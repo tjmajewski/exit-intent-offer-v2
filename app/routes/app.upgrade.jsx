@@ -1,4 +1,4 @@
-import { useLoaderData, useNavigation, Link } from "react-router";
+import { useLoaderData, Link } from "react-router";
 import { useState } from "react";
 import { authenticate } from "../shopify.server";
 import { PLAN_FEATURES } from "../utils/featureGates";
@@ -32,8 +32,6 @@ export async function loader({ request }) {
 
 export default function Upgrade() {
   const { plan } = useLoaderData();
-  const navigation = useNavigation();
-  const isNavigating = navigation.state === "loading";
   const [billingCycle, setBillingCycle] = useState("monthly");
 
   const plans = [
@@ -292,21 +290,19 @@ export default function Upgrade() {
                     Current Plan
                   </div>
                 ) : (
-                  <Link
-                    to={`/app/subscribe?tier=${planOption.tier}&cycle=${billingCycle}`}
+                  <a
+                    href={`/app/subscribe?tier=${planOption.tier}&cycle=${billingCycle}`}
                     style={{
                       display: "block",
                       width: "100%",
                       padding: "14px 24px",
-                      background: isNavigating
-                        ? "#6b7280"
-                        : "linear-gradient(90deg, #8B5CF6 0%, #a78bfa 100%)",
+                      background: "linear-gradient(90deg, #8B5CF6 0%, #a78bfa 100%)",
                       color: "white",
                       border: "none",
                       borderRadius: 8,
                       fontSize: 16,
                       fontWeight: 600,
-                      cursor: isNavigating ? "wait" : "pointer",
+                      cursor: "pointer",
                       marginBottom: 28,
                       transition: "all 0.2s",
                       boxShadow: "0 4px 15px rgba(139, 92, 246, 0.3)",
@@ -316,7 +312,7 @@ export default function Upgrade() {
                     }}
                   >
                     Start Free Trial
-                  </Link>
+                  </a>
                 )}
 
                 {/* Features List */}
