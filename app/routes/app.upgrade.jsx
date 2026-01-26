@@ -59,10 +59,11 @@ export async function action({ request }) {
 
   // billing.request() handles the Shopify approval redirect automatically,
   // including escaping the embedded app iframe via App Bridge
+  const appUrl = process.env.SHOPIFY_APP_URL || new URL(request.url).origin;
   await billing.request({
     plan: planName,
     isTest: true,
-    returnUrl: `/app/billing-callback?tier=${tier}&cycle=${billingCycle}`,
+    returnUrl: `${appUrl}/app/billing-callback?tier=${tier}&cycle=${billingCycle}`,
   });
 }
 
