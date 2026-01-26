@@ -331,7 +331,7 @@ export default function Upgrade() {
                     Current Plan
                   </div>
                 ) : (
-                  <Form method="post">
+                  <Form method="post" reloadDocument>
                     <input type="hidden" name="tier" value={planOption.tier} />
                     <input type="hidden" name="billingCycle" value={billingCycle} />
                     <button
