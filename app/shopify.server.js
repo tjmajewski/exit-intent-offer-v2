@@ -2,8 +2,6 @@ import "@shopify/shopify-app-react-router/adapters/node";
 import {
   ApiVersion,
   AppDistribution,
-  BillingInterval,
-  BillingReplacementBehavior,
   DeliveryMethod,
   shopifyApp,
 } from "@shopify/shopify-app-react-router/server";
@@ -31,16 +29,16 @@ const shopify = shopifyApp({
   distribution: AppDistribution.AppStore,
   billing: {
     [BILLING_PLANS.STARTER_MONTHLY]: {
-      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
+      replacementBehavior: "APPLY_IMMEDIATELY",
       trialDays: 14,
       lineItems: [
         {
-          interval: BillingInterval.Every30Days,
+          interval: "EVERY_30_DAYS",
           amount: 29,
           currencyCode: "USD",
         },
         {
-          interval: BillingInterval.Usage,
+          interval: "USAGE",
           amount: 500,
           currencyCode: "USD",
           terms: "5% of recovered revenue",
@@ -48,27 +46,27 @@ const shopify = shopifyApp({
       ],
     },
     [BILLING_PLANS.STARTER_ANNUAL]: {
-      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
+      replacementBehavior: "APPLY_IMMEDIATELY",
       trialDays: 14,
       lineItems: [
         {
-          interval: BillingInterval.Annual,
+          interval: "ANNUAL",
           amount: 295.80,
           currencyCode: "USD",
         },
       ],
     },
     [BILLING_PLANS.PRO_MONTHLY]: {
-      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
+      replacementBehavior: "APPLY_IMMEDIATELY",
       trialDays: 14,
       lineItems: [
         {
-          interval: BillingInterval.Every30Days,
+          interval: "EVERY_30_DAYS",
           amount: 79,
           currencyCode: "USD",
         },
         {
-          interval: BillingInterval.Usage,
+          interval: "USAGE",
           amount: 2000,
           currencyCode: "USD",
           terms: "2% of recovered revenue",
@@ -76,27 +74,27 @@ const shopify = shopifyApp({
       ],
     },
     [BILLING_PLANS.PRO_ANNUAL]: {
-      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
+      replacementBehavior: "APPLY_IMMEDIATELY",
       trialDays: 14,
       lineItems: [
         {
-          interval: BillingInterval.Annual,
+          interval: "ANNUAL",
           amount: 805.80,
           currencyCode: "USD",
         },
       ],
     },
     [BILLING_PLANS.ENTERPRISE_MONTHLY]: {
-      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
+      replacementBehavior: "APPLY_IMMEDIATELY",
       trialDays: 14,
       lineItems: [
         {
-          interval: BillingInterval.Every30Days,
+          interval: "EVERY_30_DAYS",
           amount: 199,
           currencyCode: "USD",
         },
         {
-          interval: BillingInterval.Usage,
+          interval: "USAGE",
           amount: 5000,
           currencyCode: "USD",
           terms: "1% of recovered revenue",
@@ -104,11 +102,11 @@ const shopify = shopifyApp({
       ],
     },
     [BILLING_PLANS.ENTERPRISE_ANNUAL]: {
-      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
+      replacementBehavior: "APPLY_IMMEDIATELY",
       trialDays: 14,
       lineItems: [
         {
-          interval: BillingInterval.Annual,
+          interval: "ANNUAL",
           amount: 2029.80,
           currencyCode: "USD",
         },
