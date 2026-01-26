@@ -1,9 +1,18 @@
 import { useLoaderData, useActionData, Link, Form, useNavigation } from "react-router";
-import { useState, useEffect } from "react";
-import { authenticate } from "../shopify.server";
+import { useState } from "react";
+import { authenticate, BILLING_PLANS } from "../shopify.server";
 import { PLAN_FEATURES } from "../utils/featureGates";
-import { createSubscription, getActiveSubscription, tierFromSubscriptionName } from "../utils/billing.server";
 import AppLayout from "../components/AppLayout";
+
+// Map tier + cycle to billing plan name defined in shopify.server.js
+const PLAN_NAME_MAP = {
+  "starter-monthly": BILLING_PLANS.STARTER_MONTHLY,
+  "starter-annual": BILLING_PLANS.STARTER_ANNUAL,
+  "pro-monthly": BILLING_PLANS.PRO_MONTHLY,
+  "pro-annual": BILLING_PLANS.PRO_ANNUAL,
+  "enterprise-monthly": BILLING_PLANS.ENTERPRISE_MONTHLY,
+  "enterprise-annual": BILLING_PLANS.ENTERPRISE_ANNUAL,
+};
 
 export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
@@ -24,23 +33,15 @@ export async function loader({ request }) {
       ? JSON.parse(data.data.shop.plan.value)
       : { tier: "starter" };
 
-    // Check active Shopify subscription
-    let activeSubscription = null;
-    try {
-      activeSubscription = await getActiveSubscription(admin);
-    } catch (e) {
-      console.error("Error checking subscription:", e);
-    }
-
-    return { plan, activeSubscription };
+    return { plan };
   } catch (error) {
     console.error("Error loading upgrade page:", error);
-    return { plan: { tier: "starter" }, activeSubscription: null };
+    return { plan: { tier: "starter" } };
   }
 }
 
 export async function action({ request }) {
-  const { admin, session } = await authenticate.admin(request);
+  const { billing } = await authenticate.admin(request);
   const formData = await request.formData();
   const tier = formData.get("tier");
   const billingCycle = formData.get("billingCycle");
@@ -49,43 +50,29 @@ export async function action({ request }) {
     return { error: "Invalid plan tier" };
   }
 
-  try {
-    const appUrl = process.env.SHOPIFY_APP_URL || "";
-    const returnUrl = `${appUrl}/app/billing-callback?tier=${tier}&cycle=${billingCycle}`;
+  const planKey = `${tier}-${billingCycle}`;
+  const planName = PLAN_NAME_MAP[planKey];
 
-    // test: true for development, set to false for production
-    const isTest = process.env.NODE_ENV !== "production";
-
-    const { confirmationUrl } = await createSubscription(
-      admin,
-      tier,
-      billingCycle,
-      returnUrl,
-      isTest
-    );
-
-    // Return URL to client — client redirects via _top to escape iframe
-    return { confirmationUrl };
-  } catch (error) {
-    console.error("[Billing] Error creating subscription:", error);
-    return { error: error.message };
+  if (!planName) {
+    return { error: "Invalid plan configuration" };
   }
+
+  // billing.request() handles the Shopify approval redirect automatically,
+  // including escaping the embedded app iframe via App Bridge
+  await billing.request({
+    plan: planName,
+    isTest: true,
+    returnUrl: `/app/billing-callback?tier=${tier}&cycle=${billingCycle}`,
+  });
 }
 
 export default function Upgrade() {
-  const { plan, activeSubscription } = useLoaderData();
+  const { plan } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const submittingTier = isSubmitting ? navigation.formData?.get("tier") : null;
   const [billingCycle, setBillingCycle] = useState("monthly");
-
-  // Redirect to Shopify billing approval page (must break out of iframe)
-  useEffect(() => {
-    if (actionData?.confirmationUrl) {
-      window.open(actionData.confirmationUrl, "_top");
-    }
-  }, [actionData]);
 
   const plans = [
     {
