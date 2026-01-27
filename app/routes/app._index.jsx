@@ -236,7 +236,7 @@ export async function loader({ request }) {
           amount: activePromo.amount,
           type: activePromo.type,
           aiStrategy: activePromo.aiStrategy,
-          message: `Your AI is still offering discounts during your ${activePromo.amount}${activePromo.type === 'percentage' ? '%' : '$'} ${activePromo.code} promotion. These discounts stack, which could erode your margins.`
+          message: `Your exit offers are still running during your ${activePromo.amount}${activePromo.type === 'percentage' ? '%' : '$'} ${activePromo.code} promotion. Since these codes stack, customers can combine both discounts.`
         };
       }
     }
@@ -816,17 +816,11 @@ export default function Dashboard() {
                 marginBottom: 16
               }}>
                 <p style={{ margin: 0, fontSize: 14, color: "#92400e", marginBottom: 12 }}>
-                  <strong> What Enterprise AI would do automatically:</strong>
+                  <strong>Enterprise AI would have automatically:</strong>
                 </p>
                 <ul style={{ margin: 0, paddingLeft: 20, color: "#78350f", fontSize: 14 }}>
-                  {promoWarning.aiStrategy === 'pause' && (
-                    <li><strong>Pause exit modals</strong> during your {promoWarning.amount}% sale to avoid double-discounting</li>
-                  )}
-                  {promoWarning.aiStrategy === 'decrease' && (
-                    <li><strong>Decrease exit offers to {Math.max(5, Math.floor(promoWarning.amount * 0.3))}%</strong> to preserve margin since codes stack with your site-wide promotion</li>
-                  )}
-                  <li>Save you money by not showing discounts to customers who would buy anyway</li>
-                  <li>Email you when promotions are detected with recommended actions</li>
+                  <li><strong>Turned your exit offers down</strong> (or off if already at 0%) to save you margin during this promotion</li>
+                  <li>Emailed you when the promotion was detected with recommended actions</li>
                   <li>Let you set announcement mode (0% offers) with one click</li>
                 </ul>
               </div>
