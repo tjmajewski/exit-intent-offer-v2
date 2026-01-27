@@ -32,10 +32,15 @@ export async function loader({ request }) {
       console.error("Error checking subscription:", e);
     }
 
-    return { plan, activeSubscription };
+    // A user has used their trial if:
+    // 1. The plan metafield explicitly says so, OR
+    // 2. They have (or had) an active Shopify subscription
+    const hasUsedTrial = plan.hasUsedTrial === true || activeSubscription != null;
+
+    return { plan, activeSubscription, hasUsedTrial };
   } catch (error) {
     console.error("Error loading upgrade page:", error);
-    return { plan: { tier: "starter" }, activeSubscription: null };
+    return { plan: { tier: "starter" }, activeSubscription: null, hasUsedTrial: false };
   }
 }
 
@@ -56,12 +61,45 @@ export async function action({ request }) {
     // test: true for development, set to false for production
     const isTest = process.env.NODE_ENV !== "production";
 
+    // Check if the merchant has already used their trial
+    let hasUsedTrial = false;
+    try {
+      const planResponse = await admin.graphql(`
+        query {
+          shop {
+            plan: metafield(namespace: "exit_intent", key: "plan") {
+              value
+            }
+          }
+        }
+      `);
+      const planData = await planResponse.json();
+      const currentPlan = planData.data.shop?.plan?.value
+        ? JSON.parse(planData.data.shop.plan.value)
+        : null;
+
+      // Trial is used if explicitly flagged or if they already have/had a subscription
+      if (currentPlan?.hasUsedTrial) {
+        hasUsedTrial = true;
+      } else {
+        const activeSub = await getActiveSubscription(admin);
+        if (activeSub) {
+          hasUsedTrial = true;
+        }
+      }
+    } catch (e) {
+      console.error("[Billing] Error checking trial status:", e);
+    }
+
+    const trialDays = hasUsedTrial ? 0 : 14;
+
     const { confirmationUrl } = await createSubscription(
       admin,
       tier,
       billingCycle,
       returnUrl,
-      isTest
+      isTest,
+      trialDays
     );
 
     // Return URL to client — client redirects via _top to escape iframe
@@ -73,7 +111,7 @@ export async function action({ request }) {
 }
 
 export default function Upgrade() {
-  const { plan, activeSubscription } = useLoaderData();
+  const { plan, activeSubscription, hasUsedTrial } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -379,7 +417,7 @@ export default function Upgrade() {
                     >
                       {isSubmitting && submittingTier === planOption.tier
                         ? "Redirecting to Shopify..."
-                        : "Start Free Trial"}
+                        : hasUsedTrial ? "Subscribe" : "Start Free Trial"}
                     </button>
                   </Form>
                 )}
