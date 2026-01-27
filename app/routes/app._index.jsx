@@ -236,7 +236,7 @@ export async function loader({ request }) {
           amount: activePromo.amount,
           type: activePromo.type,
           aiStrategy: activePromo.aiStrategy,
-          message: `Your AI is still offering discounts during your ${activePromo.amount}${activePromo.type === 'percentage' ? '%' : '$'} ${activePromo.code} promotion, potentially wasting budget.`
+          message: `Your AI is still offering discounts during your ${activePromo.amount}${activePromo.type === 'percentage' ? '%' : '$'} ${activePromo.code} promotion. These discounts stack, which could erode your margins.`
         };
       }
     }
