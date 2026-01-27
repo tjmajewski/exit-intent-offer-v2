@@ -567,7 +567,7 @@
           transition: color 0.2s;
         " onmouseover="this.style.color='#8B5CF6'" onmouseout="this.style.color='#9ca3af'">
           <span>Powered by</span>
-          <span style="font-weight: 600; color: #8B5CF6;">ResparQ</span>
+          <span style="font-weight: 600; color: #8B5CF6;">resparq</span>
           <span style="font-size: 13px;"></span>
         </a>
       `;

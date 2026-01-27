@@ -10,12 +10,12 @@ import prisma from "./db.server";
 
 // Plan names used by billing.request() and billing.require()
 export const BILLING_PLANS = {
-  STARTER_MONTHLY: "ResparQ Starter Monthly",
-  STARTER_ANNUAL: "ResparQ Starter Annual",
-  PRO_MONTHLY: "ResparQ Pro Monthly",
-  PRO_ANNUAL: "ResparQ Pro Annual",
-  ENTERPRISE_MONTHLY: "ResparQ Enterprise Monthly",
-  ENTERPRISE_ANNUAL: "ResparQ Enterprise Annual",
+  STARTER_MONTHLY: "resparq Starter Monthly",
+  STARTER_ANNUAL: "resparq Starter Annual",
+  PRO_MONTHLY: "resparq Pro Monthly",
+  PRO_ANNUAL: "resparq Pro Annual",
+  ENTERPRISE_MONTHLY: "resparq Enterprise Monthly",
+  ENTERPRISE_ANNUAL: "resparq Enterprise Annual",
 };
 
 const shopify = shopifyApp({

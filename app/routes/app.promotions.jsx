@@ -422,7 +422,7 @@ export default function PromotionsPage() {
                 No active site-wide promotions detected.
               </p>
               <p style={{ margin: 0, fontSize: 14, color: "#9ca3af" }}>
-                ResparQ will automatically detect when you run sales and adjust your AI strategy to protect margins.
+                resparq will automatically detect when you run sales and adjust your AI strategy to protect margins.
               </p>
             </div>
           ) : (

@@ -51,7 +51,7 @@ export async function createSubscription(admin, tier, billingCycle, returnUrl, i
   const isAnnual = billingCycle === "annual";
   const price = isAnnual ? config.annualPrice : config.monthlyPrice;
   const interval = isAnnual ? "ANNUAL" : "EVERY_30_DAYS";
-  const planName = `ResparQ ${config.name} (${isAnnual ? "Annual" : "Monthly"})`;
+  const planName = `resparq ${config.name} (${isAnnual ? "Annual" : "Monthly"})`;
 
   const lineItems = [
     {

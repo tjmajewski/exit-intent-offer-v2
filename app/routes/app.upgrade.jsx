@@ -398,7 +398,7 @@ export default function Upgrade() {
           border: "1px solid rgba(139, 92, 246, 0.3)",
           textAlign: "center"
         }}>
-          <h3 style={{ fontSize: 24, marginBottom: 16, color: "#fff" }}>Why ResparQ?</h3>
+          <h3 style={{ fontSize: 24, marginBottom: 16, color: "#fff" }}>Why resparq?</h3>
           <div style={{
             display: "grid",
             gridTemplateColumns: "repeat(3, 1fr)",
@@ -485,7 +485,7 @@ export default function Upgrade() {
           <div style={{ marginBottom: 20 }}>
             <strong style={{ fontSize: 16, color: "#fff" }}>What does "% of recovered revenue" mean?</strong>
             <p style={{ color: "#9ca3af", marginTop: 8, lineHeight: "1.6", marginBottom: 0 }}>
-              This is a small percentage of revenue from orders where customers used a ResparQ discount code. It only applies to recovered revenue, not your total sales.
+              This is a small percentage of revenue from orders where customers used a resparq discount code. It only applies to recovered revenue, not your total sales.
             </p>
           </div>
 
