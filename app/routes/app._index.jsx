@@ -151,12 +151,16 @@ export async function loader({ request }) {
       ? ((conversions30d / impressions30d) * 100).toFixed(1) 
       : 0;
 
-    const clickRate30d = impressions30d > 0 
-      ? ((clicks30d / impressions30d) * 100).toFixed(1) 
+    const revenue30d = last30DaysEvents
+      .filter(e => e.type === 'conversion')
+      .reduce((sum, e) => sum + (e.revenue || 0), 0);
+
+    const clickRate30d = impressions30d > 0
+      ? ((clicks30d / impressions30d) * 100).toFixed(1)
       : 0;
 
-    const revenuePerView30d = impressions30d > 0 
-      ? ((analyticsRaw.revenue || 0) / impressions30d).toFixed(2) 
+    const revenuePerView30d = impressions30d > 0
+      ? (revenue30d / impressions30d).toFixed(2)
       : 0;
 
     // Calculate lifetime metrics (for Pro+)
@@ -186,7 +190,7 @@ export async function loader({ request }) {
     const analytics = {
       // 30-day metrics (everyone)
       last30Days: {
-        totalRevenue: analyticsRaw.revenue || 0, // Note: revenue is cumulative, we'd need to track per-event
+        totalRevenue: revenue30d,
         conversionRate: parseFloat(conversionRate30d),
         clickRate: parseFloat(clickRate30d),
         revenuePerView: parseFloat(revenuePerView30d),
@@ -411,7 +415,7 @@ export async function action({ request }) {
       // - Modal shown to ~3-5% of site visitors who show exit intent
       // - Click rate: 15-25% of impressions
       // - Conversion rate: 2-4% of impressions (8-15% of clicks)
-      // - Average order value: $65-120
+      // - Average order value: $100-150
 
       // Generate 30 days of realistic events
       for (let day = 0; day < 30; day++) {
@@ -449,12 +453,12 @@ export async function action({ request }) {
           });
         }
 
-        // Add conversions with realistic AOV ($65-135)
+        // Add conversions with realistic AOV ($100-150)
         for (let i = 0; i < dailyConversions; i++) {
           const eventTime = new Date(date);
           eventTime.setHours(Math.floor(Math.random() * 24));
           eventTime.setMinutes(Math.floor(Math.random() * 60));
-          const revenue = 65 + Math.random() * 70; // $65-135 AOV
+          const revenue = 100 + Math.random() * 50; // $100-150 AOV
           events.push({
             type: 'conversion',
             event: 'conversion',

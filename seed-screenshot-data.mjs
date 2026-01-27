@@ -202,7 +202,7 @@ async function seedData() {
     const impressions = baseImpressions;
     const clicks = Math.floor(impressions * randFloat(0.25, 0.45));
     const conversions = Math.floor(impressions * conversionRate);
-    const avgOrderValue = randFloat(65, 145);
+    const avgOrderValue = randFloat(100, 150);
     const revenue = conversions * avgOrderValue;
     const profitPerImpression = revenue / impressions;
 
@@ -287,7 +287,7 @@ async function seedData() {
 
   for (let i = 0; i < numConversions; i++) {
     const variant = pick(variants.filter(v => v.status !== 'dead'));
-    const orderValue = randFloat(45, 225);
+    const orderValue = randFloat(100, 150);
     const discountRedeemed = Math.random() > 0.15;
     const discountAmount = discountRedeemed ? orderValue * (variant.offerAmount / 100) : 0;
 
