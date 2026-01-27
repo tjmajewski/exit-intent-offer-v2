@@ -236,7 +236,7 @@ export async function loader({ request }) {
           amount: activePromo.amount,
           type: activePromo.type,
           aiStrategy: activePromo.aiStrategy,
-          message: `Your exit offers are still running during your ${activePromo.amount}${activePromo.type === 'percentage' ? '%' : '$'} ${activePromo.code} promotion. Since these codes stack, customers can combine both discounts.`
+          message: `Your ${activePromo.code} promotion was detected as active and identified as having a high take rate at checkout.`
         };
       }
     }
@@ -820,6 +820,7 @@ export default function Dashboard() {
                 </p>
                 <ul style={{ margin: 0, paddingLeft: 20, color: "#78350f", fontSize: 14 }}>
                   <li><strong>Turned your exit offers down</strong> (or off if already at 0%) to save you margin during this promotion</li>
+                  <li>Reverted your offer settings back to what they were once the promotion is no longer detected</li>
                   <li>Emailed you when the promotion was detected with recommended actions</li>
                   <li>Let you set announcement mode (0% offers) with one click</li>
                 </ul>
