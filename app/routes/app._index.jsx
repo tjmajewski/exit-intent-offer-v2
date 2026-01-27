@@ -846,14 +846,6 @@ export default function Dashboard() {
               >
                 Upgrade to Enterprise →
               </Link>
-              <p style={{ 
-                margin: 0, 
-                marginTop: 12,
-                fontSize: 13, 
-                color: "#92400e" 
-              }}>
-                Save $600/year with annual billing
-              </p>
             </div>
           </div>
         </div>
