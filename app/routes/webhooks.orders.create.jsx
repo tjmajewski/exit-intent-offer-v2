@@ -326,7 +326,7 @@ async function classifyPromotion(promoId) {
   // High usage = site-wide promotion
   if (usagePerHour > 10) {
     classification = "site_wide";
-    aiStrategy = promo.amount >= 25 ? "pause" : "increase";
+    aiStrategy = promo.amount >= 25 ? "pause" : "decrease";
     reason = `${promo.amount}% site-wide promo detected (${stats.total} uses in ${hoursSince.toFixed(1)} hours)`;
   } 
   // Medium usage = targeted campaign

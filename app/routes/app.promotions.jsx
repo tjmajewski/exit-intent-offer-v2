@@ -185,7 +185,7 @@ export async function action({ request }) {
 function getStrategyColor(strategy) {
   switch(strategy) {
     case 'pause': return '#ef4444';
-    case 'increase': return '#f59e0b';
+    case 'decrease': return '#f59e0b';
     case 'continue': return '#10b981';
     case 'ignore': return '#6b7280';
     default: return '#3b82f6';
@@ -195,7 +195,7 @@ function getStrategyColor(strategy) {
 function getStrategyLabel(strategy) {
   switch(strategy) {
     case 'pause': return 'AI Paused';
-    case 'increase': return 'Increased Offers';
+    case 'decrease': return 'Decreased Offers';
     case 'continue': return 'Continue Normal';
     case 'ignore': return 'Ignored';
     default: return 'Auto';
@@ -562,7 +562,7 @@ function PromotionCard({ promo, fetcher, isEnded = false }) {
                 ) : promo.amount >= 20 && promo.type === 'percentage' ? (
                   `Moderate discount (${promo.amount}%). AI suggests reducing exit offers to maintain healthy margins while still capturing exits.`
                 ) : promo.amount >= 15 && promo.type === 'percentage' ? (
-                  `Small discount (${promo.amount}%). Consider continuing normal exit offers or slightly increasing to beat the promotion.`
+                  `Small discount (${promo.amount}%). Consider continuing normal exit offers or decreasing to preserve margin since codes stack.`
                 ) : (
                   'AI will monitor usage patterns and automatically adjust strategy to maximize profitability.'
                 )}
@@ -595,7 +595,7 @@ function PromotionCard({ promo, fetcher, isEnded = false }) {
                 <option value="auto">Auto (AI decides)</option>
                 <option value="pause">Pause AI (no modals)</option>
                 <option value="force_zero">Announcement mode (0% offers)</option>
-                <option value="increase">Increase offers</option>
+                <option value="decrease">Decrease offers</option>
                 <option value="continue">Continue normal</option>
                 <option value="ignore">Ignore this promo</option>
               </select>

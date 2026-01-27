@@ -75,11 +75,11 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
             return null; // Don't show modal at all
           }
           
-          if (activePromo.aiStrategy === "increase") {
-            // Force minimum offer to beat the promo by 5%
-            const minOffer = activePromo.amount + 5;
-            aggression = Math.max(aggression, Math.ceil(minOffer / 2.5)); // Convert to 1-10 scale
-            console.log(`AI auto-increased aggression to beat ${activePromo.amount}% promo`);
+          if (activePromo.aiStrategy === "decrease") {
+            // Reduce exit offers to preserve margin since discount codes stack with site-wide promo
+            const maxOffer = Math.max(5, Math.floor(activePromo.amount * 0.3)); // Cap at 30% of promo amount
+            aggression = Math.min(aggression, Math.ceil(maxOffer / 2.5)); // Convert to 1-10 scale
+            console.log(`AI auto-decreased aggression to preserve margin during ${activePromo.amount}% promo (max exit offer: ${maxOffer}%)`);
           }
         }
       }

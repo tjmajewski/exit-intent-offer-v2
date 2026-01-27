@@ -696,7 +696,7 @@ export default function Dashboard() {
   const getStrategyLabel = (strategy) => {
     switch(strategy) {
       case 'pause': return 'AI Paused';
-      case 'increase': return 'Increased Offers';
+      case 'decrease': return 'Decreased Offers';
       case 'continue': return 'Continue Normal';
       case 'ignore': return 'Ignored';
       default: return 'Auto';
@@ -706,7 +706,7 @@ export default function Dashboard() {
   const getStrategyColor = (strategy) => {
     switch(strategy) {
       case 'pause': return '#ef4444';
-      case 'increase': return '#f59e0b';
+      case 'decrease': return '#f59e0b';
       case 'continue': return '#10b981';
       case 'ignore': return '#6b7280';
       default: return '#3b82f6';
@@ -822,8 +822,8 @@ export default function Dashboard() {
                   {promoWarning.aiStrategy === 'pause' && (
                     <li><strong>Pause exit modals</strong> during your {promoWarning.amount}% sale to avoid double-discounting</li>
                   )}
-                  {promoWarning.aiStrategy === 'increase' && (
-                    <li><strong>Increase exit offers to {promoWarning.amount + 5}%</strong> to beat your site-wide promotion</li>
+                  {promoWarning.aiStrategy === 'decrease' && (
+                    <li><strong>Decrease exit offers to {Math.max(5, Math.floor(promoWarning.amount * 0.3))}%</strong> to preserve margin since codes stack with your site-wide promotion</li>
                   )}
                   <li>Save you money by not showing discounts to customers who would buy anyway</li>
                   <li>Email you when promotions are detected with recommended actions</li>
@@ -844,7 +844,7 @@ export default function Dashboard() {
                   boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
                 }}
               >
-                Upgrade to Enterprise - $249/mo →
+                Upgrade to Enterprise →
               </Link>
               <p style={{ 
                 margin: 0, 
