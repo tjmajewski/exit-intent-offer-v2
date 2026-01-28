@@ -236,7 +236,7 @@ export async function loader({ request }) {
           amount: activePromo.amount,
           type: activePromo.type,
           aiStrategy: activePromo.aiStrategy,
-          message: `${activePromo.code} is active and has a high take rate at checkout.`
+          message: `Your ${activePromo.code} promotion is active with a high take rate. Your exit offers are still running at full strength.`
         };
       }
     }
@@ -819,10 +819,9 @@ export default function Dashboard() {
                   <strong>Enterprise AI would have automatically:</strong>
                 </p>
                 <ul style={{ margin: 0, paddingLeft: 20, color: "#78350f", fontSize: 14 }}>
-                  <li><strong>Reduced or paused your exit offers</strong> to protect your margins while this promotion runs</li>
-                  <li>Restored your original settings once the promotion ended</li>
-                  <li>Notified you when the promotion was first detected with recommended actions</li>
-                  <li>Let you switch to announcement mode (0% offers) with one click</li>
+                  <li><strong>Decreased your exit offer amounts</strong> to save you margin while your promotion runs</li>
+                  <li>Restored your original offer settings once the promotion ended</li>
+                  <li>Notified you when the promotion was detected</li>
                 </ul>
               </div>
               <Link 
