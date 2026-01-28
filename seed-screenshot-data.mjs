@@ -200,7 +200,7 @@ async function seedData() {
     }
 
     const impressions = baseImpressions;
-    const clicks = Math.floor(impressions * randFloat(0.25, 0.45));
+    const clicks = Math.floor(impressions * randFloat(0.12, 0.20));
     const conversions = Math.floor(impressions * conversionRate);
     const avgOrderValue = randFloat(100, 150);
     const revenue = conversions * avgOrderValue;
@@ -251,7 +251,7 @@ async function seedData() {
     const impressions = [];
 
     for (let i = 0; i < numImpressions; i++) {
-      const clicked = Math.random() < 0.35;
+      const clicked = Math.random() < 0.16;
       const converted = clicked && Math.random() < 0.35;
       const cartValue = randFloat(25, 250);
       const orderValue = converted ? cartValue * randFloat(0.9, 1.1) : null;

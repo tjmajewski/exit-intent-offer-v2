@@ -424,10 +424,10 @@ export async function action({ request }) {
 
         // Realistic daily volume: 30-80 impressions/day for a medium store
         const dailyImpressions = Math.floor(Math.random() * 50) + 30;
-        // Click rate: 18-28%
-        const dailyClicks = Math.floor(dailyImpressions * (0.18 + Math.random() * 0.10));
-        // Conversion rate from impressions: 2.5-4% (realistic for exit intent)
-        const dailyConversions = Math.floor(dailyImpressions * (0.025 + Math.random() * 0.015));
+        // Click rate: 12-20%
+        const dailyClicks = Math.floor(dailyImpressions * (0.12 + Math.random() * 0.08));
+        // Conversion rate from impressions: 4-6% (strong performer)
+        const dailyConversions = Math.floor(dailyImpressions * (0.04 + Math.random() * 0.02));
 
         // Add impressions
         for (let i = 0; i < dailyImpressions; i++) {
