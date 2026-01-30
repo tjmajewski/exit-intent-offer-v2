@@ -1,5 +1,5 @@
 export async function action({ request }) {
-  const { default: db } = await import("../app/db.server.js");
+  const { default: db } = await import("../db.server.js");
   try {
     const now = new Date();
     
