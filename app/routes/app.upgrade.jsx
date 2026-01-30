@@ -2,11 +2,11 @@ import { useLoaderData, useActionData, Link, Form, useNavigation } from "react-r
 import { useState, useEffect } from "react";
 import { authenticate } from "../shopify.server";
 import { PLAN_FEATURES } from "../utils/featureGates";
-import { createSubscription, getActiveSubscription, tierFromSubscriptionName } from "../utils/billing.server";
 import AppLayout from "../components/AppLayout";
 
 export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
+  const { getActiveSubscription } = await import("../utils/billing.server");
 
   try {
     const response = await admin.graphql(`
@@ -41,6 +41,7 @@ export async function loader({ request }) {
 
 export async function action({ request }) {
   const { admin, session } = await authenticate.admin(request);
+  const { createSubscription } = await import("../utils/billing.server");
   const formData = await request.formData();
   const tier = formData.get("tier");
   const billingCycle = formData.get("billingCycle");
