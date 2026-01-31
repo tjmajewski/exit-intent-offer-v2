@@ -283,6 +283,73 @@ curl -I https://resparq.fly.dev/
 
 ---
 
+## Shopify Partner Dashboard Configuration
+
+After deploying to Fly.io, configure the Shopify Partner Dashboard to point to your production URL.
+
+### 1. Access App Configuration
+
+1. Go to https://partners.shopify.com
+2. Navigate to **App distribution** → **All apps**
+3. Click **View on Dev Dashboard** next to your app
+4. Click **Settings** in the left sidebar
+
+### 2. Update URLs
+
+Set the following URLs in **Configuration**:
+
+| Setting | Value |
+|---------|-------|
+| **App URL** | `https://resparq.fly.dev` |
+| **Allowed redirection URL(s)** | `https://resparq.fly.dev/auth/callback` |
+| **App proxy URL** | `https://resparq.fly.dev/apps/exit-intent` |
+
+### 3. Verify Scopes
+
+Ensure scopes match what's set in Fly.io secrets:
+```
+write_discounts,write_gift_cards,read_orders,write_products
+```
+
+---
+
+## Installing the App on a Store
+
+### For Development Stores
+
+1. Go to Dev Dashboard → **Dev stores**
+2. Click **Log in** next to your dev store
+3. Use the OAuth install URL:
+   ```
+   https://admin.shopify.com/store/YOUR-STORE-NAME/oauth/install?client_id=YOUR_CLIENT_ID
+   ```
+
+### Important: Switching from Development to Production
+
+If the app was previously installed using a local dev server (Cloudflare tunnel), you must:
+
+1. **Uninstall** the app from the store:
+   - Go to **Settings** → **Apps** in store admin
+   - Click **...** next to the app → **Uninstall**
+
+2. **Reinstall** using the production OAuth URL:
+   ```
+   https://admin.shopify.com/store/YOUR-STORE-NAME/oauth/install?client_id=YOUR_CLIENT_ID
+   ```
+
+This ensures the app connects to your Fly.io deployment instead of the old tunnel URL.
+
+### OAuth Errors
+
+If you see "Oops, something went wrong" or "Unauthorized Access":
+
+1. Verify `SHOPIFY_APP_URL` secret matches exactly: `https://resparq.fly.dev`
+2. Verify `SHOPIFY_API_SECRET` matches Partner Dashboard (no extra whitespace)
+3. Verify redirect URL in Partner Dashboard: `https://resparq.fly.dev/auth/callback`
+4. Restart machines after updating secrets: `flyctl machine restart -a resparq`
+
+---
+
 ## Troubleshooting
 
 ### Issue: Migration Failed (P3009)
