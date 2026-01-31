@@ -98,10 +98,10 @@ The AI uses **propensity scoring** (0-100) to predict purchase likelihood:
 
 ### Pro Tier
 - **Basic AI** with core signals
-- AI determines **what offer** to show (percentage, fixed, threshold)
-- Exit intent trigger determines **when** to show
-- Uses 9 core signals for decision-making
-- Propensity scoring to avoid wasting discounts
+- AI determines **what**, **when**, and **whether** to show
+- Uses 9 core signals + basic high-value signals for decision-making
+- Simpler "should we show" logic than Enterprise
+- Exit intent as primary trigger
 
 **Pro AI Scoring:**
 ```
@@ -111,11 +111,23 @@ score = 0
 + Long browsing (timeOnSite > 120s): +20
 + Engaged (pageViews >= 3): +10
 + Purchase history: +20
++ Failed coupon attempt: +35
++ Previous abandoner: +25
++ Checkout/cart exit: +15 to +30
 - First-time visitor: -10
 - Quick exit (timeOnSite < 30s): -15
 - Mobile device: -5
 - Low cart value (<$30): -10
 ```
+
+**Pro AI "Should We Show" Logic:**
+| Condition | Decision |
+|-----------|----------|
+| Score < 20 AND cart < $40 | Don't show - unlikely to convert |
+| Score < 0 | Don't show - very unlikely to convert |
+| First visit + quick exit + cart < $50 | Don't show - accidental visit |
+| Score > 80 | Show minimal offer (5%) - they'll convert anyway |
+| Otherwise | Show calculated offer |
 
 ### Enterprise Tier
 - **Advanced AI** with all signals including high-value indicators
@@ -436,27 +448,52 @@ analyzeCartComposition(signals)
 ┌─────────────────────────────────────────────────────────────┐
 │                     PRO AI FLOW                             │
 ├─────────────────────────────────────────────────────────────┤
-│ 1. Collect 9 core signals                                   │
-│ 2. Calculate propensity score                               │
-│ 3. Wait for exit intent trigger                             │
-│ 4. Determine offer based on score + aggression              │
-│ 5. Show modal with offer                                    │
+│ 1. Collect signals (core + basic high-value)                │
+│ 2. Calculate intent score                                   │
+│ 3. SHOULD WE SHOW? (simple rules)                           │
+│    - Score < 20 + small cart → NO                           │
+│    - Score < 0 → NO                                         │
+│    - First visit + quick exit + low cart → NO               │
+│    - Score > 80 → YES, minimal offer                        │
+│ 4. Wait for exit intent trigger                             │
+│ 5. Calculate offer based on score + aggression              │
+│ 6. Show modal with offer                                    │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
 │                   ENTERPRISE AI FLOW                        │
 ├─────────────────────────────────────────────────────────────┤
-│ 1. Collect all 16+ signals (including high-value)           │
-│ 2. Check high-value signals first:                          │
-│    - Failed coupon? → Immediate targeted offer              │
-│    - Checkout exit? → Recovery offer                        │
-│    - Cart hesitation? → Price-sensitive offer               │
-│    - Stale cart? → Nudge offer                              │
+│ 1. Collect ALL 16+ signals (including high-value)           │
+│ 2. CHECK HIGH-VALUE SIGNALS FIRST:                          │
+│    - Failed coupon? → IMMEDIATE targeted offer              │
+│    - Checkout exit? → IMMEDIATE recovery offer              │
+│    - Cart hesitation > 1? → Price-sensitive offer           │
+│    - Stale cart (60+ min)? → IMMEDIATE nudge                │
 │ 3. Calculate propensity score with full signal set          │
-│ 4. Decide: Show? When? What offer?                          │
-│ 5. Return decision with timing control                      │
+│ 4. SHOULD WE SHOW? (advanced rules)                         │
+│    - High propensity + high CLV → NO (they'll buy anyway)   │
+│    - Low propensity + small cart → NO                       │
+│ 5. WHEN TO SHOW? (dynamic timing)                           │
+│    - immediate: High-value signals detected                 │
+│    - exit_intent: Standard behavior                         │
+│    - delayed: Building engagement                           │
+│ 6. Calculate specialized offer for situation                │
+│ 7. Return decision with timing control                      │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+**Key Differences:**
+
+| Capability | Pro | Enterprise |
+|------------|-----|------------|
+| Decides whether to show | ✓ Simple rules | ✓ Advanced rules |
+| Decides what offer | ✓ Score-based | ✓ Situation-specific |
+| Decides when (timing) | Exit intent only | Immediate/exit/delayed |
+| Failed coupon detection | Scores it | Acts on it immediately |
+| Checkout recovery | Scores it | Special recovery offer |
+| Cart hesitation handling | Scores it | Price-sensitive offer |
+| Stale cart detection | Scores it | Proactive nudge |
+| High-CLV customer handling | ✗ | ✓ Skip to avoid waste |
 
 **Enterprise-Only Helper Functions:**
 ```javascript

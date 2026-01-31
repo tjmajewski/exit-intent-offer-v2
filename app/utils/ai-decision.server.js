@@ -165,7 +165,48 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
   // Cart age - older carts may need a push
   if (signals.cartAgeMinutes > 30) score += 10;
   if (signals.cartAgeMinutes > 60) score += 5;
-  
+
+  console.log(` [Pro AI] Intent score: ${score}`);
+
+  // =============================================================================
+  // PRO AI: SHOULD WE SHOW? (simpler logic than Enterprise)
+  // Goal: Don't waste discounts on customers who won't convert
+  // =============================================================================
+
+  const currentCartValue = cartValue || signals.cartValue || 0;
+
+  // DON'T SHOW: Very low score + low cart = unlikely to convert
+  if (score < 20 && currentCartValue < 40) {
+    console.log(` [Pro AI] Score too low (${score}) with small cart ($${currentCartValue}) - skipping`);
+    return null;
+  }
+
+  // DON'T SHOW: Negative score = very unlikely to convert
+  if (score < 0) {
+    console.log(` [Pro AI] Negative score (${score}) - not worth showing`);
+    return null;
+  }
+
+  // DON'T SHOW: First-time visitor + quick exit + low cart = accidental visit
+  if (signals.visitFrequency === 1 && signals.timeOnSite < 30 && currentCartValue < 50) {
+    console.log(` [Pro AI] First-time quick exit with low cart - skipping`);
+    return null;
+  }
+
+  // HIGH SCORE: Customer likely to convert anyway - minimal or no offer
+  if (score > 80) {
+    console.log(` [Pro AI] High score (${score}) - customer likely to convert, minimal offer`);
+    // Still show but with reduced discount
+    if (aggression > 0) {
+      return {
+        type: 'percentage',
+        amount: 5, // Minimal discount - they're already likely to buy
+        confidence: 'high',
+        reasoning: `High intent score (${score}) - minimal nudge needed`
+      };
+    }
+  }
+
   // If aggression is 0, return no-discount offer
   if (aggression === 0) {
     return {
@@ -175,7 +216,11 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
       reasoning: 'Aggression set to 0 - announcement only mode'
     };
   }
-  
+
+  // =============================================================================
+  // PRO AI: WHAT OFFER TO SHOW (based on score and aggression)
+  // =============================================================================
+
   // REVENUE MODE: Threshold offers to increase cart size
   if (aiGoal === 'revenue') {
     const currentCart = cartValue || signals.cartValue || 0;
