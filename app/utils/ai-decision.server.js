@@ -87,16 +87,84 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
   }
 
   let score = 0;
-  
-  // Score each signal (0-100 scale)
-  if (signals.visitFrequency === 1) score += 15; // New visitor
-  if (signals.deviceType === 'mobile') score += 10;
-  if (signals.trafficSource === 'paid') score += 20;
-  if (signals.accountStatus === 'guest') score += 10;
-  if (signals.timeOnSite < 30) score += 15; // Quick exit
-  if (signals.cartValue > 75 && signals.cartValue < 150) score += 15;
-  if (signals.pageViews >= 3) score += 10;
-  if (signals.hasAbandonedBefore) score += 10;
+
+  // =============================================================================
+  // PRO AI SCORING - Determines offer aggressiveness (higher = more likely to convert)
+  // Goal: Show modal only when necessary to get a conversion
+  // =============================================================================
+
+  // POSITIVE SIGNALS (customer likely to convert with small nudge)
+  // -----------------------------------------------------------------------------
+
+  // Returning visitors convert 2-3x better than new visitors
+  if (signals.visitFrequency > 1) score += 20;
+  if (signals.visitFrequency > 3) score += 10; // Very engaged, been back multiple times
+
+  // Paid traffic is pre-qualified (clicked an ad, showed intent)
+  if (signals.trafficSource === 'paid') score += 15;
+
+  // Long time on site = genuine consideration, not accidental visit
+  if (signals.timeOnSite > 120) score += 20; // 2+ minutes of browsing
+  if (signals.timeOnSite > 300) score += 10; // 5+ minutes = very engaged
+
+  // Engaged browsing behavior
+  if (signals.pageViews >= 5) score += 15;
+  else if (signals.pageViews >= 3) score += 10;
+
+  // Sweet spot cart values (serious but not huge commitment)
+  if (signals.cartValue > 50 && signals.cartValue < 200) score += 10;
+  if (signals.cartValue > 100) score += 5; // Higher cart = more invested
+
+  // Logged-in users have accounts = more committed
+  if (signals.accountStatus === 'logged_in') score += 15;
+
+  // Deep scroll = read the content, engaged with page
+  if (signals.scrollDepth > 75) score += 10;
+
+  // NEGATIVE SIGNALS (customer unlikely to convert, don't waste discount)
+  // -----------------------------------------------------------------------------
+
+  // First-time visitors have ~2% conversion rate - be cautious
+  if (signals.visitFrequency === 1) score -= 10;
+
+  // Quick exits suggest accidental visit or wrong product
+  if (signals.timeOnSite < 30) score -= 15;
+
+  // Mobile has ~50% lower conversion rates than desktop
+  if (signals.deviceType === 'mobile') score -= 5;
+
+  // Very low cart values often don't convert regardless of discount
+  if (signals.cartValue < 25) score -= 10;
+
+  // Shallow engagement
+  if (signals.pageViews < 2) score -= 10;
+
+  // HIGH-VALUE SIGNALS (strong purchase intent indicators)
+  // -----------------------------------------------------------------------------
+
+  // Failed coupon attempt = customer explicitly wants a discount (STRONGEST SIGNAL)
+  if (signals.failedCouponAttempt) score += 35;
+
+  // Previous abandoner who came back = second chance, high intent
+  if (signals.hasAbandonedBefore) score += 25;
+
+  // Cart hesitation (added then removed items) = price sensitivity
+  if (signals.cartHesitation > 0) score += 15;
+
+  // Exit from checkout page = was about to buy, something stopped them
+  if (signals.exitPage === 'checkout') score += 30;
+  if (signals.exitPage === 'cart') score += 15;
+
+  // Long product dwell time = serious consideration
+  if (signals.productDwellTime > 60) score += 15;
+
+  // Returning customer with purchase history = knows and trusts the brand
+  if (signals.purchaseHistoryCount > 0) score += 20;
+  if (signals.purchaseHistoryCount > 3) score += 10; // Loyal customer
+
+  // Cart age - older carts may need a push
+  if (signals.cartAgeMinutes > 30) score += 10;
+  if (signals.cartAgeMinutes > 60) score += 5;
   
   // If aggression is 0, return no-discount offer
   if (aggression === 0) {
@@ -221,13 +289,64 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
   }
 } // Close determineOffer function // Close determineOffer function
 
+/**
+ * Enterprise AI - Advanced decision engine with full signal access
+ *
+ * Key advantages over Pro:
+ * 1. Access to high-value signals (failed coupons, exit page context, cart age)
+ * 2. Smarter "should we even show" logic - doesn't waste discounts
+ * 3. Dynamic timing control (immediate, exit_intent, or delayed)
+ * 4. Budget-aware offer sizing
+ * 5. Promotional intelligence integration
+ */
 export function enterpriseAI(signals, aggression, aiGoal = 'revenue') {
   const propensity = signals.propensityScore;
   const cartValue = signals.cartValue || 0;
   const cart = analyzeCartComposition(signals);
-  
+
   console.log(' [Enterprise AI] Cart analysis:', cart);
   console.log(' [Enterprise AI] Propensity:', propensity);
+  console.log(' [Enterprise AI] High-value signals:', {
+    failedCouponAttempt: signals.failedCouponAttempt,
+    exitPage: signals.exitPage,
+    cartAgeMinutes: signals.cartAgeMinutes,
+    cartHesitation: signals.cartHesitation
+  });
+
+  // =============================================================================
+  // ENTERPRISE-EXCLUSIVE: SHOULD WE SHOW AT ALL?
+  // Goal: Only show modal when necessary to get the conversion
+  // =============================================================================
+
+  // HIGH-VALUE SIGNAL: Failed coupon attempt - ALWAYS show, they want a discount
+  if (signals.failedCouponAttempt) {
+    console.log(' [Enterprise AI] Failed coupon detected - guaranteed show');
+    const offer = calculateOfferForDiscountSeeker(signals, aggression, aiGoal, cartValue, cart);
+    return { ...offer, timing: 'immediate', confidence: 'high', reasoning: 'Customer tried a coupon code - they want a discount' };
+  }
+
+  // EXIT PAGE CONTEXT: Checkout exit is highest intent
+  if (signals.exitPage === 'checkout') {
+    console.log(' [Enterprise AI] Checkout exit detected - high-value recovery');
+    // They were about to buy - give them a reason to complete
+    const offer = calculateCheckoutRecoveryOffer(signals, aggression, cartValue, cart);
+    return { ...offer, timing: 'immediate', confidence: 'high', reasoning: 'Customer abandoned at checkout - recovery offer' };
+  }
+
+  // CART HESITATION: Add/remove behavior indicates price sensitivity
+  if (signals.cartHesitation > 1) {
+    console.log(' [Enterprise AI] Cart hesitation detected - price sensitive customer');
+    const offer = calculateOfferForPriceSensitive(signals, aggression, aiGoal, cartValue, cart);
+    return { ...offer, timing: 'exit_intent', confidence: 'medium', reasoning: 'Customer showing price sensitivity (add/remove behavior)' };
+  }
+
+  // CART AGE: Old carts may need a push
+  if (signals.cartAgeMinutes > 60) {
+    console.log(' [Enterprise AI] Stale cart detected (' + signals.cartAgeMinutes + ' minutes old)');
+    // They've been thinking about it for a while - nudge them
+    const offer = calculateStaleCartOffer(signals, aggression, aiGoal, cartValue, cart);
+    return { ...offer, timing: 'immediate', confidence: 'medium', reasoning: 'Cart has been sitting for over an hour' };
+  }
   
   // High propensity (>75) = likely to buy anyway
   if (propensity > 75) {
@@ -440,4 +559,129 @@ export async function checkBudget(db, shopId, budgetPeriod) {
     remaining: Math.max(remaining, 0),
     totalSpent
   };
+}
+
+// =============================================================================
+// ENTERPRISE AI - Advanced Signal-Based Offer Calculations
+// =============================================================================
+
+/**
+ * Calculate offer for customers who tried a coupon code
+ * They explicitly want a discount - give them one that converts
+ */
+function calculateOfferForDiscountSeeker(signals, aggression, aiGoal, cartValue, cart) {
+  // They want a discount, so give them one - but be smart about it
+
+  if (aiGoal === 'revenue' && cartValue > 30) {
+    // Try to increase cart size with threshold offer
+    const rawThreshold = cartValue * 1.25; // 25% increase target
+    const threshold = roundToNiceNumber(rawThreshold);
+    const discountPercent = 10 + (aggression * 0.5);
+    const discountAmount = roundToNiceNumber(threshold * (discountPercent / 100));
+
+    return {
+      type: 'threshold',
+      threshold: Math.max(threshold, cartValue + 15),
+      amount: Math.max(discountAmount, 5)
+    };
+  }
+
+  // Conversion mode - straight discount
+  const baseDiscount = 10 + (aggression * 1.5);
+  return {
+    type: 'percentage',
+    amount: Math.min(Math.round(baseDiscount), 25)
+  };
+}
+
+/**
+ * Calculate offer for checkout abandonment recovery
+ * Highest intent signal - they were about to buy
+ */
+function calculateCheckoutRecoveryOffer(signals, aggression, cartValue, cart) {
+  // They were at checkout - small nudge should work
+  // Don't give away too much, they're already committed
+
+  if (cart.isHighTicket) {
+    // High ticket item at checkout - minimal discount needed
+    return {
+      type: 'percentage',
+      amount: 5 + Math.floor(aggression * 0.5) // 5-10%
+    };
+  }
+
+  // Standard checkout recovery
+  const discount = 8 + (aggression * 0.8); // 8-16%
+  return {
+    type: 'percentage',
+    amount: Math.min(Math.round(discount), 15)
+  };
+}
+
+/**
+ * Calculate offer for price-sensitive customers (cart hesitation)
+ * They're considering but price is a barrier
+ */
+function calculateOfferForPriceSensitive(signals, aggression, aiGoal, cartValue, cart) {
+  // They're price sensitive, so discount is key
+
+  if (aiGoal === 'revenue' && cartValue > 40) {
+    // Threshold offer - get them to add more but give good discount
+    const rawThreshold = cartValue * 1.2;
+    const threshold = roundToNiceNumber(rawThreshold);
+    const discountPercent = 12 + (aggression * 1);
+    const discountAmount = roundToNiceNumber(threshold * (discountPercent / 100));
+
+    return {
+      type: 'threshold',
+      threshold: Math.max(threshold, cartValue + 10),
+      amount: Math.max(discountAmount, 5)
+    };
+  }
+
+  // Conversion - give decent discount since they're price sensitive
+  const baseDiscount = 12 + (aggression * 1.5);
+  return {
+    type: 'percentage',
+    amount: Math.min(Math.round(baseDiscount), 20)
+  };
+}
+
+/**
+ * Calculate offer for stale carts (items sitting for a while)
+ * They've been thinking about it - nudge them to complete
+ */
+function calculateStaleCartOffer(signals, aggression, aiGoal, cartValue, cart) {
+  // Cart has been sitting - they're undecided
+
+  if (aiGoal === 'revenue' && cartValue > 50) {
+    // Try to get them to add more
+    const rawThreshold = cartValue * 1.3;
+    const threshold = roundToNiceNumber(rawThreshold);
+    const discountPercent = 10 + (aggression * 0.8);
+    const discountAmount = roundToNiceNumber(threshold * (discountPercent / 100));
+
+    return {
+      type: 'threshold',
+      threshold: Math.max(threshold, cartValue + 20),
+      amount: Math.max(discountAmount, 5)
+    };
+  }
+
+  // Conversion - moderate discount to push them over the edge
+  const baseDiscount = 10 + aggression;
+  return {
+    type: 'percentage',
+    amount: Math.min(Math.round(baseDiscount), 18)
+  };
+}
+
+/**
+ * Round to psychologically appealing numbers
+ */
+function roundToNiceNumber(value) {
+  if (value <= 15) return Math.round(value);
+  if (value < 50) return Math.round(value / 5) * 5;
+  if (value < 200) return Math.round(value / 10) * 10;
+  return Math.round(value / 25) * 25;
 }

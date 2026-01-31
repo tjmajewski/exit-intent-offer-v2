@@ -1,19 +1,147 @@
 # ResparQ AI - Technical Architecture
-**Last Updated:** January 19, 2026
+**Last Updated:** January 31, 2026
 **Audience:** Developers
 
 ---
 
 ## Table of Contents
 
-1. [System Architecture](#system-architecture)
-2. [Core Files & Functions](#core-files--functions)
-3. [Database Schema](#database-schema)
-4. [API Endpoints](#api-endpoints)
-5. [Data Flow](#data-flow)
-6. [Evolution Algorithm Details](#evolution-algorithm-details)
-7. [Thompson Sampling Implementation](#thompson-sampling-implementation)
-8. [Social Proof Integration](#social-proof-integration)
+1. [AI Philosophy](#ai-philosophy)
+2. [Customer Signals](#customer-signals)
+3. [Tier Comparison](#tier-comparison)
+4. [System Architecture](#system-architecture)
+5. [Core Files & Functions](#core-files--functions)
+6. [Database Schema](#database-schema)
+7. [API Endpoints](#api-endpoints)
+8. [Data Flow](#data-flow)
+9. [Evolution Algorithm Details](#evolution-algorithm-details)
+10. [Thompson Sampling Implementation](#thompson-sampling-implementation)
+11. [Social Proof Integration](#social-proof-integration)
+
+---
+
+## AI Philosophy
+
+### Goal: Show Modal Only When Necessary
+
+The ResparQ AI is designed with a single guiding principle: **only show a discount modal when it's necessary to get the conversion**.
+
+This means:
+- High-intent customers who would buy anyway → No modal or minimal offer
+- Price-sensitive customers who need a nudge → Targeted discount
+- Low-intent browsers → Don't waste discounts on unlikely conversions
+
+### How We Determine "Necessary"
+
+The AI uses **propensity scoring** (0-100) to predict purchase likelihood:
+- **High propensity (70+)**: Likely to convert without help → Skip modal or show non-discount reminder
+- **Medium propensity (40-70)**: On the fence → Show appropriate offer
+- **Low propensity (<40)**: Unlikely to convert → Only show if cart value justifies it
+
+---
+
+## Customer Signals
+
+### Signal Categories
+
+| Category | Signals | Available In |
+|----------|---------|--------------|
+| **Core Signals** | visitFrequency, cartValue, itemCount, deviceType, accountStatus, trafficSource, timeOnSite, pageViews, hasAbandonedBefore | Pro + Enterprise |
+| **Engagement Signals** | scrollDepth, productDwellTime, cartHesitation, abandonmentCount | Enterprise |
+| **High-Value Signals** | failedCouponAttempt, exitPage, cartAgeMinutes | Enterprise |
+| **Server-Enriched** | purchaseHistoryCount, customerLifetimeValue, averageOrderValue, cartComposition | Pro + Enterprise |
+
+### Signal Scoring Logic
+
+**POSITIVE signals (customer likely to convert):**
+
+| Signal | Impact | Reasoning |
+|--------|--------|-----------|
+| `visitFrequency > 1` | +15 to +30 | Returning visitors convert 2-3x better |
+| `accountStatus = 'logged_in'` | +15 | Committed customers have accounts |
+| `timeOnSite > 120s` | +15 to +25 | Genuine consideration, not accidental |
+| `pageViews >= 5` | +10 to +15 | Engaged browsing behavior |
+| `cartValue > $100` | +10 to +15 | Invested in purchase |
+| `purchaseHistoryCount > 0` | +20 to +30 | Knows and trusts the brand |
+| `scrollDepth > 75%` | +5 to +10 | Read the content, engaged |
+
+**NEGATIVE signals (customer may need incentive):**
+
+| Signal | Impact | Reasoning |
+|--------|--------|-----------|
+| `visitFrequency = 1` | -10 to -15 | First-time visitors have ~2% conversion |
+| `timeOnSite < 30s` | -15 to -20 | Quick exit = low intent |
+| `deviceType = 'mobile'` | -5 to -10 | Mobile converts ~50% lower than desktop |
+| `cartValue < $30` | -10 | Less committed to purchase |
+| `pageViews < 2` | -10 | Shallow engagement |
+
+**HIGH-VALUE signals (strong intent indicators - Enterprise only):**
+
+| Signal | Impact | Reasoning |
+|--------|--------|-----------|
+| `failedCouponAttempt` | +35 / -35 | Customer explicitly wants a discount |
+| `exitPage = 'checkout'` | +30 | Was about to buy, something stopped them |
+| `exitPage = 'cart'` | +15 | Reviewing cart, considering purchase |
+| `hasAbandonedBefore` | +25 / -15 | Second chance, high intent but hesitant |
+| `cartHesitation > 0` | +15 / -15 | Add/remove = price sensitivity |
+| `cartAgeMinutes > 60` | +10 | Cart sitting = needs a push |
+| `productDwellTime > 60s` | +15 | Serious consideration |
+
+---
+
+## Tier Comparison
+
+### Starter Tier
+- **No AI** - Manual settings only
+- Merchant configures fixed discount and copy
+- Modal shows based on simple triggers (exit intent, timer)
+
+### Pro Tier
+- **Basic AI** with core signals
+- AI determines **what offer** to show (percentage, fixed, threshold)
+- Exit intent trigger determines **when** to show
+- Uses 9 core signals for decision-making
+- Propensity scoring to avoid wasting discounts
+
+**Pro AI Scoring:**
+```
+score = 0
++ Returning visitor (visitFrequency > 1): +20
++ Paid traffic: +15
++ Long browsing (timeOnSite > 120s): +20
++ Engaged (pageViews >= 3): +10
++ Purchase history: +20
+- First-time visitor: -10
+- Quick exit (timeOnSite < 30s): -15
+- Mobile device: -5
+- Low cart value (<$30): -10
+```
+
+### Enterprise Tier
+- **Advanced AI** with all signals including high-value indicators
+- AI determines **what**, **when**, and **whether** to show
+- Access to 16+ signals including failed coupon detection
+- Dynamic timing control (immediate, exit_intent, delayed)
+- Smart "should we show" logic
+- Promotional intelligence integration
+- Budget-aware offer sizing
+
+**Enterprise-Exclusive Features:**
+
+1. **Failed Coupon Detection**: If customer tries an invalid coupon code, they're flagged as discount-seeking. Enterprise AI immediately shows a targeted offer.
+
+2. **Exit Page Context**: Different strategies for checkout abandonment vs. product page exit.
+
+3. **Cart Age Tracking**: Stale carts (60+ minutes) get proactive offers.
+
+4. **Cart Hesitation Analysis**: Add/remove behavior indicates price sensitivity.
+
+5. **Smart Timing**: AI decides optimal moment to show modal:
+   - `immediate`: Show right away (high intent signals)
+   - `exit_intent`: Wait for exit (standard)
+   - `delayed`: Wait X seconds (building engagement)
+
+---
 
 ---
 
@@ -181,40 +309,31 @@ export function selectBaseline(signals, aiGoal) {
   if (shop.aggression === 0) {
     return 'pure_reminder';
   }
-  
+
   // Calculate propensity score (0-100)
   const propensity = calculatePropensityScore(signals);
-  
+
   // Determine if customer needs incentive
   const needsIncentive = propensity < 70;
-  
+
   // Select baseline
   if (aiGoal === 'revenue') {
-    return needsIncentive 
-      ? 'revenue_with_discount' 
+    return needsIncentive
+      ? 'revenue_with_discount'
       : 'revenue_no_discount';
   } else {
-    return needsIncentive 
-      ? 'conversion_with_discount' 
+    return needsIncentive
+      ? 'conversion_with_discount'
       : 'conversion_no_discount';
   }
 }
-
-function calculatePropensityScore(signals) {
-  let score = 50; // Baseline
-  
-  if (signals.visitFrequency === 1) score += 15;
-  if (signals.deviceType === 'mobile') score += 10;
-  if (signals.trafficSource === 'paid') score += 20;
-  if (signals.accountStatus === 'guest') score += 10;
-  if (signals.timeOnSite < 30) score += 15;
-  if (signals.cartValue > 75) score += 10;
-  if (signals.pageViews >= 3) score += 10;
-  if (signals.hasAbandonedBefore) score += 10;
-  
-  return Math.min(score, 100);
-}
 ```
+
+**Propensity Score Calculation (see [Customer Signals](#customer-signals) section for full breakdown):**
+- Baseline: 50
+- Positive signals increase score (returning visitors, logged-in, long sessions)
+- Negative signals decrease score (first-time, quick exit, mobile)
+- High-value signals have outsized impact (failed coupon attempt: ±35)
 
 ---
 
@@ -288,19 +407,19 @@ clearAllSocialProofCache()
 
 ---
 
-### 6. `ai-decision.js`
+### 6. `ai-decision.server.js`
 
 **Purpose:** Determine offer type and amount based on signals
 
 **Key Functions:**
 ```javascript
-// Main decision function
+// Pro AI: Main decision function
 determineOffer(signals, aggression, aiGoal, cartValue, shopId, plan)
 → { type, amount, threshold, confidence, reasoning }
 
-// Enterprise AI with propensity scoring
+// Enterprise AI: Advanced decision with timing and high-value signals
 enterpriseAI(signals, aggression, aiGoal)
-→ Enhanced decision with timing and confidence
+→ { type, amount, timing, confidence, reasoning }
 
 // Budget check
 checkBudget(db, shopId, budgetPeriod)
@@ -309,6 +428,49 @@ checkBudget(db, shopId, budgetPeriod)
 // Cart composition analysis
 analyzeCartComposition(signals)
 → { isHighTicket, isMultiItem, avgItemPrice, itemCount }
+```
+
+**Pro vs Enterprise Decision Flow:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     PRO AI FLOW                             │
+├─────────────────────────────────────────────────────────────┤
+│ 1. Collect 9 core signals                                   │
+│ 2. Calculate propensity score                               │
+│ 3. Wait for exit intent trigger                             │
+│ 4. Determine offer based on score + aggression              │
+│ 5. Show modal with offer                                    │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                   ENTERPRISE AI FLOW                        │
+├─────────────────────────────────────────────────────────────┤
+│ 1. Collect all 16+ signals (including high-value)           │
+│ 2. Check high-value signals first:                          │
+│    - Failed coupon? → Immediate targeted offer              │
+│    - Checkout exit? → Recovery offer                        │
+│    - Cart hesitation? → Price-sensitive offer               │
+│    - Stale cart? → Nudge offer                              │
+│ 3. Calculate propensity score with full signal set          │
+│ 4. Decide: Show? When? What offer?                          │
+│ 5. Return decision with timing control                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Enterprise-Only Helper Functions:**
+```javascript
+// For customers who tried invalid coupon codes
+calculateOfferForDiscountSeeker(signals, aggression, aiGoal, cartValue, cart)
+
+// For checkout page abandonment
+calculateCheckoutRecoveryOffer(signals, aggression, cartValue, cart)
+
+// For add/remove cart behavior
+calculateOfferForPriceSensitive(signals, aggression, aiGoal, cartValue, cart)
+
+// For carts sitting 60+ minutes
+calculateStaleCartOffer(signals, aggression, aiGoal, cartValue, cart)
 ```
 
 ---
