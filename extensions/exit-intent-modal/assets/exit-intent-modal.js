@@ -969,6 +969,10 @@
       else if (this.settings.mode === 'ai') {
         await this.getAIDecision();
       }
+      // STARTER TIER: Still collect signals for learning (but don't change the offer)
+      else if (this.settings.plan === 'starter' || this.settings.mode === 'manual') {
+        await this.trackStarterImpression();
+      }
 
       // NOW show the modal after content is ready
       // Prevent body scroll on mobile
@@ -1230,6 +1234,11 @@
       // Track variant click (both Pro and Enterprise)
       this.trackVariant('click');
 
+      // Track Starter click for learning
+      if (this.starterImpressionId) {
+        await this.trackStarterClick();
+      }
+
       // Track click for evolution system
       if (this.currentImpressionId) {
         try {
@@ -1377,13 +1386,78 @@
       }
     }
     
+    /**
+     * STARTER TIER LEARNING: Track manual settings + signals for AI training
+     * Starter customers can't enable AI, but their data helps train it
+     */
+    async trackStarterImpression() {
+      try {
+        // Collect signals even for Starter tier
+        const signals = await this.collectCustomerSignals();
+
+        // Get the manual settings being used
+        const manualSettings = {
+          headline: this.settings.modalHeadline,
+          body: this.settings.modalBody,
+          cta: this.settings.ctaButton,
+          discountType: this.settings.discountType || 'percentage',
+          discountAmount: this.settings.discountAmount || 0,
+          redirectDestination: this.settings.redirectDestination || 'checkout'
+        };
+
+        // Send to learning endpoint
+        const response = await fetch('/apps/exit-intent/api/track-starter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shop: window.Shopify.shop,
+            signals: signals,
+            manualSettings: manualSettings,
+            event: 'impression'
+          })
+        });
+
+        const result = await response.json();
+
+        // Store impression ID for click/conversion tracking
+        if (result.impressionId) {
+          this.starterImpressionId = result.impressionId;
+          console.log('[Starter Learning] Impression tracked:', result.impressionId);
+        }
+      } catch (error) {
+        console.error('[Starter Learning] Error tracking impression:', error);
+      }
+    }
+
+    /**
+     * Track Starter tier click for learning
+     */
+    async trackStarterClick() {
+      if (!this.starterImpressionId) return;
+
+      try {
+        await fetch('/apps/exit-intent/api/track-starter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shop: window.Shopify.shop,
+            impressionId: this.starterImpressionId,
+            event: 'click'
+          })
+        });
+        console.log('[Starter Learning] Click tracked');
+      } catch (error) {
+        console.error('[Starter Learning] Error tracking click:', error);
+      }
+    }
+
     async trackVariant(event, revenue = 0) {
       // Track variant performance (both Pro and Enterprise contribute to learning)
       if (!this.currentVariantId) {
         console.log('[Exit Intent] No variant ID to track');
         return;
       }
-      
+
       try {
         await fetch('/apps/exit-intent/api/track-variant', {
           method: 'POST',
@@ -1395,7 +1469,7 @@
             revenue: revenue
           })
         });
-        
+
         console.log(`[Exit Intent] Tracked ${event} for variant ${this.currentVariantId} (segment: ${this.currentSegment})`);
       } catch (error) {
         console.error('[Exit Intent] Variant tracking error:', error);

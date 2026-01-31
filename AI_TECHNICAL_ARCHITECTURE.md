@@ -95,6 +95,27 @@ The AI uses **propensity scoring** (0-100) to predict purchase likelihood:
 - **No AI** - Manual settings only
 - Merchant configures fixed discount and copy
 - Modal shows based on simple triggers (exit intent, timer)
+- **Contributes to AI training** (see below)
+
+#### Starter Tier Learning (Background)
+
+Even though Starter customers can't enable AI, their data helps train it:
+
+1. **Signal Collection**: Starter tier collects the same customer signals as Pro/Enterprise
+2. **Outcome Tracking**: Impressions, clicks, and conversions are recorded
+3. **Settings Capture**: Manual settings (headline, body, CTA, discount) are stored
+4. **Meta-Learning**: This data feeds into the cross-store learning system
+
+**What Starter Data Teaches the AI:**
+- Which headlines convert best for different segments
+- Optimal discount amounts by device type and traffic source
+- CTA text effectiveness
+- Copy patterns (emoji, urgency, questions, numbers)
+
+**Benefits:**
+- More training data = better AI for Pro/Enterprise users
+- New stores get better defaults based on aggregate learnings
+- No privacy concerns - data is anonymized and aggregated
 
 ### Pro Tier
 - **Basic AI** with core signals
