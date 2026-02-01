@@ -49,6 +49,39 @@ npm run setup
 npm run dev
 ```
 
+### Local PostgreSQL Setup (macOS)
+
+If `npm run dev` fails with database errors, you may need to set up PostgreSQL locally:
+
+```bash
+# Install PostgreSQL via Homebrew
+brew install postgresql@15
+brew services start postgresql@15
+
+# Initialize the database (if needed)
+/usr/local/opt/postgresql@15/bin/initdb -D /usr/local/var/postgresql@15
+
+# Create the database
+/usr/local/opt/postgresql@15/bin/createdb exit_intent_dev
+
+# Add DATABASE_URL to .env
+echo 'DATABASE_URL="postgresql://YOUR_USERNAME@localhost:5432/exit_intent_dev"' >> .env
+
+# Push schema to database
+npx prisma db push
+
+# Mark migrations as applied (if using db push instead of migrate)
+for dir in prisma/migrations/*/; do name=$(basename "$dir"); npx prisma migrate resolve --applied "$name" 2>/dev/null; done
+
+# Start dev server (with SSL workaround if needed)
+NODE_TLS_REJECT_UNAUTHORIZED=0 npx shopify app dev
+```
+
+**Common Issues:**
+- `DATETIME` errors: The migrations use SQLite syntax. Use `npx prisma db push` instead of `migrate deploy`
+- SSL certificate errors: Prefix command with `NODE_TLS_REJECT_UNAUTHORIZED=0`
+- Postgres not running: Run `brew services start postgresql@15`
+
 ### First-Time Setup
 
 1. **Install app on development store** via the Shopify CLI URL
@@ -223,6 +256,7 @@ Comprehensive documentation is available in the following files:
 
 ### Operational Documentation
 - **[PRODUCTION-CRON-SETUP.md](./PRODUCTION-CRON-SETUP.md)** - Cron job configuration
+- **[DATABASE_MAINTENANCE.md](./DATABASE_MAINTENANCE.md)** - Database cleanup and monitoring
 - **[ROADMAP.md](./ROADMAP.md)** - Feature roadmap and launch checklist
 - **[REFACTORING_NOTES.md](./REFACTORING_NOTES.md)** - Code refactoring history
 - **[CRITICAL_NOTES.md](./CRITICAL_NOTES.md)** - Important fixes and gotchas
