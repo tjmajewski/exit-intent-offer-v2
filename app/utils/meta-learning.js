@@ -229,9 +229,9 @@ export async function saveMetaInsight(prisma, insightType, segment, data, sample
     where: { segment, insightType },
     orderBy: { version: 'desc' }
   });
-  
+
   const version = existing ? existing.version + 1 : 1;
-  
+
   await prisma.metaLearningInsights.create({
     data: {
       insightType,
@@ -242,6 +242,219 @@ export async function saveMetaInsight(prisma, insightType, segment, data, sample
       version
     }
   });
-  
+
   console.log(`[Meta-Learning] Saved ${insightType} insight for ${segment} (v${version}, confidence: ${confidenceLevel})`);
+}
+
+// =============================================================================
+// STARTER TIER LEARNING
+// Aggregate data from Starter tier manual settings for AI training
+// =============================================================================
+
+/**
+ * Aggregate learnings from Starter tier impressions
+ * Analyzes which manual settings perform best by device, traffic source, etc.
+ */
+export async function aggregateStarterLearnings(prisma) {
+  // Get all Starter impressions from last 30 days
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  const impressions = await prisma.starterImpression.findMany({
+    where: {
+      timestamp: { gte: thirtyDaysAgo }
+    }
+  });
+
+  if (impressions.length < 100) {
+    console.log(`[Starter Learning] Insufficient data: ${impressions.length} impressions`);
+    return null;
+  }
+
+  console.log(`[Starter Learning] Analyzing ${impressions.length} Starter impressions`);
+
+  // Analyze performance by discount amount
+  const discountPerformance = analyzeByField(impressions, 'discountAmount');
+
+  // Analyze performance by headline patterns
+  const headlinePatterns = analyzeHeadlinePatterns(impressions);
+
+  // Analyze performance by CTA text
+  const ctaPerformance = analyzeByField(impressions, 'cta');
+
+  // Analyze by segment (device + traffic combo)
+  const segmentPerformance = analyzeBySegment(impressions);
+
+  return {
+    totalImpressions: impressions.length,
+    totalConversions: impressions.filter(i => i.converted).length,
+    avgConversionRate: impressions.filter(i => i.converted).length / impressions.length,
+    discountPerformance,
+    headlinePatterns,
+    ctaPerformance,
+    segmentPerformance,
+    analyzedAt: new Date().toISOString()
+  };
+}
+
+/**
+ * Analyze performance by a specific field
+ */
+function analyzeByField(impressions, field) {
+  const groups = {};
+
+  impressions.forEach(imp => {
+    const key = String(imp[field] || 'unknown');
+    if (!groups[key]) {
+      groups[key] = { impressions: 0, clicks: 0, conversions: 0, revenue: 0 };
+    }
+    groups[key].impressions++;
+    if (imp.clicked) groups[key].clicks++;
+    if (imp.converted) {
+      groups[key].conversions++;
+      groups[key].revenue += imp.revenue || 0;
+    }
+  });
+
+  // Calculate CVR for each group
+  const results = Object.entries(groups).map(([value, stats]) => ({
+    value,
+    impressions: stats.impressions,
+    conversionRate: stats.impressions > 0 ? stats.conversions / stats.impressions : 0,
+    clickRate: stats.impressions > 0 ? stats.clicks / stats.impressions : 0,
+    avgRevenue: stats.conversions > 0 ? stats.revenue / stats.conversions : 0
+  }));
+
+  // Sort by conversion rate
+  return results.sort((a, b) => b.conversionRate - a.conversionRate);
+}
+
+/**
+ * Analyze headline patterns (emoji, urgency, personalization)
+ */
+function analyzeHeadlinePatterns(impressions) {
+  const patterns = {
+    withEmoji: { impressions: 0, conversions: 0 },
+    withUrgency: { impressions: 0, conversions: 0 },
+    withQuestion: { impressions: 0, conversions: 0 },
+    withNumber: { impressions: 0, conversions: 0 }
+  };
+
+  impressions.forEach(imp => {
+    const headline = imp.headline || '';
+
+    // Check for emoji
+    if (/[\u{1F300}-\u{1F9FF}]/u.test(headline)) {
+      patterns.withEmoji.impressions++;
+      if (imp.converted) patterns.withEmoji.conversions++;
+    }
+
+    // Check for urgency words
+    if (/limited|hurry|now|today|expires|don't miss|last chance|ending/i.test(headline)) {
+      patterns.withUrgency.impressions++;
+      if (imp.converted) patterns.withUrgency.conversions++;
+    }
+
+    // Check for questions
+    if (/\?/.test(headline)) {
+      patterns.withQuestion.impressions++;
+      if (imp.converted) patterns.withQuestion.conversions++;
+    }
+
+    // Check for numbers/percentages
+    if (/\d+%|\$\d+|\d+\s*(off|discount)/i.test(headline)) {
+      patterns.withNumber.impressions++;
+      if (imp.converted) patterns.withNumber.conversions++;
+    }
+  });
+
+  // Calculate CVR for each pattern
+  return Object.entries(patterns).map(([pattern, stats]) => ({
+    pattern,
+    impressions: stats.impressions,
+    conversionRate: stats.impressions > 0 ? stats.conversions / stats.impressions : 0
+  })).sort((a, b) => b.conversionRate - a.conversionRate);
+}
+
+/**
+ * Analyze performance by customer segment
+ */
+function analyzeBySegment(impressions) {
+  const segments = {};
+
+  impressions.forEach(imp => {
+    // Create segment key from device + traffic source
+    const device = imp.deviceType || 'unknown';
+    const traffic = imp.trafficSource || 'unknown';
+    const key = `${device}_${traffic}`;
+
+    if (!segments[key]) {
+      segments[key] = { impressions: 0, conversions: 0, revenue: 0 };
+    }
+    segments[key].impressions++;
+    if (imp.converted) {
+      segments[key].conversions++;
+      segments[key].revenue += imp.revenue || 0;
+    }
+  });
+
+  return Object.entries(segments).map(([segment, stats]) => ({
+    segment,
+    impressions: stats.impressions,
+    conversionRate: stats.impressions > 0 ? stats.conversions / stats.impressions : 0,
+    avgRevenue: stats.conversions > 0 ? stats.revenue / stats.conversions : 0
+  })).sort((a, b) => b.conversionRate - a.conversionRate);
+}
+
+/**
+ * Get best performing settings from Starter data for a given segment
+ * Used to seed new AI stores with good defaults
+ */
+export async function getBestStarterSettings(prisma, deviceType = null, trafficSource = null) {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  const where = {
+    timestamp: { gte: thirtyDaysAgo },
+    converted: true // Only look at successful conversions
+  };
+
+  if (deviceType) where.deviceType = deviceType;
+  if (trafficSource) where.trafficSource = trafficSource;
+
+  // Get converting impressions
+  const conversions = await prisma.starterImpression.findMany({
+    where,
+    orderBy: { revenue: 'desc' },
+    take: 100
+  });
+
+  if (conversions.length < 10) {
+    console.log(`[Starter Learning] Insufficient conversion data for segment`);
+    return null;
+  }
+
+  // Find most common successful settings
+  const headlineCounts = {};
+  const ctaCounts = {};
+  const discountAmounts = [];
+
+  conversions.forEach(c => {
+    headlineCounts[c.headline] = (headlineCounts[c.headline] || 0) + 1;
+    ctaCounts[c.cta] = (ctaCounts[c.cta] || 0) + 1;
+    discountAmounts.push(c.discountAmount);
+  });
+
+  // Get top performers
+  const topHeadline = Object.entries(headlineCounts)
+    .sort((a, b) => b[1] - a[1])[0]?.[0];
+  const topCta = Object.entries(ctaCounts)
+    .sort((a, b) => b[1] - a[1])[0]?.[0];
+  const avgDiscount = discountAmounts.reduce((a, b) => a + b, 0) / discountAmounts.length;
+
+  return {
+    recommendedHeadline: topHeadline,
+    recommendedCta: topCta,
+    recommendedDiscountAmount: Math.round(avgDiscount),
+    sampleSize: conversions.length,
+    segment: deviceType && trafficSource ? `${deviceType}_${trafficSource}` : 'all'
+  };
 }

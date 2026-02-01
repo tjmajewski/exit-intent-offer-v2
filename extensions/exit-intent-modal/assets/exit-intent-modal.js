@@ -84,9 +84,15 @@
       
       // Track cart hesitation (Enterprise signal)
       this.trackCartHesitation();
-      
+
       // Track product dwell time (Enterprise signal)
       this.trackProductDwellTime();
+
+      // Track failed coupon attempts (HIGH-VALUE SIGNAL)
+      this.trackFailedCouponAttempts();
+
+      // Track cart age (when items were first added)
+      this.trackCartAge();
       
       // AI Mode: Set up intelligent triggers
       if (this.settings.mode === 'ai' && this.settings.plan === 'enterprise') {
@@ -160,9 +166,18 @@
       // 11. Add-to-cart hesitation (NEW - Enterprise signal)
       const cartHesitation = this.getCartHesitation();
       
-      // 12. Product page dwell time (NEW - Enterprise signal)
+      // 12. Product page dwell time (Enterprise signal)
       const productDwellTime = this.getProductDwellTime();
-      
+
+      // 13. Failed coupon attempt (HIGH-VALUE SIGNAL)
+      const failedCouponAttempt = this.getFailedCouponAttempt();
+
+      // 14. Exit page context (where the exit intent triggered)
+      const exitPage = this.getExitPageContext();
+
+      // 15. Cart age in minutes (how long items have been in cart)
+      const cartAgeMinutes = this.getCartAge();
+
       return {
         visitFrequency: visits,
         cartValue,
@@ -176,7 +191,11 @@
         scrollDepth,
         abandonmentCount,
         cartHesitation,
-        productDwellTime
+        productDwellTime,
+        // New high-value signals
+        failedCouponAttempt,
+        exitPage,
+        cartAgeMinutes
       };
     }
     
@@ -227,23 +246,51 @@
     getProductDwellTime() {
       // Track time spent on product pages
       const currentPath = window.location.pathname;
-      
+
       // Check if on a product page
       if (currentPath.includes('/products/')) {
         const dwellStart = sessionStorage.getItem('productPageStart');
-        
+
         if (!dwellStart) {
           // First product page of session
           sessionStorage.setItem('productPageStart', Date.now());
           return 0;
         }
-        
+
         // Calculate total dwell time across all product pages
         const totalDwell = parseInt(sessionStorage.getItem('totalProductDwell') || '0');
         return totalDwell;
       }
-      
+
       return 0;
+    }
+
+    // HIGH-VALUE SIGNAL: Failed coupon attempt detection
+    getFailedCouponAttempt() {
+      // Check if user tried to use a coupon code that failed
+      return sessionStorage.getItem('failedCouponAttempt') === 'true';
+    }
+
+    // Get the page context where exit intent triggered
+    getExitPageContext() {
+      const path = window.location.pathname;
+
+      if (path.includes('/checkout')) return 'checkout';
+      if (path.includes('/cart')) return 'cart';
+      if (path.includes('/products/')) return 'product';
+      if (path.includes('/collections/')) return 'collection';
+
+      return 'other';
+    }
+
+    // Track how long items have been in cart
+    getCartAge() {
+      const cartTimestamp = localStorage.getItem('cartFirstItemTimestamp');
+
+      if (!cartTimestamp) return 0;
+
+      const ageMs = Date.now() - parseInt(cartTimestamp);
+      return Math.floor(ageMs / 60000); // Convert to minutes
     }
     
     trackCartHesitation() {
@@ -274,23 +321,23 @@
     
     trackProductDwellTime() {
       const currentPath = window.location.pathname;
-      
+
       // Only track on product pages
       if (!currentPath.includes('/products/')) {
         return;
       }
-      
+
       // Start timer when page loads
       const pageStart = Date.now();
       sessionStorage.setItem('productPageStart', pageStart);
-      
+
       // Update total dwell time every 5 seconds
       const dwellInterval = setInterval(() => {
         const elapsed = Math.floor((Date.now() - pageStart) / 1000);
         const previousTotal = parseInt(sessionStorage.getItem('totalProductDwell') || '0');
         sessionStorage.setItem('totalProductDwell', previousTotal + 5);
       }, 5000);
-      
+
       // Clean up on page unload
       window.addEventListener('beforeunload', () => {
         clearInterval(dwellInterval);
@@ -298,6 +345,97 @@
         const previousTotal = parseInt(sessionStorage.getItem('totalProductDwell') || '0');
         sessionStorage.setItem('totalProductDwell', previousTotal + elapsed);
       });
+    }
+
+    // HIGH-VALUE SIGNAL: Track failed coupon/discount code attempts
+    trackFailedCouponAttempts() {
+      // Monitor discount code inputs for failed submissions
+      const discountSelectors = [
+        'input[name="discount"]',
+        'input[name="checkout[reduction_code]"]',
+        'input#discount_code',
+        'input#CartDrawer-Discount',
+        'input.discount-code',
+        'input[placeholder*="discount" i]',
+        'input[placeholder*="coupon" i]',
+        'input[placeholder*="promo" i]'
+      ];
+
+      // Observe for discount code form submissions
+      document.addEventListener('submit', (e) => {
+        const form = e.target;
+        const discountInput = discountSelectors
+          .map(sel => form.querySelector(sel))
+          .find(el => el);
+
+        if (discountInput && discountInput.value) {
+          // Store that they attempted a code - we'll check for failure
+          sessionStorage.setItem('pendingCouponAttempt', discountInput.value);
+          console.log('[Signal] Coupon attempt detected:', discountInput.value);
+        }
+      }, true);
+
+      // Check for error messages that indicate failed coupon
+      const checkForFailure = () => {
+        const pendingCode = sessionStorage.getItem('pendingCouponAttempt');
+        if (!pendingCode) return;
+
+        // Common error message patterns
+        const errorPatterns = [
+          '.discount-error',
+          '.coupon-error',
+          '[data-discount-error]',
+          '.field__message--error',
+          '.notice--error',
+          '.alert--error'
+        ];
+
+        const hasError = errorPatterns.some(sel => {
+          const el = document.querySelector(sel);
+          return el && el.textContent.toLowerCase().includes('invalid');
+        });
+
+        // Also check URL for discount error (checkout pages)
+        const urlHasError = window.location.search.includes('discount_error');
+
+        if (hasError || urlHasError) {
+          sessionStorage.setItem('failedCouponAttempt', 'true');
+          console.log('[Signal] Failed coupon attempt detected - HIGH VALUE SIGNAL');
+        }
+
+        // Clear pending after check
+        sessionStorage.removeItem('pendingCouponAttempt');
+      };
+
+      // Check periodically and on page changes
+      setInterval(checkForFailure, 2000);
+      window.addEventListener('load', checkForFailure);
+    }
+
+    // Track when items were first added to cart
+    trackCartAge() {
+      const checkCart = async () => {
+        try {
+          const cart = await fetch('/cart.js').then(r => r.json());
+
+          if (cart.item_count > 0) {
+            // If cart has items and we haven't tracked the timestamp yet
+            if (!localStorage.getItem('cartFirstItemTimestamp')) {
+              localStorage.setItem('cartFirstItemTimestamp', Date.now());
+              console.log('[Signal] Cart age tracking started');
+            }
+          } else {
+            // Cart is empty, clear the timestamp
+            localStorage.removeItem('cartFirstItemTimestamp');
+          }
+        } catch (error) {
+          console.error('[Signal] Error tracking cart age:', error);
+        }
+      };
+
+      // Check on load and when cart updates
+      checkCart();
+      document.addEventListener('cart:updated', checkCart);
     }
 
     // Cart monitoring for add-to-cart timer trigger
@@ -831,6 +969,10 @@
       else if (this.settings.mode === 'ai') {
         await this.getAIDecision();
       }
+      // STARTER TIER: Still collect signals for learning (but don't change the offer)
+      else if (this.settings.plan === 'starter' || this.settings.mode === 'manual') {
+        await this.trackStarterImpression();
+      }
 
       // NOW show the modal after content is ready
       // Prevent body scroll on mobile
@@ -1092,6 +1234,11 @@
       // Track variant click (both Pro and Enterprise)
       this.trackVariant('click');
 
+      // Track Starter click for learning
+      if (this.starterImpressionId) {
+        await this.trackStarterClick();
+      }
+
       // Track click for evolution system
       if (this.currentImpressionId) {
         try {
@@ -1239,13 +1386,78 @@
       }
     }
     
+    /**
+     * STARTER TIER LEARNING: Track manual settings + signals for AI training
+     * Starter customers can't enable AI, but their data helps train it
+     */
+    async trackStarterImpression() {
+      try {
+        // Collect signals even for Starter tier
+        const signals = await this.collectCustomerSignals();
+
+        // Get the manual settings being used
+        const manualSettings = {
+          headline: this.settings.modalHeadline,
+          body: this.settings.modalBody,
+          cta: this.settings.ctaButton,
+          discountType: this.settings.discountType || 'percentage',
+          discountAmount: this.settings.discountAmount || 0,
+          redirectDestination: this.settings.redirectDestination || 'checkout'
+        };
+
+        // Send to learning endpoint
+        const response = await fetch('/apps/exit-intent/api/track-starter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shop: window.Shopify.shop,
+            signals: signals,
+            manualSettings: manualSettings,
+            event: 'impression'
+          })
+        });
+
+        const result = await response.json();
+
+        // Store impression ID for click/conversion tracking
+        if (result.impressionId) {
+          this.starterImpressionId = result.impressionId;
+          console.log('[Starter Learning] Impression tracked:', result.impressionId);
+        }
+      } catch (error) {
+        console.error('[Starter Learning] Error tracking impression:', error);
+      }
+    }
+
+    /**
+     * Track Starter tier click for learning
+     */
+    async trackStarterClick() {
+      if (!this.starterImpressionId) return;
+
+      try {
+        await fetch('/apps/exit-intent/api/track-starter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shop: window.Shopify.shop,
+            impressionId: this.starterImpressionId,
+            event: 'click'
+          })
+        });
+        console.log('[Starter Learning] Click tracked');
+      } catch (error) {
+        console.error('[Starter Learning] Error tracking click:', error);
+      }
+    }
+
     async trackVariant(event, revenue = 0) {
       // Track variant performance (both Pro and Enterprise contribute to learning)
       if (!this.currentVariantId) {
         console.log('[Exit Intent] No variant ID to track');
         return;
       }
-      
+
       try {
         await fetch('/apps/exit-intent/api/track-variant', {
           method: 'POST',
@@ -1257,7 +1469,7 @@
             revenue: revenue
           })
         });
-        
+
         console.log(`[Exit Intent] Tracked ${event} for variant ${this.currentVariantId} (segment: ${this.currentSegment})`);
       } catch (error) {
         console.error('[Exit Intent] Variant tracking error:', error);

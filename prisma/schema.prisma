@@ -343,32 +343,69 @@ model Promotion {
 model Conversion {
   id                String   @id @default(uuid())
   shopId            String
-  
+
   // Order details
   orderId           String   // Shopify order ID
   orderNumber       String   // Human-readable (#1234)
   orderValue        Float
   customerEmail     String?
   orderedAt         DateTime
-  
+
   // Modal context
   modalId           String
   modalName         String?
   variantId         String?  // For AI mode
-  
+
   // Discount tracking
   modalHadDiscount  Boolean  @default(false)
   discountCode      String?
   discountRedeemed  Boolean  @default(false)
   discountAmount    Float?
-  
+
   // Modal snapshot (Enterprise only)
   modalSnapshot     String?  // JSON of modal config when shown
-  
+
   // Metadata
   createdAt         DateTime @default(now())
-  
+
   @@index([shopId])
   @@index([orderedAt])
   @@unique([shopId, orderId])
+}
+
+// Starter Tier Learning: Track manual settings + signals for AI training
+// Even though Starter users can't enable AI, their data helps train it
+model StarterImpression {
+  id                String   @id @default(uuid())
+  shopId            String
+
+  // Manual settings used (the "genes" we're learning from)
+  headline          String
+  body              String
+  cta               String
+  discountType      String   // percentage, fixed, threshold
+  discountAmount    Float
+  redirectDestination String
+
+  // Customer signals at time of impression
+  signals           String   // JSON blob of all collected signals
+
+  // Outcome
+  clicked           Boolean  @default(false)
+  converted         Boolean  @default(false)
+  revenue           Float?
+
+  // Context (denormalized from signals for easier querying)
+  deviceType        String?
+  trafficSource     String?
+  cartValue         Float?
+  visitFrequency    Int?
+
+  // Metadata
+  timestamp         DateTime @default(now())
+
+  @@index([shopId, timestamp])
+  @@index([clicked, converted])
+  @@index([headline, clicked])
+  @@index([discountAmount, converted])
 }
