@@ -36,6 +36,7 @@ model Shop {
   shopifyDomain     String   @unique
   mode              String   @default("manual")
   plan              String   @default("pro")
+  subscriptionId    String?  // Shopify subscription ID for usage billing
   aiGoal            String   @default("revenue")
   aggression        Int      @default(5)
   budgetEnabled     Boolean  @default(false)
@@ -408,4 +409,37 @@ model StarterImpression {
   @@index([clicked, converted])
   @@index([headline, clicked])
   @@index([discountAmount, converted])
+}
+
+// Usage-based billing charges (commission on recovered revenue)
+model UsageCharge {
+  id                String   @id @default(uuid())
+  shopId            String
+
+  // Order/Conversion Reference
+  orderId           String   @unique // Shopify order ID - also serves as idempotency key
+  orderNumber       String?
+
+  // Revenue & Commission
+  recoveredRevenue  Float    // The order total that was recovered
+  commissionRate    Float    // 0.05, 0.02, or 0.01 (5%, 2%, 1%)
+  chargeAmount      Float    // recoveredRevenue * commissionRate
+  currency          String   @default("USD")
+
+  // Billing Status
+  status            String   @default("pending") // pending, charged, failed, skipped
+  shopifyChargeId   String?  // ID returned from Shopify UsageCharge API
+  errorMessage      String?  // If failed, why
+
+  // Plan Context
+  planTier          String   // starter, pro, enterprise
+
+  // Timestamps
+  conversionAt      DateTime // When the conversion happened
+  chargedAt         DateTime? // When we successfully charged
+  createdAt         DateTime @default(now())
+
+  @@index([shopId, status])
+  @@index([shopId, createdAt])
+  @@index([status, createdAt])
 }
