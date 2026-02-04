@@ -563,8 +563,8 @@ export default function Performance() {
               All Time
             </button>
             
-            {/* DEV: Generate Test Events Button */}
-            {process.env.NODE_ENV === 'development' && (
+            {/* DEV: Generate Test Events Button - Hidden for recording */}
+            {false && process.env.NODE_ENV === 'development' && (
               <fetcher.Form method="post" style={{ display: "inline" }}>
                 <input type="hidden" name="action" value="generateTestEvents" />
                 <button
