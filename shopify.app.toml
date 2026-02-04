@@ -25,18 +25,10 @@ api_version = "2026-01"
   topics = [ "orders/create" ]
   uri = "/webhooks/orders/create"
 
-  # GDPR Mandatory Webhooks
+  # GDPR Mandatory Webhooks (use compliance_topics, not topics)
   [[webhooks.subscriptions]]
-  topics = [ "CUSTOMERS_DATA_REQUEST" ]
-  uri = "/webhooks/customers/data_request"
-
-  [[webhooks.subscriptions]]
-  topics = [ "CUSTOMERS_REDACT" ]
-  uri = "/webhooks/customers/redact"
-
-  [[webhooks.subscriptions]]
-  topics = [ "SHOP_REDACT" ]
-  uri = "/webhooks/shop/redact"
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+  uri = "/webhooks"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
