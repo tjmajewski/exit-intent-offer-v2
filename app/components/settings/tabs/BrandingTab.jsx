@@ -284,37 +284,6 @@ export default function BrandingTab({
           </div>
         </div>
 
-        {/* Preview Box */}
-        <div style={{
-          padding: 16,
-          background: brandSecondaryColor,
-          border: `2px solid ${brandPrimaryColor}`,
-          borderRadius: 8,
-          textAlign: "center"
-        }}>
-          <div style={{ 
-            fontSize: 18, 
-            fontWeight: 600, 
-            color: brandPrimaryColor,
-            fontFamily: brandFont,
-            marginBottom: 8
-          }}>
-            Preview
-          </div>
-          <button type="button" style={{
-            padding: "10px 20px",
-            background: brandAccentColor,
-            color: brandSecondaryColor,
-            border: "none",
-            borderRadius: 6,
-            fontFamily: brandFont,
-            fontSize: 14,
-            fontWeight: 500,
-            cursor: "default"
-          }}>
-            Sample Button
-          </button>
-        </div>
       </div>
     </>
   );

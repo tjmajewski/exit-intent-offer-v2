@@ -878,8 +878,8 @@ export default function Dashboard() {
         </div>
         
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          {/* Dev Tools */}
-          {plan && (
+          {/* Dev Tools - Hidden for production/recording */}
+          {false && plan && (
             <div style={{ display: "flex", gap: 12 }}>
               {/* Plan Switcher */}
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
