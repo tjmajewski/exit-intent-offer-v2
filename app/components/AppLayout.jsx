@@ -3,8 +3,9 @@ import { useState, useEffect } from "react";
 
 function DevPlanSwitcher({ plan }) {
   const fetcher = useFetcher();
-  
-  if (process.env.NODE_ENV !== 'development' || !plan) {
+
+  // Hidden for app store recording
+  if (true || process.env.NODE_ENV !== 'development' || !plan) {
     return null;
   }
   
