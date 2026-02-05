@@ -2,7 +2,7 @@
 
 client_id = "32b61408918a3191610084f0d2700fe5"
 name = "exit-intent-offer-v2"
-application_url = "https://example.com"
+application_url = "https://resparq.fly.dev"
 embedded = true
 
 [build]
@@ -35,7 +35,7 @@ api_version = "2026-01"
 scopes = "write_products,write_discounts,read_orders,write_gift_cards"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://resparq.fly.dev/api/auth" ]
 
 [app_proxy]
 url = "/apps/exit-intent"
