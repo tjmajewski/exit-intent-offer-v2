@@ -5,7 +5,7 @@ import db from "../db.server";
 import AppLayout from "../components/AppLayout";
 
 export async function loader({ request }) {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
   try {
     const response = await admin.graphql(`
@@ -20,9 +20,20 @@ export async function loader({ request }) {
     `);
 
     const data = await response.json();
-    const plan = data.data.shop?.plan?.value
+    let plan = data.data.shop?.plan?.value
       ? JSON.parse(data.data.shop.plan.value)
       : { tier: "pro" };
+
+    // Get shop from database and use database plan as source of truth
+    const shopDomain = session.shop;
+    const shopRecord = await db.shop.findUnique({
+      where: { shopifyDomain: shopDomain }
+    });
+
+    // Override plan with database value
+    if (shopRecord?.plan) {
+      plan = { ...plan, tier: shopRecord.plan };
+    }
 
     // Enterprise-only feature
     if (plan.tier !== 'enterprise') {
@@ -34,12 +45,6 @@ export async function loader({ request }) {
         plan
       };
     }
-
-    // Get shop from database
-    const shopDomain = new URL(request.url).searchParams.get('shop') || request.headers.get('host');
-    const shopRecord = await db.shop.findUnique({
-      where: { shopifyDomain: shopDomain }
-    });
 
     if (!shopRecord) {
       return {
@@ -110,7 +115,7 @@ export async function loader({ request }) {
 }
 
 export async function action({ request }) {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
   try {
     const formData = await request.formData();
@@ -118,7 +123,7 @@ export async function action({ request }) {
 
     if (actionType === "toggleIntelligence") {
       const enabled = formData.get("enabled") === "true";
-      const shopDomain = new URL(request.url).searchParams.get('shop') || request.headers.get('host');
+      const shopDomain = session.shop;
 
       const shopRecord = await db.shop.findUnique({
         where: { shopifyDomain: shopDomain }
