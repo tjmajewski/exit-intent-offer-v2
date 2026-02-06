@@ -123,7 +123,7 @@ export const action = async ({ request }) => {
 
     console.log(`Shop redact completed for ${shop}:`, deletionResults);
 
-    return new Response(JSON.stringify({ success: true, deleted: deletionResults }), {
+    return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
     });
@@ -131,7 +131,7 @@ export const action = async ({ request }) => {
   } catch (error) {
     console.error(`Error processing shop redact:`, error);
     // Still return 200 to acknowledge receipt
-    return new Response(JSON.stringify({ success: true, error: error.message }), {
+    return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
     });

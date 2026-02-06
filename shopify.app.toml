@@ -2,14 +2,14 @@
 
 client_id = "32b61408918a3191610084f0d2700fe5"
 name = "exit-intent-offer-v2"
-application_url = "https://example.com"
+application_url = "https://resparq.fly.dev"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
 
 [webhooks]
-api_version = "2026-01"
+api_version = "2025-10"
 
   # App lifecycle
   [[webhooks.subscriptions]]
@@ -43,7 +43,7 @@ api_version = "2026-01"
 scopes = "write_products,write_discounts,read_orders,write_gift_cards"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://resparq.fly.dev/auth/callback" ]
 
 [app_proxy]
 url = "/apps/exit-intent"
