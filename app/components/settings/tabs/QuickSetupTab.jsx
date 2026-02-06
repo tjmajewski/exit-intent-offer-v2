@@ -322,6 +322,7 @@ export default function QuickSetupTab({
                   type="checkbox"
                   name="discountEnabled"
                   defaultChecked={settings.discountEnabled}
+                  onChange={() => setFormChanged(true)}
                   style={{ marginRight: 12, width: 20, height: 20 }}
                 />
                 <div>
@@ -434,6 +435,7 @@ export default function QuickSetupTab({
                     name="offerType"
                     value="percentage"
                     defaultChecked={settings.offerType === "percentage" || !settings.offerType}
+                    onChange={() => setFormChanged(true)}
                     style={{ marginRight: 12, marginTop: 4 }}
                   />
                   <div style={{ flex: 1 }}>
@@ -447,8 +449,9 @@ export default function QuickSetupTab({
                       defaultValue={settings.discountPercentage || 10}
                       min="1"
                       max="100"
-                      style={{ 
-                        padding: "8px 12px", 
+                      onChange={() => setFormChanged(true)}
+                      style={{
+                        padding: "8px 12px",
                         border: "1px solid #d1d5db",
                         borderRadius: 6,
                         width: 100,
@@ -468,6 +471,7 @@ export default function QuickSetupTab({
                     name="offerType"
                     value="fixed"
                     defaultChecked={settings.offerType === "fixed"}
+                    onChange={() => setFormChanged(true)}
                     style={{ marginRight: 12, marginTop: 4 }}
                   />
                   <div style={{ flex: 1 }}>
@@ -482,8 +486,9 @@ export default function QuickSetupTab({
                       defaultValue={settings.discountAmount || 10}
                       min="1"
                       step="1"
-                      style={{ 
-                        padding: "8px 12px", 
+                      onChange={() => setFormChanged(true)}
+                      style={{
+                        padding: "8px 12px",
                         border: "1px solid #d1d5db",
                         borderRadius: 6,
                         width: 100,
@@ -538,6 +543,7 @@ export default function QuickSetupTab({
                   type="checkbox"
                   name="exitIntentEnabled"
                   defaultChecked={settings.exitIntentEnabled}
+                  onChange={() => setFormChanged(true)}
                   style={{ marginRight: 12, width: 20, height: 20 }}
                 />
                 <div>
@@ -560,6 +566,7 @@ export default function QuickSetupTab({
                   name="timeDelayEnabled"
                   defaultChecked={settings.timeDelayEnabled}
                   disabled={!canUseAllTriggers}
+                  onChange={() => setFormChanged(true)}
                   style={{ marginRight: 12, width: 20, height: 20 }}
                 />
                 <div style={{ flex: 1 }}>
@@ -595,8 +602,9 @@ export default function QuickSetupTab({
                   min="5"
                   max="300"
                   disabled={!canUseAllTriggers}
-                  style={{ 
-                    padding: "8px 12px", 
+                  onChange={() => setFormChanged(true)}
+                  style={{
+                    padding: "8px 12px",
                     border: "1px solid #d1d5db",
                     borderRadius: 6,
                     width: 100

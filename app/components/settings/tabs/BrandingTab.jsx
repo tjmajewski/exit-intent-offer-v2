@@ -116,6 +116,7 @@ export default function BrandingTab({
                   setBrandSecondaryColor(data.colors.secondary);
                   setBrandAccentColor(data.colors.accent);
                   setBrandFont(data.colors.font);
+                  setFormChanged(true);
                 }
               } catch (error) {
                 console.error('Auto-detect failed:', error);

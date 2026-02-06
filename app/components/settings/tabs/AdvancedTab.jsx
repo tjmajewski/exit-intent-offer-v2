@@ -3,7 +3,8 @@ export default function AdvancedTab({
   optimizationMode,
   canChooseRedirect,
   settings,
-  canUseCartValue
+  canUseCartValue,
+  setFormChanged
 }) {
   if (plan && plan.tier === 'starter') {
     return (
@@ -127,6 +128,7 @@ export default function AdvancedTab({
               value="checkout"
               defaultChecked={!settings.redirectDestination || settings.redirectDestination === "checkout"}
               disabled={!canChooseRedirect}
+              onChange={() => setFormChanged(true)}
               style={{ marginRight: 12, marginTop: 4 }}
             />
             <div style={{ flex: 1 }}>
@@ -156,6 +158,7 @@ export default function AdvancedTab({
               value="cart"
               defaultChecked={settings.redirectDestination === "cart"}
               disabled={!canChooseRedirect}
+              onChange={() => setFormChanged(true)}
               style={{ marginRight: 12, marginTop: 4 }}
             />
             <div style={{ flex: 1 }}>
@@ -223,6 +226,7 @@ export default function AdvancedTab({
               name="cartValueEnabled"
               defaultChecked={settings.cartValueEnabled}
               disabled={!canUseCartValue}
+              onChange={() => setFormChanged(true)}
               style={{ marginRight: 12, width: 20, height: 20 }}
             />
             <div style={{ flex: 1 }}>
@@ -259,8 +263,9 @@ export default function AdvancedTab({
                 min="0"
                 step="0.01"
                 disabled={!canUseCartValue}
-                style={{ 
-                  padding: "8px 12px", 
+                onChange={() => setFormChanged(true)}
+                style={{
+                  padding: "8px 12px",
                   border: "1px solid #d1d5db",
                   borderRadius: 6,
                   width: 120
@@ -278,8 +283,9 @@ export default function AdvancedTab({
                 min="0"
                 step="0.01"
                 disabled={!canUseCartValue}
-                style={{ 
-                  padding: "8px 12px", 
+                onChange={() => setFormChanged(true)}
+                style={{
+                  padding: "8px 12px",
                   border: "1px solid #d1d5db",
                   borderRadius: 6,
                   width: 120

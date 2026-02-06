@@ -890,6 +890,7 @@ export default function Settings() {
           canChooseRedirect={canChooseRedirect}
           settings={settings}
           canUseCartValue={canUseCartValue}
+          setFormChanged={setFormChanged}
         />
       )}
 
