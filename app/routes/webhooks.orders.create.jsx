@@ -1,5 +1,6 @@
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import { getUsageLineItemId, recordUsageCharge, getCommissionRate } from "../utils/billing.server.js";
 
 export const action = async ({ request }) => {
   try {
@@ -179,6 +180,9 @@ export const action = async ({ request }) => {
     // CONVERSIONS TABLE: Store order-level data for reporting
     await storeConversion(shop, payload, exitDiscountUsed, session);
     console.log(" Conversion stored in conversions table");
+
+    // USAGE BILLING: Charge commission on recovered revenue
+    await recordUsageBilling(shop, payload, session);
 
     return new Response(null, { status: 200 });
   } catch (error) {
@@ -423,5 +427,113 @@ async function storeConversion(shop, orderPayload, discountUsed, session) {
   } catch (error) {
     console.error("Error storing conversion:", error);
     // Don't throw - we don't want to fail the webhook if conversion storage fails
+  }
+}
+
+/**
+ * Record usage-based billing charge for the recovered order.
+ * Commission rates: Starter 5%, Pro 2%, Enterprise 1%
+ */
+async function recordUsageBilling(shop, orderPayload, session) {
+  try {
+    // Get shop record with plan info
+    const shopRecord = await db.shop.findUnique({
+      where: { shopifyDomain: shop }
+    });
+
+    if (!shopRecord) {
+      console.log("[Billing] Shop not found, skipping usage charge");
+      return;
+    }
+
+    const tier = shopRecord.plan || "starter";
+    const recoveredRevenue = parseFloat(orderPayload.total_price);
+    const orderId = orderPayload.id.toString();
+    const orderNumber = orderPayload.order_number?.toString();
+
+    // Check if we already recorded a charge for this order (idempotency)
+    const existingCharge = await db.usageCharge.findUnique({
+      where: { orderId }
+    });
+
+    if (existingCharge) {
+      console.log(`[Billing] Usage charge already exists for order ${orderId}, skipping`);
+      return;
+    }
+
+    // Get admin client for API calls
+    const { admin } = await authenticate.admin(session);
+
+    // Get the usage line item ID from the active subscription
+    const usageInfo = await getUsageLineItemId(admin);
+
+    if (!usageInfo) {
+      console.log("[Billing] No active usage subscription found, storing charge as pending");
+
+      // Store as pending - can be charged later or manually
+      const commissionRate = getCommissionRate(tier);
+      const chargeAmount = Math.round(recoveredRevenue * commissionRate * 100) / 100;
+
+      await db.usageCharge.create({
+        data: {
+          shopId: shopRecord.id,
+          orderId,
+          orderNumber,
+          recoveredRevenue,
+          commissionRate,
+          chargeAmount,
+          currency: "USD",
+          status: "pending",
+          planTier: tier,
+          conversionAt: new Date(orderPayload.created_at),
+          errorMessage: "No active subscription found"
+        }
+      });
+      return;
+    }
+
+    // Record the usage charge with Shopify
+    const result = await recordUsageCharge(
+      admin,
+      usageInfo.lineItemId,
+      orderId,
+      recoveredRevenue,
+      tier
+    );
+
+    // Store usage charge record in our database
+    const commissionRate = getCommissionRate(tier);
+
+    await db.usageCharge.create({
+      data: {
+        shopId: shopRecord.id,
+        orderId,
+        orderNumber,
+        recoveredRevenue,
+        commissionRate,
+        chargeAmount: result.chargeAmount,
+        currency: "USD",
+        status: result.success ? (result.skipped ? "skipped" : "charged") : "failed",
+        shopifyChargeId: result.chargeId || null,
+        errorMessage: result.error || (result.skipped ? result.reason : null),
+        planTier: tier,
+        conversionAt: new Date(orderPayload.created_at),
+        chargedAt: result.success && !result.skipped ? new Date() : null
+      }
+    });
+
+    if (result.success) {
+      if (result.skipped) {
+        console.log(`[Billing] Usage charge skipped for order ${orderId}: ${result.reason}`);
+      } else {
+        console.log(`[Billing] Usage charge recorded: $${result.chargeAmount} (${(commissionRate * 100).toFixed(0)}% of $${recoveredRevenue})`);
+      }
+    } else {
+      console.error(`[Billing] Usage charge failed for order ${orderId}: ${result.error}`);
+    }
+
+  } catch (error) {
+    console.error("[Billing] Error recording usage charge:", error);
+    // Don't throw - billing failure shouldn't fail the webhook
   }
 }

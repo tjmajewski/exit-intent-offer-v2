@@ -70,13 +70,17 @@ export async function loader({ request }) {
       }
     );
 
-    // Update database
+    // Update database with plan and subscription ID
     await db.shop.upsert({
       where: { shopifyDomain: session.shop },
-      update: { plan: tier },
+      update: {
+        plan: tier,
+        subscriptionId: subscription.id
+      },
       create: {
         shopifyDomain: session.shop,
         plan: tier,
+        subscriptionId: subscription.id,
       },
     });
 
