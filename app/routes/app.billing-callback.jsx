@@ -42,6 +42,12 @@ export async function loader({ request }) {
     currentPlan.status = "active";
     currentPlan.subscriptionId = subscription.id;
 
+    // Mark trial as used so the merchant can never get another free trial
+    if (!currentPlan.hasUsedTrial) {
+      currentPlan.hasUsedTrial = true;
+      currentPlan.trialStartedAt = new Date().toISOString();
+    }
+
     // Update plan in metafields
     await admin.graphql(
       `mutation UpdatePlan($ownerId: ID!, $value: String!) {

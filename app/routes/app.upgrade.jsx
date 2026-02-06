@@ -32,10 +32,21 @@ export async function loader({ request }) {
       console.error("Error checking subscription:", e);
     }
 
-    return { plan, activeSubscription };
+    // Calculate remaining trial days for the CTA text
+    let trialDaysRemaining = 0;
+    if (plan.hasUsedTrial && plan.trialStartedAt) {
+      const daysSinceTrialStart = Math.floor(
+        (Date.now() - new Date(plan.trialStartedAt).getTime()) / (1000 * 60 * 60 * 24)
+      );
+      trialDaysRemaining = Math.max(0, 14 - daysSinceTrialStart);
+    } else if (!plan.hasUsedTrial && !activeSubscription) {
+      trialDaysRemaining = 14;
+    }
+
+    return { plan, activeSubscription, trialDaysRemaining };
   } catch (error) {
     console.error("Error loading upgrade page:", error);
-    return { plan: { tier: "starter" }, activeSubscription: null };
+    return { plan: { tier: "starter" }, activeSubscription: null, trialDaysRemaining: 14 };
   }
 }
 
@@ -57,12 +68,50 @@ export async function action({ request }) {
     // test: true for development, set to false for production
     const isTest = process.env.NODE_ENV !== "production";
 
+    // Determine how many trial days this subscription should get:
+    // - Never trialed: 14 days
+    // - Mid-trial plan switch: remaining days from original trial
+    // - Trial expired: 0 days
+    let trialDays = 0;
+    try {
+      const planResponse = await admin.graphql(`
+        query {
+          shop {
+            plan: metafield(namespace: "exit_intent", key: "plan") {
+              value
+            }
+          }
+        }
+      `);
+      const planData = await planResponse.json();
+      const currentPlan = planData.data.shop?.plan?.value
+        ? JSON.parse(planData.data.shop.plan.value)
+        : null;
+
+      if (currentPlan?.hasUsedTrial && currentPlan?.trialStartedAt) {
+        // They've started a trial before — check if it's still active
+        const daysSinceTrialStart = Math.floor(
+          (Date.now() - new Date(currentPlan.trialStartedAt).getTime()) / (1000 * 60 * 60 * 24)
+        );
+        trialDays = Math.max(0, 14 - daysSinceTrialStart);
+      } else if (!currentPlan?.hasUsedTrial) {
+        // Check if they have an active subscription (edge case: flag not set yet)
+        const activeSub = await getActiveSubscription(admin);
+        if (!activeSub) {
+          trialDays = 14;
+        }
+      }
+    } catch (e) {
+      console.error("[Billing] Error checking trial status:", e);
+    }
+
     const { confirmationUrl } = await createSubscription(
       admin,
       tier,
       billingCycle,
       returnUrl,
-      isTest
+      isTest,
+      trialDays
     );
 
     // Return URL to client — client redirects via _top to escape iframe
@@ -74,7 +123,7 @@ export async function action({ request }) {
 }
 
 export default function Upgrade() {
-  const { plan, activeSubscription } = useLoaderData();
+  const { plan, activeSubscription, trialDaysRemaining } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -380,7 +429,11 @@ export default function Upgrade() {
                     >
                       {isSubmitting && submittingTier === planOption.tier
                         ? "Redirecting to Shopify..."
-                        : "Start Free Trial"}
+                        : trialDaysRemaining === 14
+                          ? "Start Free Trial"
+                          : trialDaysRemaining > 0
+                            ? `Switch Plan (${trialDaysRemaining} days left in trial)`
+                            : "Subscribe"}
                     </button>
                   </Form>
                 )}

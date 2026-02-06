@@ -41,8 +41,9 @@ export function getPlanConfig(tier) {
  * @param {string} billingCycle - "monthly" | "annual"
  * @param {string} returnUrl - URL to redirect to after approval
  * @param {boolean} isTest - Whether this is a test charge (use true in development)
+ * @param {number} trialDays - Number of trial days (0 if trial already used)
  */
-export async function createSubscription(admin, tier, billingCycle, returnUrl, isTest = true) {
+export async function createSubscription(admin, tier, billingCycle, returnUrl, isTest = true, trialDays = 0) {
   const config = PLAN_CONFIGS[tier];
   if (!config) {
     throw new Error(`Invalid plan tier: ${tier}`);
@@ -103,7 +104,7 @@ export async function createSubscription(admin, tier, billingCycle, returnUrl, i
         name: planName,
         lineItems,
         returnUrl,
-        trialDays: 14,
+        trialDays,
         test: isTest,
       },
     }
