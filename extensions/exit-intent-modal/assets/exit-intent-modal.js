@@ -17,6 +17,21 @@
     return window.innerWidth <= 768 || /mobile/i.test(navigator.userAgent);
   }
 
+  // Currency formatting helper - uses shop's active currency
+  function formatCurrency(amount) {
+    try {
+      const currencyCode = window.Shopify?.currency?.active || 'USD';
+      return new Intl.NumberFormat('en', {
+        style: 'currency',
+        currency: currencyCode,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(amount);
+    } catch (e) {
+      return `$${amount}`;
+    }
+  }
+
   // Fetch custom CSS from shop settings
   async function fetchCustomCSS(shopDomain) {
     try {
@@ -1039,9 +1054,9 @@
           if (dec.type === 'percentage') {
             console.log('%c Discount:', 'color: #f59e0b; font-weight: bold', `${dec.amount}% OFF`);
           } else if (dec.type === 'fixed') {
-            console.log('%c Discount:', 'color: #f59e0b; font-weight: bold', `$${dec.amount} OFF`);
+            console.log('%c Discount:', 'color: #f59e0b; font-weight: bold', `${formatCurrency(dec.amount)} OFF`);
           } else if (dec.type === 'threshold') {
-            console.log('%c Threshold:', 'color: #f59e0b; font-weight: bold', `Spend $${dec.threshold} → Save $${dec.amount}`);
+            console.log('%c Threshold:', 'color: #f59e0b; font-weight: bold', `Spend ${formatCurrency(dec.threshold)} → Save ${formatCurrency(dec.amount)}`);
           }
 
           if (dec.code) {
@@ -1093,10 +1108,12 @@
         const percentToGoal = decision.threshold ? Math.round((cartValue / decision.threshold) * 100) : 0;
         
         // Replace placeholders in variant genes
+        // For threshold/fixed offers, {{amount}} is a currency value (e.g., $10)
+        // For percentage offers, {{amount}} is just the number (% is in template text)
         const replacements = {
-          '{{amount}}': decision.amount,
-          '{{threshold}}': decision.threshold || 0,
-          '{{threshold_remaining}}': `$${thresholdRemaining}`,
+          '{{amount}}': decision.type === 'percentage' ? decision.amount : formatCurrency(decision.amount),
+          '{{threshold}}': decision.threshold ? formatCurrency(decision.threshold) : 0,
+          '{{threshold_remaining}}': formatCurrency(thresholdRemaining),
           '{{percent_to_goal}}': percentToGoal
         };
         
@@ -1162,13 +1179,13 @@
         this.settings.discountCode = decision.code;
         this.settings.offerType = 'percentage';
       } else if (decision.type === 'fixed') {
-        headline.textContent = `Get $${decision.amount} Off Your Order! `;
+        headline.textContent = `Get ${formatCurrency(decision.amount)} Off Your Order!`;
         body.textContent = 'Complete your purchase now and save!';
         this.settings.discountCode = decision.code;
         this.settings.offerType = 'fixed';
       } else if (decision.type === 'threshold') {
-        headline.textContent = `Special Offer for You! `;
-        body.textContent = `Spend $${decision.threshold} and get $${decision.amount} off your order!`;
+        headline.textContent = `Special Offer for You!`;
+        body.textContent = `Spend ${formatCurrency(decision.threshold)} and get ${formatCurrency(decision.amount)} off your order!`;
         this.settings.discountCode = decision.code;
         this.settings.offerType = 'threshold';
 
@@ -1192,7 +1209,7 @@
           discount: decision.amount,
           timestamp: Date.now()
         }));
-        console.log(`[Threshold Offer] Stored in sessionStorage: Spend $${decision.threshold}, save $${decision.amount}`);
+        console.log(`[Threshold Offer] Stored in sessionStorage: Spend ${formatCurrency(decision.threshold)}, save ${formatCurrency(decision.amount)}`);
       }
       
       console.log(`[AI Mode] Updated modal with ${decision.type} offer`);
@@ -1598,15 +1615,26 @@
   }
 
   // Fetch shop settings including plan tier
+  // Merges API (database) settings with Liquid-injected metafield settings
+  // Liquid settings are the source of truth for user-configured triggers and modal content
   async function fetchShopSettings() {
+    const liquidSettings = window.exitIntentSettings || {};
+
     try {
       const response = await fetch(`/apps/exit-intent/api/shop-settings?shop=${window.Shopify.shop}`);
-      if (!response.ok) return { plan: 'starter' };
+      if (!response.ok) return liquidSettings;
       const data = await response.json();
-      return data;
+
+      // Merge: Liquid settings (metafields) are user's current config
+      // API provides plan tier (billing truth)
+      return {
+        ...data,
+        ...liquidSettings,
+        plan: data.plan || liquidSettings.plan || 'starter'
+      };
     } catch (error) {
       console.error('[Exit Intent] Failed to fetch settings:', error);
-      return { plan: 'starter' };
+      return liquidSettings;
     }
   }
 

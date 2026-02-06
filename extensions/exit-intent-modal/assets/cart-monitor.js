@@ -1,6 +1,21 @@
 (function() {
   'use strict';
 
+  // Currency formatting helper - uses shop's active currency
+  function formatCurrency(amount) {
+    try {
+      const currencyCode = window.Shopify?.currency?.active || 'USD';
+      return new Intl.NumberFormat('en', {
+        style: 'currency',
+        currency: currencyCode,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(amount);
+    } catch (e) {
+      return `$${amount}`;
+    }
+  }
+
   console.log('[Cart Monitor] Script loaded');
 
   class CartMonitor {
@@ -147,7 +162,7 @@
       
       // Only log if cart value changed
       if (currentTotal !== this.lastCartTotal) {
-        console.log(`[Cart Monitor] Cart total: $${currentTotal} (threshold: $${offer.threshold})`);
+        console.log(`[Cart Monitor] Cart total: ${formatCurrency(currentTotal)} (threshold: ${formatCurrency(offer.threshold)})`);
         this.lastCartTotal = currentTotal;
       }
 
@@ -254,7 +269,7 @@
             background: rgba(255,255,255,0.3);
           }
         </style>
-        <span> Congratulations! You qualified for $${offer.discount} off! Code <strong>${offer.code}</strong> has been applied at checkout.</span>
+        <span> Congratulations! You qualified for ${formatCurrency(offer.discount)} off! Code <strong>${offer.code}</strong> has been applied at checkout.</span>
         <button class="close-banner" onclick="this.parentElement.remove()">×</button>
       `;
 
@@ -322,7 +337,7 @@
               background: rgba(255,255,255,0.3);
             }
           </style>
-          <span> Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!</span>
+          <span> Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off!</span>
           <button class="close-banner" onclick="this.parentElement.remove()">×</button>
         `;
         
@@ -330,7 +345,7 @@
         console.log('[Cart Monitor] Progress banner displayed');
       } else {
         // Update existing banner
-        banner.querySelector('span').textContent = ` Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!`;
+        banner.querySelector('span').textContent = ` Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off!`;
       }
     }
 
@@ -386,7 +401,7 @@
               background: rgba(255,255,255,0.3);
             }
           </style>
-          <span> Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!</span>
+          <span> Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off!</span>
           <button class="close-banner" onclick="this.parentElement.remove()">×</button>
         `;
         
@@ -394,7 +409,7 @@
         console.log('[Cart Monitor] Progress banner displayed');
       } else {
         // Update existing banner
-        banner.querySelector('span').textContent = ` Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!`;
+        banner.querySelector('span').textContent = ` Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off!`;
       }
     }
 
@@ -450,7 +465,7 @@
               background: rgba(255,255,255,0.3);
             }
           </style>
-          <span> Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!</span>
+          <span> Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off!</span>
           <button class="close-banner" onclick="this.parentElement.remove()">×</button>
         `;
         
@@ -458,7 +473,7 @@
         console.log('[Cart Monitor] Progress banner displayed');
       } else {
         // Update existing banner
-        banner.querySelector('span').textContent = ` Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off!`;
+        banner.querySelector('span').textContent = ` Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off!`;
       }
     }
 
@@ -499,7 +514,7 @@
         existingCTA.innerHTML = `
           <div style="text-align: center; padding: 12px;">
             <div style="font-size: 18px; margin-bottom: 4px;"> You Qualified!</div>
-            <div style="font-size: 14px; opacity: 0.9;">$${offer.discount} off applied at checkout</div>
+            <div style="font-size: 14px; opacity: 0.9;">${formatCurrency(offer.discount)} off applied at checkout</div>
           </div>
         `;
         existingCTA.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
@@ -514,7 +529,7 @@
         existingCTA.innerHTML = `
           <div style="text-align: center; padding: 12px;">
             <div style="font-size: 16px; font-weight: 600; margin-bottom: 4px;">
-              Add $${Math.ceil(remaining / 5) * 5} more to get $${offer.discount} off! 
+              Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off!
             </div>
             <div style="font-size: 13px; opacity: 0.9;">
               ${this.getProgressBar(currentTotal, offer.threshold)}
