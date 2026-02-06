@@ -833,6 +833,8 @@ export default function Settings() {
       <Form method="post">
         {/* Hidden input to always submit current mode regardless of active tab */}
         <input type="hidden" name="mode" value={optimizationMode} />
+        {/* Hidden input to preserve current plan tier */}
+        <input type="hidden" name="tier" value={plan?.tier || "pro"} />
 
         {/* Quick Setup Tab */}
       {activeTab === 'quick' && (

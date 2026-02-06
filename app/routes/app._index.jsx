@@ -6,7 +6,7 @@ import AppLayout from "../components/AppLayout";
 import db from "../db.server";
 
 export async function loader({ request }) {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
   try {
     const response = await admin.graphql(`
@@ -216,11 +216,16 @@ export async function loader({ request }) {
     let promoWarning = null;
     let activePromotions = null;
 
-    const shopDomain = new URL(request.url).searchParams.get('shop') || request.headers.get('host');
+    const shopDomain = session.shop;
     const shopRecord = await db.shop.findUnique({
       where: { shopifyDomain: shopDomain },
-      select: { id: true, populationSize: true }
+      select: { id: true, populationSize: true, plan: true }
     });
+
+    // Override plan with database value (more reliable than metafields)
+    if (shopRecord?.plan) {
+      plan = { ...plan, tier: shopRecord.plan };
+    }
 
     if (plan && plan.tier === 'pro' && shopRecord) {
       const activePromo = await db.promotion.findFirst({

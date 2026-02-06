@@ -84,7 +84,6 @@ const STATUSES = ['alive', 'alive', 'alive', 'alive', 'dying', 'dead', 'champion
 const PROMOTIONS = [
   { code: 'SUMMER25', amount: 25, type: 'percentage', classification: 'site_wide', aiStrategy: 'pause', reason: 'Site-wide promotion detected - pausing exit modal to avoid discount stacking' },
   { code: 'WELCOME10', amount: 10, type: 'percentage', classification: 'targeted', aiStrategy: 'continue', reason: 'Targeted new customer promotion - exit modal still effective for returning visitors' },
-  { code: 'FLASH30', amount: 30, type: 'percentage', classification: 'site_wide', aiStrategy: 'decrease', reason: 'High-value promotion - decreasing exit offers to preserve margin since codes stack' },
   { code: 'VIP15', amount: 15, type: 'percentage', classification: 'targeted', aiStrategy: 'continue', reason: 'VIP-only promotion - modal can run for non-VIP segments' },
   { code: 'FREESHIP', amount: 0, type: 'free_shipping', classification: 'site_wide', aiStrategy: 'ignore', reason: 'Free shipping only - does not conflict with discount offers' }
 ];

@@ -287,10 +287,19 @@ export async function loader({ request }) {
     `);
 
     const data = await response.json();
-    
-    const plan = data.data.shop?.plan?.value 
-      ? JSON.parse(data.data.shop.plan.value) 
+
+    let plan = data.data.shop?.plan?.value
+      ? JSON.parse(data.data.shop.plan.value)
       : { tier: "starter" };
+
+    // Override plan with database value (more reliable than metafields)
+    const shopRecord = await db.shop.findUnique({
+      where: { shopifyDomain: session.shop },
+      select: { plan: true }
+    });
+    if (shopRecord?.plan) {
+      plan = { ...plan, tier: shopRecord.plan };
+    }
 
     const modalLibrary = data.data.shop?.modalLibrary?.value
       ? JSON.parse(data.data.shop.modalLibrary.value)
@@ -563,8 +572,8 @@ export default function Performance() {
               All Time
             </button>
             
-            {/* DEV: Generate Test Events Button */}
-            {process.env.NODE_ENV === 'development' && (
+            {/* DEV: Generate Test Events Button - Hidden for recording */}
+            {false && process.env.NODE_ENV === 'development' && (
               <fetcher.Form method="post" style={{ display: "inline" }}>
                 <input type="hidden" name="action" value="generateTestEvents" />
                 <button
