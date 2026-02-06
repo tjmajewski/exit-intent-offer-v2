@@ -240,7 +240,7 @@ export async function loader({ request }) {
           amount: activePromo.amount,
           type: activePromo.type,
           aiStrategy: activePromo.aiStrategy,
-          message: `Your AI is still offering discounts during your ${activePromo.amount}${activePromo.type === 'percentage' ? '%' : '$'} ${activePromo.code} promotion, potentially wasting budget.`
+          message: `Your ${activePromo.code} promotion is active with a high take rate. Your exit offers are still running at full strength.`
         };
       }
     }
@@ -700,7 +700,7 @@ export default function Dashboard() {
   const getStrategyLabel = (strategy) => {
     switch(strategy) {
       case 'pause': return 'AI Paused';
-      case 'increase': return 'Increased Offers';
+      case 'decrease': return 'Decreased Offers';
       case 'continue': return 'Continue Normal';
       case 'ignore': return 'Ignored';
       default: return 'Auto';
@@ -710,7 +710,7 @@ export default function Dashboard() {
   const getStrategyColor = (strategy) => {
     switch(strategy) {
       case 'pause': return '#ef4444';
-      case 'increase': return '#f59e0b';
+      case 'decrease': return '#f59e0b';
       case 'continue': return '#10b981';
       case 'ignore': return '#6b7280';
       default: return '#3b82f6';
@@ -820,18 +820,12 @@ export default function Dashboard() {
                 marginBottom: 16
               }}>
                 <p style={{ margin: 0, fontSize: 14, color: "#92400e", marginBottom: 12 }}>
-                  <strong> What Enterprise AI would do automatically:</strong>
+                  <strong>Enterprise AI would have automatically:</strong>
                 </p>
                 <ul style={{ margin: 0, paddingLeft: 20, color: "#78350f", fontSize: 14 }}>
-                  {promoWarning.aiStrategy === 'pause' && (
-                    <li><strong>Pause exit modals</strong> during your {promoWarning.amount}% sale to avoid double-discounting</li>
-                  )}
-                  {promoWarning.aiStrategy === 'increase' && (
-                    <li><strong>Increase exit offers to {promoWarning.amount + 5}%</strong> to beat your site-wide promotion</li>
-                  )}
-                  <li>Save you money by not showing discounts to customers who would buy anyway</li>
-                  <li>Email you when promotions are detected with recommended actions</li>
-                  <li>Let you set announcement mode (0% offers) with one click</li>
+                  <li><strong>Decreased your exit offer amounts</strong> to save you margin while your promotion runs</li>
+                  <li>Restored your original offer settings once the promotion ended</li>
+                  <li>Notified you when the promotion was detected</li>
                 </ul>
               </div>
               <Link 
@@ -848,16 +842,8 @@ export default function Dashboard() {
                   boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
                 }}
               >
-                Upgrade to Enterprise - $249/mo →
+                Upgrade to Enterprise →
               </Link>
-              <p style={{ 
-                margin: 0, 
-                marginTop: 12,
-                fontSize: 13, 
-                color: "#92400e" 
-              }}>
-                Save $600/year with annual billing
-              </p>
             </div>
           </div>
         </div>

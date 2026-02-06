@@ -327,7 +327,7 @@ model Promotion {
   validUntil        DateTime?
   usageStats        String    @default("{\"total\":0,\"last24h\":0}") // JSON
   classification    String?   // "site_wide" | "targeted" | "customer_service"
-  aiStrategy        String?   // "pause" | "increase" | "continue" | "ignore"
+  aiStrategy        String?   // "pause" | "decrease" | "continue" | "ignore"
   aiStrategyReason  String?
   merchantOverride  String?
   seenByMerchant    Boolean   @default(false)
