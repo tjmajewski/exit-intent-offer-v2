@@ -11,20 +11,135 @@
 
 ## Queue (in priority order)
 
-### 1. Customer Onboarding Experience
-- [ ] **Dashboard setup checklist** — Dismissible 5-step card on the Dashboard that guides new merchants from install to first live modal
-- [ ] **Getting Started page** — New `/app/getting-started` route with reference guide, accordion FAQ sections, and quick-start steps
-- [ ] **Sidebar nav update** — Add "Getting Started" link between Dashboard and Settings in `AppLayout.jsx`
+### 1. Simplified Promo Code System
+- [ ] **Remove text inputs** for discount code prefix and generic code from QuickSetupTab
+- [ ] **Auto-generate codes with RESPARQ prefix** using format: `RESPARQ-{amount}{type}` for static, `RESPARQ-{amount}{type}-XXXX` for unique
+- [ ] **Format: `P` for percentage, `F` for fixed** — e.g., `RESPARQ-5P` (5% off static), `RESPARQ-10F` (fixed $10 off), `RESPARQ-5P-A7K2` (5% off unique)
+- [ ] **Update discount creation logic** in backend to use new format
+- [ ] **Update settings UI** — remove code prefix/generic code fields, just show a preview of what the code will look like based on their discount settings
 
-**Spec file:** `ONBOARDING_PLAN.md`
-- Exact checklist steps with completion detection logic
-- Component props, file creation list, files to modify
-- UI design tokens matching existing app style
-- What NOT to build (no email drips, no wizards, no videos)
+**Spec:** Inline (no separate doc needed)
+- Current code inputs in `QuickSetupTab.jsx` lines 337-421 — replace with auto-generated preview
+- Discount creation in `apps.exit-intent.api.ai-decision.jsx` and manual flow — update code generation
+- Shopify discount codes cannot contain `%`, `$`, or spaces — only letters, numbers, hyphens
+- Stores need to distinguish percentage vs fixed when filtering in Shopify discount admin, hence `P` vs `F` suffix
+- For AI mode, the AI already controls offer type/amount — just apply the same naming convention
 
 ---
 
-### 2. Smarter "Don't Show" Modal Logic
+### 2. Product Images in Modal
+- [ ] **Parse cart item images** from `/cart.js` response (already fetched in `collectCustomerSignals()`)
+- [ ] **Pass featured image URL** to `showModalWithOffer()` — use the most expensive item's image
+- [ ] **Add image element to modal** — circular or rounded product thumbnail next to headline
+- [ ] **Fallback** — if no image available or image fails to load, hide the image element (don't break layout)
+- [ ] **Mobile layout** — image above headline on mobile, beside headline on desktop
+
+**Spec:** Inline
+- `/cart.js` response includes `items[].image` (URL) and `items[].featured_image.url`
+- Sort items by `items[].price` descending, use first item's image
+- In `createModal()` in `exit-intent-modal.js`, add an `<img>` element before the headline
+- Desktop: `display: flex` row with image (80px) + text. Mobile: image centered above text (60px)
+- Set `loading="eager"` since modal may show immediately
+- Consider: AI can test image vs no-image as a variant gene if performance data warrants it later
+
+---
+
+### 3. 24-Hour Expiry Copy for Unique Codes
+- [ ] **Add expiry line to modal** when discount code is unique (has 24hr expiry)
+- [ ] **Text:** "Valid for 24 hours" displayed below the CTA button in smaller muted text
+- [ ] **Do NOT show for static codes** (no expiry) — only unique codes
+- [ ] **AI variant testing** — the AI should test whether including/excluding the expiry line converts better (add as a boolean gene: `showExpiry: [true, false]`)
+
+**Spec:** Inline
+- In `showModalWithOffer()` in `exit-intent-modal.js`, after CTA button, conditionally add a `<div>` with expiry text
+- Condition: `settings.manualDiscountCodeMode === 'unique'` (manual) or `settings.aiDiscountCodeMode === 'unique'` (AI)
+- Style: `fontSize: 12, color: '#9ca3af', textAlign: 'center', marginTop: 8`
+- Gene pool addition: add `showExpiry: [true, false]` to all discount baselines in `gene-pools.js`
+
+---
+
+### 4. Social Proof as AI-Controlled Toggle
+- [ ] **Add single "Enable Social Proof" toggle** to AI Settings tab — no dropdown, no text box
+- [ ] **When enabled, AI mixes social proof variants into the gene pool** alongside regular variants
+- [ ] **AI measures performance** of social proof vs non-social proof copy via Thompson Sampling
+- [ ] **Social proof data sources:** `shop.orderCount`, `shop.avgRating`, `shop.reviewCount` (already in Shop model)
+- [ ] **Remove any existing social proof dropdowns/inputs** if they exist — simplify to just the toggle
+
+**Spec:** Inline
+- `socialProofEnabled` already exists in Shop model
+- Gene pools already have `headlinesWithSocialProof` and `subheadsWithSocialProof` arrays
+- `social-proof.js` and `social-proof-cache.js` already exist with `hasSocialProof()` and `replaceSocialProofPlaceholders()`
+- `createRandomVariantWithSocialProof()` in `variant-engine.js` already handles this
+- What's needed: wire the toggle in AISettingsTab → save to shop settings → variant engine checks `socialProofEnabled` when creating variants → if enabled, includes social proof pool in Thompson Sampling
+- The AI naturally A/B tests social proof vs non-social proof because both types are in the variant population
+
+---
+
+### 5. Mobile-Specific Modal Design
+- [ ] **Bottom sheet on mobile** — modal slides up from bottom, full-width, rounded top corners
+- [ ] **Shorter copy on mobile** — AI should prefer shorter headlines for mobile segment
+- [ ] **Larger tap targets** — CTA button full-width, minimum 48px height
+- [ ] **Swipe to dismiss** — swipe down gesture to close (in addition to X button)
+- [ ] **Product image above headline** (if images enabled) vs beside on desktop
+
+**Spec:** Inline
+- `isMobileDevice()` already exists in `exit-intent-modal.js`
+- `createModal()` already has some mobile detection but uses same layout
+- Mobile modal styles: `position: fixed, bottom: 0, left: 0, right: 0, borderRadius: '16px 16px 0 0', maxHeight: '70vh'`
+- Add touch event listener for swipe-down dismiss: track `touchstart` Y, compare to `touchend` Y, if delta > 50px dismiss
+- Gene pool consideration: add a `copyLength` gene (`short` vs `standard`) — mobile segment prefers `short`
+
+---
+
+### 6. Live Preview in Settings
+- [ ] **Side-by-side layout** — settings form on left (60%), live modal preview on right (40%)
+- [ ] **Preview updates in real-time** as merchant types headline, body, CTA, changes colors, toggles discount
+- [ ] **Preview shows actual modal** — not a screenshot, the real HTML/CSS that customers will see
+- [ ] **Mobile/desktop toggle** on preview — let merchant see both versions
+- [ ] **Replace current "Show Preview" toggle button** with the persistent side panel
+
+**Spec:** Inline
+- Current preview toggle in `QuickSetupTab.jsx` line 293-306
+- Create new component: `app/components/settings/ModalPreview.jsx`
+- Receives all current settings as props, renders a scaled-down version of the modal
+- Use `transform: scale(0.6)` with `transform-origin: top right` to fit in the side panel
+- Wrap the settings page in a flex container: `display: flex, gap: 24`
+- Preview component should render the same HTML structure as `createModal()` in `exit-intent-modal.js` — keep them in sync
+- On mobile viewport (< 1024px), preview goes below settings instead of beside
+
+---
+
+### 7. Smart Defaults from Store Data
+- [ ] **On first install, fetch store data** via Admin API (shop name, currency, average order value from recent orders)
+- [ ] **Pre-fill discount amount** based on AOV — stores with $200+ AOV get 10% default, stores with <$50 AOV get $5 fixed default
+- [ ] **Pre-fill brand colors** by running auto-detect on install (already exists as a button — make it automatic)
+- [ ] **Set currency-aware copy** — "Get $10 off" vs "Get €10 off" based on store currency
+- [ ] **Pre-fill headline** with store name: "Wait! {StoreName} has a special offer for you"
+
+**Spec:** Inline
+- Auto-detect brand colors button already exists in `BrandingTab.jsx` line 107-124 — trigger this logic on first install
+- Store currency available from `window.Shopify.currency.active` (client) and Shopify Admin API (server)
+- Fetch recent orders in the loader of `app.settings.jsx` to calculate AOV — `orders(first: 50) { edges { node { totalPriceSet { shopMoney { amount } } } } }`
+- Store these as defaults only if settings are empty (first install) — never overwrite existing config
+- Files: `app/routes/app.settings.jsx` (loader), settings tab components
+
+---
+
+### 8. Visual Templates
+- [ ] **Templates change design, not just copy** — each template sets colors, layout, button style, animation, and typography
+- [ ] **Template preview cards** show a visual thumbnail of what the modal will look like
+- [ ] **Applying a template sets branding + copy + design in one click**
+- [ ] **Templates:** Minimal (clean white), Bold (dark bg, large text), Playful (rounded, bright accent), Premium (elegant, serif font), Urgent (red accents, countdown feel)
+
+**Spec:** Inline
+- Current templates in `app/utils/templates.js` — extend to include visual settings
+- Each template should set: `brandPrimaryColor`, `brandSecondaryColor`, `brandAccentColor`, `brandFont`, `layout`, `buttonStyle`, `animation`, `typography` in addition to existing `headline`, `body`, `ctaButton`
+- `applyTemplate()` in `QuickSetupTab.jsx` currently only sets copy — extend to also set branding values
+- Template preview cards: render a tiny modal thumbnail (CSS only, no actual modal) using the template's colors/style
+
+---
+
+### 9. Smarter "Don't Show" Modal Logic
 - [ ] **Suppress when customer just added item** (< 10 seconds ago)
 - [ ] **Suppress on product pages** (only show on cart/checkout)
 - [ ] **Suppress for previous ResparQ converters** (cookie/localStorage flag)
@@ -36,7 +151,7 @@
 
 ---
 
-### 3. Segment-Aware Variant Selection
+### 10. Segment-Aware Variant Selection
 - [ ] **Define segments** (new_visitor, returning_browser, loyal_customer, price_sensitive, high_value_cart, mobile_shopper, paid_traffic)
 - [ ] **Compute segment from signals** in AI decision endpoint
 - [ ] **Filter Thompson Sampling by segment** so variants optimize per-audience
@@ -48,7 +163,7 @@
 
 ---
 
-### 4. Copy Personalization Tokens
+### 11. Copy Personalization Tokens
 - [ ] **Add new placeholders** (`{{cart_item_name}}`, `{{customer_first_name}}`, `{{cart_total}}`, `{{cart_item_count}}`, `{{savings_amount}}`)
 - [ ] **Add personalized headline/subhead variants** to gene pools
 - [ ] **Expand replacement logic** in `showModalWithOffer()` with fallback for missing data (e.g., guest users)
@@ -60,7 +175,7 @@
 
 ---
 
-### 5. Profit-Optimized Discounting
+### 12. Profit-Optimized Discounting
 - [ ] **Add "Average Margin" merchant setting** (default 50%)
 - [ ] **Factor margin into offer calculation** — don't offer 20% on a 30% margin product
 - [ ] **Weight PPI (profit per impression) higher** in Thompson Sampling fitness
@@ -72,7 +187,7 @@
 
 ---
 
-### 6. Discount Escalation (2-Step Offers)
+### 13. Discount Escalation (2-Step Offers)
 - [ ] **First dismiss → flag, don't session-block**
 - [ ] **Second exit intent → escalated offer** (+5%, different urgency copy)
 - [ ] **Max 2 shows per session**, track escalation conversion separately
@@ -84,7 +199,7 @@
 
 ---
 
-### 7. Time-of-Day & Day-of-Week Optimization
+### 14. Time-of-Day & Day-of-Week Optimization
 - [ ] **Add hourOfDay and dayOfWeek to signals**
 - [ ] **Store time data in VariantImpression** (new columns or JSON field)
 - [ ] **Calculate conversion rate multipliers** per time bucket after 2+ weeks of data
@@ -96,7 +211,7 @@
 
 ---
 
-### 8. Product Category Awareness
+### 15. Product Category Awareness
 - [ ] **Parse product_type, tags, title, price** from `/cart.js` response
 - [ ] **Send cartComposition signal** to AI decision endpoint
 - [ ] **Adjust strategy by category** (consumables → "stock up", gifts → urgency, sale items → smaller discount)
@@ -108,7 +223,7 @@
 
 ---
 
-### 9. Cross-Store Meta-Learning (Long-term)
+### 16. Cross-Store Meta-Learning (Long-term)
 - [ ] **Aggregate anonymized variant performance** across stores
 - [ ] **Push data after each evolution cycle** (contributing stores only)
 - [ ] **Pull meta-learned priors for new stores** — bootstrap Thompson Sampling
@@ -118,6 +233,20 @@
 - `contributeToMetaLearning` flag already exists in shop settings
 - `meta-learning.js` already exists but needs implementation
 - Files: `meta-learning.js`, `evolution-cycle.js`, `variant-engine.js`, `prisma/schema.prisma`
+
+---
+
+### 17. Customer Onboarding Experience
+- [ ] **Dashboard setup checklist** — Dismissible 5-step card on the Dashboard that guides new merchants from install to first live modal
+- [ ] **Getting Started page** — New `/app/getting-started` route with reference guide, accordion FAQ sections, and quick-start steps
+- [ ] **Sidebar nav update** — Add "Getting Started" link between Dashboard and Settings in `AppLayout.jsx`
+
+**Spec file:** `ONBOARDING_PLAN.md`
+- **Note:** Build this LAST — the settings UI changes from items 1, 6, 7, 8 above will change what the onboarding checklist references. Update `ONBOARDING_PLAN.md` to reflect the simplified settings before building.
+- Exact checklist steps with completion detection logic
+- Component props, file creation list, files to modify
+- UI design tokens matching existing app style
+- What NOT to build (no email drips, no wizards, no videos)
 
 ---
 
@@ -140,7 +269,7 @@
 
 1. Read this file first
 2. Pick the top unchecked item
-3. Read its spec file for implementation details
+3. Read its spec file (or inline spec) for implementation details
 4. Build it, commit, push to your working branch
 5. Tell the user to merge with: `git fetch origin <branch> && git checkout main && git merge origin/<branch> --no-edit && git push origin main`
 6. Check off completed items in this file and push the update
