@@ -253,11 +253,31 @@
 - [ ] **Push data after each evolution cycle** (contributing stores only)
 - [ ] **Pull meta-learned priors for new stores** — bootstrap Thompson Sampling
 - [ ] **MetaLearning table** in database
+- [ ] **Include feature gene performance** — aggregate conversion rates per gene value across stores so new stores benefit from what the network has already learned
 
 **Spec file:** `AI_IMPROVEMENTS_PLAN.md` → Section #8
 - `contributeToMetaLearning` flag already exists in shop settings
 - `meta-learning.js` already exists but needs implementation
 - Files: `meta-learning.js`, `evolution-cycle.js`, `variant-engine.js`, `prisma/schema.prisma`
+
+**Feature gene data to aggregate (anonymized, no store identity):**
+
+| Gene | What to share | How it helps new stores |
+|------|--------------|----------------------|
+| `showProductImage` | Conversion rate with/without, by store product category | Fashion store instantly knows images help; digital store knows they don't |
+| `useSocialProof` | Conversion rate with/without, by store order volume | High-volume stores may benefit more from "X customers bought today" |
+| `showExpiry` | Conversion rate with/without, by discount code type | Learn whether expiry urgency helps across store types |
+| `copyLength` | Short vs standard performance, by device type | Instant mobile optimization for new stores |
+| `modalLayout` | Bottom sheet vs center, by device type | Skip the layout testing phase entirely |
+| `urgency` | On/off performance, by offer type and segment | Already exists as gene — include in meta-learning |
+| `offerAmount` | Conversion rate by discount %, by cart value range | Learn optimal discount ranges across the network |
+| `redirect` | Cart vs checkout performance, by cart value | Learn which redirect converts better by context |
+
+**Privacy rules:**
+- Never share store domain, customer data, revenue numbers, or product names
+- Only share gene-level conversion rates with minimum 100 impressions (prevent fingerprinting small stores)
+- Stores must opt in via `contributeToMetaLearning` toggle
+- Data is aggregated into buckets (e.g., "stores with AOV $50-100") not individual store records
 
 ---
 
