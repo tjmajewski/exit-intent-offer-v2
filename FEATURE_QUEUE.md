@@ -9,6 +9,22 @@
 
 ---
 
+## Core Principle: Every Modal Feature Must Be a Testable Gene
+
+> **IMPORTANT:** When building any new modal feature (product images, social proof, expiry copy, mobile design, etc.), it MUST be added as a **boolean gene** in the variant gene pool. The AI should be able to toggle the feature on/off per variant and measure its impact on conversions via Thompson Sampling.
+>
+> This means the AI doesn't just optimize copy — it learns whether product images help or hurt for a specific store, whether social proof converts better than urgency, whether showing the expiry line increases or decreases clicks. Every feature is an experiment the AI runs automatically.
+>
+> **Implementation pattern for each new feature gene:**
+> 1. Add the gene to relevant baselines in `gene-pools.js` (e.g., `showProductImage: [true, false]`)
+> 2. Store the gene value on each variant in `variant-engine.js`
+> 3. Pass the gene value to `createModal()` / `showModalWithOffer()` in `exit-intent-modal.js`
+> 4. Conditionally render the feature based on the gene value
+> 5. Thompson Sampling naturally evolves toward the best combination — variants with the feature survive if it helps, die if it hurts
+> 6. Track the gene value in `VariantImpression` so performance can be analyzed per-feature in analytics
+
+---
+
 ## Queue (in priority order)
 
 ### 1. Simplified Promo Code System
@@ -33,6 +49,7 @@
 - [ ] **Add image element to modal** — circular or rounded product thumbnail next to headline
 - [ ] **Fallback** — if no image available or image fails to load, hide the image element (don't break layout)
 - [ ] **Mobile layout** — image above headline on mobile, beside headline on desktop
+- [ ] **AI gene: `showProductImage: [true, false]`** — AI tests image vs no-image per variant and evolves toward what converts best for each store
 
 **Spec:** Inline
 - `/cart.js` response includes `items[].image` (URL) and `items[].featured_image.url`
@@ -40,7 +57,9 @@
 - In `createModal()` in `exit-intent-modal.js`, add an `<img>` element before the headline
 - Desktop: `display: flex` row with image (80px) + text. Mobile: image centered above text (60px)
 - Set `loading="eager"` since modal may show immediately
-- Consider: AI can test image vs no-image as a variant gene if performance data warrants it later
+- Add `showProductImage: [true, false]` to all baselines in `gene-pools.js`
+- Variant engine stores the gene value; modal conditionally renders image based on it
+- This lets the AI discover that e.g. fashion stores convert better with images but SaaS stores don't
 
 ---
 
@@ -48,7 +67,7 @@
 - [ ] **Add expiry line to modal** when discount code is unique (has 24hr expiry)
 - [ ] **Text:** "Valid for 24 hours" displayed below the CTA button in smaller muted text
 - [ ] **Do NOT show for static codes** (no expiry) — only unique codes
-- [ ] **AI variant testing** — the AI should test whether including/excluding the expiry line converts better (add as a boolean gene: `showExpiry: [true, false]`)
+- [ ] **AI gene: `showExpiry: [true, false]`** — AI tests whether showing the expiry line increases urgency-driven conversions or scares people off, per store
 
 **Spec:** Inline
 - In `showModalWithOffer()` in `exit-intent-modal.js`, after CTA button, conditionally add a `<div>` with expiry text
@@ -64,6 +83,7 @@
 - [ ] **AI measures performance** of social proof vs non-social proof copy via Thompson Sampling
 - [ ] **Social proof data sources:** `shop.orderCount`, `shop.avgRating`, `shop.reviewCount` (already in Shop model)
 - [ ] **Remove any existing social proof dropdowns/inputs** if they exist — simplify to just the toggle
+- [ ] **AI gene: `useSocialProof: [true, false]`** — AI tests social proof copy vs standard copy per variant, evolves toward what works for each store's audience
 
 **Spec:** Inline
 - `socialProofEnabled` already exists in Shop model
@@ -72,6 +92,7 @@
 - `createRandomVariantWithSocialProof()` in `variant-engine.js` already handles this
 - What's needed: wire the toggle in AISettingsTab → save to shop settings → variant engine checks `socialProofEnabled` when creating variants → if enabled, includes social proof pool in Thompson Sampling
 - The AI naturally A/B tests social proof vs non-social proof because both types are in the variant population
+- Track `useSocialProof` on VariantImpression so analytics can show "social proof converts X% better/worse for your store"
 
 ---
 
@@ -81,13 +102,17 @@
 - [ ] **Larger tap targets** — CTA button full-width, minimum 48px height
 - [ ] **Swipe to dismiss** — swipe down gesture to close (in addition to X button)
 - [ ] **Product image above headline** (if images enabled) vs beside on desktop
+- [ ] **AI gene: `copyLength: ['short', 'standard']`** — AI tests short vs standard copy length, especially for mobile segment
+- [ ] **AI gene: `modalLayout: ['bottom_sheet', 'center']`** on mobile — AI tests which layout converts better
 
 **Spec:** Inline
 - `isMobileDevice()` already exists in `exit-intent-modal.js`
 - `createModal()` already has some mobile detection but uses same layout
-- Mobile modal styles: `position: fixed, bottom: 0, left: 0, right: 0, borderRadius: '16px 16px 0 0', maxHeight: '70vh'`
+- Mobile modal styles for bottom sheet: `position: fixed, bottom: 0, left: 0, right: 0, borderRadius: '16px 16px 0 0', maxHeight: '70vh'`
 - Add touch event listener for swipe-down dismiss: track `touchstart` Y, compare to `touchend` Y, if delta > 50px dismiss
-- Gene pool consideration: add a `copyLength` gene (`short` vs `standard`) — mobile segment prefers `short`
+- Add `copyLength` and `modalLayout` genes to baselines in `gene-pools.js`
+- Short copy = headline only (no subhead). Standard = headline + subhead as today
+- Track both genes on VariantImpression for per-store learning
 
 ---
 
