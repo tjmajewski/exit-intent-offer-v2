@@ -4,8 +4,8 @@ This is a queue of planned features to implement after Shopify review is complet
 
 ## High Priority
 
-- [ ] Feature name and description
-- [ ] Feature name and description
+- [ ] **Enhanced AI System (Promotional Intelligence & Variant Analytics)** - Implement the complete AI system upgrade outlined in `AI_SYSTEM_COMPLETE_GUIDE.md`. This includes genetic algorithm improvements, Bayesian statistics optimization, and social proof integration. Reference `AI_TECHNICAL_ARCHITECTURE.md` and `AI_PRO_VS_ENTERPRISE.md` for implementation details.
+- [ ] **Developer Onboarding Feature** - Implement the comprehensive onboarding guide and setup documented in `DEVELOPER_ONBOARDING.md`. Includes environment setup automation, guided first-day experience, and developer documentation standards.
 
 ## Medium Priority
 
@@ -22,5 +22,5 @@ This is a queue of planned features to implement after Shopify review is complet
 
 ---
 
-**Last Updated:** [Date]
+**Last Updated:** February 7, 2026
 **Review Status:** Pending Shopify approval
