@@ -550,7 +550,7 @@ The free shipping progress bar needs to know the store's free shipping threshold
 - On install or when the touchpoint is first enabled, run auto-detect and pre-fill the text input
 - The text input is always editable — merchant can override if auto-detect picked the wrong rate (e.g., they have multiple shipping zones with different thresholds)
 - If auto-detect finds no free shipping rate, leave the field empty and show: "We couldn't detect a free shipping threshold. Enter your free shipping minimum to enable the progress bar."
-- The field is **required** — the bar can't render without knowing the threshold, so the save button stays disabled until it's filled in
+- The field is **required** — if the merchant enables the free shipping bar but leaves the threshold empty, the save button stays enabled (assuming other settings changed), but on save show an inline error: "Enter your free shipping threshold to activate the progress bar." The bar stays inactive until the threshold is set, but other settings still save normally.
 - Store as `freeShippingThreshold` on the Shop model
 
 **Edge cases:**
