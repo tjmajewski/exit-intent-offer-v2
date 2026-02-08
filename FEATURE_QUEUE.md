@@ -358,6 +358,202 @@
 
 ---
 
+## Expansion Roadmap: Multi-Touchpoint Orchestration
+
+> **Status:** Future — build AFTER the current queue is complete and the exit-intent experience is fully optimized.
+>
+> **Trigger to start:** When you're ready to add the first non-exit-intent touchpoint (e.g., free shipping bar, welcome modal, return visitor offer).
+>
+> **Key principle:** The orchestrator ships WITH the second touchpoint. One touchpoint doesn't need orchestration. Two or more do.
+
+### The Problem
+
+Multiple on-site interventions (exit-intent modal, welcome offer, free shipping bar, cart upsell, social proof toasts, return visitor modal) can overwhelm and annoy customers if they fire independently. A welcome modal + a free shipping bar + an exit-intent modal in one session is spam.
+
+### The Solution: Session-Level Orchestrator
+
+A coordination layer that sits ABOVE all individual touchpoints and makes a single decision: **"What is the ONE best intervention for this visitor right now, if any?"**
+
+**Core logic flow:**
+```
+Visitor arrives
+    ↓
+Collect signals (existing system)
+    ↓
+Orchestrator checks:
+  - Visitor's intervention history (this session + cross-session for Enterprise)
+  - Current patience budget (depleted or available?)
+  - Funnel stage (browsing / carting / checkout / post-purchase)
+  - Session behavior (engaged? rushing? idle?)
+  - Third-party popup detection (did Klaviyo/Privy already fire?)
+    ↓
+Orchestrator decides: "eligible touchpoints for this moment"
+  (usually 0-1 candidates, sometimes 2, often 0)
+    ↓
+If candidates exist → AI ranks them → picks the best one (or none)
+    ↓
+If shown → log it, deduct patience budget, track conversion
+If not shown → log the "control" observation for learning
+```
+
+### Third-Party Popup Detection
+
+Other apps (Klaviyo, Privy, Justuno, OptinMonster) inject modals into the DOM. ResparQ should detect these and treat them as if an intervention already fired.
+
+**Detection methods:**
+- **MutationObserver** on body — detect new overlay/modal elements that aren't ResparQ's
+- **Known selectors** — `.klaviyo-popup`, `#privy-popup`, `.ju-popup`, `#om-popup`, etc.
+- **Generic detection** — any new `position: fixed` element with high z-index and backdrop that appeared after page load
+
+**This applies to ALL tiers.** Even Starter customers deserve not to have ResparQ pile on top of another app's popup. The detection is basic DOM watching, not AI.
+
+**Selling point:** "ResparQ is the only app smart enough to back off when another app already engaged your visitor." Surface in dashboard: "ResparQ suppressed X modals this week because another app had already engaged the visitor."
+
+### How the Orchestrator Maps to Plan Tiers
+
+Every tier gets the same touchpoints. The tiers separate **how smart the orchestration is.**
+
+#### Starter ($29) — Manual Touchpoints, Rule-Based Protection
+
+- Merchant manually configures each touchpoint individually (on/off, offer type, discount, copy) — same as today's manual mode, just applied to more surfaces
+- Orchestration is simple rules:
+  - One popup per session (hard cap)
+  - Funnel stage gate: welcome offer only if no cart, exit-intent only if cart exists, etc.
+  - Third-party detection: if another app's popup fired, ResparQ waits
+- If multiple touchpoints are eligible, system fires the first one that matches the visitor's funnel stage and blocks the rest for that session
+- **Predictable and safe.** Merchant controls everything, rules prevent collisions.
+- Non-modal touchpoints (free shipping bar, social proof toasts) DON'T count against the popup limit — they're passive, not interruptive
+
+#### Pro ($79) — AI Picks the Best Intervention
+
+- Same touchpoints available
+- AI mode means the system decides WHICH touchpoint to show, not just what copy to use
+- Thompson Sampling runs across touchpoints: "for this returning mobile shopper with an $80 cart, is the exit-intent modal or the free shipping nudge more likely to convert?"
+- AI also optimizes copy/design within the chosen touchpoint (same as today)
+- Includes a "do nothing" arm — the AI actively measures whether staying silent outperforms every intervention, and backs off when silence wins
+- Merchant gets an "intervention style" control (conservative ↔ balanced ↔ aggressive) that maps to how willing the AI is to intervene vs stay quiet
+- Third-party detection included
+- **Session-only awareness** — Pro orchestrator only knows about the current visit, not past visits
+
+#### Enterprise ($199) — AI Learns Optimal Strategy Across the Lifecycle
+
+Everything Pro has, plus:
+- **Cross-session visitor history** (server-side tracking): knows this visitor saw a modal on their last 2 visits and backs off on visit 3
+- **Patience budgets per visitor:** every modal shown depletes patience, every un-interrupted visit restores it. AI learns the optimal cadence per segment.
+- **Segment-aware orchestration:** AI learns that new visitors from paid ads convert best with a welcome offer, but returning organic visitors convert best when left alone until exit. Different segments get different strategies.
+- **Cadence learning per store:** fashion stores might need more frequent touchpoints, B2B stores might need fewer. Enterprise AI discovers this.
+- **Third-party detection with learning:** not just detecting other popups, but learning patterns (e.g., "Klaviyo fires on every first visit to this store, so always defer the welcome offer")
+
+### How Settings Evolve Per Tier
+
+#### Starter Settings UI
+
+```
+── Touchpoints ──────────────────────────────────
+☑ Exit-Intent Modal           [Configure →]
+☑ Free Shipping Progress Bar  [Configure →]
+☐ Welcome Offer               [Configure →]
+☐ Return Visitor Offer        [Configure →]
+☐ Post-Purchase Offer         [Configure →]
+
+── Session Rules ────────────────────────────────
+Max popups per visit: [1 ▾]
+```
+
+Each "Configure" opens manual settings for that touchpoint: offer type, discount amount, copy, design. Same UX pattern as today's manual mode. The "max popups per visit" dropdown is their only orchestration control (default 1, option for 2). Non-modal touchpoints (free shipping bar) don't count against the limit.
+
+#### Pro Settings UI (adds AI section)
+
+```
+── AI Optimization ──────────────────────────────
+☑ Let AI choose which touchpoint to show
+  Intervention style: [Balanced ▾]
+  (Conservative / Balanced / Aggressive)
+
+── Touchpoints ──────────────────────────────────
+☑ Exit-Intent Modal           [AI-Managed ✦]
+☑ Free Shipping Progress Bar  [AI-Managed ✦]
+☐ Welcome Offer               [Configure →]
+☐ Return Visitor Offer        [Configure →]
+```
+
+When AI mode is on, enabled touchpoints switch from "Configure" to "AI-Managed" — merchant can view what the AI is currently running but doesn't manually set copy. They still toggle touchpoints on/off (the AI only uses enabled touchpoints). The intervention style slider controls how willing the AI is to intervene vs stay silent.
+
+#### Enterprise Settings UI (adds cross-session + segments)
+
+```
+── Cross-Session Intelligence ───────────────────
+☑ Track visitor history across sessions
+  Patience budget: [Standard ▾]
+  (Relaxed / Standard / Persistent)
+
+── Segment Strategies (AI-managed) ──────────────
+  New visitors:        Moderate engagement ↕
+  Returning browsers:  Low engagement ↕
+  Loyal customers:     Minimal engagement ↕
+  Price-sensitive:     High engagement ↕
+  (AI adjusts automatically. Read-only view.)
+```
+
+Enterprise merchants see what the AI learned about their segments but don't configure it. The AI discovers "loyal customers at your store convert better when left alone" and the merchant sees that reflected. The patience budget slider lets them influence how aggressively the system re-engages across visits.
+
+### Tier Comparison Table
+
+| Capability | Starter | Pro | Enterprise |
+|---|---|---|---|
+| Available touchpoints | All | All | All |
+| Touchpoint configuration | Manual per touchpoint | AI-optimized | AI-optimized |
+| Session orchestration | Rules (1 per visit) | AI picks best | AI picks best |
+| "Do nothing" intelligence | Rule-based (max cap) | AI-measured control arm | AI-learned per segment |
+| Cross-session memory | None | None (session only) | Full visitor lifecycle |
+| Segment-aware strategies | None | None | AI-learned per segment |
+| Third-party popup detection | Basic DOM detection | Same | Learns patterns over time |
+| Intervention cadence learning | None | Per-session | Per-store, per-segment |
+
+### Upgrade Pitch
+
+- **Starter → Pro:** "Stop guessing which touchpoint works. Let the AI figure out the best intervention for each visitor."
+- **Pro → Enterprise:** "Stop treating every visitor the same. Let the AI learn when to engage and when to back off across their entire relationship with your store."
+
+### Orchestrator Genes (AI-Evolved)
+
+When the orchestrator is built, these become testable genes in the evolution system:
+
+| Gene | Values | What it controls |
+|------|--------|-----------------|
+| `maxInterventionsPerSession` | `1`, `2` | Hard cap on popups per visit |
+| `patienceBudget` | `3`, `5`, `7` | How many sessions before re-engaging (Enterprise) |
+| `cooldownVisits` | `1`, `2`, `3` | Quiet visits required after showing a modal (Enterprise) |
+| `funnelStageStrictness` | `strict`, `permissive` | How tightly touchpoints are locked to funnel stages |
+| `suppressOnHighEngagement` | `true`, `false` | Back off when visitor is already actively browsing |
+| `thirdPartyBackoffMinutes` | `5`, `15`, `session` | How long to wait after another app's popup |
+
+### Implementation Order (when ready to build)
+
+1. **Pick the second touchpoint** — likely free shipping progress bar (non-modal, low risk, high value)
+2. **Build the basic orchestrator** — session flag + funnel stage gate + third-party detection (~30 lines of JS wrapping existing trigger logic)
+3. **Add the touchpoint** — with the orchestrator already preventing collisions
+4. **Wire up Starter settings** — touchpoint toggles + max popups dropdown
+5. **Add AI orchestration for Pro** — Thompson Sampling across touchpoints + "do nothing" arm + intervention style slider
+6. **Add cross-session tracking for Enterprise** — server-side visitor history, patience budgets, segment strategies
+7. **Add more touchpoints** — each new one plugs into the orchestrator automatically
+8. **Evolve orchestrator genes** — once enough data exists, the AI optimizes orchestration parameters themselves
+
+### New Touchpoints to Consider (in order of value)
+
+| Touchpoint | Type | Why | Funnel stage |
+|---|---|---|---|
+| Free shipping progress bar | Passive (not a popup) | High conversion impact, doesn't annoy | Cart/browsing |
+| Return visitor offer | Modal | Re-engage people who left before | First pageview (returning) |
+| Welcome offer | Modal | First-purchase discount | First pageview (new) |
+| Cart upsell/cross-sell | Modal or inline | Increase AOV | Cart page |
+| Post-purchase next-order offer | Modal or inline | Drive repeat purchase | Thank you page |
+| Social proof toasts | Toast notification | Build trust, passive | Browsing/product pages |
+| Urgency/scarcity badges | Inline | Create urgency on product pages | Product pages |
+| Smart announcement bar | Banner | Personalized top-of-page messaging | All pages |
+
+---
+
 ## Reference Docs
 
 | Doc | What it covers |
