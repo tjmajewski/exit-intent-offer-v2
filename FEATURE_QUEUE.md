@@ -454,7 +454,6 @@ Everything Pro has, plus:
 ☑ Free Shipping Progress Bar  [Configure →]
 ☐ Welcome Offer               [Configure →]
 ☐ Return Visitor Offer        [Configure →]
-☐ Post-Purchase Offer         [Configure →]
 
 ── Session Rules ────────────────────────────────
 Max popups per visit: [1 ▾]
@@ -528,6 +527,38 @@ When the orchestrator is built, these become testable genes in the evolution sys
 | `suppressOnHighEngagement` | `true`, `false` | Back off when visitor is already actively browsing |
 | `thirdPartyBackoffMinutes` | `5`, `15`, `session` | How long to wait after another app's popup |
 
+### Free Shipping Threshold Detection
+
+The free shipping progress bar needs to know the store's free shipping threshold. Auto-detect on install, let the merchant adjust if wrong.
+
+**Auto-detection via Shopify Admin API:**
+- Query `deliveryProfiles` → each profile has `profileLocationGroups` → `locationGroupZones` → `methodDefinitions`
+- Look for shipping rates with `rateProvider` price of $0.00 that have a price-based condition (minimum order subtotal)
+- Extract the minimum subtotal value — that's the free shipping threshold
+- Example: a rate named "Free Shipping" with condition "order subtotal >= $75" → threshold = $75
+
+**Settings UX:**
+```
+── Free Shipping Bar ────────────────────────────
+☑ Enable free shipping progress bar
+
+  Free shipping threshold: [$75.00    ]
+  (Auto-detected from your shipping settings.
+   Update this if the detected value is incorrect.)
+```
+
+- On install or when the touchpoint is first enabled, run auto-detect and pre-fill the text input
+- The text input is always editable — merchant can override if auto-detect picked the wrong rate (e.g., they have multiple shipping zones with different thresholds)
+- If auto-detect finds no free shipping rate, leave the field empty and show: "We couldn't detect a free shipping threshold. Enter your free shipping minimum to enable the progress bar."
+- The field is **required** — the bar can't render without knowing the threshold, so the save button stays disabled until it's filled in
+- Store as `freeShippingThreshold` on the Shop model
+
+**Edge cases:**
+- Multiple shipping zones with different thresholds → pick the most common one, let merchant adjust
+- No free shipping configured → field empty, merchant must enter manually
+- Free shipping with no minimum (always free) → detect and show "Free shipping is always active — progress bar not needed"
+- Threshold changes in Shopify → re-detect periodically (e.g., on each settings page load) and show a notice: "Your shipping settings changed — update threshold?"
+
 ### Implementation Order (when ready to build)
 
 1. **Pick the second touchpoint** — likely free shipping progress bar (non-modal, low risk, high value)
@@ -547,10 +578,10 @@ When the orchestrator is built, these become testable genes in the evolution sys
 | Return visitor offer | Modal | Re-engage people who left before | First pageview (returning) |
 | Welcome offer | Modal | First-purchase discount | First pageview (new) |
 | Cart upsell/cross-sell | Modal or inline | Increase AOV | Cart page |
-| Post-purchase next-order offer | Modal or inline | Drive repeat purchase | Thank you page |
 | Social proof toasts | Toast notification | Build trust, passive | Browsing/product pages |
 | Urgency/scarcity badges | Inline | Create urgency on product pages | Product pages |
 | Smart announcement bar | Banner | Personalized top-of-page messaging | All pages |
+| Post-purchase next-order offer | Modal or inline | Drive repeat purchase — **NOTE:** requires separate Shopify checkout extension, NOT the app proxy. Different integration surface, heavier lift. | Thank you page |
 
 ### Pricing & Revenue Metric Update
 
