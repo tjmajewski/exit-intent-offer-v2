@@ -295,6 +295,69 @@
 
 ---
 
+## Internal Tools (Owner-Only)
+
+### 18. Admin Console — Store Switcher & Customer View
+- [ ] **New route: `/app/admin`** — locked to owner's store domain only (`session.shop === OWNER_DOMAIN`)
+- [ ] **Store numbering** — Your demo store is `#000`. Each customer gets a sequential number (`#001`, `#002`, etc.) based on install date from the `Shop` table
+- [ ] **Store selector** — Search box + dropdown listing all active stores by number, name, and domain. Filter by plan tier, status (active/churned), install date
+- [ ] **"View as Store" mode** — When you select a store, the entire app context switches to that store's data:
+  - Their Dashboard (analytics, metrics, enable/disable status)
+  - Their Settings (all 4 tabs showing their exact configuration)
+  - Their Performance/Conversions data
+  - Their active variants and evolution state
+  - Their plan tier and usage
+- [ ] **Read-only banner** — When viewing another store, show a persistent top banner: "Viewing Store #001 — nike-store.myshopify.com (READ ONLY)" with a "Back to Home" button
+- [ ] **Home view (#000)** — Your demo store dashboard, PLUS a summary widget showing:
+  - Total active stores
+  - Total impressions/conversions/revenue across all stores (last 30 days)
+  - Stores by plan tier breakdown
+  - Recently installed stores
+  - Stores with issues (modal disabled, no impressions in 7 days, etc.)
+- [ ] **Never write data** when viewing another store — all forms disabled, save buttons hidden
+
+**Spec:** Inline
+- **Auth gate:** In the route loader, check `session.shop` against an env var `OWNER_SHOP_DOMAIN`. If mismatch, redirect to `/app`
+- **Store list:** Query `prisma.shop.findMany()` ordered by `createdAt`. Assign sequential numbers in the UI (not stored — just array index + 1)
+- **Reading customer data:** Use the customer's stored session token from `prisma.session.findFirst({ where: { shop: selectedShopDomain } })` to create an admin API client for that shop. Read their metafields (settings, plan, analytics, status) and database records (conversions, variantImpressions, promotions)
+- **API client for other shops:**
+  ```
+  // Pseudocode for reading another shop's data
+  const session = await prisma.session.findFirst({ where: { shop: targetDomain, isOnline: false } });
+  const admin = shopifyApp.createAdminApiClient({ storeDomain: targetDomain, accessToken: session.accessToken });
+  const metafields = await admin.graphql(`query { shop { metafield(namespace: "exit_intent", key: "settings") { value } } }`);
+  ```
+- **Database records:** Direct Prisma queries filtered by `shopId` — conversions, variant impressions, promotions, discount offers
+- **Home view aggregation:** `prisma.shop.count()`, `prisma.conversion.aggregate()` with `_sum` on revenue, group by to get per-tier counts
+- **Files to create:** `app/routes/app.admin.jsx`, `app/components/admin/StoreSelector.jsx`, `app/components/admin/StoreOverview.jsx`
+- **Files to modify:** `app/components/AppLayout.jsx` (add Admin nav item, only visible when `session.shop === OWNER_DOMAIN`)
+- **Env var:** Add `OWNER_SHOP_DOMAIN` to `.env` and `ENVIRONMENT_VARIABLES.md`
+
+**Security rules:**
+- Route loader MUST check owner domain before loading any data — no client-side-only checks
+- Never expose this route or nav item to non-owner shops
+- All API calls to customer shops are read-only — no mutations
+- Log every admin view for audit trail (optional but recommended)
+- If a customer's session token is missing/expired, show "Store unavailable — reinstall required" instead of crashing
+
+---
+
+### 19. Admin Console — Cross-Store Performance Summary (Future)
+- [ ] **Dashboard widget on admin home** — table of all stores with key metrics columns
+- [ ] **Columns:** Store #, Name, Plan, Status, Impressions (30d), Conversions (30d), Revenue (30d), Conversion Rate, Last Active
+- [ ] **Sortable and filterable** — click column headers to sort, filter by plan tier or date range
+- [ ] **Alert flags** — highlight stores with: modal disabled, zero impressions in 7+ days, trial expiring soon, approaching impression limit
+- [ ] **Export to CSV** — download the table for offline analysis
+
+**Spec:** Inline
+- This builds on top of #18 — requires the admin route and store list to exist first
+- Aggregate data from Prisma: `conversion` table grouped by `shopId`, `variantImpression` table for impression counts
+- For revenue and conversion counts, use date-range filtered queries
+- Alert logic: compare `lastImpressionDate` to `now - 7 days`, check `plan.usage.impressionsThisMonth` vs `plan.impressionLimit`
+- Files: `app/components/admin/CrossStoreTable.jsx` (new), `app/routes/app.admin.jsx` (extend)
+
+---
+
 ## Reference Docs
 
 | Doc | What it covers |
