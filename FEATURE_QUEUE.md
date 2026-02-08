@@ -552,6 +552,50 @@ When the orchestrator is built, these become testable genes in the evolution sys
 | Urgency/scarcity badges | Inline | Create urgency on product pages | Product pages |
 | Smart announcement bar | Banner | Personalized top-of-page messaging | All pages |
 
+### Pricing & Revenue Metric Update
+
+> **IMPORTANT:** As soon as a pre-add-to-cart touchpoint is added (free shipping bar, welcome offer, etc.), the revenue metric and calculation must be updated.
+
+**Current metric:** "Recovered Revenue" — works for exit-intent only because the customer was leaving and ResparQ saved the sale.
+
+**New metric:** "ResparQ Revenue" — measures the **incremental value created** by each touchpoint, not the total purchase.
+
+**Revenue share rates (applied to ResparQ Revenue):**
+
+| Tier | Rate | Why |
+|------|------|-----|
+| Starter ($29) | 5% | Higher rate, lower volume. Incentivizes upgrade to Pro. |
+| Pro ($79) | 2% | AI generates more value, so lower rate still yields more absolute revenue. |
+| Enterprise ($199) | 1% | Lowest rate, highest volume stores. Absolute dollars are highest. |
+
+**Value calculation per touchpoint type:**
+
+| Touchpoint | Attribution method | Value created |
+|---|---|---|
+| Exit-intent modal | RESPARQ discount code used | Full cart value (saved from $0) |
+| Free shipping bar | Cart snapshot before bar vs cart at checkout | Delta only (e.g., cart was $60, purchased $85 → value = $25) |
+| Cart upsell | Items added after upsell shown | Value of added items |
+| Welcome offer | RESPARQ discount code used | Full purchase value (converted from bounce) |
+| Return visitor modal | RESPARQ discount code used | Full purchase value (re-engaged from $0) |
+| Passive touchpoints (toasts, badges) | No direct attribution | Covered by subscription — no rev share |
+
+**Why this model works:**
+- Aligned incentives: ResparQ only earns when the merchant earns. Showing a pointless popup earns nothing.
+- Discount codes provide clean attribution for modal-based touchpoints
+- Cart snapshots provide clean attribution for passive upsell touchpoints (free shipping bar)
+- No impression-based pricing concerns — merchants won't worry "the AI is spamming my customers to charge me more"
+- The orchestrator actively suppresses low-value interventions, which aligns with the pricing model
+
+**Dashboard display:** "ResparQ created $4,200 in incremental revenue this month. Your fee: $84 (2%)" — makes the ROI undeniable.
+
+**Implementation notes:**
+- Track `cartValueAtIntervention` on every touchpoint event (snapshot cart via `/cart.js` when touchpoint fires)
+- Track `purchaseValue` when RESPARQ discount code is redeemed (Shopify webhook or order API)
+- For free shipping bar: `resparqRevenue = purchaseValue - cartValueAtIntervention` (only if positive)
+- For modal touchpoints with discount codes: `resparqRevenue = purchaseValue`
+- Store per-touchpoint attribution in the `Conversion` table so the dashboard can break down value by touchpoint type
+- Monthly billing: sum all `resparqRevenue` for the period, apply tier rate
+
 ---
 
 ## Reference Docs
