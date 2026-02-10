@@ -177,10 +177,17 @@
 ---
 
 ### 10. Segment-Aware Variant Selection
-- [ ] **Define segments** (new_visitor, returning_browser, loyal_customer, price_sensitive, high_value_cart, mobile_shopper, paid_traffic)
+- [ ] **Define segments** (new_visitor, returning_browser, loyal_customer, price_sensitive, high_value_cart, mobile_shopper, paid_traffic, aeo_geo_traffic)
 - [ ] **Compute segment from signals** in AI decision endpoint
 - [ ] **Filter Thompson Sampling by segment** so variants optimize per-audience
 - [ ] **Track per-segment performance** in VariantImpression table
+- [ ] **AEO/GEO detection:** Identify visitors arriving from AI answer engines (ChatGPT, Perplexity, Google AI Overviews, Bing Copilot, Claude, etc.) via `document.referrer` and UTM parameters. Treat as a distinct high-intent segment similar to paid_traffic or returning_browser — these visitors were specifically recommended by an AI, so they're likely high-intent but brand-unfamiliar. The AI should learn the optimal strategy independently for this segment (e.g., social proof to build trust may outperform discounting since they're already convinced enough to click through).
+
+**AEO/GEO referrer detection:**
+- `document.referrer` containing: `chat.openai.com`, `chatgpt.com`, `perplexity.ai`, `bing.com/chat`, `copilot.microsoft.com`, `claude.ai`, `bard.google.com`, `you.com`, `phind.com`
+- Google AI Overviews: harder to distinguish from regular Google organic — look for UTM params like `utm_source=google_ai` or referrer path patterns if available
+- Pass `trafficSource: 'aeo_geo'` as a signal alongside existing `trafficSource` detection (organic, paid, direct, social, referral)
+- This segment should be tracked separately in analytics so merchants can see "X% of your recovered revenue came from AI-referred visitors"
 
 **Spec file:** `AI_IMPROVEMENTS_PLAN.md` → Section #1
 - Files: `variant-engine.js`, `ai-decision.server.js`, `exit-intent-modal.js`, `apps.exit-intent.api.ai-decision.jsx`
@@ -440,7 +447,7 @@ Every tier gets the same touchpoints. The tiers separate **how smart the orchest
 Everything Pro has, plus:
 - **Cross-session visitor history** (server-side tracking): knows this visitor saw a modal on their last 2 visits and backs off on visit 3
 - **Patience budgets per visitor:** every modal shown depletes patience, every un-interrupted visit restores it. AI learns the optimal cadence per segment.
-- **Segment-aware orchestration:** AI learns that new visitors from paid ads convert best with a welcome offer, but returning organic visitors convert best when left alone until exit. Different segments get different strategies.
+- **Segment-aware orchestration:** AI learns that new visitors from paid ads convert best with a welcome offer, returning organic visitors convert best when left alone until exit, and AEO/GEO visitors (from ChatGPT, Perplexity, Google AI Overviews, etc.) may respond better to trust-building than discounting since they arrived via an AI recommendation. Different segments get different strategies.
 - **Cadence learning per store:** fashion stores might need more frequent touchpoints, B2B stores might need fewer. Enterprise AI discovers this.
 - **Third-party detection with learning:** not just detecting other popups, but learning patterns (e.g., "Klaviyo fires on every first visit to this store, so always defer the welcome offer")
 
@@ -491,6 +498,8 @@ When AI mode is on, enabled touchpoints switch from "Configure" to "AI-Managed" 
   Returning browsers:  Low engagement ↕
   Loyal customers:     Minimal engagement ↕
   Price-sensitive:     High engagement ↕
+  AI-referred (AEO/GEO): Moderate engagement ↕
+  Paid traffic:        High engagement ↕
   (AI adjusts automatically. Read-only view.)
 ```
 
