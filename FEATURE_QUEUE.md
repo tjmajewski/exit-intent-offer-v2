@@ -583,17 +583,17 @@ The free shipping progress bar needs to know the store's free shipping threshold
 
 ### New Touchpoints to Consider (in order of value)
 
+> **Lane constraint:** ResparQ is a **promotional intelligence** platform. Every touchpoint must be about surfacing or creating promotional value. No shipping info, trust badges, loyalty programs, or general e-commerce widgets — those are other apps' lanes.
+
 | Touchpoint | Type | Why | Funnel stage |
 |---|---|---|---|
 | Promotion awareness | Passive (multiple formats) | Surfaces EXISTING store promotions to visitors who missed them (deep-link arrivals from ads, AEO/GEO, shared links). Costs the merchant nothing — no new discount, just visibility. Highest ROI touchpoint. | Product/collection pages (when visitor hasn't seen homepage) |
+| Compare-at-price awareness | Passive (multiple formats) | Surfaces EXISTING markdowns the visitor may not notice. Shopify `compare_at_price` is already set on the product — ResparQ makes it prominent. "This item was $120 — now $89, you're saving $31." Zero cost to merchant, same AI-tested formats as promotion awareness (banner, price slash, badge, cart callout). | Product pages (when compare_at_price is set) |
 | Free shipping progress bar | Passive (not a popup) | High conversion impact, doesn't annoy | Cart/browsing |
-| Return visitor offer | Modal | Re-engage people who left before | First pageview (returning) |
-| Welcome offer | Modal | First-purchase discount | First pageview (new) |
-| Cart upsell/cross-sell | Modal or inline | Increase AOV | Cart page |
-| Social proof toasts | Toast notification | Build trust, passive | Browsing/product pages |
-| Urgency/scarcity badges | Inline | Create urgency on product pages | Product pages |
-| Smart announcement bar | Banner | Personalized top-of-page messaging | All pages |
-| Post-purchase next-order offer | Modal or inline | Drive repeat purchase — **NOTE:** requires separate Shopify checkout extension, NOT the app proxy. Different integration surface, heavier lift. | Thank you page |
+| Return visitor offer | Modal | Re-engage people who left before with a promotional offer | First pageview (returning) |
+| Welcome offer | Modal | First-purchase promotional discount | First pageview (new) |
+| Cart upsell/cross-sell | Modal or inline | Increase AOV with promotional bundle/add-on | Cart page |
+| Post-purchase next-order offer | Modal or inline | Promotional offer to drive repeat purchase — **NOTE:** requires separate Shopify checkout extension, NOT the app proxy. Different integration surface, heavier lift. Build last. | Thank you page |
 
 ### Promotion Awareness Touchpoint — Detailed Spec
 
@@ -650,6 +650,36 @@ The AI should test which presentation format converts best for each store. This 
 - Attribution: if the visitor saw the promotion awareness touchpoint AND used the store's promo code → attribute the full purchase as ResparQ Revenue (the conversion would not have happened without the awareness)
 - Track with a `resparq_promo_surfaced` flag in sessionStorage so the attribution is clean
 
+### Compare-at-Price Awareness Touchpoint — Detailed Spec
+
+> **Core idea:** Shopify products have a `compare_at_price` field that stores the original price before a markdown. Many themes show a slash-through price, but it's often subtle, and deep-link visitors may not notice it — especially on mobile. ResparQ makes the savings explicit and prominent.
+
+**Detection:**
+- Storefront JS reads the product's `compare_at_price` from the product JSON (available on product pages via `{{ product | json }}` or Shopify's global JS data)
+- If `compare_at_price > price` → the product is on sale, savings = `compare_at_price - price`
+- No API call needed — this data is already on the product page
+
+**Presentation — same AI-tested format system as promotion awareness:**
+
+| Gene: `compareFormat` | What it looks like |
+|---|---|
+| `banner` | Slide-in toast: "You're saving $31 on this item — was $120, now $89" |
+| `price_slash` | Enhanced price display near buy button: "~~$120~~ $89 — Save 26%" |
+| `cart_callout` | In cart: "You're saving $31 on Denim Jacket" |
+| `badge` | Badge on product image: "SAVE $31" or "26% OFF" |
+
+**AI genes:** Same structure as promotion awareness — `compareFormat`, `compareCopyStyle` (savings_amount vs savings_percent vs both), `comparePlacement`, `compareTiming`. The AI learns whether "$31 off" or "26% off" resonates better per store's audience.
+
+**When NOT to show:**
+- Visitor arrived from homepage and likely already saw sale banners
+- Theme already has a prominent compare-at-price display (harder to detect — could check for existing strikethrough elements near the price)
+- Product is not on sale (`compare_at_price` not set or equal to `price`)
+
+**Revenue attribution:**
+- If visitor saw the compare-at-price awareness AND purchased the item → attribute the purchase as ResparQ Revenue
+- The product was already on sale, but the visitor may not have noticed without the prominent callout
+- Track with `resparq_compare_surfaced` flag in sessionStorage
+
 ### Pricing & Revenue Metric Update
 
 > **IMPORTANT:** As soon as a pre-add-to-cart touchpoint is added (free shipping bar, welcome offer, etc.), the revenue metric and calculation must be updated.
@@ -676,6 +706,7 @@ The AI should test which presentation format converts best for each store. This 
 | Welcome offer | RESPARQ discount code used | Full purchase value (converted from bounce) |
 | Return visitor modal | RESPARQ discount code used | Full purchase value (re-engaged from $0) |
 | Promotion awareness | Visitor saw promo surfacing + used store's promo code | Full purchase value (visitor would have bounced or paid full price without awareness) |
+| Compare-at-price awareness | Visitor saw savings callout + purchased the item | Full purchase value (visitor may not have noticed the markdown without ResparQ surfacing it) |
 | Passive touchpoints (toasts, badges) | No direct attribution | Covered by subscription — no rev share |
 
 **Why this model works:**
