@@ -391,6 +391,8 @@ Orchestrator checks:
   - Visitor's intervention history (this session + cross-session for Enterprise)
   - Current patience budget (depleted or available?)
   - Funnel stage (browsing / carting / checkout / post-purchase)
+  - Landing page context (homepage vs product page vs collection — did they see the store's promo banners?)
+  - Active store promotions (is a sale running that this visitor may not know about?)
   - Session behavior (engaged? rushing? idle?)
   - Third-party popup detection (did Klaviyo/Privy already fire?)
     ↓
@@ -583,6 +585,7 @@ The free shipping progress bar needs to know the store's free shipping threshold
 
 | Touchpoint | Type | Why | Funnel stage |
 |---|---|---|---|
+| Promotion awareness | Passive (multiple formats) | Surfaces EXISTING store promotions to visitors who missed them (deep-link arrivals from ads, AEO/GEO, shared links). Costs the merchant nothing — no new discount, just visibility. Highest ROI touchpoint. | Product/collection pages (when visitor hasn't seen homepage) |
 | Free shipping progress bar | Passive (not a popup) | High conversion impact, doesn't annoy | Cart/browsing |
 | Return visitor offer | Modal | Re-engage people who left before | First pageview (returning) |
 | Welcome offer | Modal | First-purchase discount | First pageview (new) |
@@ -591,6 +594,61 @@ The free shipping progress bar needs to know the store's free shipping threshold
 | Urgency/scarcity badges | Inline | Create urgency on product pages | Product pages |
 | Smart announcement bar | Banner | Personalized top-of-page messaging | All pages |
 | Post-purchase next-order offer | Modal or inline | Drive repeat purchase — **NOTE:** requires separate Shopify checkout extension, NOT the app proxy. Different integration surface, heavier lift. | Thank you page |
+
+### Promotion Awareness Touchpoint — Detailed Spec
+
+> **Core idea:** Stores run promotions (20% off, BOGO, seasonal sales) but visitors who arrive via deep links (Instagram ads, Google Shopping, AEO/GEO, shared links) land on product pages and never see the homepage banners. They're looking at full price while the store is literally running a sale. ResparQ surfaces the existing promotion to these visitors — zero cost to the merchant, pure conversion lift.
+
+**Detection — does the store have an active promotion?**
+- ResparQ already detects active promotions via promotional intelligence in `ai-decision.server.js`
+- Shopify Admin API: `priceRules` / `discountNodes` to get active automatic discounts and discount codes
+- Store the active promotion data (code, type, amount, end date) so the storefront JS can access it
+
+**Detection — did this visitor miss the promotion?**
+- Track `landingPage` signal: `window.location.pathname` on first pageview
+- Track `pagesViewed` signal: list of pages visited this session
+- If `landingPage` is a product or collection page AND the visitor has NOT visited the homepage → they likely missed the promotion
+- If the visitor arrived from an ad (`utm_medium=cpc/paid`), AEO/GEO, or a direct product link → high probability they missed it
+
+**Presentation — AI-tested formats (genes):**
+
+The AI should test which presentation format converts best for each store. This is NOT a merchant setting — the AI learns the optimal format automatically.
+
+| Gene: `promoFormat` | What it looks like | When it works best |
+|---|---|---|
+| `banner` | Slide-in toast/banner: "Sale happening now — 20% off everything with code SUMMER20" | General awareness, non-intrusive |
+| `price_slash` | Injected near the product price: "~~$80~~ $64 with code SUMMER20" | Product pages, price-sensitive shoppers |
+| `cart_callout` | Message in/near cart: "Apply SUMMER20 at checkout for 20% off your order" | Cart page, when customer is close to purchasing |
+| `badge` | Small badge on product image or near CTA: "SALE 20% OFF" | Browse/collection pages, visual shoppers |
+
+**AI genes for this touchpoint:**
+
+| Gene | Values | What AI learns |
+|------|--------|---------------|
+| `promoFormat` | `banner`, `price_slash`, `cart_callout`, `badge` | Which presentation converts best for this store's audience |
+| `promoCopyStyle` | `informational`, `urgency`, `savings_focused` | "Sale ends Sunday" vs "Save $16 on this item" vs "20% off everything" |
+| `promoPlacement` | `top`, `bottom`, `inline_near_price`, `inline_near_cta` | Where on the page the promotion surfaces |
+| `promoTiming` | `immediate`, `after_5s`, `after_scroll` | Show right away or after the visitor engages |
+
+**Interaction with exit-intent modal:**
+- If the visitor saw the promotion awareness touchpoint but still tries to leave WITHOUT applying the promo code → the exit-intent modal can reinforce: "Don't forget — your 20% off code SUMMER20 is still available"
+- If the visitor already applied the promo code to their cart → exit-intent uses a different strategy (urgency, social proof, free shipping) instead of offering a new discount on top of an existing one
+- The orchestrator checks `cartHasDiscount` signal (from `/cart.js` response `total_discount` field) before deciding whether to create a new ResparQ discount or reinforce the existing store promotion
+
+**Landing page segmentation for orchestrator:**
+
+| Signal | How to collect | Why it matters |
+|---|---|---|
+| `landingPage` | `window.location.pathname` on first pageview | Determines if visitor saw homepage promo banners |
+| `landingPageType` | Parse path: `/products/*` = product, `/collections/*` = collection, `/` = homepage | Different touchpoint eligibility per page type |
+| `hasVisitedHomepage` | Track in sessionStorage as visitor navigates | If they've been to homepage, they may already know about the promo |
+| `entrySource` | Existing `trafficSource` signal (organic, paid, direct, social, aeo_geo, referral) | Ad and AEO/GEO traffic almost always deep-links |
+| `cartHasDiscount` | `/cart.js` response `total_discount > 0` | Whether the visitor already applied a promo code |
+
+**Revenue attribution for this touchpoint:**
+- The store created the discount, but without ResparQ the visitor would never have known
+- Attribution: if the visitor saw the promotion awareness touchpoint AND used the store's promo code → attribute the full purchase as ResparQ Revenue (the conversion would not have happened without the awareness)
+- Track with a `resparq_promo_surfaced` flag in sessionStorage so the attribution is clean
 
 ### Pricing & Revenue Metric Update
 
@@ -617,6 +675,7 @@ The free shipping progress bar needs to know the store's free shipping threshold
 | Cart upsell | Items added after upsell shown | Value of added items |
 | Welcome offer | RESPARQ discount code used | Full purchase value (converted from bounce) |
 | Return visitor modal | RESPARQ discount code used | Full purchase value (re-engaged from $0) |
+| Promotion awareness | Visitor saw promo surfacing + used store's promo code | Full purchase value (visitor would have bounced or paid full price without awareness) |
 | Passive touchpoints (toasts, badges) | No direct attribution | Covered by subscription — no rev share |
 
 **Why this model works:**
