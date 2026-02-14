@@ -604,6 +604,16 @@ The free shipping progress bar needs to know the store's free shipping threshold
 - Shopify Admin API: `priceRules` / `discountNodes` to get active automatic discounts and discount codes
 - Store the active promotion data (code, type, amount, end date) so the storefront JS can access it
 
+**Filtering — mass promotions vs customer service codes:**
+- **CRITICAL:** Only surface promotions intended for all customers. Never surface one-time CS codes.
+- Filter using Shopify discount API fields:
+  - `usageLimit`: must be `null` (unlimited) or `> 10` — codes with `usageLimit: 1` are almost certainly CS codes for individual customers
+  - `customerSelection`: must be `ALL` — codes with `PREREQUISITE` are restricted to specific customers and should never be surfaced
+  - `prerequisiteCustomerIds`: must be empty — if specific customer IDs are set, it's a targeted code
+- **Automatic discounts** (applied at checkout without a code) are always safe to surface — they're inherently mass promotions
+- **Additional safety:** if a code has been used 0 times and has a usage limit of 1, it's definitely a CS code. If a code has a very specific/unusual naming pattern (contains order numbers, customer names, "sorry", "cs-", "support-"), flag it as potentially CS and exclude by default
+- Store a `promotionType` field: `mass` (safe to surface) vs `targeted` (never surface) vs `unknown` (exclude by default, err on the side of caution)
+
 **Detection — did this visitor miss the promotion?**
 - Track `landingPage` signal: `window.location.pathname` on first pageview
 - Track `pagesViewed` signal: list of pages visited this session
