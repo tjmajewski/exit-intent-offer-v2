@@ -737,6 +737,78 @@ The AI should test which presentation format converts best for each store. This 
 - Store per-touchpoint attribution in the `Conversion` table so the dashboard can break down value by touchpoint type
 - Monthly billing: sum all `resparqRevenue` for the period, apply tier rate
 
+### Files That Must Update With Each New Touchpoint
+
+> **IMPORTANT:** When a new touchpoint ships via the orchestrator, the corresponding analytics, tracking, and UI files MUST be updated in the same release. A touchpoint without analytics is invisible to the merchant.
+
+#### Terminology (global update — do once when orchestrator ships)
+- "Recovered Revenue" → "ResparQ Revenue" everywhere
+- "Exit Intent Dashboard" → "ResparQ Dashboard"
+- "Revenue Saved" → "ResparQ Revenue" or "Revenue Created"
+- "your modal" / "modal performance" → "touchpoint" or specific touchpoint name
+
+#### Per-touchpoint checklist (repeat for each new touchpoint)
+
+**Dashboard — `app/routes/app._index.jsx`**
+- [ ] Add touchpoint to the 30-day and lifetime metric aggregations
+- [ ] ResparQ Revenue hero card includes conversions from this touchpoint
+- [ ] Add touchpoint filter/tab so merchants can see performance per touchpoint vs combined
+- [ ] Update event structure to include `touchpointType` attribution
+
+**Analytics — `app/routes/app.analytics.jsx`**
+- [ ] Add tab or filter for this touchpoint type (alongside "Exit-Intent Modals", "AI Variants")
+- [ ] Touchpoint-specific KPIs where relevant (e.g., free shipping bar shows "AOV Lift", promo awareness shows "Codes Surfaced")
+- [ ] Variant comparison table includes `touchpointType` column
+- [ ] Segment performance breakdown works across this touchpoint's data
+
+**Conversions — `app/routes/app.conversions.jsx`**
+- [ ] Conversion table shows which touchpoint caused each conversion (`touchpointType` column)
+- [ ] "Touchpoint Preview" (Enterprise) shows what the customer saw — modal, banner, price slash, etc.
+- [ ] Export includes touchpoint type and ResparQ Revenue columns
+
+**Conversion Export — `app/routes/apps.exit-intent.api.export-conversions.jsx`**
+- [ ] Add `touchpointType` column
+- [ ] Add `resparqRevenue` column (incremental value created)
+- [ ] Add `cartValueAtIntervention` column
+
+**Event Tracking — `app/routes/apps.exit-intent.track.jsx`**
+- [ ] Accept `touchpointType` on every impression/click/conversion event
+- [ ] Track `cartValueAtIntervention` when touchpoint fires
+- [ ] Support touchpoint-specific identifiers (not just modal hash)
+
+**Order Webhook — `app/routes/webhooks.orders.create.jsx`**
+- [ ] Attribute conversion to correct touchpoint type
+- [ ] Calculate `resparqRevenue` using the correct formula for this touchpoint type (full cart for modals, delta for free shipping bar, etc.)
+- [ ] Store `touchpointType` in Conversion record
+
+**Variant System — `app/utils/variant-engine.js`**
+- [ ] Add touchpoint-specific gene pools if this touchpoint has AI-testable presentation formats
+- [ ] `touchpointType` stored on each variant
+- [ ] Thompson Sampling runs per-touchpoint (variants from different touchpoints don't compete with each other in evolution)
+
+**AI Decision — `app/utils/ai-decision.server.js`**
+- [ ] Orchestrator considers this touchpoint when deciding "which is the best intervention?"
+- [ ] Touchpoint-specific signals factored into decision (e.g., `cartHasDiscount` for promotion awareness, `cartBelowFreeShipping` for free shipping bar)
+
+**Billing — `app/utils/billing.server.js`**
+- [ ] Revenue share calculation includes this touchpoint's ResparQ Revenue
+- [ ] Attribution formula matches the touchpoint type (see Pricing & Revenue Metric Update table above)
+
+**Promotions — `app/routes/app.promotions.jsx` (Enterprise)**
+- [ ] If touchpoint interacts with store promotions (promotion awareness, compare-at-price), update promo intelligence to show which touchpoint surfaced which promotion
+
+**Variants — `app/routes/app.variants._index.jsx` and `app.variants.manage.jsx`**
+- [ ] Touchpoint type filter in variant listing
+- [ ] Variant status management (alive/killed/champion) works per-touchpoint
+
+**Settings — `app/routes/app.settings.jsx` + tab components**
+- [ ] Touchpoint toggle added to settings UI (Starter: manual configure, Pro/Enterprise: AI-managed)
+- [ ] Any touchpoint-specific settings (e.g., free shipping threshold, promo format preferences)
+- [ ] Settings preview shows this touchpoint type
+
+**Navigation — `app/components/AppLayout.jsx`**
+- [ ] Update any nav labels that reference "modals" or "exit intent" specifically
+
 ---
 
 ## Reference Docs
