@@ -29,6 +29,9 @@ model Session {
   locale        String?
   collaborator  Boolean?  @default(false)
   emailVerified Boolean?  @default(false)
+
+  @@index([shop])
+  @@index([expires])
 }
 
 model Shop {
@@ -139,6 +142,7 @@ model DiscountOffer {
 
   @@index([shopId, expiresAt])
   @@index([shopId, redeemed])
+  @@index([discountCode])
 }
 
 model AIDecision {
@@ -370,6 +374,7 @@ model Conversion {
   createdAt         DateTime @default(now())
 
   @@index([shopId])
+  @@index([shopId, orderedAt])
   @@index([orderedAt])
   @@unique([shopId, orderId])
 }

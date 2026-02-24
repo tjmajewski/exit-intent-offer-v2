@@ -187,7 +187,7 @@ cat > ROADMAP.md << 'EOF'
 
 ### DEPLOYMENT STEPS
 - [x] Pre-deployment optimizations complete
-- [ ] Database indexes added ← still needed
+- [x] Database indexes added ✅ Feb 24
 - [ ] Load testing passed ← still needed (see below)
 - [x] Error monitoring configured (Sentry)
 - [x] All critical bugs fixed
@@ -203,7 +203,7 @@ cat > ROADMAP.md << 'EOF'
   - **Test:** `/apps/exit-intent/api/ai-decision` (most critical)
   - **Red flags:** p(95) > 1000ms, error rate > 5%, DB connection errors
 - [x] All critical bugs fixed
-- [ ] Database indexes added
+- [x] Database indexes added ✅ Feb 24
 - [ ] API rate limiting
 - [x] GDPR compliance — privacy policy, data_request/redact webhooks ✅ Feb 1
 - [ ] Security audit
@@ -230,7 +230,7 @@ cat > ROADMAP.md << 'EOF'
 ### BUSINESS
 - [x] Pricing finalized — Starter $29 / Pro $79 / Enterprise $199
 - [x] Payment processing set up (Shopify Billing API)
-- [ ] Terms of service ← still needed
+- [x] Terms of service ✅ Feb 24 — /terms route
 - [x] Privacy policy ✅ Feb 1
 - [ ] Support process defined
 - [x] Upgrade page updated ✅ Jan 25
@@ -248,8 +248,8 @@ cat > ROADMAP.md << 'EOF'
 ### 🟡 SHOPIFY REVIEW STATUS
 App submitted and currently under review. Remaining items to address while waiting:
 - [ ] Load testing (app is live on Fly.io — run now)
-- [ ] Terms of service page
-- [ ] Database indexes
+- [x] Terms of service page ✅ /terms route — Feb 24
+- [x] Database indexes ✅ Feb 24
 - [x] Website — www.resparq.ai ✅
 
 ---
@@ -497,8 +497,8 @@ App submitted and currently under review. Remaining items to address while waiti
 
 **Do Now:**
 1. **Load testing** — App is deployed on Fly.io. Run `load-test.js` with k6. Target: 100 req/s, <500ms, <1% errors
-2. **Terms of service page** — Add `/terms` route (same pattern as `/privacy`)
-3. **Database indexes** — Review schema for missing indexes on high-traffic queries
+2. ~~**Terms of service page**~~ — ✅ /terms route live Feb 24
+3. ~~**Database indexes**~~ — ✅ Added Session, Conversion, DiscountOffer indexes Feb 24
 4. ~~**Website**~~ — ✅ Live at www.resparq.ai
 
 **When Review Passes:**
