@@ -1,7 +1,8 @@
 cat > ROADMAP.md << 'EOF'
 # ResparQ Launch Roadmap
-**Updated: January 15, 2026**
+**Updated: February 24, 2026**
 **App:** Exit Intent Modal with AI-Powered Cart Recovery
+**Status: 🟡 Under Shopify App Review**
 
 ---
 
@@ -28,6 +29,34 @@ cat > ROADMAP.md << 'EOF'
 - **Variant counter** ✅ showing totals
 - **Date filtering** ✅ on Performance page
 - **Mobile-First Modal** ✅ - Bottom sheet, swipe-to-dismiss, 48px touch targets, optimized animations
+
+### Shipped Jan 16 – Feb 24, 2026 (Post-Roadmap)
+- **Settings Preview Modal + Custom CSS (Monaco editor)** ✅ - Jan 16
+- **Social Proof System** ✅ - Dynamic customer counts and ratings - Jan 16
+- **Discount Code Modes** ✅ - Generic vs Unique codes (Manual + AI) - Jan 21
+- **Plan Persistence Bug Fixed** ✅ - Plan tier now stored in DB and consistent across all routes - Jan 21 – Feb 5
+- **Tier-Based Variant Population Limits** ✅ - Jan 24
+- **Shopify Billing API** ✅ - Recurring subscriptions, 14-day trial, all tiers - Jan 25
+- **Upgrade Page Redesign** ✅ - Dark theme, pricing, feature comparison - Jan 25
+- **Onboarding Documentation** ✅ - Starter/Pro/Enterprise welcome guides - Jan 23-24
+- **Discount Code Modes Spec** ✅ - Full implementation documented - Jan 23
+- **Production Deploy (Fly.io)** ✅ - PostgreSQL, migrations, deployment guide - Jan 30
+- **Database Cleanup Job** ✅ - Expired session cleanup + stats endpoint - Jan 31
+- **Starter Tier AI Learning** ✅ - Trains AI from manual settings - Jan 31
+- **Pro AI "Should We Show" Logic** ✅ - Budget/frequency gating for Pro - Jan 31
+- **AI Signal Overhaul** ✅ - High-value signal detection improvements - Jan 31
+- **Promo Strategy Reversal** ✅ - Correctly decreases offers during site-wide promos - Jan 27
+- **Trial Logic Fixes** ✅ - Prevents new 14-day trial on every plan switch - Jan 27
+- **Privacy Policy Page** ✅ - GDPR-compliant `/privacy` route - Feb 1
+- **GDPR Webhooks** ✅ - customers/data_request, customers/redact, shop/redact - Feb 1
+- **Shopify Submission Checklist** ✅ - SHOPIFY_SUBMISSION_CHECKLIST.md - Feb 1
+- **Usage-Based Billing** ✅ - Commission on recovered revenue - Feb 2
+- **Unified Compliance Webhook Handler** ✅ - Single `/webhooks` endpoint - Feb 5
+- **Production URL Configured** ✅ - shopify.app.toml updated to fly.dev domain - Feb 5
+- **Currency Symbol Support** ✅ - Modal shows correct currency - Feb 6
+- **Time-Delay Modal Fix** ✅ - Manual time-delay now displays correctly - Feb 6
+- **FLASH30 Promo Logic Fix** ✅ - Correct promo detection behavior - Feb 6
+- **Upgrade/Trial Logic Fix** ✅ - Mid-trial plan switching works correctly - Feb 6
 
 ---
 
@@ -127,173 +156,101 @@ cat > ROADMAP.md << 'EOF'
 
 ---
 
-## 🎯 PRE-LAUNCH PRIORITIES (DO BEFORE LAUNCH)
+## ✅ PRE-LAUNCH PRIORITIES (ALL COMPLETE)
 
-### 1. Custom CSS API (Enterprise Only) - 8 hours ⏳
-**Why:** Enterprise customers want full control over modal appearance.
+### 1. Custom CSS API (Enterprise Only) ✅ DONE - Jan 16
+- Monaco CSS editor integrated into Settings
+- Live preview functional
+- CSS injected into modal
 
-**Implementation:**
-- Add `customCSS` field to Shop model (Text type)
-- Create API endpoint: `app/routes/apps.exit-intent.api.custom-css.jsx`
-- Settings UI: Monaco editor, live preview, save/reset buttons
-- Modal integration: Fetch and inject CSS into `<style>` tag
-- Security: Sanitize CSS, limit 100KB, rate limit
+### 2. Settings Preview Modal ✅ DONE - Jan 16
+- "Show Preview" opens actual modal overlay with live form values
 
-**Important Notes:**
-- CSS must use `!important` to override inline styles
-- Document this for customers
-- Provide example snippets
-- Test with brand colors from database
+### 3. Misc Bugs Cleanup ✅ DONE
+- Plan navigation/persistence (#2) — fixed across Jan 21 – Feb 5 commits
+- Console errors resolved
+- All tier gates working (Starter/Pro/Enterprise)
+- All webhooks processing correctly
 
-### 2. Settings Preview Modal - 4 hours ⏳
-**Why:** Merchants need to see changes before saving.
+### 4. Website 🟡 IN PROGRESS
+- `resparq-website` submodule added Jan 19
+- Status: confirm if live
 
-**Implementation:**
-- Clicking "Show Preview" opens actual modal overlay
-- Use current form values (headline, body, CTA)
-- Show with current brand colors
-- Responsive preview (desktop + mobile)
-- Close button functional
-- Don't track as impression
-
-**Dashboard preview is done** ✅ - Just need settings preview
-
-### 3. Misc Bugs Cleanup - varies ⏳
-**Action:** Investigate and fix remaining bugs
-
-**To Check:**
-- [ ] Plan navigation/persistence (#2)
-- [ ] Any console errors?
-- [ ] Mobile rendering issues?
-- [ ] Form validation errors?
-- [ ] Edge cases in AI decision logic?
-- [ ] Date filter edge cases?
-- [ ] Pagination bugs?
-
-**Test Checklist:**
-- [ ] All tier gates working (Starter/Pro/Enterprise)
-- [ ] All forms submit correctly
-- [ ] No React hydration errors
-- [ ] All database queries optimized
-- [ ] No N+1 queries
-- [ ] All webhooks processing correctly
-- [ ] Modal shows/hides properly on all pages
-
-### 4. Create Website - external project 🌐
-**Platform:** Webflow, Framer, or Next.js
-
-**Pages Needed:**
-- Homepage (hero, features, pricing, CTA)
-- Pricing
-- Features breakdown
-- Case studies/testimonials (post-launch)
-- Documentation/Help center
-- Blog (optional)
-
-**Key Messaging:**
-- "Exit intent that drives sales, not signups"
-- "Performance-first modals for merchants who want revenue, not subscribers"
-- "AI-powered cart recovery that converts in seconds, not days"
-
-**Differentiators:**
-- No email required (unlike competitors)
-- Auto-applied discounts (unlike competitors)
-- AI learns from 13+ signals (more than competitors)
-- Promotional intelligence (unique)
-- Flat pricing, not pageview-based (simpler)
-
-### 5. Update Upgrade Page - 1 hour ⏳
-**File:** `app/routes/app.upgrade.jsx`
-
-**Update:**
-- Clear tier comparison table
-- Feature list per tier
-- Pricing (decide on flat vs usage-based)
-- "Current plan" indicator
-- Upgrade CTA buttons
-- FAQ section
-
-**Pricing Suggestions:**
-- **Starter:** $29/mo (1,000 sessions/month, manual mode, basic triggers)
-- **Pro:** $79/mo (10,000 sessions/month, AI mode, all triggers, analytics)
-- **Enterprise:** $199/mo (unlimited sessions, manual controls, promo intelligence, custom CSS, priority support)
+### 5. Upgrade Page ✅ DONE - Jan 25
+- Dark theme redesign
+- Flat pricing finalized: Starter $29 / Pro $79 / Enterprise $199
+- Shopify Billing API integrated with 14-day trial
 
 ---
 
 ## 🚀 DEPLOYMENT & LAUNCH CHECKLIST
 
-### BEFORE DEPLOYING TO PRODUCTION
-
-**1. Load Testing - 2 hours** 🔴 MUST DO BEFORE LAUNCH
-- **Why:** Prevent Black Friday disasters
-- **Tool:** k6 (https://k6.io)
-- **Targets:** 100 req/s sustained, 500 req/s peak, <500ms response, <1% errors
-- **What to test:**
-  - `/apps/exit-intent/api/ai-decision` (most critical)
-  - `/apps/exit-intent/api/enrich-signals`
-  - Settings page load
-  - Order webhook processing
-- **Prerequisites:** App must be deployed first (cannot test localhost)
-- **Files included:** `load-test.js`, `LOAD_TESTING.md`, `PERFORMANCE_CHECKLIST.md`
-- **Red flags:** p(95) > 1000ms, Error rate > 5%, DB connection errors
-
-**Pre-deployment optimizations:**
-- [ ] Add database indexes
-- [ ] Verify pagination on all lists
-- [ ] Check for N+1 queries
-- [ ] Optimize API responses (only needed fields)
-
 ### DEPLOYMENT STEPS
-- [ ] Pre-deployment optimizations complete
-- [ ] Database indexes added
-- [ ] Load testing passed
-- [ ] Error monitoring configured
-- [ ] All bugs fixed
-- [ ] Mobile optimization verified
-- [ ] Website live
+- [x] Pre-deployment optimizations complete
+- [ ] Database indexes added ← still needed
+- [ ] Load testing passed ← still needed (see below)
+- [x] Error monitoring configured (Sentry)
+- [x] All critical bugs fixed
+- [x] Mobile optimization verified
+- [ ] Website live ← confirm status
 
 ### TECHNICAL LAUNCH CHECKLIST
-- [ ] Error monitoring (Sentry)
-- [ ] Mobile-first modal design
-- [ ] Load testing completed ← DO THIS AFTER DEPLOYING
-- [ ] All bugs fixed
-- [ ] Database optimized
+- [x] Error monitoring (Sentry)
+- [x] Mobile-first modal design
+- [ ] Load testing completed ← **DO THIS NOW** (app is deployed on Fly.io)
+  - **Tool:** k6 — `load-test.js` already exists in repo
+  - **Targets:** 100 req/s sustained, 500 req/s peak, <500ms, <1% errors
+  - **Test:** `/apps/exit-intent/api/ai-decision` (most critical)
+  - **Red flags:** p(95) > 1000ms, error rate > 5%, DB connection errors
+- [x] All critical bugs fixed
+- [ ] Database indexes added
 - [ ] API rate limiting
+- [x] GDPR compliance — privacy policy, data_request/redact webhooks ✅ Feb 1
 - [ ] Security audit
-- [ ] GDPR compliance check
 
 ### FEATURES
-- [ ] AI decision engine
-- [ ] Manual intervention controls
-- [ ] Order tracking
-- [ ] Analytics with date filtering
-- [ ] Promotional intelligence
-- [ ] Custom CSS API (Enterprise)
-- [ ] Mobile optimization
-- [ ] Discount code system ✅
+- [x] AI decision engine
+- [x] Manual intervention controls
+- [x] Order tracking
+- [x] Analytics with date filtering
+- [x] Promotional intelligence
+- [x] Custom CSS API (Enterprise)
+- [x] Mobile optimization
+- [x] Discount code system
+- [x] Usage-based billing (commission on recovered revenue)
+- [x] Shopify Billing API (recurring subscriptions, 14-day trial)
 
 ### CONTENT
-- [ ] Website live
-- [ ] Help documentation
+- [ ] Website live ← confirm status
+- [x] Help documentation (Starter/Pro/Enterprise onboarding guides)
 - [ ] Video tutorials
 - [ ] Email templates (onboarding)
 - [ ] Support responses templated
 
 ### BUSINESS
-- [ ] Pricing finalized
-- [ ] Payment processing set up (Shopify billing)
-- [ ] Terms of service
-- [ ] Privacy policy
+- [x] Pricing finalized — Starter $29 / Pro $79 / Enterprise $199
+- [x] Payment processing set up (Shopify Billing API)
+- [ ] Terms of service ← still needed
+- [x] Privacy policy ✅ Feb 1
 - [ ] Support process defined
-- [ ] Upgrade page updated
+- [x] Upgrade page updated ✅ Jan 25
 
-### MARKETING
-- [ ] App Store listing optimized
-- [ ] Screenshots ready
+### MARKETING / APP STORE
+- [x] App Store submission prep (screenshots seeded, dev tools hidden)
+- [x] GDPR webhooks (required for Shopify review) ✅ Feb 1
+- [x] SHOPIFY_SUBMISSION_CHECKLIST.md created
+- [x] Production URL configured in shopify.app.toml ✅ Feb 5
 - [ ] Demo video
 - [ ] Social media accounts
 - [ ] Launch announcement drafted
 - [ ] Beta testers lined up
+
+### 🟡 SHOPIFY REVIEW STATUS
+App submitted and currently under review. Remaining items to address while waiting:
+- [ ] Load testing (app is live on Fly.io — run now)
+- [ ] Terms of service page
+- [ ] Database indexes
+- [ ] Website (confirm if live)
 
 ---
 
@@ -536,24 +493,24 @@ cat > ROADMAP.md << 'EOF'
 
 ---
 
-## 🎯 NEXT SESSION PRIORITIES
+## 🎯 CURRENT PRIORITIES (While Under Review)
 
-**Immediate (This Week):**
-1. ✅ Settings preview modal - Make "Show Preview" actually work
-2. ✅ Custom CSS API (Enterprise) - 8 hours
-3. ✅ Bug #2 investigation - What's the plan persistence issue?
-4. ✅ Update upgrade page - Quick win, 1 hour
+**Do Now:**
+1. **Load testing** — App is deployed on Fly.io. Run `load-test.js` with k6. Target: 100 req/s, <500ms, <1% errors
+2. **Terms of service page** — Add `/terms` route (same pattern as `/privacy`)
+3. **Database indexes** — Review schema for missing indexes on high-traffic queries
+4. **Website** — Confirm if `resparq-website` submodule is live
 
-**Before Launch (Next 2 Weeks):**
-1. Load testing (AFTER deployment)
-2. Website launch
-3. Help docs
-4. App Store listing
+**When Review Passes:**
+1. Announce launch
+2. Onboard beta testers
+3. Monitor Sentry for production errors
+4. Watch first installs and conversion data
 
 **Post-Launch (Month 1):**
 1. Margin protection
-2. Express checkout
-3. Google Analytics
+2. Express checkout integration
+3. Google Analytics events
 4. Klaviyo integration
 
 ---
@@ -652,8 +609,8 @@ offerType           String?  @default("percentage")
 **Questions? Concerns? Updates?**
 Bring this document to your next Claude session for continuity!
 
-**Last Updated:** January 15, 2026
-**Status:** Pre-Launch Phase - Major bug fixes complete!
-**Next Milestone:** Custom CSS API + Settings Preview Modal
-**Launch Target:** Late January 2026
+**Last Updated:** February 24, 2026
+**Status:** 🟡 Under Shopify App Review
+**Next Milestone:** Review approval → public launch
+**Submitted:** ~February 2026
 EOF
