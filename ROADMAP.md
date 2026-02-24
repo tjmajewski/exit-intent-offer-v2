@@ -172,9 +172,9 @@ cat > ROADMAP.md << 'EOF'
 - All tier gates working (Starter/Pro/Enterprise)
 - All webhooks processing correctly
 
-### 4. Website 🟡 IN PROGRESS
+### 4. Website ✅ LIVE
+- **www.resparq.ai**
 - `resparq-website` submodule added Jan 19
-- Status: confirm if live
 
 ### 5. Upgrade Page ✅ DONE - Jan 25
 - Dark theme redesign
@@ -192,7 +192,7 @@ cat > ROADMAP.md << 'EOF'
 - [x] Error monitoring configured (Sentry)
 - [x] All critical bugs fixed
 - [x] Mobile optimization verified
-- [ ] Website live ← confirm status
+- [x] Website live — www.resparq.ai ✅
 
 ### TECHNICAL LAUNCH CHECKLIST
 - [x] Error monitoring (Sentry)
@@ -221,7 +221,7 @@ cat > ROADMAP.md << 'EOF'
 - [x] Shopify Billing API (recurring subscriptions, 14-day trial)
 
 ### CONTENT
-- [ ] Website live ← confirm status
+- [x] Website live — www.resparq.ai ✅
 - [x] Help documentation (Starter/Pro/Enterprise onboarding guides)
 - [ ] Video tutorials
 - [ ] Email templates (onboarding)
@@ -250,7 +250,7 @@ App submitted and currently under review. Remaining items to address while waiti
 - [ ] Load testing (app is live on Fly.io — run now)
 - [ ] Terms of service page
 - [ ] Database indexes
-- [ ] Website (confirm if live)
+- [x] Website — www.resparq.ai ✅
 
 ---
 
@@ -499,7 +499,7 @@ App submitted and currently under review. Remaining items to address while waiti
 1. **Load testing** — App is deployed on Fly.io. Run `load-test.js` with k6. Target: 100 req/s, <500ms, <1% errors
 2. **Terms of service page** — Add `/terms` route (same pattern as `/privacy`)
 3. **Database indexes** — Review schema for missing indexes on high-traffic queries
-4. **Website** — Confirm if `resparq-website` submodule is live
+4. ~~**Website**~~ — ✅ Live at www.resparq.ai
 
 **When Review Passes:**
 1. Announce launch
