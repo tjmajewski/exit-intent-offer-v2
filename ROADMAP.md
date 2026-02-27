@@ -1,5 +1,5 @@
 cat > ROADMAP.md << 'EOF'
-# ResparQ Launch Roadmap
+# Repsarq Launch Roadmap
 **Updated: January 15, 2026**
 **App:** Exit Intent Modal with AI-Powered Cart Recovery
 
@@ -19,7 +19,7 @@ cat > ROADMAP.md << 'EOF'
 - **Evolution System** - Auto-generates and tests variants, generation-based improvement
 - **Performance Analytics** - Revenue per impression, variant performance, pagination (15/page)
 - **Settings Organization** - Advanced tab with proper tier gating, AI/Manual mode detection
-- **Branding** - ResparQ branding, ENTERPRISE gold badges, PRO purple badges
+- **Branding** - Repsarq branding, ENTERPRISE gold badges, PRO purple badges
 
 ### Recent Additions (January 2026)
 - **Error Monitoring** ✅ - Sentry integration (server + client), error boundaries, session replay
@@ -343,7 +343,7 @@ cat > ROADMAP.md << 'EOF'
 - Settings: API key input, event selection
 
 **7. Email Performance Updates (Enterprise) - 6 hours**
-- Compare ResparQ vs abandoned cart email recovery rates
+- Compare Repsarq vs abandoned cart email recovery rates
 - Dashboard widget showing performance comparison
 - Metrics: recovery rate, time to conversion, additional revenue
 - "6x more effective than emails" messaging
@@ -377,7 +377,7 @@ cat > ROADMAP.md << 'EOF'
 - **Justuno** - AI recommendations, $59-399/mo, advanced segmentation
 - **OptinMonster** - General popup, $9-49/mo, WordPress focus
 
-### ResparQ's Unique Advantages
+### Repsarq's Unique Advantages
 
 **1. Performance-First (Not Email-First)**
 - ✅ Focus on immediate sales, not email capture
@@ -404,7 +404,7 @@ cat > ROADMAP.md << 'EOF'
 - ✅ Unlimited traffic on Pro/Enterprise
 
 ### Feature Comparison Matrix
-| Feature | ResparQ | OptiMonk | Wisepops | Privy | Justuno |
+| Feature | Repsarq | OptiMonk | Wisepops | Privy | Justuno |
 |---------|---------|----------|----------|-------|---------|
 | Focus | Revenue | Email | Multi-channel | Email/SMS | AI Recs |
 | No Email Required | ✅ | ❌ | ❌ | ❌ | ❌ |

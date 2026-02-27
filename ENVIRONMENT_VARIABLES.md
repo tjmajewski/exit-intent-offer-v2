@@ -1,6 +1,6 @@
-# Environment Variables - ResparQ
+# Environment Variables - Repsarq
 
-Complete reference for all environment variables required and optional for ResparQ.
+Complete reference for all environment variables required and optional for Repsarq.
 
 ---
 

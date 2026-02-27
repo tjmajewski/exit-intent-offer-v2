@@ -98,7 +98,7 @@ const SEASONS = [
 
 async function seedData() {
   console.log('\n======================================');
-  console.log('  ResparQ Screenshot Data Seeder');
+  console.log('  Repsarq Screenshot Data Seeder');
   console.log('======================================\n');
 
   // Find the shop

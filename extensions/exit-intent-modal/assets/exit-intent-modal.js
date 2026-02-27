@@ -718,7 +718,7 @@
           margin-top: 16px;
           float: right;
         ">
-          <span>Powered by ResparQ</span>
+          <span>Powered by Repsarq</span>
         </a>
       `;
       

@@ -1,6 +1,6 @@
 # Usage-Based Billing
 
-ResparQ uses a hybrid pricing model: a flat monthly subscription fee plus a commission on recovered revenue.
+Repsarq uses a hybrid pricing model: a flat monthly subscription fee plus a commission on recovered revenue.
 
 ## Commission Rates by Plan
 
@@ -15,7 +15,7 @@ ResparQ uses a hybrid pricing model: a flat monthly subscription fee plus a comm
 ### 1. Conversion Detection
 When an order is placed with an `EXIT` discount code:
 1. `webhooks.orders.create.jsx` receives the order
-2. Detects the discount code was from ResparQ
+2. Detects the discount code was from Repsarq
 3. Records the conversion in the `Conversion` table
 4. Triggers usage billing
 

@@ -872,12 +872,12 @@ export default function Dashboard() {
               </h3>
               <p style={{ margin: "0 0 16px 0", fontSize: 14, color: "#1e3a8a", lineHeight: 1.6 }}>
                 Before the exit-intent modal can appear on your storefront, you need to add the
-                ResparQ app block to your theme. Follow the steps below:
+                Repsarq app block to your theme. Follow the steps below:
               </p>
               <ol style={{ margin: "0 0 16px 0", paddingLeft: 20, color: "#1d4ed8", fontSize: 14, lineHeight: 2 }}>
                 <li>Click <strong>Open Theme Editor</strong> below to go directly to your theme customiser.</li>
                 <li>In the left-hand panel click <strong>App embeds</strong> (the puzzle-piece icon).</li>
-                <li>Find <strong>ResparQ – Exit Intent Modal</strong> and toggle it <strong>ON</strong>.</li>
+                <li>Find <strong>Repsarq – Exit Intent Modal</strong> and toggle it <strong>ON</strong>.</li>
                 <li>Click <strong>Save</strong> in the theme editor.</li>
                 <li>Return here and configure your modal in <strong>Settings</strong>.</li>
               </ol>
@@ -937,7 +937,7 @@ export default function Dashboard() {
             <ol style={{ margin: "0 0 14px 0", paddingLeft: 20 }}>
               <li>Open your <strong>Theme Editor</strong> using the button below.</li>
               <li>Select <strong>App embeds</strong> from the left sidebar (puzzle-piece icon).</li>
-              <li>Enable <strong>ResparQ – Exit Intent Modal</strong> and click <strong>Save</strong>.</li>
+              <li>Enable <strong>Repsarq – Exit Intent Modal</strong> and click <strong>Save</strong>.</li>
               <li>Optionally, add the <strong>Exit Intent Modal app block</strong> to a specific template
                   if you want it only on certain pages.</li>
             </ol>

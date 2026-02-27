@@ -1,4 +1,4 @@
-# ResparQ AI Documentation Files
+# Repsarq AI Documentation Files
 
 All AI system documentation created January 16, 2026.
 

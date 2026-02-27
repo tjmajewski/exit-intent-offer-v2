@@ -1,6 +1,6 @@
 # @shopify/shopify-app-template-react-router
 
-## ResparQ AI - January 19, 2026
+## Repsarq AI - January 19, 2026
 
 ### Added
 - **Promotional Intelligence Enhancements**:
@@ -51,7 +51,7 @@
 - Updated AI_SYSTEM_COMPLETE_GUIDE.md with Enterprise features documentation
 - Updated all documentation dates to January 19, 2026
 
-## ResparQ AI - January 19, 2026 (Evening Update - Segment Tracking)
+## Repsarq AI - January 19, 2026 (Evening Update - Segment Tracking)
 
 ### Added
 - **Complete Segment Tracking Implementation**:

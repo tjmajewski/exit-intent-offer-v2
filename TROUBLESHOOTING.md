@@ -1,6 +1,6 @@
-# Troubleshooting Guide - ResparQ
+# Troubleshooting Guide - Repsarq
 
-Common issues and their solutions for ResparQ development and deployment.
+Common issues and their solutions for Repsarq development and deployment.
 
 ---
 
@@ -627,4 +627,4 @@ If your issue isn't covered here:
 ---
 
 **Last Updated:** January 2026
-**Maintained by:** ResparQ Development Team
+**Maintained by:** Repsarq Development Team

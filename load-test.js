@@ -152,7 +152,7 @@ export default function () {
 
 // Setup function (runs once at start)
 export function setup() {
-  console.log('🚀 Starting ResparQ load test...');
+  console.log('🚀 Starting Repsarq load test...');
   console.log(`📊 Target: ${BASE_URL}`);
   console.log('⚡ Simulating Black Friday/Cyber Monday traffic');
 }

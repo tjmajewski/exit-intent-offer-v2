@@ -1,4 +1,4 @@
-# ResparQ AI System - Complete Guide
+# Repsarq AI System - Complete Guide
 **Last Updated:** January 19, 2026
 **Version:** 2.1 (with Promotional Intelligence & Variant Analytics)
 
@@ -15,7 +15,7 @@
 
 ## System Overview
 
-ResparQ uses a **genetic algorithm** + **Bayesian statistics** to automatically optimize exit-intent modals.
+Repsarq uses a **genetic algorithm** + **Bayesian statistics** to automatically optimize exit-intent modals.
 
 **Key Concepts:**
 - **Variants** = Individual modal versions (organisms)

@@ -1,8 +1,8 @@
-# Discount Code Implementation - ResparQ
+# Discount Code Implementation - Repsarq
 **Status:** ✅ COMPLETE (Updated January 16, 2026)
 
 ## Overview
-ResparQ supports automatic discount code creation and application in both Manual and AI modes. Discount codes are unique per customer in AI mode to prevent sharing on Reddit/social media. Manual mode uses simple, reusable codes.
+Repsarq supports automatic discount code creation and application in both Manual and AI modes. Discount codes are unique per customer in AI mode to prevent sharing on Reddit/social media. Manual mode uses simple, reusable codes.
 
 ---
 
