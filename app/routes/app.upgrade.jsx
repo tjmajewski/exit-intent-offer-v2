@@ -52,7 +52,7 @@ export async function loader({ request }) {
 
 export async function action({ request }) {
   const { admin, session } = await authenticate.admin(request);
-  const { createSubscription } = await import("../utils/billing.server");
+  const { createSubscription, getActiveSubscription } = await import("../utils/billing.server");
   const formData = await request.formData();
   const tier = formData.get("tier");
   const billingCycle = formData.get("billingCycle");
@@ -210,6 +210,24 @@ export default function Upgrade() {
         background: "linear-gradient(180deg, #0f0a1f 0%, #1a0f2e 50%, #0f0a1f 100%)",
         minHeight: "100vh"
       }}>
+        {/* Free Trial Banner */}
+        <div style={{
+          background: "linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(5,150,105,0.15) 100%)",
+          border: "1px solid rgba(16,185,129,0.4)",
+          borderRadius: 12,
+          padding: "16px 24px",
+          marginBottom: 32,
+          textAlign: "center"
+        }}>
+          <div style={{ fontSize: 20, marginBottom: 4 }}>🎉</div>
+          <div style={{ color: "#10b981", fontWeight: 700, fontSize: 18, marginBottom: 4 }}>
+            14-Day Free Trial Included on All Plans
+          </div>
+          <div style={{ color: "#6ee7b7", fontSize: 14 }}>
+            Try any plan free for 14 days — no charge until your trial ends. Cancel anytime.
+          </div>
+        </div>
+
         {/* Billing Toggle */}
         <div style={{
           display: "flex",
@@ -473,6 +491,28 @@ export default function Upgrade() {
           })}
         </div>
 
+        {/* Recovered Revenue Explanation */}
+        <div style={{
+          padding: 24,
+          background: "rgba(30, 20, 50, 0.6)",
+          borderRadius: 12,
+          border: "1px solid rgba(139, 92, 246, 0.25)",
+          marginBottom: 24
+        }}>
+          <h3 style={{ fontSize: 16, color: "#fff", marginBottom: 12, fontWeight: 600 }}>
+            How usage charges work
+          </h3>
+          <p style={{ color: "#9ca3af", fontSize: 14, lineHeight: "1.7", margin: 0 }}>
+            In addition to your flat monthly/annual subscription, a small usage-based commission applies only to
+            orders where a customer used a ResparQ-generated discount code (i.e., revenue that was recovered by the app).
+            Commission rates: <strong style={{ color: "#d1d5db" }}>5% on Starter</strong>,{" "}
+            <strong style={{ color: "#d1d5db" }}>2% on Pro</strong>, and{" "}
+            <strong style={{ color: "#d1d5db" }}>1% on Enterprise</strong>.
+            Monthly caps ($500/$2,000/$5,000) ensure charges never exceed the limits shown above.
+            These charges are billed automatically through Shopify&apos;s billing system — no separate invoicing.
+          </p>
+        </div>
+
         {/* 14-Day Money-Back Guarantee */}
         <div style={{
           marginTop: 48,
@@ -585,7 +625,11 @@ export default function Upgrade() {
           <div style={{ marginBottom: 20 }}>
             <strong style={{ fontSize: 16, color: "#fff" }}>What does "% of recovered revenue" mean?</strong>
             <p style={{ color: "#9ca3af", marginTop: 8, lineHeight: "1.6", marginBottom: 0 }}>
-              This is a small percentage of revenue from orders where customers used a ResparQ discount code. It only applies to recovered revenue, not your total sales.
+              &ldquo;Recovered revenue&rdquo; refers to the total order value of purchases where a customer used a
+              ResparQ-generated discount code at checkout — meaning the app directly helped convert that sale.
+              The percentage commission (5%, 2%, or 1% depending on your plan) is charged only on those specific orders,
+              not on your overall store revenue. These usage charges are billed monthly through Shopify&apos;s billing system,
+              subject to the monthly cap for your plan.
             </p>
           </div>
 

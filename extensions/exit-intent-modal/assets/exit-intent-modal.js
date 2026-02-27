@@ -708,7 +708,7 @@
       }
       
       poweredBy.innerHTML = `
-        <a href="https://resparq.ai" target="_blank" style="
+        <a href="https://resparq.ai" target="_blank" rel="noopener" style="
           display: inline-flex;
           align-items: center;
           gap: 4px;
@@ -717,11 +717,8 @@
           text-decoration: none;
           margin-top: 16px;
           float: right;
-          transition: color 0.2s;
-        " onmouseover="this.style.color='#8B5CF6'" onmouseout="this.style.color='#9ca3af'">
-          <span>Powered by</span>
-          <span style="font-weight: 600; color: #8B5CF6;">ResparQ</span>
-          <span style="font-size: 13px;"></span>
+        ">
+          <span>Powered by ResparQ</span>
         </a>
       `;
       
@@ -1347,6 +1344,17 @@
         // Checkout - use URL parameter (works natively)
         redirectUrl = discountCode ? `/checkout?discount=${discountCode}` : '/checkout';
         console.log(`Redirecting to checkout${discountCode ? ' with discount: ' + discountCode : ''}`);
+
+        // Also register the discount with the cart session so it is pre-applied
+        // even if the browser strips the query parameter during checkout navigation
+        if (discountCode) {
+          try {
+            await fetch(`/discount/${encodeURIComponent(discountCode)}`, { method: 'GET' });
+            console.log(`[Discount] Registered ${discountCode} with cart session`);
+          } catch (e) {
+            console.log('[Discount] Session registration failed, relying on URL param');
+          }
+        }
       }
 
       window.location.href = redirectUrl;
