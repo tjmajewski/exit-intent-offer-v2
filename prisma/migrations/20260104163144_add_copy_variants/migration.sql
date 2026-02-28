@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE "Shop" (
+CREATE TABLE IF NOT EXISTS "Shop" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "shopifyDomain" TEXT NOT NULL,
     "mode" TEXT NOT NULL DEFAULT 'manual',
@@ -16,7 +16,7 @@ CREATE TABLE "Shop" (
 );
 
 -- CreateTable
-CREATE TABLE "DiscountOffer" (
+CREATE TABLE IF NOT EXISTS "DiscountOffer" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "shopId" TEXT NOT NULL,
     "discountCode" TEXT NOT NULL,
@@ -31,7 +31,7 @@ CREATE TABLE "DiscountOffer" (
 );
 
 -- CreateTable
-CREATE TABLE "AIDecision" (
+CREATE TABLE IF NOT EXISTS "AIDecision" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "shopId" TEXT NOT NULL,
     "signals" TEXT NOT NULL,
@@ -42,13 +42,13 @@ CREATE TABLE "AIDecision" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Shop_shopifyDomain_key" ON "Shop"("shopifyDomain");
+CREATE UNIQUE INDEX IF NOT EXISTS "Shop_shopifyDomain_key" ON "Shop"("shopifyDomain");
 
 -- CreateIndex
-CREATE INDEX "DiscountOffer_shopId_expiresAt_idx" ON "DiscountOffer"("shopId", "expiresAt");
+CREATE INDEX IF NOT EXISTS "DiscountOffer_shopId_expiresAt_idx" ON "DiscountOffer"("shopId", "expiresAt");
 
 -- CreateIndex
-CREATE INDEX "DiscountOffer_shopId_redeemed_idx" ON "DiscountOffer"("shopId", "redeemed");
+CREATE INDEX IF NOT EXISTS "DiscountOffer_shopId_redeemed_idx" ON "DiscountOffer"("shopId", "redeemed");
 
 -- CreateIndex
-CREATE INDEX "AIDecision_shopId_createdAt_idx" ON "AIDecision"("shopId", "createdAt");
+CREATE INDEX IF NOT EXISTS "AIDecision_shopId_createdAt_idx" ON "AIDecision"("shopId", "createdAt");
