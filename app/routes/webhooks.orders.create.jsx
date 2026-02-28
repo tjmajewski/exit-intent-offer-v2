@@ -282,6 +282,15 @@ async function updateAnalytics(admin, revenue) {
       currentModal.stats.conversions = (currentModal.stats.conversions || 0) + 1;
       currentModal.stats.revenue = (currentModal.stats.revenue || 0) + revenue;
 
+      // Push a conversion event so the analytics page (which filters by modal.stats.events)
+      // correctly counts this order instead of recalculating from an empty events array
+      if (!currentModal.stats.events) currentModal.stats.events = [];
+      currentModal.stats.events.push({
+        type: 'conversion',
+        timestamp: new Date().toISOString(),
+        revenue: revenue
+      });
+
       console.log(` Updated ${currentModal.modalName} stats:`, currentModal.stats);
 
       // Save updated modal library
