@@ -282,6 +282,15 @@ async function updateAnalytics(admin, revenue) {
       currentModal.stats.conversions = (currentModal.stats.conversions || 0) + 1;
       currentModal.stats.revenue = (currentModal.stats.revenue || 0) + revenue;
 
+      // Push a conversion event so the analytics page (which filters by modal.stats.events)
+      // correctly counts this order instead of recalculating from an empty events array
+      if (!currentModal.stats.events) currentModal.stats.events = [];
+      currentModal.stats.events.push({
+        type: 'conversion',
+        timestamp: new Date().toISOString(),
+        revenue: revenue
+      });
+
       console.log(` Updated ${currentModal.modalName} stats:`, currentModal.stats);
 
       // Save updated modal library
@@ -409,7 +418,8 @@ async function storeConversion(shop, orderPayload, discountUsed, admin) {
         orderId: orderPayload.id.toString(),
         orderNumber: orderPayload.order_number.toString(),
         orderValue: parseFloat(orderPayload.total_price),
-        customerEmail: orderPayload.customer?.email || orderPayload.email,
+        customerEmail: orderPayload.customer?.email || orderPayload.email ||
+                       orderPayload.customer?.phone || orderPayload.phone || null,
         orderedAt: new Date(orderPayload.created_at),
         modalId: modalLibrary.currentModalId || 'unknown',
         modalName: currentModal?.modalName || 'Unknown Modal',

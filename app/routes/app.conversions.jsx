@@ -85,6 +85,16 @@ export default function Conversions() {
     return `$${amount.toFixed(2)}`;
   };
 
+  // Format customer contact — email shown as-is, phone numbers made readable
+  const formatCustomer = (value) => {
+    if (!value) return 'Guest';
+    // Detect phone: starts with + or is mostly digits/spaces/dashes
+    if (/^\+?[\d\s\-().]{7,}$/.test(value)) {
+      return value; // already readable
+    }
+    return value; // email
+  };
+
   // Export to Excel (via API route)
   const exportToExcel = async () => {
     try {
@@ -347,7 +357,7 @@ export default function Conversions() {
                     </a>
                   </td>
                   <td style={{ padding: 12, fontSize: 14, color: '#6b7280' }}>
-                    {conversion.customerEmail || 'Guest'}
+                    {formatCustomer(conversion.customerEmail)}
                   </td>
                   <td style={{ padding: 12, fontSize: 14, textAlign: 'right', fontWeight: 500 }}>
                     {formatCurrency(conversion.orderValue)}

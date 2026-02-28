@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE "Promotion" (
+CREATE TABLE IF NOT EXISTS "Promotion" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "shopId" TEXT NOT NULL,
     "code" TEXT NOT NULL,
@@ -7,23 +7,23 @@ CREATE TABLE "Promotion" (
     "type" TEXT NOT NULL,
     "detectedVia" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'monitoring',
-    "validFrom" DATETIME,
-    "validUntil" DATETIME,
+    "validFrom" TIMESTAMP,
+    "validUntil" TIMESTAMP,
     "usageStats" TEXT NOT NULL DEFAULT '{"total":0,"last24h":0}',
     "classification" TEXT,
     "aiStrategy" TEXT,
     "aiStrategyReason" TEXT,
     "merchantOverride" TEXT,
-    "detectedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "detectedAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "Promotion_shopId_fkey" FOREIGN KEY ("shopId") REFERENCES "Shop" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 -- CreateIndex
-CREATE INDEX "Promotion_shopId_status_idx" ON "Promotion"("shopId", "status");
+CREATE INDEX IF NOT EXISTS "Promotion_shopId_status_idx" ON "Promotion"("shopId", "status");
 
 -- CreateIndex
-CREATE INDEX "Promotion_shopId_code_idx" ON "Promotion"("shopId", "code");
+CREATE INDEX IF NOT EXISTS "Promotion_shopId_code_idx" ON "Promotion"("shopId", "code");
 
 -- CreateIndex
-CREATE INDEX "Promotion_detectedAt_idx" ON "Promotion"("detectedAt");
+CREATE INDEX IF NOT EXISTS "Promotion_detectedAt_idx" ON "Promotion"("detectedAt");
