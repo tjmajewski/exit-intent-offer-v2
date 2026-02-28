@@ -26,9 +26,9 @@ CREATE TABLE "new_Variant" (
     "conversions" INTEGER NOT NULL DEFAULT 0,
     "revenue" REAL NOT NULL DEFAULT 0,
     "profitPerImpression" REAL NOT NULL DEFAULT 0,
-    "birthDate" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "deathDate" DATETIME,
-    "championDate" DATETIME,
+    "birthDate" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "deathDate" TIMESTAMP,
+    "championDate" TIMESTAMP,
     CONSTRAINT "Variant_shopId_fkey" FOREIGN KEY ("shopId") REFERENCES "Shop" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 INSERT INTO "new_Variant" ("baseline", "birthDate", "championDate", "clicks", "conversions", "cta", "deathDate", "generation", "headline", "id", "impressions", "offerAmount", "parents", "profitPerImpression", "redirect", "revenue", "segment", "shopId", "status", "subhead", "urgency", "variantId") SELECT "baseline", "birthDate", "championDate", "clicks", "conversions", "cta", "deathDate", "generation", "headline", "id", "impressions", "offerAmount", "parents", "profitPerImpression", "redirect", "revenue", "segment", "shopId", "status", "subhead", "urgency", "variantId" FROM "Variant";

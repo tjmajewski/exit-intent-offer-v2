@@ -8,11 +8,11 @@ CREATE TABLE "Shop" (
     "budgetEnabled" BOOLEAN NOT NULL DEFAULT false,
     "budgetAmount" REAL NOT NULL DEFAULT 500,
     "budgetPeriod" TEXT NOT NULL DEFAULT 'month',
-    "budgetStartDate" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL,
+    "budgetStartDate" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP NOT NULL,
     "copyVariants" TEXT DEFAULT '{"variants":[],"segmentBestVariants":{}}',
-    "lastVariantUpdate" DATETIME DEFAULT CURRENT_TIMESTAMP
+    "lastVariantUpdate" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- CreateTable
@@ -23,10 +23,10 @@ CREATE TABLE "DiscountOffer" (
     "offerType" TEXT NOT NULL,
     "amount" REAL NOT NULL,
     "cartValue" REAL,
-    "expiresAt" DATETIME NOT NULL,
+    "expiresAt" TIMESTAMP NOT NULL,
     "redeemed" BOOLEAN NOT NULL DEFAULT false,
-    "redeemedAt" DATETIME,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "redeemedAt" TIMESTAMP,
+    "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "DiscountOffer_shopId_fkey" FOREIGN KEY ("shopId") REFERENCES "Shop" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
@@ -37,7 +37,7 @@ CREATE TABLE "AIDecision" (
     "signals" TEXT NOT NULL,
     "decision" TEXT NOT NULL,
     "offerId" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "AIDecision_shopId_fkey" FOREIGN KEY ("shopId") REFERENCES "Shop" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 

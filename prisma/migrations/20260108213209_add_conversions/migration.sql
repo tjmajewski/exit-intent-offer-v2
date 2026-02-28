@@ -6,7 +6,7 @@ CREATE TABLE "Conversion" (
     "orderNumber" TEXT NOT NULL,
     "orderValue" REAL NOT NULL,
     "customerEmail" TEXT,
-    "orderedAt" DATETIME NOT NULL,
+    "orderedAt" TIMESTAMP NOT NULL,
     "modalId" TEXT NOT NULL,
     "modalName" TEXT,
     "variantId" TEXT,
@@ -15,7 +15,7 @@ CREATE TABLE "Conversion" (
     "discountRedeemed" BOOLEAN NOT NULL DEFAULT false,
     "discountAmount" REAL,
     "modalSnapshot" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- CreateIndex

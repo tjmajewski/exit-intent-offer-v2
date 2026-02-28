@@ -6,7 +6,7 @@ CREATE TABLE "MetaLearningInsights" (
     "data" TEXT NOT NULL,
     "sampleSize" INTEGER NOT NULL,
     "confidenceLevel" REAL NOT NULL,
-    "lastUpdated" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastUpdated" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "version" INTEGER NOT NULL DEFAULT 1
 );
 
@@ -23,11 +23,11 @@ CREATE TABLE "new_Shop" (
     "budgetEnabled" BOOLEAN NOT NULL DEFAULT false,
     "budgetAmount" REAL NOT NULL DEFAULT 500,
     "budgetPeriod" TEXT NOT NULL DEFAULT 'month',
-    "budgetStartDate" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL,
+    "budgetStartDate" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP NOT NULL,
     "copyVariants" TEXT DEFAULT '{"variants":[],"segmentBestVariants":{}}',
-    "lastVariantUpdate" DATETIME DEFAULT CURRENT_TIMESTAMP,
+    "lastVariantUpdate" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "contributeToMetaLearning" BOOLEAN NOT NULL DEFAULT true
 );
 INSERT INTO "new_Shop" ("aggression", "aiGoal", "budgetAmount", "budgetEnabled", "budgetPeriod", "budgetStartDate", "copyVariants", "createdAt", "id", "lastVariantUpdate", "mode", "plan", "shopifyDomain", "updatedAt") SELECT "aggression", "aiGoal", "budgetAmount", "budgetEnabled", "budgetPeriod", "budgetStartDate", "copyVariants", "createdAt", "id", "lastVariantUpdate", "mode", "plan", "shopifyDomain", "updatedAt" FROM "Shop";

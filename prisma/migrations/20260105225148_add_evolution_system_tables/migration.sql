@@ -1,5 +1,5 @@
 -- AlterTable
-ALTER TABLE "Shop" ADD COLUMN "lastEvolutionCycle" DATETIME;
+ALTER TABLE "Shop" ADD COLUMN "lastEvolutionCycle" TIMESTAMP;
 
 -- CreateTable
 CREATE TABLE "Variant" (
@@ -22,9 +22,9 @@ CREATE TABLE "Variant" (
     "conversions" INTEGER NOT NULL DEFAULT 0,
     "revenue" REAL NOT NULL DEFAULT 0,
     "profitPerImpression" REAL NOT NULL DEFAULT 0,
-    "birthDate" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "deathDate" DATETIME,
-    "championDate" DATETIME,
+    "birthDate" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "deathDate" TIMESTAMP,
+    "championDate" TIMESTAMP,
     CONSTRAINT "Variant_shopId_fkey" FOREIGN KEY ("shopId") REFERENCES "Shop" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
@@ -42,7 +42,7 @@ CREATE TABLE "VariantImpression" (
     "deviceType" TEXT,
     "trafficSource" TEXT,
     "cartValue" REAL,
-    "timestamp" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "timestamp" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "VariantImpression_variantId_fkey" FOREIGN KEY ("variantId") REFERENCES "Variant" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
@@ -62,7 +62,7 @@ CREATE TABLE "MetaLearningGene" (
     "avgOrderValue" TEXT,
     "deviceType" TEXT,
     "sampleSize" INTEGER NOT NULL DEFAULT 0,
-    "lastUpdated" DATETIME NOT NULL
+    "lastUpdated" TIMESTAMP NOT NULL
 );
 
 -- CreateTable
@@ -70,8 +70,8 @@ CREATE TABLE "SeasonalPattern" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "shopId" TEXT NOT NULL,
     "season" TEXT NOT NULL,
-    "startDate" DATETIME NOT NULL,
-    "endDate" DATETIME NOT NULL,
+    "startDate" TIMESTAMP NOT NULL,
+    "endDate" TIMESTAMP NOT NULL,
     "avgCVR" REAL NOT NULL DEFAULT 0,
     "avgAOV" REAL NOT NULL DEFAULT 0,
     "avgProfitPerImpression" REAL NOT NULL DEFAULT 0,

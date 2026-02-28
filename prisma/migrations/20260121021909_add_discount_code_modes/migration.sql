@@ -20,10 +20,10 @@ CREATE TABLE "DiscountOffer_new" (
     "amount" REAL NOT NULL,
     "cartValue" REAL,
     "mode" TEXT NOT NULL DEFAULT 'unique',
-    "expiresAt" DATETIME,
+    "expiresAt" TIMESTAMP,
     "redeemed" BOOLEAN NOT NULL DEFAULT 0,
-    "redeemedAt" DATETIME,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "redeemedAt" TIMESTAMP,
+    "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "DiscountOffer_shopId_fkey" FOREIGN KEY ("shopId") REFERENCES "Shop" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
