@@ -7,6 +7,7 @@ import db from "../db.server";
 export async function loader({ request }) {
   const { session } = await authenticate.admin(request);
 
+  try {
   // Get filters from URL
   const url = new URL(request.url);
   const promoFilter = url.searchParams.get('promo') || 'all';
@@ -259,11 +260,22 @@ export async function loader({ request }) {
       segment: segmentFilter
     }
   };
+  } catch (error) {
+    console.error("Variants loader error:", error);
+    return {
+      shop: null, plan: null, variants: [], totalVariants: 0,
+      aliveCount: 0, deadCount: 0,
+      generationStats: { max: 0 },
+      componentStats: { headlines: [], subheads: [], ctas: [] },
+      filters: { promo: 'all', segment: 'all' },
+      dbError: true
+    };
+  }
 }
 
 export default function VariantsIndex() {
   const data = useLoaderData();
-  const { shop, plan, variants, totalVariants, aliveCount, deadCount, generationStats, componentStats } = data;
+  const { shop, plan, variants, totalVariants, aliveCount, deadCount, generationStats, componentStats, dbError } = data;
   const fetcher = useFetcher();
   const [searchParams, setSearchParams] = useSearchParams();
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -285,6 +297,20 @@ export default function VariantsIndex() {
   // Use fetcher data if available, otherwise use initial data
   const displayData = fetcher.data || data;
   const displayVariants = displayData.variants || variants;
+
+  if (dbError) {
+    return (
+      <AppLayout plan={plan}>
+        <div style={{ padding: 40 }}>
+          <h1 style={{ fontSize: 32, marginBottom: 8 }}>Variant Performance</h1>
+          <div style={{ background: 'white', padding: 48, borderRadius: 8, border: '1px solid #e5e7eb', textAlign: 'center' }}>
+            <h2 style={{ fontSize: 20, marginBottom: 8 }}>Unable to load variants</h2>
+            <p style={{ color: '#666' }}>There was a problem connecting to the database. Please try refreshing the page.</p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   if (!shop) {
     return (

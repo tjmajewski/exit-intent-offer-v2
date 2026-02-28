@@ -26,10 +26,7 @@ export async function action({ request }) {
       if (newStatus === 'alive') {
         await db.variant.update({
           where: { id: variantId },
-          data: {
-            status: 'alive',
-            isChampion: false
-          }
+          data: { status: 'alive' }
         });
         return { success: true, message: 'Variant set to Active' };
       }
@@ -37,10 +34,7 @@ export async function action({ request }) {
       if (newStatus === 'protected') {
         await db.variant.update({
           where: { id: variantId },
-          data: {
-            status: 'protected',
-            isChampion: false
-          }
+          data: { status: 'protected' }
         });
         return { success: true, message: 'Variant protected from evolution' };
       }
@@ -51,17 +45,15 @@ export async function action({ request }) {
           where: {
             shopId: variant.shopId,
             baseline: variant.baseline,
-            segment: variant.segment
+            segment: variant.segment,
+            status: 'champion'
           },
-          data: { isChampion: false }
+          data: { status: 'alive' }
         });
 
         await db.variant.update({
           where: { id: variantId },
-          data: {
-            status: 'champion',
-            isChampion: true
-          }
+          data: { status: 'champion' }
         });
 
         return { success: true, message: 'Variant set as champion' };
@@ -486,7 +478,7 @@ export default function ManageVariants() {
                           key={variant.id}
                           style={{
                             borderBottom: "1px solid #e5e7eb",
-                            background: variant.isChampion ? "#f0fdf4" : variant.status === 'protected' ? "#fef3c7" : "white"
+                            background: variant.status === 'champion' ? "#f0fdf4" : variant.status === 'protected' ? "#fef3c7" : "white"
                           }}
                         >
                           <td style={{ padding: 16 }}>
@@ -496,7 +488,7 @@ export default function ManageVariants() {
                             <div style={{ fontSize: 12, color: "#6b7280" }}>
                               Gen {variant.generation} · {variant.baseline}
                             </div>
-                            {variant.isChampion && (
+                            {variant.status === 'champion' && (
                               <span style={{
                                 display: 'inline-block',
                                 marginTop: 4,
@@ -552,7 +544,7 @@ export default function ManageVariants() {
                                 <input type="hidden" name="variantId" value={variant.id} />
                                 <select
                                   name="status"
-                                  defaultValue={variant.isChampion ? 'champion' : variant.status}
+                                  defaultValue={variant.status}
                                   onChange={(e) => e.target.form.requestSubmit()}
                                   style={{
                                     padding: "6px 12px",

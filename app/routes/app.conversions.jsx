@@ -12,51 +12,56 @@ export const loader = async ({ request }) => {
   const url = new URL(request.url);
   const range = url.searchParams.get("range") || "30d";
 
-  // Find shop record
-  const shopRecord = await db.shop.findUnique({
-    where: { shopifyDomain: shop }
-  });
+  try {
+    // Find shop record
+    const shopRecord = await db.shop.findUnique({
+      where: { shopifyDomain: shop }
+    });
 
-  if (!shopRecord) {
-    return { conversions: [], plan: null, range };
-  }
-
-  // Calculate date range
-  const now = new Date();
-  let startDate;
-  
-  if (range === "7d") {
-    startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  } else if (range === "30d") {
-    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  } else {
-    // "all" - get all conversions
-    startDate = new Date(0);
-  }
-
-  // Fetch conversions
-  const conversions = await db.conversion.findMany({
-    where: {
-      shopId: shopRecord.id,
-      orderedAt: {
-        gte: startDate
-      }
-    },
-    orderBy: {
-      orderedAt: 'desc'
+    if (!shopRecord) {
+      return { conversions: [], plan: null, range, shop };
     }
-  });
 
-  return {
-    conversions,
-    plan: shopRecord.plan,
-    range,
-    shop
-  };
+    // Calculate date range
+    const now = new Date();
+    let startDate;
+
+    if (range === "7d") {
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (range === "30d") {
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    } else {
+      // "all" - get all conversions
+      startDate = new Date(0);
+    }
+
+    // Fetch conversions
+    const conversions = await db.conversion.findMany({
+      where: {
+        shopId: shopRecord.id,
+        orderedAt: {
+          gte: startDate
+        }
+      },
+      orderBy: {
+        orderedAt: 'desc'
+      }
+    });
+
+    return {
+      conversions,
+      plan: shopRecord.plan,
+      range,
+      shop
+    };
+  } catch (error) {
+    console.error("Conversions loader error:", error);
+    return { conversions: [], plan: null, range, shop, dbError: true };
+  }
 };
 
 export default function Conversions() {
-  const { conversions, plan, range, shop } = useLoaderData();
+  const { conversions, plan, range, shop, dbError } = useLoaderData();
   const [selectedConversion, setSelectedConversion] = useState(null);
 
   // Tier access control
@@ -117,6 +122,18 @@ export default function Conversions() {
       alert('Failed to export data: ' + error.message);
     }
   };
+
+  if (dbError) {
+    return (
+      <div style={{ padding: 32 }}>
+        <h1 style={{ fontSize: 28, fontWeight: 600, marginBottom: 8 }}>Conversions</h1>
+        <div style={{ background: 'white', padding: 48, borderRadius: 8, border: '1px solid #e5e7eb', textAlign: 'center' }}>
+          <h2 style={{ fontSize: 20, marginBottom: 8 }}>Unable to load conversions</h2>
+          <p style={{ color: '#6b7280' }}>There was a problem connecting to the database. Please try refreshing the page.</p>
+        </div>
+      </div>
+    );
+  }
 
   // Locked state for Starter
   if (!canAccess) {
