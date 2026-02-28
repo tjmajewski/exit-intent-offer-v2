@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE "MetaLearningInsights" (
+CREATE TABLE IF NOT EXISTS "MetaLearningInsights" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "insightType" TEXT NOT NULL,
     "segment" TEXT NOT NULL,
@@ -10,35 +10,11 @@ CREATE TABLE "MetaLearningInsights" (
     "version" INTEGER NOT NULL DEFAULT 1
 );
 
--- RedefineTables
-PRAGMA defer_foreign_keys=ON;
-PRAGMA foreign_keys=OFF;
-CREATE TABLE "new_Shop" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "shopifyDomain" TEXT NOT NULL,
-    "mode" TEXT NOT NULL DEFAULT 'manual',
-    "plan" TEXT NOT NULL DEFAULT 'pro',
-    "aiGoal" TEXT NOT NULL DEFAULT 'revenue',
-    "aggression" INTEGER NOT NULL DEFAULT 5,
-    "budgetEnabled" BOOLEAN NOT NULL DEFAULT false,
-    "budgetAmount" REAL NOT NULL DEFAULT 500,
-    "budgetPeriod" TEXT NOT NULL DEFAULT 'month',
-    "budgetStartDate" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP NOT NULL,
-    "copyVariants" TEXT DEFAULT '{"variants":[],"segmentBestVariants":{}}',
-    "lastVariantUpdate" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    "contributeToMetaLearning" BOOLEAN NOT NULL DEFAULT true
-);
-INSERT INTO "new_Shop" ("aggression", "aiGoal", "budgetAmount", "budgetEnabled", "budgetPeriod", "budgetStartDate", "copyVariants", "createdAt", "id", "lastVariantUpdate", "mode", "plan", "shopifyDomain", "updatedAt") SELECT "aggression", "aiGoal", "budgetAmount", "budgetEnabled", "budgetPeriod", "budgetStartDate", "copyVariants", "createdAt", "id", "lastVariantUpdate", "mode", "plan", "shopifyDomain", "updatedAt" FROM "Shop";
-DROP TABLE "Shop";
-ALTER TABLE "new_Shop" RENAME TO "Shop";
-CREATE UNIQUE INDEX "Shop_shopifyDomain_key" ON "Shop"("shopifyDomain");
-PRAGMA foreign_keys=ON;
-PRAGMA defer_foreign_keys=OFF;
+-- AddColumn (converted from SQLite RedefineTables)
+ALTER TABLE "Shop" ADD COLUMN IF NOT EXISTS "contributeToMetaLearning" BOOLEAN NOT NULL DEFAULT true;
 
 -- CreateIndex
-CREATE INDEX "MetaLearningInsights_segment_insightType_idx" ON "MetaLearningInsights"("segment", "insightType");
+CREATE INDEX IF NOT EXISTS "MetaLearningInsights_segment_insightType_idx" ON "MetaLearningInsights"("segment", "insightType");
 
 -- CreateIndex
-CREATE INDEX "MetaLearningInsights_lastUpdated_idx" ON "MetaLearningInsights"("lastUpdated");
+CREATE INDEX IF NOT EXISTS "MetaLearningInsights_lastUpdated_idx" ON "MetaLearningInsights"("lastUpdated");

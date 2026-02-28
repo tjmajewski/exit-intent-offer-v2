@@ -1,8 +1,8 @@
 -- AlterTable
-ALTER TABLE "Shop" ADD COLUMN "lastEvolutionCycle" TIMESTAMP;
+ALTER TABLE "Shop" ADD COLUMN IF NOT EXISTS "lastEvolutionCycle" TIMESTAMP;
 
 -- CreateTable
-CREATE TABLE "Variant" (
+CREATE TABLE IF NOT EXISTS "Variant" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "shopId" TEXT NOT NULL,
     "variantId" TEXT NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE "Variant" (
 );
 
 -- CreateTable
-CREATE TABLE "VariantImpression" (
+CREATE TABLE IF NOT EXISTS "VariantImpression" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "variantId" TEXT NOT NULL,
     "shopId" TEXT NOT NULL,
@@ -47,7 +47,7 @@ CREATE TABLE "VariantImpression" (
 );
 
 -- CreateTable
-CREATE TABLE "MetaLearningGene" (
+CREATE TABLE IF NOT EXISTS "MetaLearningGene" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "baseline" TEXT NOT NULL,
     "geneType" TEXT NOT NULL,
@@ -66,7 +66,7 @@ CREATE TABLE "MetaLearningGene" (
 );
 
 -- CreateTable
-CREATE TABLE "SeasonalPattern" (
+CREATE TABLE IF NOT EXISTS "SeasonalPattern" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "shopId" TEXT NOT NULL,
     "season" TEXT NOT NULL,
@@ -83,7 +83,7 @@ CREATE TABLE "SeasonalPattern" (
 );
 
 -- CreateTable
-CREATE TABLE "BrandSafetyRule" (
+CREATE TABLE IF NOT EXISTS "BrandSafetyRule" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "shopId" TEXT NOT NULL,
     "prohibitedWords" TEXT NOT NULL DEFAULT '[]',
@@ -95,34 +95,34 @@ CREATE TABLE "BrandSafetyRule" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Variant_variantId_key" ON "Variant"("variantId");
+CREATE UNIQUE INDEX IF NOT EXISTS "Variant_variantId_key" ON "Variant"("variantId");
 
 -- CreateIndex
-CREATE INDEX "Variant_shopId_status_idx" ON "Variant"("shopId", "status");
+CREATE INDEX IF NOT EXISTS "Variant_shopId_status_idx" ON "Variant"("shopId", "status");
 
 -- CreateIndex
-CREATE INDEX "Variant_shopId_baseline_segment_idx" ON "Variant"("shopId", "baseline", "segment");
+CREATE INDEX IF NOT EXISTS "Variant_shopId_baseline_segment_idx" ON "Variant"("shopId", "baseline", "segment");
 
 -- CreateIndex
-CREATE INDEX "Variant_status_profitPerImpression_idx" ON "Variant"("status", "profitPerImpression");
+CREATE INDEX IF NOT EXISTS "Variant_status_profitPerImpression_idx" ON "Variant"("status", "profitPerImpression");
 
 -- CreateIndex
-CREATE INDEX "VariantImpression_variantId_converted_idx" ON "VariantImpression"("variantId", "converted");
+CREATE INDEX IF NOT EXISTS "VariantImpression_variantId_converted_idx" ON "VariantImpression"("variantId", "converted");
 
 -- CreateIndex
-CREATE INDEX "VariantImpression_shopId_timestamp_idx" ON "VariantImpression"("shopId", "timestamp");
+CREATE INDEX IF NOT EXISTS "VariantImpression_shopId_timestamp_idx" ON "VariantImpression"("shopId", "timestamp");
 
 -- CreateIndex
-CREATE INDEX "VariantImpression_segment_timestamp_idx" ON "VariantImpression"("segment", "timestamp");
+CREATE INDEX IF NOT EXISTS "VariantImpression_segment_timestamp_idx" ON "VariantImpression"("segment", "timestamp");
 
 -- CreateIndex
-CREATE INDEX "MetaLearningGene_baseline_avgProfitPerImpression_idx" ON "MetaLearningGene"("baseline", "avgProfitPerImpression");
+CREATE INDEX IF NOT EXISTS "MetaLearningGene_baseline_avgProfitPerImpression_idx" ON "MetaLearningGene"("baseline", "avgProfitPerImpression");
 
 -- CreateIndex
-CREATE INDEX "MetaLearningGene_baseline_geneType_confidenceLevel_idx" ON "MetaLearningGene"("baseline", "geneType", "confidenceLevel");
+CREATE INDEX IF NOT EXISTS "MetaLearningGene_baseline_geneType_confidenceLevel_idx" ON "MetaLearningGene"("baseline", "geneType", "confidenceLevel");
 
 -- CreateIndex
-CREATE INDEX "SeasonalPattern_shopId_season_idx" ON "SeasonalPattern"("shopId", "season");
+CREATE INDEX IF NOT EXISTS "SeasonalPattern_shopId_season_idx" ON "SeasonalPattern"("shopId", "season");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "BrandSafetyRule_shopId_key" ON "BrandSafetyRule"("shopId");
+CREATE UNIQUE INDEX IF NOT EXISTS "BrandSafetyRule_shopId_key" ON "BrandSafetyRule"("shopId");

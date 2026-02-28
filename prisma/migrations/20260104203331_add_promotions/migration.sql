@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE "Promotion" (
+CREATE TABLE IF NOT EXISTS "Promotion" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "shopId" TEXT NOT NULL,
     "code" TEXT NOT NULL,
@@ -20,10 +20,10 @@ CREATE TABLE "Promotion" (
 );
 
 -- CreateIndex
-CREATE INDEX "Promotion_shopId_status_idx" ON "Promotion"("shopId", "status");
+CREATE INDEX IF NOT EXISTS "Promotion_shopId_status_idx" ON "Promotion"("shopId", "status");
 
 -- CreateIndex
-CREATE INDEX "Promotion_shopId_code_idx" ON "Promotion"("shopId", "code");
+CREATE INDEX IF NOT EXISTS "Promotion_shopId_code_idx" ON "Promotion"("shopId", "code");
 
 -- CreateIndex
-CREATE INDEX "Promotion_detectedAt_idx" ON "Promotion"("detectedAt");
+CREATE INDEX IF NOT EXISTS "Promotion_detectedAt_idx" ON "Promotion"("detectedAt");

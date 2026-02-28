@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE "Conversion" (
+CREATE TABLE IF NOT EXISTS "Conversion" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "shopId" TEXT NOT NULL,
     "orderId" TEXT NOT NULL,
@@ -19,10 +19,10 @@ CREATE TABLE "Conversion" (
 );
 
 -- CreateIndex
-CREATE INDEX "Conversion_shopId_idx" ON "Conversion"("shopId");
+CREATE INDEX IF NOT EXISTS "Conversion_shopId_idx" ON "Conversion"("shopId");
 
 -- CreateIndex
-CREATE INDEX "Conversion_orderedAt_idx" ON "Conversion"("orderedAt");
+CREATE INDEX IF NOT EXISTS "Conversion_orderedAt_idx" ON "Conversion"("orderedAt");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Conversion_shopId_orderId_key" ON "Conversion"("shopId", "orderId");
+CREATE UNIQUE INDEX IF NOT EXISTS "Conversion_shopId_orderId_key" ON "Conversion"("shopId", "orderId");

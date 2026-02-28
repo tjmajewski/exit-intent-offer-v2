@@ -1,5 +1,5 @@
 -- AlterTable
-ALTER TABLE "VariantImpression" ADD COLUMN "duringPromo" BOOLEAN NOT NULL DEFAULT 0;
+ALTER TABLE "VariantImpression" ADD COLUMN IF NOT EXISTS "duringPromo" BOOLEAN NOT NULL DEFAULT false;
 
 -- CreateIndex
-CREATE INDEX "VariantImpression_shopId_duringPromo_idx" ON "VariantImpression"("shopId", "duringPromo");
+CREATE INDEX IF NOT EXISTS "VariantImpression_shopId_duringPromo_idx" ON "VariantImpression"("shopId", "duringPromo");
