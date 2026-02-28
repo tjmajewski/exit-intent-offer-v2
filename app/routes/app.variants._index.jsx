@@ -1,4 +1,3 @@
-import { json } from "@remix-run/node";
 import { useLoaderData, useFetcher, Link, useSearchParams } from "react-router";
 import { authenticate } from "../shopify.server";
 import { useEffect, useState } from "react";
@@ -19,7 +18,7 @@ export async function loader({ request }) {
   });
 
   if (!shop) {
-    return json({ variants: [], shop: null, plan: null });
+    return { variants: [], shop: null, plan: null };
   }
 
   // Map plan string to tier
@@ -240,7 +239,7 @@ export async function loader({ request }) {
   const displayVariants = variants.slice(0, populationLimit);
   const maxGeneration = displayVariants.length > 0 ? Math.max(...displayVariants.map(v => v.generation)) : 0;
 
-  return json({
+  return {
     shop,
     plan,
     variants: displayVariants,
@@ -259,7 +258,7 @@ export async function loader({ request }) {
       promo: promoFilter,
       segment: segmentFilter
     }
-  });
+  };
 }
 
 export default function VariantsIndex() {

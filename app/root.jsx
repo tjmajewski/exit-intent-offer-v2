@@ -54,10 +54,10 @@ export function ErrorBoundary() {
           <p style={{ color: '#6b7280', marginBottom: 24, maxWidth: 400 }}>
             We've been notified and are working on it. Please try refreshing the page.
           </p>
-          <a 
-            href="/" 
-            style={{ 
-              color: '#8B5CF6', 
+          <a
+            href="/app"
+            style={{
+              color: '#8B5CF6',
               textDecoration: 'underline',
               fontSize: 16
             }}

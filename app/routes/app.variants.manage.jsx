@@ -1,5 +1,4 @@
-import { json, redirect } from "@remix-run/node";
-import { useLoaderData, useFetcher, Link, useSearchParams, Form } from "react-router";
+import { useLoaderData, useFetcher, Link, useSearchParams, Form, redirect } from "react-router";
 import { authenticate } from "../shopify.server";
 import { useEffect, useState } from "react";
 import AppLayout from "../components/AppLayout";
@@ -20,7 +19,7 @@ export async function action({ request }) {
       });
 
       if (!variant) {
-        return json({ error: 'Variant not found', success: false });
+        return { error: 'Variant not found', success: false };
       }
 
       // Handle status change
@@ -32,7 +31,7 @@ export async function action({ request }) {
             isChampion: false
           }
         });
-        return json({ success: true, message: 'Variant set to Active' });
+        return { success: true, message: 'Variant set to Active' };
       }
 
       if (newStatus === 'protected') {
@@ -43,7 +42,7 @@ export async function action({ request }) {
             isChampion: false
           }
         });
-        return json({ success: true, message: 'Variant protected from evolution' });
+        return { success: true, message: 'Variant protected from evolution' };
       }
 
       if (newStatus === 'champion') {
@@ -65,7 +64,7 @@ export async function action({ request }) {
           }
         });
 
-        return json({ success: true, message: 'Variant set as champion' });
+        return { success: true, message: 'Variant set as champion' };
       }
     }
 
@@ -80,10 +79,10 @@ export async function action({ request }) {
       return redirect('/app/variants/manage');
     }
 
-    return json({ success: false, error: 'Invalid action' });
+    return { success: false, error: 'Invalid action' };
   } catch (error) {
     console.error('Action error:', error);
-    return json({ error: error.message, success: false }, { status: 500 });
+    return { error: error.message, success: false };
   }
 }
 
@@ -101,7 +100,7 @@ export async function loader({ request }) {
   });
 
   if (!shop) {
-    return json({ variants: [], shop: null, plan: null });
+    return { variants: [], shop: null, plan: null };
   }
 
   // Map plan string to tier
@@ -205,7 +204,7 @@ export async function loader({ request }) {
   const deadCount = variants.filter(v => v.status === 'killed').length;
   const maxGeneration = variants.length > 0 ? Math.max(...variants.map(v => v.generation)) : 0;
 
-  return json({
+  return {
     shop,
     plan,
     variants,
