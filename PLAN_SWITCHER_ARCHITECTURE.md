@@ -1,4 +1,4 @@
-# Plan Switcher Architecture - ResparQ
+# Plan Switcher Architecture - Repsarq
 **Date:** January 16, 2026
 **Status:** ✅ Fixed and Working
 

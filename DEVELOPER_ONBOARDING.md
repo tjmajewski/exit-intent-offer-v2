@@ -1,6 +1,6 @@
-# Developer Onboarding Guide - ResparQ
+# Developer Onboarding Guide - Repsarq
 
-Welcome! This guide will help you set up your development environment and understand the ResparQ codebase.
+Welcome! This guide will help you set up your development environment and understand the Repsarq codebase.
 
 ---
 
@@ -124,7 +124,7 @@ Shopify CLI will:
 
 ### Architecture Overview
 
-ResparQ is a **full-stack Shopify app**:
+Repsarq is a **full-stack Shopify app**:
 
 ```
 Frontend (React)          Backend (React Router)      Database (Prisma)
@@ -592,4 +592,4 @@ After completing Day 1-3:
 ---
 
 **Last Updated:** January 2026
-**Maintained by:** ResparQ Development Team
+**Maintained by:** Repsarq Development Team

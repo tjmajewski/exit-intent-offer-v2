@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "32b61408918a3191610084f0d2700fe5"
-name = "exit-intent-offer-v2"
+name = "Repsarq"
 application_url = "https://resparq.fly.dev"
 embedded = true
 

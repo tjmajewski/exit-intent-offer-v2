@@ -1,12 +1,12 @@
-# Evolution System - ResparQ AI
+# Evolution System - Repsarq AI
 
-Deep dive into the genetic algorithm powering ResparQ's AI-driven variant optimization system.
+Deep dive into the genetic algorithm powering Repsarq's AI-driven variant optimization system.
 
 ---
 
 ## Overview
 
-The **Evolution System** is ResparQ's Enterprise-tier feature that automatically generates, tests, and optimizes exit intent modal variants using a genetic algorithm. Unlike traditional A/B testing which compares 2-3 manually-created options, the Evolution System:
+The **Evolution System** is Repsarq's Enterprise-tier feature that automatically generates, tests, and optimizes exit intent modal variants using a genetic algorithm. Unlike traditional A/B testing which compares 2-3 manually-created options, the Evolution System:
 
 - **Generates** a population of 10+ variants automatically
 - **Tests** them simultaneously with real customers

@@ -1,6 +1,6 @@
-# ResparQ Deployment Guide - Fly.io
+# Repsarq Deployment Guide - Fly.io
 
-This document covers the complete deployment process for ResparQ on Fly.io with PostgreSQL. Use this as a reference for troubleshooting or future deployments.
+This document covers the complete deployment process for Repsarq on Fly.io with PostgreSQL. Use this as a reference for troubleshooting or future deployments.
 
 ## Table of Contents
 

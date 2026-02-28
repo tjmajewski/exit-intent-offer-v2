@@ -1,4 +1,4 @@
-# ResparQ - AI-Powered Exit Intent & Cart Recovery
+# Repsarq - AI-Powered Exit Intent & Cart Recovery
 
 **Live App:** Exit Intent Offer v2
 **Tech Stack:** React Router 7, Node.js, Prisma, SQLite/PostgreSQL, Shopify Admin API
@@ -8,7 +8,7 @@
 
 ## Overview
 
-ResparQ is a Shopify app that uses AI-powered exit intent modals and cart recovery to convert abandoning visitors into customers. Unlike traditional exit intent tools that focus on email capture, ResparQ delivers **immediate revenue** through intelligently-timed, personalized discount offers.
+Repsarq is a Shopify app that uses AI-powered exit intent modals and cart recovery to convert abandoning visitors into customers. Unlike traditional exit intent tools that focus on email capture, Repsarq delivers **immediate revenue** through intelligently-timed, personalized discount offers.
 
 ### Key Features
 

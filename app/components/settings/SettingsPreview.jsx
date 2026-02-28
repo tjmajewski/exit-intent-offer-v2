@@ -284,7 +284,7 @@ export default function SettingsPreview({
                   color: '#9ca3af'
                 }}>
                   <span>Powered by </span>
-                  <span style={{ fontWeight: '600', color: '#8B5CF6' }}>ResparQ</span>
+                  <span style={{ fontWeight: '600', color: '#8B5CF6' }}>Repsarq</span>
                   <span style={{ fontSize: '13px' }}> </span>
                 </div>
               </div>

@@ -166,7 +166,7 @@ export default function AppLayout({ children, plan }) {
         <div style={{ padding: "0 24px", marginBottom: 32 }}>
           <img 
             src="/resparq_outline_final.svg" 
-            alt="ResparQ" 
+            alt="Repsarq" 
             style={{ 
               width: "100%", 
               height: "auto",

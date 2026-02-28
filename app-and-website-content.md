@@ -1,5 +1,5 @@
 cat > RESPARQ_WEBSITE_CONTENT_V2.md << 'EOF'
-# ResparQ Website Content - Version 2.0
+# Repsarq Website Content - Version 2.0
 **Last Updated:** January 16, 2026  
 **Includes:** Evolutionary AI, Social Proof, Pro/Enterprise tiers
 
@@ -11,7 +11,7 @@ cat > RESPARQ_WEBSITE_CONTENT_V2.md << 'EOF'
 "Exit intent powered by evolution"
 
 ### **New Elevator Pitch** (30 seconds)
-ResparQ uses evolutionary AI to recover abandoning shoppers with personalized offers that convert instantly. Our system creates hundreds of modal variants, tests them automatically using Bayesian statistics, and evolves the best performers—like natural selection for your checkout. Add dynamic social proof ("Join 5k+ customers"), automatic discount codes, and margin protection. Result? AI that gets smarter every day while you focus on growth.
+Repsarq uses evolutionary AI to recover abandoning shoppers with personalized offers that convert instantly. Our system creates hundreds of modal variants, tests them automatically using Bayesian statistics, and evolves the best performers—like natural selection for your checkout. Add dynamic social proof ("Join 5k+ customers"), automatic discount codes, and margin protection. Result? AI that gets smarter every day while you focus on growth.
 
 ### **Key Differentiators (UPDATED)**
 1. **Evolutionary AI** - Creates & evolves variants automatically (not manual A/B testing)
@@ -26,7 +26,7 @@ ResparQ uses evolutionary AI to recover abandoning shoppers with personalized of
 ```
 Headline: Your Checkout is Bleeding Revenue
 
-Subheadline: ResparQ's evolutionary AI recovers abandoning customers 
+Subheadline: Repsarq's evolutionary AI recovers abandoning customers 
 with offers that get smarter every day—automatically.
 
 Stats Bar:
@@ -63,7 +63,7 @@ Three Problems:
    High-intent buyers get unnecessary discounts
    Low-intent browsers don't get enough
 
-Visual: Side-by-side showing old popup vs ResparQ
+Visual: Side-by-side showing old popup vs Repsarq
 ```
 
 ---
@@ -72,7 +72,7 @@ Visual: Side-by-side showing old popup vs ResparQ
 ```
 Headline: Evolution Finds What Converts
 
-ResparQ doesn't just test variants—it breeds them.
+Repsarq doesn't just test variants—it breeds them.
 
 How Evolutionary AI Works:
 
@@ -318,7 +318,7 @@ CTA: See Social Proof in Action
 ```
 Headline: Built on Proven Science
 
-ResparQ uses established algorithms from academia and industry:
+Repsarq uses established algorithms from academia and industry:
 
 Thompson Sampling (1933)
 - Bayesian bandit algorithm
@@ -432,7 +432,7 @@ LTV/CAC: 20:1+ (low churn on AI products)
 
 Traction:
 [Post-launch metrics]
-- Merchants using ResparQ
+- Merchants using Repsarq
 - Revenue recovered
 - MRR growth rate
 - Net revenue retention
