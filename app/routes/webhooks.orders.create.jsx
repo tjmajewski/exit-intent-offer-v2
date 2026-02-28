@@ -418,7 +418,8 @@ async function storeConversion(shop, orderPayload, discountUsed, admin) {
         orderId: orderPayload.id.toString(),
         orderNumber: orderPayload.order_number.toString(),
         orderValue: parseFloat(orderPayload.total_price),
-        customerEmail: orderPayload.customer?.email || orderPayload.email,
+        customerEmail: orderPayload.customer?.email || orderPayload.email ||
+                       orderPayload.customer?.phone || orderPayload.phone || null,
         orderedAt: new Date(orderPayload.created_at),
         modalId: modalLibrary.currentModalId || 'unknown',
         modalName: currentModal?.modalName || 'Unknown Modal',
