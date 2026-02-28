@@ -1,4 +1,3 @@
-import { json } from "@remix-run/node";
 import { useLoaderData, Link } from "react-router";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
@@ -19,7 +18,7 @@ export const loader = async ({ request }) => {
   });
 
   if (!shopRecord) {
-    return json({ conversions: [], plan: null, range });
+    return { conversions: [], plan: null, range };
   }
 
   // Calculate date range
@@ -48,12 +47,12 @@ export const loader = async ({ request }) => {
     }
   });
 
-  return json({
+  return {
     conversions,
     plan: shopRecord.plan,
     range,
     shop
-  });
+  };
 };
 
 export default function Conversions() {
