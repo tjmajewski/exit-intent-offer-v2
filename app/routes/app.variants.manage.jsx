@@ -218,7 +218,7 @@ export async function loader({ request }) {
       promo: promoFilter,
       segment: segmentFilter
     }
-  });
+  };
 }
 
 export default function ManageVariants() {
