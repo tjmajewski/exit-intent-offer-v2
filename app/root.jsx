@@ -26,10 +26,13 @@ export default function App() {
 
 export function ErrorBoundary() {
   const error = useRouteError();
-  
+
   // Log to Sentry
   Sentry.captureException(error);
-  
+
+  const message = error instanceof Error ? error.message : String(error);
+  const stack = error instanceof Error ? error.stack : null;
+
   return (
     <html lang="en">
       <head>
@@ -39,8 +42,8 @@ export function ErrorBoundary() {
         <Links />
       </head>
       <body>
-        <div style={{ 
-          padding: 48, 
+        <div style={{
+          padding: 48,
           textAlign: 'center',
           minHeight: '100vh',
           display: 'flex',
@@ -54,6 +57,22 @@ export function ErrorBoundary() {
           <p style={{ color: '#6b7280', marginBottom: 24, maxWidth: 400 }}>
             We've been notified and are working on it. Please try refreshing the page.
           </p>
+          <pre style={{
+            background: '#f3f4f6',
+            padding: 16,
+            borderRadius: 8,
+            fontSize: 12,
+            textAlign: 'left',
+            maxWidth: 700,
+            overflowX: 'auto',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+            marginBottom: 24,
+            color: '#dc2626'
+          }}>
+            {message}
+            {stack ? `\n\n${stack}` : ''}
+          </pre>
           <a
             href="/app"
             style={{
