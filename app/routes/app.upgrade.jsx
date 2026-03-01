@@ -504,7 +504,7 @@ export default function Upgrade() {
           </h3>
           <p style={{ color: "#9ca3af", fontSize: 14, lineHeight: "1.7", margin: 0 }}>
             In addition to your flat monthly/annual subscription, a small usage-based commission applies only to
-            orders where a customer used a Repsarq-generated discount code (i.e., revenue that was recovered by the app).
+            orders where a customer used a Resparq-generated discount code (i.e., revenue that was recovered by the app).
             Commission rates: <strong style={{ color: "#d1d5db" }}>5% on Starter</strong>,{" "}
             <strong style={{ color: "#d1d5db" }}>2% on Pro</strong>, and{" "}
             <strong style={{ color: "#d1d5db" }}>1% on Enterprise</strong>.
@@ -538,7 +538,7 @@ export default function Upgrade() {
           border: "1px solid rgba(139, 92, 246, 0.3)",
           textAlign: "center"
         }}>
-          <h3 style={{ fontSize: 24, marginBottom: 16, color: "#fff" }}>Why Repsarq?</h3>
+          <h3 style={{ fontSize: 24, marginBottom: 16, color: "#fff" }}>Why Resparq?</h3>
           <div style={{
             display: "grid",
             gridTemplateColumns: "repeat(3, 1fr)",
@@ -626,7 +626,7 @@ export default function Upgrade() {
             <strong style={{ fontSize: 16, color: "#fff" }}>What does "% of recovered revenue" mean?</strong>
             <p style={{ color: "#9ca3af", marginTop: 8, lineHeight: "1.6", marginBottom: 0 }}>
               &ldquo;Recovered revenue&rdquo; refers to the total order value of purchases where a customer used a
-              Repsarq-generated discount code at checkout — meaning the app directly helped convert that sale.
+              Resparq-generated discount code at checkout — meaning the app directly helped convert that sale.
               The percentage commission (5%, 2%, or 1% depending on your plan) is charged only on those specific orders,
               not on your overall store revenue. These usage charges are billed monthly through Shopify&apos;s billing system,
               subject to the monthly cap for your plan.

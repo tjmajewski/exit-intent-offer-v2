@@ -14,7 +14,7 @@ export default function Privacy() {
       <section style={{ marginBottom: '30px' }}>
         <h2>Introduction</h2>
         <p>
-          Repsarq ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy
+          Resparq ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy
           explains how we collect, use, and share information when you use our Shopify application.
         </p>
       </section>
