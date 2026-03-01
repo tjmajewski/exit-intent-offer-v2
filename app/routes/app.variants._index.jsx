@@ -1,4 +1,4 @@
-import { useLoaderData, useFetcher, Link, useSearchParams } from "react-router";
+import { useLoaderData, useFetcher, Link, useSearchParams, redirect } from "react-router";
 import { authenticate } from "../shopify.server";
 import { useEffect, useState } from "react";
 import AppLayout from "../components/AppLayout";
@@ -25,6 +25,11 @@ export async function loader({ request }) {
   // Map plan string to tier
   const planTier = shop.plan === 'enterprise' ? 'enterprise' : shop.plan === 'pro' ? 'pro' : 'starter';
   const plan = { tier: planTier };
+
+  // Enterprise-only page
+  if (planTier !== 'enterprise') {
+    return redirect('/app/upgrade');
+  }
 
   // Get all variants for this shop
   const allVariants = await db.variant.findMany({

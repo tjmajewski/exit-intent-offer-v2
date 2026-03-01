@@ -99,6 +99,11 @@ export async function loader({ request }) {
   const planTier = shop.plan === 'enterprise' ? 'enterprise' : shop.plan === 'pro' ? 'pro' : 'starter';
   const plan = { tier: planTier };
 
+  // Enterprise-only page
+  if (planTier !== 'enterprise') {
+    return redirect('/app/upgrade');
+  }
+
   // Get all variants for this shop
   const allVariants = await db.variant.findMany({
     where: { shopId: shop.id },
