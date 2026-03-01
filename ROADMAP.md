@@ -348,6 +348,15 @@ cat > ROADMAP.md << 'EOF'
 - Metrics: recovery rate, time to conversion, additional revenue
 - "6x more effective than emails" messaging
 
+**8. Community Gene Pool (Crowdsourced Copy Variants) - 10 hours**
+- Merchants opt in to contribute high-performing variants to the global gene pool
+- Performance gate: variant must hit a minimum CVR threshold over N impressions before it's eligible
+- Normalization step: strip brand-specific values and re-introduce placeholders (`{{social_proof_count}}`, `{{amount}}`, etc.) before pooling
+- Requires explicit opt-in consent at contribution step (TOS disclosure)
+- Category tagging by store vertical so copy is served to contextually similar stores
+- Builds a network effect moat: larger merchant base → better gene pool → better results for everyone
+- **Dependency:** Variant Tracking (Phase 1 item #4) must ship first to supply the performance data needed to identify candidates
+
 ### Phase 3: Nice-to-Have (Weeks 7+)
 - Multi-currency support
 - Multi-language variants
