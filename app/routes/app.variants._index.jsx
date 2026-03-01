@@ -1,4 +1,4 @@
-import { useLoaderData, useFetcher, Link, useSearchParams, redirect } from "react-router";
+import { useLoaderData, useFetcher, Link, useSearchParams } from "react-router";
 import { authenticate } from "../shopify.server";
 import { useEffect, useState } from "react";
 import AppLayout from "../components/AppLayout";
@@ -28,7 +28,18 @@ export async function loader({ request }) {
 
   // Enterprise-only page
   if (planTier !== 'enterprise') {
-    return redirect('/app/upgrade');
+    return {
+      hasAccess: false,
+      plan: { tier: planTier },
+      shop: null,
+      variants: [],
+      totalVariants: 0,
+      aliveCount: 0,
+      deadCount: 0,
+      generationStats: { max: 0 },
+      componentStats: { headlines: [], subheads: [], ctas: [] },
+      filters: { promo: 'all', segment: 'all' }
+    };
   }
 
   // Get all variants for this shop
@@ -280,7 +291,7 @@ export async function loader({ request }) {
 
 export default function VariantsIndex() {
   const data = useLoaderData();
-  const { shop, plan, variants, totalVariants, aliveCount, deadCount, generationStats, componentStats, dbError } = data;
+  const { hasAccess, shop, plan, variants, totalVariants, aliveCount, deadCount, generationStats, componentStats, dbError } = data;
   const fetcher = useFetcher();
   const [searchParams, setSearchParams] = useSearchParams();
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -302,6 +313,46 @@ export default function VariantsIndex() {
   // Use fetcher data if available, otherwise use initial data
   const displayData = fetcher.data || data;
   const displayVariants = displayData.variants || variants;
+
+  // Non-Enterprise users see upgrade page
+  if (hasAccess === false) {
+    return (
+      <AppLayout plan={plan}>
+        <div style={{ padding: 40 }}>
+          <div style={{
+            textAlign: "center",
+            maxWidth: 600,
+            margin: "80px auto",
+            padding: 40,
+            background: "#fef3c7",
+            borderRadius: 12,
+            border: "2px solid #f59e0b"
+          }}>
+            <h1 style={{ fontSize: 28, marginBottom: 16 }}>Enterprise Feature</h1>
+            <p style={{ fontSize: 16, color: "#78350f", marginBottom: 24 }}>
+              Variant Performance is only available on Enterprise plans.
+              Unlock AI-powered copy testing that automatically evolves your exit offers to maximize conversions.
+            </p>
+            <a
+              href="/app/upgrade"
+              style={{
+                display: "inline-block",
+                background: "#f59e0b",
+                color: "white",
+                padding: "14px 28px",
+                borderRadius: 8,
+                textDecoration: "none",
+                fontWeight: 600,
+                fontSize: 16
+              }}
+            >
+              Upgrade to Enterprise →
+            </a>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   if (dbError) {
     return (
