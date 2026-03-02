@@ -708,15 +708,12 @@
       }
       
       poweredBy.innerHTML = `
-        <a href="https://apps.shopify.com/resparq" target="_blank" rel="noopener"
-           title="Powered by Resparq"
-           aria-label="Powered by Resparq"
-           style="display:inline-block;width:24px;height:24px;margin-top:16px;float:right;text-decoration:none;opacity:0.5;">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <rect width="24" height="24" rx="4" fill="#8B5CF6"/>
-            <text x="12" y="17" text-anchor="middle" fill="white" font-size="13" font-weight="700" font-family="sans-serif">R</text>
-          </svg>
-        </a>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"
+             aria-label="Powered by Resparq"
+             style="display:block;margin-top:16px;float:right;opacity:0.5;">
+          <rect width="24" height="24" rx="4" fill="#8B5CF6"/>
+          <text x="12" y="17" text-anchor="middle" fill="white" font-size="13" font-weight="700" font-family="sans-serif">R</text>
+        </svg>
       `;
       
       // Add swipe-to-dismiss for mobile
