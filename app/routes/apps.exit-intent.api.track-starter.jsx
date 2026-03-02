@@ -1,5 +1,6 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
+import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
 
 /**
  * API endpoint for tracking Starter tier impressions
@@ -14,7 +15,7 @@ export async function action({ request }) {
   const { default: db } = await import("../db.server.js");
 
   try {
-    await authenticate.public.appProxy(request);
+    const { admin } = await authenticate.public.appProxy(request);
     const body = await request.json();
     const { shop, signals, manualSettings, event, impressionId, revenue } = body;
 
@@ -59,6 +60,12 @@ export async function action({ request }) {
       });
 
       console.log(`[Starter Learning] Impression tracked: ${impression.id}`);
+
+      // Update analytics metafield for dashboard metrics (fire-and-forget)
+      trackAnalyticsEvent(admin, 'impression').catch(e =>
+        console.error('[Analytics] Failed to track starter impression event:', e)
+      );
+
       return json({ success: true, impressionId: impression.id });
     }
 
@@ -73,6 +80,12 @@ export async function action({ request }) {
       });
 
       console.log(`[Starter Learning] Click tracked: ${impressionId}`);
+
+      // Update analytics metafield for dashboard metrics (fire-and-forget)
+      trackAnalyticsEvent(admin, 'click').catch(e =>
+        console.error('[Analytics] Failed to track starter click event:', e)
+      );
+
       return json({ success: true });
     }
 

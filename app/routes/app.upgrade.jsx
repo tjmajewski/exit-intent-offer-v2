@@ -3,9 +3,10 @@ import { useState, useEffect } from "react";
 import { authenticate } from "../shopify.server";
 import { PLAN_FEATURES } from "../utils/featureGates";
 import AppLayout from "../components/AppLayout";
+import db from "../db.server";
 
 export async function loader({ request }) {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const { getActiveSubscription } = await import("../utils/billing.server");
 
   try {
@@ -20,9 +21,22 @@ export async function loader({ request }) {
     `);
 
     const data = await response.json();
-    const plan = data.data.shop?.plan?.value
+    let plan = data.data.shop?.plan?.value
       ? JSON.parse(data.data.shop.plan.value)
       : { tier: "starter" };
+
+    // Override plan with database value (more reliable than metafields)
+    try {
+      const shopRecord = await db.shop.findUnique({
+        where: { shopifyDomain: session.shop },
+        select: { plan: true }
+      });
+      if (shopRecord?.plan) {
+        plan = { ...plan, tier: shopRecord.plan };
+      }
+    } catch (e) {
+      console.error("Error fetching shop plan from DB:", e);
+    }
 
     // Check active Shopify subscription
     let activeSubscription = null;
@@ -30,6 +44,18 @@ export async function loader({ request }) {
       activeSubscription = await getActiveSubscription(admin);
     } catch (e) {
       console.error("Error checking subscription:", e);
+    }
+
+    // Extract current billing cycle from active subscription
+    let currentBillingCycle = null;
+    if (activeSubscription) {
+      for (const lineItem of activeSubscription.lineItems || []) {
+        const pricing = lineItem.plan?.pricingDetails;
+        if (pricing && pricing.interval) {
+          currentBillingCycle = pricing.interval === 'ANNUAL' ? 'annual' : 'monthly';
+          break;
+        }
+      }
     }
 
     // Calculate remaining trial days for the CTA text
@@ -43,10 +69,10 @@ export async function loader({ request }) {
       trialDaysRemaining = 14;
     }
 
-    return { plan, activeSubscription, trialDaysRemaining };
+    return { plan, activeSubscription, trialDaysRemaining, currentBillingCycle };
   } catch (error) {
     console.error("Error loading upgrade page:", error);
-    return { plan: { tier: "starter" }, activeSubscription: null, trialDaysRemaining: 14 };
+    return { plan: { tier: "starter" }, activeSubscription: null, trialDaysRemaining: 14, currentBillingCycle: null };
   }
 }
 
@@ -123,12 +149,12 @@ export async function action({ request }) {
 }
 
 export default function Upgrade() {
-  const { plan, activeSubscription, trialDaysRemaining } = useLoaderData();
+  const { plan, activeSubscription, trialDaysRemaining, currentBillingCycle } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const submittingTier = isSubmitting ? navigation.formData?.get("tier") : null;
-  const [billingCycle, setBillingCycle] = useState("monthly");
+  const [billingCycle, setBillingCycle] = useState(currentBillingCycle || "monthly");
 
   // Redirect to Shopify billing approval page (must break out of iframe)
   useEffect(() => {
@@ -227,6 +253,21 @@ export default function Upgrade() {
           </div>
         </div>
 
+        {/* Error Banner */}
+        {actionData?.error && (
+          <div style={{
+            background: "#fee2e2",
+            border: "1px solid #ef4444",
+            borderRadius: 8,
+            padding: "16px 24px",
+            marginBottom: 24,
+            color: "#991b1b",
+            fontSize: 14
+          }}>
+            <strong>Subscription error:</strong> {actionData.error}
+          </div>
+        )}
+
         {/* Billing Toggle */}
         <div style={{
           display: "flex",
@@ -295,7 +336,12 @@ export default function Upgrade() {
           marginBottom: 40
         }}>
           {plans.map((planOption) => {
-            const isCurrent = plan.tier === planOption.tier;
+            // "Current Plan" only applies when there's an active paid subscription
+            // AND the tier AND billing cycle both match the current selection
+            const hasPaidSubscription = activeSubscription !== null;
+            const isCurrent = hasPaidSubscription &&
+              plan.tier === planOption.tier &&
+              (currentBillingCycle === null || currentBillingCycle === billingCycle);
             const isPopular = planOption.popular;
             const displayPrice = billingCycle === "monthly" ? planOption.monthlyPrice : planOption.annualPrice;
 

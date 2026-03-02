@@ -2,6 +2,7 @@ import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { createPercentageDiscount, createFixedDiscount, createThresholdDiscount } from "../utils/discount-codes";
 import { getMetaInsight, shouldUseMetaLearning } from "../utils/meta-learning.js";
+import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
 
 export async function action({ request }) {
   const { default: db } = await import("../db.server.js");
@@ -195,7 +196,12 @@ export async function action({ request }) {
       trafficSource: signals.trafficSource || 'unknown',
       cartValue: signals.cartValue
     });
-    
+
+    // Update analytics metafield for dashboard metrics (fire-and-forget to avoid blocking)
+    trackAnalyticsEvent(admin, 'impression').catch(e =>
+      console.error('[Analytics] Failed to track impression event:', e)
+    );
+
     // If no discount needed, return early
     if (decision.type === 'no-discount') {
       await db.aIDecision.create({
