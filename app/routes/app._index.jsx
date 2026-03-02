@@ -1227,8 +1227,32 @@ export default function Dashboard() {
         marginBottom: 32,
         boxShadow: "0 10px 30px rgba(102, 126, 234, 0.3)"
       }}>
-        <div style={{ fontSize: 16, opacity: 0.9, marginBottom: 16 }}>
-          Your Performance (Last 30 Days)
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ fontSize: 16, opacity: 0.9 }}>Your Performance (Last 30 Days)</div>
+          <button
+            onClick={() => window.location.reload()}
+            title="Refresh data"
+            style={{
+              background: "rgba(255,255,255,0.15)",
+              border: "1px solid rgba(255,255,255,0.3)",
+              borderRadius: 6,
+              padding: "6px 8px",
+              cursor: "pointer",
+              color: "white",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12,
+              opacity: 0.85,
+              lineHeight: 1
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 4 23 10 17 10"/>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+            Refresh
+          </button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 24 }}>
           <div>
