@@ -708,7 +708,7 @@
       }
       
       poweredBy.innerHTML = `
-        <a href="https://resparq.ai" target="_blank" rel="noopener" style="
+        <a href="https://apps.shopify.com/resparq" target="_blank" rel="noopener" style="
           display: inline-flex;
           align-items: center;
           gap: 4px;

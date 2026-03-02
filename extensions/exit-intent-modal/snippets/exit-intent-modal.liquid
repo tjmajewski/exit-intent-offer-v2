@@ -2,6 +2,13 @@
   Exit Intent Modal - Loads settings and initializes the modal
 {% endcomment %}
 
+{% assign discount_enabled = shop.metafields.exit_intent.settings.value.discountEnabled | default: false %}
+{% if discount_enabled == true %}
+  {% assign active_discount_code = shop.metafields.exit_intent.settings.value.discountCode | default: null %}
+{% else %}
+  {% assign active_discount_code = null %}
+{% endif %}
+
 <script>
   // Pass settings from Shopify to JavaScript
   window.exitIntentSettings = {
@@ -11,7 +18,8 @@
     modalHeadline: {{ shop.metafields.exit_intent.settings.value.modalHeadline | default: "Wait! Don't leave yet 🎁" | json }},
     modalBody: {{ shop.metafields.exit_intent.settings.value.modalBody | default: "Complete your purchase now and get free shipping on your order!" | json }},
     ctaButton: {{ shop.metafields.exit_intent.settings.value.ctaButton | default: "Complete My Order" | json }},
-    discountCode: {{ shop.metafields.exit_intent.settings.value.discountCode | default: null | json }},
+    discountEnabled: {{ discount_enabled | json }},
+    discountCode: {{ active_discount_code | json }},
     offerType: {{ shop.metafields.exit_intent.settings.value.offerType | default: "percentage" | json }},
     redirectDestination: {{ shop.metafields.exit_intent.settings.value.redirectDestination | default: "checkout" | json }},
     triggers: {
