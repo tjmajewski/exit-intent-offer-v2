@@ -70,7 +70,7 @@ export const action = async ({ request }) => {
   } catch (error) {
     console.error(`Error processing customer redact:`, error);
     // Still return 200 to acknowledge receipt
-    return new Response(JSON.stringify({ success: true, error: error.message }), {
+    return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
     });

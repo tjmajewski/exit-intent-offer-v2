@@ -135,66 +135,70 @@ export default function Conversions() {
 
   if (dbError) {
     return (
-      <div style={{ padding: 32 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 600, marginBottom: 8 }}>Conversions</h1>
-        <div style={{ background: 'white', padding: 48, borderRadius: 8, border: '1px solid #e5e7eb', textAlign: 'center' }}>
-          <h2 style={{ fontSize: 20, marginBottom: 8 }}>Unable to load conversions</h2>
-          <p style={{ color: '#6b7280' }}>There was a problem connecting to the database. Please try refreshing the page.</p>
+      <AppLayout plan={{ tier: plan, status: "active" }}>
+        <div style={{ padding: 32 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 600, marginBottom: 8 }}>Conversions</h1>
+          <div style={{ background: 'white', padding: 48, borderRadius: 8, border: '1px solid #e5e7eb', textAlign: 'center' }}>
+            <h2 style={{ fontSize: 20, marginBottom: 8 }}>Unable to load conversions</h2>
+            <p style={{ color: '#6b7280' }}>There was a problem connecting to the database. Please try refreshing the page.</p>
+          </div>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
   // Locked state for Starter
   if (!canAccess) {
     return (
-      <div style={{ padding: 32 }}>
-        <div style={{ marginBottom: 24 }}>
-          <h1 style={{ fontSize: 28, fontWeight: 600, marginBottom: 8 }}>Conversions</h1>
-          <p style={{ color: '#6b7280' }}>Track every order that came through after seeing your modal</p>
-        </div>
-
-        <div style={{
-          background: 'white',
-          padding: 48,
-          borderRadius: 8,
-          border: '1px solid #e5e7eb',
-          textAlign: 'center'
-        }}>
-          <div style={{
-            display: 'inline-block',
-            padding: '4px 12px',
-            background: '#f3f4f6',
-            borderRadius: 4,
-            fontSize: 12,
-            fontWeight: 600,
-            marginBottom: 16,
-            color: '#6b7280'
-          }}>
-            PRO
+      <AppLayout plan={{ tier: plan, status: "active" }}>
+        <div style={{ padding: 32 }}>
+          <div style={{ marginBottom: 24 }}>
+            <h1 style={{ fontSize: 28, fontWeight: 600, marginBottom: 8 }}>Conversions</h1>
+            <p style={{ color: '#6b7280' }}>Track every order that came through after seeing your modal</p>
           </div>
-          <h2 style={{ fontSize: 24, marginBottom: 12 }}>Order-Level Tracking</h2>
-          <p style={{ color: '#6b7280', marginBottom: 24, maxWidth: 500, margin: '0 auto 24px' }}>
-            See every order that converted after seeing your modal. Perfect for validating ROI with your finance team.
-          </p>
-          <button
-            type="button"
-            onClick={() => window.open('https://sealdeal.ai/pricing', '_blank')}
-            style={{
-              padding: '12px 24px',
-              background: '#8B5CF6',
-              color: 'white',
-              border: 'none',
-              borderRadius: 6,
-              fontSize: 14,
+
+          <div style={{
+            background: 'white',
+            padding: 48,
+            borderRadius: 8,
+            border: '1px solid #e5e7eb',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              display: 'inline-block',
+              padding: '4px 12px',
+              background: '#f3f4f6',
+              borderRadius: 4,
+              fontSize: 12,
               fontWeight: 600,
-              cursor: 'pointer'
-            }}
-          >
-            Upgrade to Pro
-          </button>
+              marginBottom: 16,
+              color: '#6b7280'
+            }}>
+              PRO
+            </div>
+            <h2 style={{ fontSize: 24, marginBottom: 12 }}>Order-Level Tracking</h2>
+            <p style={{ color: '#6b7280', marginBottom: 24, maxWidth: 500, margin: '0 auto 24px' }}>
+              See every order that converted after seeing your modal. Perfect for validating ROI with your finance team.
+            </p>
+            <button
+              type="button"
+              onClick={() => window.open('https://sealdeal.ai/pricing', '_blank')}
+              style={{
+                padding: '12px 24px',
+                background: '#8B5CF6',
+                color: 'white',
+                border: 'none',
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              Upgrade to Pro
+            </button>
+          </div>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
