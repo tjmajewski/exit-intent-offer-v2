@@ -1314,6 +1314,15 @@
           console.error('Error adding gift card to cart:', error);
         }
 
+        // Stamp exit intent on cart so webhook can attribute conversion
+        try {
+          await fetch('/cart/update.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attributes: { exit_intent: 'true' } })
+          });
+        } catch (e) { /* non-fatal */ }
+
         // Redirect to cart or checkout
         window.location.href = destination === 'cart' ? '/cart' : '/checkout';
         return;
@@ -1346,9 +1355,22 @@
         }
       }
 
+      // Stamp exit intent on cart so the order webhook can attribute this conversion
+      // regardless of whether a discount code was applied
+      try {
+        await fetch('/cart/update.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ attributes: { exit_intent: 'true' } })
+        });
+        console.log('[Exit Intent] Cart attribute stamped for conversion tracking');
+      } catch (e) {
+        console.log('[Exit Intent] Cart attribute stamp failed (non-fatal):', e);
+      }
+
       window.location.href = redirectUrl;
     }
-    
+
     async handleSecondaryClick() {
       // Track secondary button click for evolution system
       if (this.currentImpressionId) {
