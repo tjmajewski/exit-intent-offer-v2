@@ -1343,14 +1343,19 @@
       // Handle discount codes (percentage or fixed)
       let redirectUrl;
 
-      if (destination === 'cart') {
-        // If going to cart with discount, set flag for auto-apply
+      const alreadyOnCart = window.location.pathname === '/cart';
+
+      if (destination === 'cart' && !alreadyOnCart) {
+        // Not on the cart page yet — send them there first.
+        // Store the discount so the cart page will forward them to checkout with it applied.
         if (discountCode) {
           sessionStorage.setItem('exitIntentDiscount', discountCode);
           console.log(`Redirecting to cart - will auto-apply discount: ${discountCode}`);
         }
         redirectUrl = '/cart';
       } else {
+        // Either destination is 'checkout', or the customer is already on the cart page
+        // (no point going to /cart again — skip straight to checkout with discount).
         // Use Shopify's session-based discount redemption endpoint (/discount/CODE?redirect=/checkout)
         // This is more reliable than the URL parameter approach (/checkout?discount=CODE):
         // - /checkout?discount=CODE can be stripped or ignored by Checkout 2.0 / checkout.shopify.com
