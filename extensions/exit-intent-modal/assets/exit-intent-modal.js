@@ -711,7 +711,7 @@
       }
       
       poweredBy.innerHTML = `
-        <p style="margin:12px 0 0;text-align:right;font-size:10px;opacity:0.4;color:#666;letter-spacing:0.02em;font-family:sans-serif;">Powered by Resparq</p>
+        <p style="margin:12px 0 0;text-align:right;font-size:10px;opacity:0.4;color:#666;letter-spacing:0.02em;font-family:sans-serif;line-height:24px;max-height:24px;overflow:hidden;"><a href="https://resparq.ai" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:none;">Powered by Resparq</a></p>
       `;
       
       // Add swipe-to-dismiss for mobile
