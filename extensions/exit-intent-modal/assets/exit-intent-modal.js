@@ -5,7 +5,10 @@
   const discountCode = sessionStorage.getItem('exitIntentDiscount');
   if (discountCode && window.location.pathname === '/cart') {
     console.log('[Exit Intent] Redirecting from cart to checkout with discount');
-    window.location.replace(`/checkout?discount=${discountCode}`);
+    sessionStorage.removeItem('exitIntentDiscount');
+    // Use Shopify's session-based redemption endpoint — more reliable than URL params,
+    // especially with Checkout 2.0 / checkout.shopify.com
+    window.location.replace(`/discount/${encodeURIComponent(discountCode)}?redirect=/checkout`);
     return; // Stop execution
   }
 
@@ -1004,7 +1007,16 @@
       
       // Track impression
       this.trackEvent('impression');
-      
+
+      // Stamp exit intent on the Shopify cart so the order webhook can attribute
+      // any order placed this session as a conversion — even if the customer
+      // dismisses the modal and checks out later without using a discount code.
+      fetch('/cart/update.js', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attributes: { exit_intent: 'true' } })
+      }).catch(() => {}); // fire-and-forget, non-fatal
+
       // Track variant impression (both Pro and Enterprise)
       this.trackVariant('impression');
     }
@@ -1314,6 +1326,15 @@
           console.error('Error adding gift card to cart:', error);
         }
 
+        // Stamp exit intent on cart so webhook can attribute conversion
+        try {
+          await fetch('/cart/update.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attributes: { exit_intent: 'true' } })
+          });
+        } catch (e) { /* non-fatal */ }
+
         // Redirect to cart or checkout
         window.location.href = destination === 'cart' ? '/cart' : '/checkout';
         return;
@@ -1322,33 +1343,50 @@
       // Handle discount codes (percentage or fixed)
       let redirectUrl;
 
-      if (destination === 'cart') {
-        // If going to cart with discount, set flag for auto-apply
+      const alreadyOnCart = window.location.pathname === '/cart';
+
+      if (destination === 'cart' && !alreadyOnCart) {
+        // Not on the cart page yet — send them there first.
+        // Store the discount so the cart page will forward them to checkout with it applied.
         if (discountCode) {
           sessionStorage.setItem('exitIntentDiscount', discountCode);
           console.log(`Redirecting to cart - will auto-apply discount: ${discountCode}`);
         }
         redirectUrl = '/cart';
       } else {
-        // Checkout - use URL parameter (works natively)
-        redirectUrl = discountCode ? `/checkout?discount=${discountCode}` : '/checkout';
-        console.log(`Redirecting to checkout${discountCode ? ' with discount: ' + discountCode : ''}`);
-
-        // Also register the discount with the cart session so it is pre-applied
-        // even if the browser strips the query parameter during checkout navigation
+        // Either destination is 'checkout', or the customer is already on the cart page
+        // (no point going to /cart again — skip straight to checkout with discount).
+        // Use Shopify's session-based discount redemption endpoint (/discount/CODE?redirect=/checkout)
+        // This is more reliable than the URL parameter approach (/checkout?discount=CODE):
+        // - /checkout?discount=CODE can be stripped or ignored by Checkout 2.0 / checkout.shopify.com
+        // - fetch('/discount/CODE') sets a cookie but SameSite restrictions prevent it from
+        //   carrying to checkout.shopify.com (a different origin from the storefront)
+        // - Direct navigation to /discount/CODE lets Shopify's server set the session discount
+        //   and then redirect to checkout with it already applied
         if (discountCode) {
-          try {
-            await fetch(`/discount/${encodeURIComponent(discountCode)}`, { method: 'GET' });
-            console.log(`[Discount] Registered ${discountCode} with cart session`);
-          } catch (e) {
-            console.log('[Discount] Session registration failed, relying on URL param');
-          }
+          redirectUrl = `/discount/${encodeURIComponent(discountCode)}?redirect=/checkout`;
+        } else {
+          redirectUrl = '/checkout';
         }
+        console.log(`Redirecting to checkout${discountCode ? ' with discount: ' + discountCode : ''}`);
+      }
+
+      // Stamp exit intent on cart so the order webhook can attribute this conversion
+      // regardless of whether a discount code was applied
+      try {
+        await fetch('/cart/update.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ attributes: { exit_intent: 'true' } })
+        });
+        console.log('[Exit Intent] Cart attribute stamped for conversion tracking');
+      } catch (e) {
+        console.log('[Exit Intent] Cart attribute stamp failed (non-fatal):', e);
       }
 
       window.location.href = redirectUrl;
     }
-    
+
     async handleSecondaryClick() {
       // Track secondary button click for evolution system
       if (this.currentImpressionId) {
@@ -1374,7 +1412,9 @@
       const offerType = this.settings.offerType || 'percentage';
       if (offerType === 'threshold') {
         const discountCode = this.settings.discountCode;
-        const redirectUrl = discountCode ? `/checkout?discount=${discountCode}` : '/checkout';
+        const redirectUrl = discountCode
+          ? `/discount/${encodeURIComponent(discountCode)}?redirect=/checkout`
+          : '/checkout';
         console.log('[Threshold Offer] Secondary CTA - redirecting to checkout' + (discountCode ? ' with discount: ' + discountCode : ''));
         window.location.href = redirectUrl;
       }
@@ -1507,7 +1547,8 @@
           e.stopPropagation();
           e.stopImmediatePropagation();
           console.log(`[Exit Intent] Intercepted checkout click! Redirecting with discount: ${code}`);
-          window.location.href = `/checkout?discount=${code}`;
+          sessionStorage.removeItem('exitIntentDiscount');
+          window.location.href = `/discount/${encodeURIComponent(code)}?redirect=/checkout`;
         }
       }
     }, true); // Use capture phase
@@ -1551,7 +1592,7 @@
     
     if (!discountInput) {
       console.log('No discount input found - redirecting to checkout instead');
-      window.location.href = `/checkout?discount=${discountCode}`;
+      window.location.href = `/discount/${encodeURIComponent(discountCode)}?redirect=/checkout`;
       return;
     }
     
