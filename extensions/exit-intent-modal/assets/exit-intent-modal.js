@@ -1004,7 +1004,16 @@
       
       // Track impression
       this.trackEvent('impression');
-      
+
+      // Stamp exit intent on the Shopify cart so the order webhook can attribute
+      // any order placed this session as a conversion — even if the customer
+      // dismisses the modal and checks out later without using a discount code.
+      fetch('/cart/update.js', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attributes: { exit_intent: 'true' } })
+      }).catch(() => {}); // fire-and-forget, non-fatal
+
       // Track variant impression (both Pro and Enterprise)
       this.trackVariant('impression');
     }
