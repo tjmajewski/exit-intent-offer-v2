@@ -191,37 +191,67 @@ export async function action({ request }) {
     // Step 1: Determine which baseline to use (revenue/conversion × discount/no-discount)
     let baseline = selectBaseline(signals, aiGoal);
 
-    // CRITICAL: If aggression is 0 OR AI determines no offer needed, use pure_reminder
-    // This prevents false advertising (modal copy promising offers we don't give)
+    // AGGRESSION CONTROLS:
+    // 1. Frequency — aggression acts as a probability ceiling for discount offers.
+    //    Aggression 5 → ~50% of visitors get a discount baseline, rest get no-discount copy.
+    //    Aggression 10 → up to 100% can get discounts. Aggression 0 → pure reminder only.
+    // 2. Max discount size — aggression caps how large the discount can be (see Step 4).
+    const aggressionNormalized = Math.max(0, Math.min(10, aggression)) / 10; // 0.0 – 1.0
+
     if (aggression === 0) {
       baseline = 'pure_reminder';
       console.log(`[Variant Selection] Aggression = 0 → forcing pure_reminder baseline`);
+    } else if (baseline.includes('with_discount')) {
+      // Roll against aggression to decide if this visitor gets a discount
+      const discountRoll = Math.random();
+      if (discountRoll > aggressionNormalized) {
+        // Downgrade to no-discount version of the same goal
+        const noDiscountBaseline = baseline.replace('with_discount', 'no_discount');
+        console.log(`[Variant Selection] Aggression ${aggression}/10 — roll ${discountRoll.toFixed(2)} > ${aggressionNormalized.toFixed(2)} → downgrading to ${noDiscountBaseline}`);
+        baseline = noDiscountBaseline;
+      } else {
+        console.log(`[Variant Selection] Aggression ${aggression}/10 — roll ${discountRoll.toFixed(2)} ≤ ${aggressionNormalized.toFixed(2)} → keeping discount baseline`);
+      }
     }
-    
+
     console.log(`[Variant Selection] Baseline: ${baseline}`);
-    
+
     // Step 1.5: Determine segment (device-specific evolution)
     const deviceType = signals.deviceType || 'unknown';
-    const segment = deviceType === 'mobile' ? 'mobile' : 
+    const segment = deviceType === 'mobile' ? 'mobile' :
                     deviceType === 'desktop' ? 'desktop' : 'all';
     console.log(`[Variant Selection] Segment: ${segment}`);
-    
+
     // Step 2: Check if variants exist for this baseline, if not seed them
     const existingVariants = await getLiveVariants(shopRecord.id, baseline, segment);
-    
+
     if (existingVariants.length === 0) {
       console.log(`[Variant Selection] No variants found. Seeding initial population...`);
       await seedInitialPopulation(shopRecord.id, baseline, segment);
     }
-    
+
     // Step 3: Use Thompson Sampling to select variant
     const selectedVariant = await selectVariantForImpression(shopRecord.id, baseline, segment);
     console.log(`[Variant Selection] Selected ${selectedVariant.variantId} (Gen ${selectedVariant.generation})`);
-    
+
     // Step 4: Build decision from variant genes
+    // Cap the offer amount based on aggression level.
+    // Aggression acts as a ceiling: aggression 5 → max 50% of pool max, aggression 10 → full max.
+    // The AI can always choose LESS than the cap, but never more.
+    let cappedOfferAmount = selectedVariant.offerAmount;
+    if (baseline.includes('with_discount') && selectedVariant.offerAmount > 0) {
+      const pool = (await import('../utils/gene-pools.js')).genePools[baseline];
+      const poolMax = Math.max(...pool.offerAmounts);
+      const maxAllowed = Math.round(poolMax * aggressionNormalized);
+      if (cappedOfferAmount > maxAllowed) {
+        console.log(`[Aggression Cap] Capping offer from ${cappedOfferAmount} to ${maxAllowed} (aggression ${aggression}/10, pool max ${poolMax})`);
+        cappedOfferAmount = maxAllowed;
+      }
+    }
+
     const decision = {
       type: baseline.includes('revenue') ? 'threshold' : 'percentage',
-      amount: selectedVariant.offerAmount,
+      amount: cappedOfferAmount,
       threshold: baseline.includes('revenue') ? Math.round(signals.cartValue * 1.3) : null,
       headline: selectedVariant.headline,
       subhead: selectedVariant.subhead,
@@ -249,8 +279,8 @@ export async function action({ request }) {
       console.error('[Analytics] Failed to track impression event:', e)
     );
 
-    // If no discount needed, return early
-    if (decision.type === 'no-discount') {
+    // If no discount needed (no-discount baseline or 0 amount), return with copy but no code
+    if (decision.type === 'no-discount' || decision.amount === 0) {
       await db.aIDecision.create({
         data: {
           shopId: shopRecord.id,
@@ -258,14 +288,24 @@ export async function action({ request }) {
           decision: JSON.stringify(decision)
         }
       });
-      
+
       return json({
         shouldShow: true,
         decision: {
           type: 'no-discount',
           amount: 0,
           code: null,
-          message: decision.reasoning
+          baseline: decision.baseline,
+          variant: {
+            headline: decision.headline,
+            subhead: decision.subhead,
+            cta: decision.cta,
+            redirect: decision.redirect,
+            urgency: decision.urgency
+          },
+          variantId: decision.variantId,
+          variantPublicId: decision.variantPublicId,
+          impressionId: impressionRecord.id
         }
       });
     }
