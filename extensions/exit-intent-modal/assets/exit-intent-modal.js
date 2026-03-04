@@ -874,22 +874,53 @@
       this.showModal();
     }
 
-    setupAITriggers() {
-      // Pro AI Mode: Use exit intent as primary trigger (no time delays)
-      // Exit intent trigger (desktop only)
-      if (!isMobileDevice()) {
-        document.addEventListener('mouseout', async (e) => {
-          if (e.clientY < 0 && !this.modalShown) {
-            // Check if cart has items before showing
-            const hasItems = await this.hasItemsInCart();
-            if (hasItems) {
+    async setupAITriggers() {
+      // Pro AI Mode: Pre-fetch AI decision, then use the AI's trigger gene to decide WHEN to show.
+      // This lets the evolution system learn which trigger strategy converts best.
+      const hasItems = await this.hasItemsInCart();
+      if (!hasItems) {
+        console.log('[Pro AI] Cart is empty, skipping AI trigger setup');
+        return;
+      }
+
+      // Pre-fetch AI decision (includes triggerType and idleSeconds genes)
+      await this.getAIDecision();
+
+      if (this.aiDecidedNoIntervention) {
+        console.log('[Pro AI] AI decided no intervention — no triggers set');
+        return;
+      }
+
+      // Read the AI's trigger strategy from the pre-fetched decision
+      const triggerType = this.preloadedDecision?.triggerType || 'exit_intent';
+      const idleSeconds = this.preloadedDecision?.idleSeconds || 30;
+      const isMobile = isMobileDevice();
+
+      console.log(`[Pro AI] Trigger strategy: ${triggerType}, idle: ${idleSeconds}s, mobile: ${isMobile}`);
+
+      // Set up exit intent listener (desktop only — no mouseout on mobile)
+      if (triggerType === 'exit_intent' || triggerType === 'exit_intent_or_idle') {
+        if (!isMobile) {
+          document.addEventListener('mouseout', (e) => {
+            if (e.clientY < 0 && !this.modalShown) {
+              console.log('[Pro AI] Exit intent triggered (mouse left viewport)');
               this.showModal();
-            } else {
-              console.log('[Pro AI] Cart is empty, not showing modal');
             }
-          }
-        });
-        console.log('[Pro AI] Exit intent trigger enabled');
+          });
+          console.log('[Pro AI] Exit intent trigger enabled');
+        }
+      }
+
+      // Set up idle timer (works on BOTH desktop and mobile)
+      if (triggerType === 'idle' || triggerType === 'exit_intent_or_idle') {
+        this.setupIdleTrigger(idleSeconds);
+      }
+
+      // On mobile with exit_intent-only strategy, fall back to idle
+      // (exit intent can't fire on mobile — mouseout doesn't happen)
+      if (isMobile && triggerType === 'exit_intent') {
+        console.log('[Pro AI] Mobile + exit_intent only → adding idle fallback (30s)');
+        this.setupIdleTrigger(30);
       }
 
       // Only use cart value trigger if explicitly configured
@@ -897,6 +928,37 @@
       if (triggers.cartValue && (triggers.minCartValue || triggers.maxCartValue)) {
         this.checkCartValue();
       }
+    }
+
+    /**
+     * Idle trigger: fires after X seconds of inactivity on a page with cart items.
+     * Resets on mouse movement, scroll, touch, or keyboard activity.
+     * This is the primary trigger for mobile (where exit intent doesn't work).
+     */
+    setupIdleTrigger(seconds) {
+      let idleTimer = null;
+
+      const resetIdle = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        if (this.modalShown) return;
+        idleTimer = setTimeout(() => {
+          if (!this.modalShown) {
+            console.log(`[Pro AI] Idle trigger fired after ${seconds}s of inactivity`);
+            this.showModal();
+          }
+        }, seconds * 1000);
+      };
+
+      // Start the idle timer immediately
+      resetIdle();
+
+      // Reset on any user interaction
+      const events = ['mousemove', 'scroll', 'touchstart', 'touchmove', 'keydown', 'click'];
+      events.forEach(event => {
+        document.addEventListener(event, resetIdle, { passive: true });
+      });
+
+      console.log(`[Pro AI] Idle trigger enabled: ${seconds}s`);
     }
 
     setupTriggers() {
@@ -974,7 +1036,11 @@
       if (this.enterpriseOffer) {
         await this.updateModalWithAI(this.enterpriseOffer);
       }
-      // Otherwise if AI mode is enabled, get AI decision
+      // If AI decision was pre-loaded by setupAITriggers, modal content is already set — skip
+      else if (this.preloadedDecision) {
+        console.log('[Pro AI] Using pre-loaded AI decision');
+      }
+      // Otherwise if AI mode is enabled, get AI decision on demand
       else if (this.settings.mode === 'ai') {
         await this.getAIDecision();
         // If AI decided no intervention is optimal, abort showing the modal
@@ -1091,7 +1157,13 @@
 
           console.log('%c Variant ID:', 'color: #64748b', dec.variantId || 'N/A');
           console.log('%c Segment:', 'color: #64748b', dec.segment || 'default');
+          if (dec.triggerType) {
+            console.log('%c Trigger:', 'color: #ec4899; font-weight: bold', `${dec.triggerType}${dec.triggerType !== 'exit_intent' ? ` (${dec.idleSeconds}s idle)` : ''}`);
+          }
           console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
+
+          // Store the decision for trigger setup (triggerType, idleSeconds) and later use
+          this.preloadedDecision = result.decision;
 
           // Update modal with AI decision (await to ensure content is ready)
           await this.updateModalWithAI(result.decision);

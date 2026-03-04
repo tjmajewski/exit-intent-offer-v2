@@ -258,6 +258,8 @@ export async function action({ request }) {
       cta: selectedVariant.cta,
       redirect: selectedVariant.redirect,
       urgency: selectedVariant.urgency,
+      triggerType: selectedVariant.triggerType || 'exit_intent',
+      idleSeconds: selectedVariant.idleSeconds || 30,
       variantId: selectedVariant.id,
       variantPublicId: selectedVariant.variantId,
       baseline: baseline,
@@ -303,6 +305,8 @@ export async function action({ request }) {
             redirect: decision.redirect,
             urgency: decision.urgency
           },
+          triggerType: decision.triggerType,
+          idleSeconds: decision.idleSeconds,
           variantId: decision.variantId,
           variantPublicId: decision.variantPublicId,
           impressionId: impressionRecord.id
@@ -396,6 +400,8 @@ export async function action({ request }) {
       redirect: decision.redirect,
       urgency: decision.urgency
     };
+    response.decision.triggerType = decision.triggerType;
+    response.decision.idleSeconds = decision.idleSeconds;
     response.decision.variantId = decision.variantId;
     response.decision.variantPublicId = decision.variantPublicId;
     response.decision.impressionId = impressionRecord.id; // For tracking clicks/conversions

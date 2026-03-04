@@ -57,6 +57,8 @@ function createRandomVariant(baseline, segment = 'all', useSocialProof = false) 
     cta: pool.ctas[Math.floor(Math.random() * pool.ctas.length)],
     redirect: pool.redirects[Math.floor(Math.random() * pool.redirects.length)],
     urgency: pool.urgency[Math.floor(Math.random() * pool.urgency.length)],
+    triggerType: pool.triggerTypes[Math.floor(Math.random() * pool.triggerTypes.length)],
+    idleSeconds: pool.idleSeconds[Math.floor(Math.random() * pool.idleSeconds.length)],
     
     // Initialize performance
     impressions: 0,
@@ -136,7 +138,9 @@ function generateDiverseVariants(count, baseline, segment = 'all') {
     const ctaIndex = i % pool.ctas.length;
     const redirectIndex = i % 2;
     const urgencyValue = i < count / 2;
-    
+    const triggerIndex = i % pool.triggerTypes.length;
+    const idleIndex = i % pool.idleSeconds.length;
+
     variants.push({
       variantId: generateVariantId(),
       baseline: baseline,
@@ -144,13 +148,15 @@ function generateDiverseVariants(count, baseline, segment = 'all') {
       status: 'alive',
       generation: 0,
       parents: null,
-      
+
       offerAmount: pool.offerAmounts[offerIndex],
       headline: pool.headlines[headlineIndex],
       subhead: pool.subheads[subheadIndex],
       cta: pool.ctas[ctaIndex],
       redirect: pool.redirects[redirectIndex],
       urgency: urgencyValue,
+      triggerType: pool.triggerTypes[triggerIndex],
+      idleSeconds: pool.idleSeconds[idleIndex],
       
       impressions: 0,
       clicks: 0,
@@ -245,6 +251,10 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
             variant.redirect = gene.geneValue;
           } else if (gene.geneType === 'urgency') {
             variant.urgency = gene.geneValue === 'true';
+          } else if (gene.geneType === 'triggerType') {
+            variant.triggerType = gene.geneValue;
+          } else if (gene.geneType === 'idleSeconds') {
+            variant.idleSeconds = parseInt(gene.geneValue);
           }
         });
         
@@ -633,16 +643,27 @@ async function breedNewVariant(parents, baseline, segment = 'all', shopId = null
     subhead: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.subhead : parent2.subhead) : parent1.subhead,
     cta: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.cta : parent2.cta) : parent1.cta,
     redirect: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.redirect : parent2.redirect) : parent1.redirect,
-    urgency: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.urgency : parent2.urgency) : parent1.urgency
+    urgency: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.urgency : parent2.urgency) : parent1.urgency,
+    triggerType: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.triggerType : parent2.triggerType) : parent1.triggerType,
+    idleSeconds: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.idleSeconds : parent2.idleSeconds) : parent1.idleSeconds
   };
-  
+
   // Mutation: Randomize each gene based on mutationRate
   const mutations = [];
+  // Map gene name → pool key for mutation lookups
+  const geneToPoolKey = {
+    offerAmount: 'offerAmounts',
+    headline: 'headlines',
+    subhead: 'subheads',
+    cta: 'ctas',
+    redirect: 'redirects',
+    urgency: 'urgency',
+    triggerType: 'triggerTypes',
+    idleSeconds: 'idleSeconds'
+  };
   Object.keys(childGenes).forEach(gene => {
     if (Math.random() < mutationRate) {
-      const geneKey = gene === 'offerAmount' ? 'offerAmounts' : 
-                      gene === 'urgency' ? 'urgency' :
-                      gene + 's';
+      const geneKey = geneToPoolKey[gene] || (gene + 's');
       const options = pool[geneKey];
       childGenes[gene] = options[Math.floor(Math.random() * options.length)];
       mutations.push(gene);

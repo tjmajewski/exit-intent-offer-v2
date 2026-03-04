@@ -37,7 +37,14 @@ export const genePools = {
     ],
 
     redirects: ['cart', 'checkout'],
-    urgency: [true, false]
+    urgency: [true, false],
+
+    // Trigger strategy: how to fire the modal
+    // exit_intent = mouse leave (desktop) / back-button (mobile fallback)
+    // idle = show after X seconds idle on page with cart items
+    // exit_intent_or_idle = whichever fires first (covers both desktop & mobile)
+    triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60]  // Only used when trigger includes idle
   },
 
   // REVENUE + NO DISCOUNT: Upsell without discount (high-propensity customers)
@@ -75,7 +82,9 @@ export const genePools = {
     ],
 
     redirects: ['cart', 'checkout'],
-    urgency: [false]  // No urgency without incentive
+    urgency: [false],  // No urgency without incentive
+    triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60]
   },
 
   // CONVERSION + DISCOUNT: % off to prevent cart abandonment
@@ -113,7 +122,9 @@ export const genePools = {
     ],
 
     redirects: ['cart', 'checkout'],
-    urgency: [true, false]
+    urgency: [true, false],
+    triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60]
   },
 
   // CONVERSION + NO DISCOUNT: Convert without discount (social proof / trust focus)
@@ -151,7 +162,9 @@ export const genePools = {
     ],
 
     redirects: ['cart', 'checkout'],
-    urgency: [false]  // No urgency without incentive
+    urgency: [false],  // No urgency without incentive
+    triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60]
   },
 
   // PURE REMINDER: No offers, no discounts, no incentives
@@ -193,7 +206,9 @@ export const genePools = {
     ],
 
     redirects: ['cart', 'checkout'],
-    urgency: [false]  // No urgency for reminders
+    urgency: [false],  // No urgency for reminders
+    triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60]
   }
 };
 
@@ -206,7 +221,9 @@ export function getCombinationCount(baseline) {
     pool.subheads.length *
     pool.ctas.length *
     pool.redirects.length *
-    pool.urgency.length
+    pool.urgency.length *
+    pool.triggerTypes.length *
+    pool.idleSeconds.length
   );
 }
 

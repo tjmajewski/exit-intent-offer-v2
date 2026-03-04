@@ -187,6 +187,8 @@ model Variant {
   cta               String
   redirect          String   // cart | checkout
   urgency           Boolean
+  triggerType       String   @default("exit_intent") // exit_intent | idle | exit_intent_or_idle
+  idleSeconds       Int      @default(30)            // seconds before idle trigger fires
   
   // Visual Genes (Design DNA)
   colorScheme       String   @default("classic")
