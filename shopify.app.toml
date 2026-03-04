@@ -25,6 +25,11 @@ api_version = "2026-01"
   topics = [ "orders/create" ]
   uri = "/webhooks/orders/create"
 
+  # Cart events (for proactive AI decisions on add-to-cart)
+  [[webhooks.subscriptions]]
+  topics = [ "carts/create", "carts/update" ]
+  uri = "/webhooks/carts/update"
+
   # GDPR Mandatory Webhooks (use compliance_topics, not topics)
   [[webhooks.subscriptions]]
   compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]

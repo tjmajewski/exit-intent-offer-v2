@@ -1,3 +1,36 @@
+// =============================================================================
+// PROFITABILITY GUARD
+// Ensures discounts don't erode store margins beyond what's sustainable.
+// E-commerce average margins are 20-50%. We cap discount at a fraction of
+// estimated margin so stores remain profitable even when offering discounts.
+// =============================================================================
+
+/**
+ * Cap a discount amount to protect store profitability.
+ * @param {number} discountAmount - Raw discount amount (percentage or fixed)
+ * @param {string} discountType - 'percentage' | 'fixed' | 'threshold'
+ * @param {number} cartValue - Current cart value
+ * @param {number} aggression - 0-10 aggression setting
+ * @returns {number} - Capped discount amount
+ */
+function capDiscountForProfitability(discountAmount, discountType, cartValue, aggression) {
+  // Estimated margin floor: even aggressive discounting shouldn't exceed
+  // ~20% of cart value (assumes ~40% average margin, keeping half as profit)
+  // Lower aggression = more conservative
+  const maxDiscountPercent = 10 + (aggression * 1.5); // 10-25% max based on aggression
+
+  if (discountType === 'percentage') {
+    return Math.min(discountAmount, maxDiscountPercent);
+  }
+
+  if (discountType === 'fixed' || discountType === 'threshold') {
+    const maxFixed = cartValue * (maxDiscountPercent / 100);
+    return Math.min(discountAmount, Math.max(maxFixed, 5)); // At least $5
+  }
+
+  return discountAmount;
+}
+
 // Helper: Analyze cart composition to adjust strategy
 function analyzeCartComposition(signals) {
   const cartValue = signals.cartValue || 0;
@@ -170,26 +203,34 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
 
   // =============================================================================
   // PRO AI: SHOULD WE SHOW? (simpler logic than Enterprise)
-  // Goal: Don't waste discounts on customers who won't convert
+  // Goal: Increase revenue while keeping the store profitable
+  // The AI must balance conversion uplift vs margin erosion
   // =============================================================================
 
   const currentCartValue = cartValue || signals.cartValue || 0;
 
   // DON'T SHOW: Very low score + low cart = unlikely to convert
   if (score < 20 && currentCartValue < 40) {
-    console.log(` [Pro AI] Score too low (${score}) with small cart ($${currentCartValue}) - skipping`);
+    console.log(` [Pro AI] Score too low (${score}) with small cart ($${currentCartValue}) - no intervention`);
     return null;
   }
 
   // DON'T SHOW: Negative score = very unlikely to convert
   if (score < 0) {
-    console.log(` [Pro AI] Negative score (${score}) - not worth showing`);
+    console.log(` [Pro AI] Negative score (${score}) - no intervention (preserving margin)`);
     return null;
   }
 
   // DON'T SHOW: First-time visitor + quick exit + low cart = accidental visit
   if (signals.visitFrequency === 1 && signals.timeOnSite < 30 && currentCartValue < 50) {
-    console.log(` [Pro AI] First-time quick exit with low cart - skipping`);
+    console.log(` [Pro AI] First-time quick exit with low cart - no intervention`);
+    return null;
+  }
+
+  // NO INTERVENTION: High-propensity customer will likely convert without discount
+  // Offering a discount here would erode margin for no benefit
+  if (score > 80 && signals.purchaseHistoryCount > 0) {
+    console.log(` [Pro AI] High score (${score}) + repeat buyer - no intervention (protect margin)`);
     return null;
   }
 
@@ -202,7 +243,7 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
         type: 'percentage',
         amount: 5, // Minimal discount - they're already likely to buy
         confidence: 'high',
-        reasoning: `High intent score (${score}) - minimal nudge needed`
+        reasoning: `High intent score (${score}) - minimal nudge needed, protecting margin`
       };
     }
   }
@@ -294,42 +335,47 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
   
   // CONVERSION MODE: Immediate discounts to convert
   const cart = analyzeCartComposition(signals);
-  
+
   // HIGH-TICKET SINGLE ITEM: Lower % discount (they're already buying)
   if (cart.isHighTicket && !cart.isMultiItem) {
     const conservativeOffer = 5 + (aggression * 0.8); // 5-13% max
+    const cappedOffer = capDiscountForProfitability(Math.round(conservativeOffer), 'percentage', currentCartValue, aggression);
     return {
       type: 'percentage',
-      amount: Math.min(Math.round(conservativeOffer), 15), // Cap at 15%
+      amount: Math.min(cappedOffer, 15), // Cap at 15%
       confidence: 'high',
-      reasoning: `High-ticket single item ($${cart.avgItemPrice.toFixed(0)}) - conservative discount to close`
+      reasoning: `High-ticket single item ($${cart.avgItemPrice.toFixed(0)}) - conservative discount to close (margin-protected)`
     };
   }
-  
+
   // Convert score to offer (0-100 → 5-25%)
   const baseOffer = 5 + (score / 100 * 20);
-  
+
   // Apply aggression multiplier
   const finalOffer = baseOffer * (aggression / 5);
-  
+
   // Determine if percentage or fixed based on cart value
   const shouldUseFixed = signals.cartValue < 50;
-  
+
   if (shouldUseFixed) {
     // For small carts, use fixed amount ($5-$10)
+    const rawFixed = Math.min(Math.max(Math.round(finalOffer / 2), 5), 10);
+    const cappedFixed = capDiscountForProfitability(rawFixed, 'fixed', currentCartValue, aggression);
     return {
       type: 'fixed',
-      amount: Math.min(Math.max(Math.round(finalOffer / 2), 5), 10),
+      amount: cappedFixed,
       confidence: score > 60 ? 'high' : 'medium',
-      reasoning: `Conversion mode: Small cart, offering fixed discount`
+      reasoning: `Conversion mode: Small cart, offering fixed discount (margin-protected)`
     };
   } else {
     // For larger carts, use percentage (5-25%)
+    const rawPercent = Math.min(Math.max(Math.round(finalOffer), 5), 25);
+    const cappedPercent = capDiscountForProfitability(rawPercent, 'percentage', currentCartValue, aggression);
     return {
       type: 'percentage',
-      amount: Math.min(Math.max(Math.round(finalOffer), 5), 25),
+      amount: cappedPercent,
       confidence: score > 60 ? 'high' : 'medium',
-      reasoning: `Conversion mode: Score ${score}, offering ${Math.round(finalOffer)}% discount`
+      reasoning: `Conversion mode: Score ${score}, offering ${cappedPercent}% discount (margin-protected)`
     };
   }
 } // Close determineOffer function // Close determineOffer function
@@ -343,6 +389,8 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
  * 3. Dynamic timing control (immediate, exit_intent, or delayed)
  * 4. Budget-aware offer sizing
  * 5. Promotional intelligence integration
+ * 6. Profitability-aware: understands that stores need to be profitable,
+ *    not just maximize raw revenue. No intervention is sometimes the best outcome.
  */
 export function enterpriseAI(signals, aggression, aiGoal = 'revenue') {
   const propensity = signals.propensityScore;
@@ -360,8 +408,17 @@ export function enterpriseAI(signals, aggression, aiGoal = 'revenue') {
 
   // =============================================================================
   // ENTERPRISE-EXCLUSIVE: SHOULD WE SHOW AT ALL?
-  // Goal: Only show modal when necessary to get the conversion
+  // Goal: Maximize revenue while keeping the store profitable.
+  // Sometimes the best decision is NO intervention — giving discounts to
+  // customers who would buy anyway erodes margin without adding value.
   // =============================================================================
+
+  // NO INTERVENTION: Very high propensity + loyal customer = would buy anyway
+  // Discount here would only reduce profit
+  if (propensity > 85 && signals.purchaseHistoryCount > 2) {
+    console.log(' [Enterprise AI] Very high propensity + loyal customer - no intervention (protecting margin)');
+    return null;
+  }
 
   // HIGH-VALUE SIGNAL: Failed coupon attempt - ALWAYS show, they want a discount
   if (signals.failedCouponAttempt) {

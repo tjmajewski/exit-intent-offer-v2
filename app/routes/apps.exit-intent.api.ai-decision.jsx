@@ -136,14 +136,61 @@ export async function action({ request }) {
       console.log(` Budget check passed. Remaining: $${budgetCheck.remaining}`);
     }
     
+    // PRE-CHECK: Run AI scoring to determine if intervention is warranted
+    // This enables "no_intervention" as a learned outcome
+    const preScore = await determineOffer(
+      signals,
+      aggression,
+      aiGoal,
+      signals.cartValue || 0,
+      shopRecord.id,
+      shopRecord.plan || 'pro'
+    );
+
+    if (preScore === null) {
+      // AI determined no modal intervention is needed — record this decision
+      // so the system can learn that "do nothing" was the right call
+      const noInterventionDecision = {
+        type: 'no_intervention',
+        amount: 0,
+        reasoning: 'AI determined no modal intervention needed for this customer',
+        signals_summary: {
+          cartValue: signals.cartValue,
+          visitFrequency: signals.visitFrequency,
+          timeOnSite: signals.timeOnSite,
+          deviceType: signals.deviceType,
+        }
+      };
+
+      await db.aIDecision.create({
+        data: {
+          shopId: shopRecord.id,
+          signals: JSON.stringify(signals),
+          decision: JSON.stringify(noInterventionDecision)
+        }
+      });
+
+      // Track as an analytics event for learning
+      trackAnalyticsEvent(admin, 'no_intervention').catch(e =>
+        console.error('[Analytics] Failed to track no_intervention event:', e)
+      );
+
+      console.log(`[AI Decision] No intervention for ${shop}: ${noInterventionDecision.reasoning}`);
+
+      return json({
+        shouldShow: false,
+        decision: noInterventionDecision
+      });
+    }
+
     // NEW: Use variant-based evolution system
     const { selectBaseline } = await import('../utils/baseline-selector.js');
-    const { selectVariantForImpression, getLiveVariants, seedInitialPopulation, recordImpression } = 
+    const { selectVariantForImpression, getLiveVariants, seedInitialPopulation, recordImpression } =
       await import('../utils/variant-engine.js');
-    
+
     // Step 1: Determine which baseline to use (revenue/conversion × discount/no-discount)
     let baseline = selectBaseline(signals, aiGoal);
-    
+
     // CRITICAL: If aggression is 0 OR AI determines no offer needed, use pure_reminder
     // This prevents false advertising (modal copy promising offers we don't give)
     if (aggression === 0) {

@@ -855,6 +855,11 @@
         });
         
         const data = await response.json();
+        // Handle explicit no_intervention from AI
+        if (data.shouldShow === false || data.decision?.type === 'no_intervention') {
+          console.log('[Enterprise AI] No intervention — AI decided no modal is optimal');
+          return null;
+        }
         return data.decision || null; // Return decision object or null
       } catch (error) {
         console.error('[Enterprise AI] Error getting decision:', error);
@@ -972,6 +977,11 @@
       // Otherwise if AI mode is enabled, get AI decision
       else if (this.settings.mode === 'ai') {
         await this.getAIDecision();
+        // If AI decided no intervention is optimal, abort showing the modal
+        if (this.aiDecidedNoIntervention) {
+          console.log('[AI Mode] No intervention — modal will not be shown');
+          return;
+        }
       }
       // STARTER TIER: Still collect signals for learning (but don't change the offer)
       else if (this.settings.plan === 'starter' || this.settings.mode === 'manual') {
@@ -1044,6 +1054,17 @@
         console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
         console.log('%c AI DECISION', 'color: #8B5CF6; font-weight: bold; font-size: 16px');
         console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
+
+        // Handle "no_intervention" — AI decided showing nothing is optimal
+        if (result.shouldShow === false || result.decision?.type === 'no_intervention') {
+          console.log('%c AI DECISION: NO INTERVENTION', 'color: #64748b; font-weight: bold; font-size: 16px');
+          console.log('%c The AI determined that no modal is the best outcome for this customer', 'color: #64748b');
+          console.log('%c Reason:', 'color: #64748b; font-weight: bold', result.decision?.reasoning || 'Signals insufficient');
+          console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
+          // Mark as shown to prevent retrigger, but don't display the modal
+          this.aiDecidedNoIntervention = true;
+          return;
+        }
 
         if (result.decision) {
           const dec = result.decision;

@@ -227,6 +227,15 @@ export async function loader({ request }) {
       plan = { ...plan, tier: shopRecord.plan };
     }
 
+    // Idle cart pickup: On first load, evaluate any abandoned carts
+    // that existed before the app was enabled. Fire-and-forget to avoid
+    // slowing down the admin page load.
+    if (shopRecord) {
+      import("../utils/idle-cart-pickup.server.js")
+        .then(({ pickupIdleCarts }) => pickupIdleCarts(admin, shopDomain))
+        .catch((e) => console.error("[Idle Cart Pickup] Background error:", e));
+    }
+
     if (plan && plan.tier === 'pro' && shopRecord) {
       const activePromo = await db.promotion.findFirst({
         where: {

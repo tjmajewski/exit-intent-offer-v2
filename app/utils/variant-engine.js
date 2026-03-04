@@ -468,10 +468,22 @@ export async function recordClick(impressionId) {
 
 /**
  * Record a conversion for a variant
+ *
+ * FITNESS METRIC: profitPerImpression = (avgRevenue - avgDiscountCost) × conversionRate
+ *
+ * This metric naturally teaches the AI to balance revenue vs profitability:
+ * - A variant with 10% CVR but $20 discount costs more than one with 8% CVR and $5 discount
+ * - Higher aggression variants (bigger discounts) must prove higher CVR to survive
+ * - "No discount" variants can win if their CVR is competitive
+ * - The evolution system kills unprofitable variants and breeds profitable ones
+ *
+ * This ensures the store stays profitable: raw revenue alone isn't the goal;
+ * the AI learns that a $100 order with $25 discount is less valuable than
+ * a $100 order with $10 discount (or no discount at all).
  */
 export async function recordConversion(impressionId, revenue, discountAmount = 0) {
   const profit = revenue - discountAmount;
-  
+
   const impression = await (await getDb()).variantImpression.update({
     where: { id: impressionId },
     data: {
@@ -481,22 +493,33 @@ export async function recordConversion(impressionId, revenue, discountAmount = 0
       profit: profit
     }
   });
-  
+
   // Update variant performance
   const variant = await (await getDb()).variant.findUnique({
     where: { id: impression.variantId }
   });
-  
+
   const newConversions = variant.conversions + 1;
   const newRevenue = variant.revenue + revenue;
   const newImpressions = variant.impressions;
-  
-  // Calculate profit per impression
+
+  // Calculate profit per impression using aggregated discount cost
+  // Query total discount cost across all conversions for this variant
+  const discountAgg = await (await getDb()).variantImpression.aggregate({
+    where: {
+      variantId: variant.id,
+      converted: true,
+    },
+    _sum: { discountAmount: true },
+  });
+  const totalDiscountCost = discountAgg._sum.discountAmount || 0;
+
   const cvr = newConversions / newImpressions;
   const aov = newRevenue / newConversions;
-  const profitPerConversion = aov - (discountAmount / newConversions);
+  const avgDiscountPerConversion = totalDiscountCost / newConversions;
+  const profitPerConversion = aov - avgDiscountPerConversion;
   const profitPerImpression = profitPerConversion * cvr;
-  
+
   await (await getDb()).variant.update({
     where: { id: impression.variantId },
     data: {
@@ -505,9 +528,13 @@ export async function recordConversion(impressionId, revenue, discountAmount = 0
       profitPerImpression: profitPerImpression
     }
   });
-  
-  console.log(` Recorded conversion for impression ${impressionId}: $${revenue} revenue, $${discountAmount} discount`);
-  
+
+  console.log(
+    ` Recorded conversion for impression ${impressionId}: ` +
+    `$${revenue} revenue, $${discountAmount} discount, ` +
+    `$${profitPerImpression.toFixed(2)}/impression profit`
+  );
+
   return impression;
 }
 
