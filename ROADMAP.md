@@ -112,6 +112,7 @@ Automatically generate and manage the right type of Shopify discount code based 
 - Fixed amount off → auto-creates fixed amount price rule
 - Free shipping → auto-creates free shipping discount
 - Gift with purchase → auto-creates BXGY or automatic discount
+- **24-hour expiration:** Every unique code auto-expires after 24 hours and is set to disabled in Shopify. The modal must clearly display "Code expires in 24 hours" to the customer. This creates urgency and prevents code sharing/hoarding.
 - Code rotation: auto-expire and regenerate codes on schedule
 - Conflict detection: warn if another active discount would stack or override
 
@@ -335,6 +336,18 @@ Ideas worth validating but not yet committed. Revisit after Tiers 1-3 ship.
 - **NPS collection** — nice-to-have, low priority
 - **Geolocation-based offers** — useful for multi-region stores
 - **BFCM / Flash sale mode** — seasonal preset that auto-adjusts aggression and offers
+
+---
+
+## Cross-Cutting Requirements
+
+### 24-Hour Code Expiration (Applies Everywhere)
+Every unique discount code shown to a customer **expires in 24 hours** and is automatically **set to disabled** in Shopify after expiration. This is not optional — it applies across all features that generate or display a promo code (modal, cart CTA, shipping bar, full-funnel touchpoints, etc.).
+
+- The modal/touchpoint must visually communicate: **"Code expires in 24 hours"**
+- After 24 hours, the code is disabled via Shopify Admin API
+- If the customer returns after expiration, they get a fresh code (if eligible)
+- This creates genuine urgency and prevents code sharing on coupon sites
 
 ---
 
