@@ -112,7 +112,9 @@ Automatically generate and manage the right type of Shopify discount code based 
 - Fixed amount off → auto-creates fixed amount price rule
 - Free shipping → auto-creates free shipping discount
 - Gift with purchase → auto-creates BXGY or automatic discount
-- **24-hour expiration:** Every unique code auto-expires after 24 hours and is set to disabled in Shopify. The modal must clearly display "Code expires in 24 hours" to the customer. This creates urgency and prevents code sharing/hoarding.
+- **Two code modes:**
+  - **Generic code** (e.g. "SAVE10") — merchant-defined, stays active indefinitely, reusable by anyone. No expiration messaging.
+  - **Unique code** (e.g. "EXIT-A7k9x") — auto-generated per customer, expires in 24 hours and is set to disabled in Shopify. Modal displays "Code expires in 24 hours" to create urgency and prevent code sharing.
 - Code rotation: auto-expire and regenerate codes on schedule
 - Conflict detection: warn if another active discount would stack or override
 
@@ -341,13 +343,21 @@ Ideas worth validating but not yet committed. Revisit after Tiers 1-3 ship.
 
 ## Cross-Cutting Requirements
 
-### 24-Hour Code Expiration (Applies Everywhere)
-Every unique discount code shown to a customer **expires in 24 hours** and is automatically **set to disabled** in Shopify after expiration. This is not optional — it applies across all features that generate or display a promo code (modal, cart CTA, shipping bar, full-funnel touchpoints, etc.).
+### Generic vs. Unique Promo Codes (Applies Everywhere)
+Merchants choose between two code modes. This choice affects behavior across all features that generate or display a promo code (modal, cart CTA, shipping bar, full-funnel touchpoints, etc.).
 
+**Generic codes** (e.g. "SAVE10"):
+- Merchant creates and manages the code themselves
+- Stays active indefinitely — no expiration messaging shown
+- Reusable by multiple customers
+- Simpler setup, but susceptible to coupon site sharing
+
+**Unique codes** (e.g. "EXIT-A7k9x"):
+- Auto-generated per customer session
+- **Expires in 24 hours** and is automatically **set to disabled** in Shopify
 - The modal/touchpoint must visually communicate: **"Code expires in 24 hours"**
-- After 24 hours, the code is disabled via Shopify Admin API
 - If the customer returns after expiration, they get a fresh code (if eligible)
-- This creates genuine urgency and prevents code sharing on coupon sites
+- Prevents code sharing on coupon sites and creates genuine urgency
 
 ---
 
