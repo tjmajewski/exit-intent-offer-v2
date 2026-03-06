@@ -145,28 +145,19 @@ export async function createGenericDiscountCode(admin, code, type, amount) {
  */
 async function checkDiscountCodeExists(admin, code) {
   const query = `
-    query {
-      codeDiscountNodes(first: 1, query: "code:${code}") {
-        nodes {
-          id
-          codeDiscount {
-            ... on DiscountCodeBasic {
-              codes(first: 1) {
-                nodes {
-                  code
-                }
-              }
-            }
-          }
-        }
+    query CheckCode($code: String!) {
+      codeDiscountNodeByCode(code: $code) {
+        id
       }
     }
   `;
 
-  const response = await admin.graphql(query);
+  const response = await admin.graphql(query, {
+    variables: { code }
+  });
   const result = await response.json();
 
-  return result.data.codeDiscountNodes.nodes.length > 0;
+  return !!result.data?.codeDiscountNodeByCode?.id;
 }
 
 // Create percentage discount with 24h expiration
