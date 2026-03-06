@@ -1,38 +1,23 @@
 export async function createDiscountCode(admin, discountPercentage) {
   const discountCode = `${discountPercentage}OFF`;
-  
+
   console.log(`Creating discount code: ${discountCode}`);
-  
-  // Check if THIS SPECIFIC code already exists
+
+  // Check if THIS SPECIFIC code already exists using exact lookup
   const checkQuery = `
-    query {
-      codeDiscountNodes(first: 50, query: "code:'${discountCode}'") {
-        nodes {
-          id
-          codeDiscount {
-            ... on DiscountCodeBasic {
-              title
-              codes(first: 1) {
-                nodes {
-                  code
-                }
-              }
-            }
-          }
-        }
+    query CheckCode($code: String!) {
+      codeDiscountNodeByCode(code: $code) {
+        id
       }
     }
   `;
-  
-  const checkResponse = await admin.graphql(checkQuery);
+
+  const checkResponse = await admin.graphql(checkQuery, {
+    variables: { code: discountCode }
+  });
   const checkResult = await checkResponse.json();
-  
-  // Check if the SPECIFIC code exists in the results
-  const codeExists = checkResult.data.codeDiscountNodes.nodes.some(node => 
-    node.codeDiscount?.codes?.nodes?.some(c => c.code === discountCode)
-  );
-  
-  if (codeExists) {
+
+  if (checkResult.data?.codeDiscountNodeByCode?.id) {
     console.log(` Using existing discount code: ${discountCode}`);
     return discountCode;
   }
@@ -99,43 +84,24 @@ export async function createDiscountCode(admin, discountPercentage) {
 
 export async function createFixedAmountDiscountCode(admin, discountAmount, currencyCode = 'USD') {
   const discountCode = `${discountAmount}DOLLARSOFF`;
-  
+
   console.log(`Creating fixed amount discount code: ${discountCode}`);
-  
-  // Check if THIS SPECIFIC code already exists
+
+  // Check if THIS SPECIFIC code already exists using exact lookup
   const checkQuery = `
-    query {
-      codeDiscountNodes(first: 50, query: "code:'${discountCode}'") {
-        nodes {
-          id
-          codeDiscount {
-            ... on DiscountCodeBasic {
-              title
-              codes(first: 1) {
-                nodes {
-                  code
-                }
-              }
-            }
-          }
-        }
+    query CheckCode($code: String!) {
+      codeDiscountNodeByCode(code: $code) {
+        id
       }
     }
   `;
-  
-  const checkResponse = await admin.graphql(checkQuery);
+
+  const checkResponse = await admin.graphql(checkQuery, {
+    variables: { code: discountCode }
+  });
   const checkResult = await checkResponse.json();
-  
-  console.log('=== CHECK QUERY RESULT ===');
-  console.log('Query result:', JSON.stringify(checkResult, null, 2));
-  console.log('Nodes found:', checkResult.data?.codeDiscountNodes?.nodes?.length || 0);
-  
-  // Check if the SPECIFIC code exists in the results
-  const codeExists = checkResult.data.codeDiscountNodes.nodes.some(node => 
-    node.codeDiscount?.codes?.nodes?.some(c => c.code === discountCode)
-  );
-  
-  if (codeExists) {
+
+  if (checkResult.data?.codeDiscountNodeByCode?.id) {
     console.log(` Using existing discount code: ${discountCode}`);
     return discountCode;
   }

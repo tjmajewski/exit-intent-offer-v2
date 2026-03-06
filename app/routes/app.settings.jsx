@@ -237,7 +237,64 @@ export async function action({ request }) {
       }
     }
 
-    // Update or create shop record in database
+    // Create discount code in Shopify BEFORE saving to database
+    // so the discountCode field is populated for the DB save
+    if (settings.discountEnabled) {
+      console.log('Creating discount code...');
+
+      // Determine which settings to use based on app mode
+      const discountCodeMode = settings.mode === "ai"
+        ? settings.aiDiscountCodeMode
+        : settings.manualDiscountCodeMode;
+      const genericDiscountCode = settings.mode === "ai"
+        ? settings.aiGenericDiscountCode
+        : settings.manualGenericDiscountCode;
+
+      console.log(`Using ${settings.mode} mode settings:`, { discountCodeMode, genericDiscountCode });
+
+      // MODE: Generic - Create or verify generic code
+      if (discountCodeMode === "generic" && genericDiscountCode) {
+        console.log('Creating generic discount code:', genericDiscountCode);
+
+        const discountAmount = settings.offerType === "percentage"
+          ? settings.discountPercentage
+          : settings.discountAmount;
+
+        const result = await createGenericDiscountCode(
+          admin,
+          genericDiscountCode,
+          settings.offerType,
+          discountAmount
+        );
+
+        settings.discountCode = result.code;
+        console.log('Generic code ready:', settings.discountCode, result.exists ? '(reused)' : '(created)');
+      }
+      // MODE: Unique - Create reusable code in Shopify
+      else if (discountCodeMode === "unique") {
+        if (settings.offerType === "percentage" && settings.discountPercentage > 0) {
+          console.log('Creating percentage discount:', settings.discountPercentage);
+          settings.discountCode = await createOldDiscountCode(admin, settings.discountPercentage);
+          console.log('Created code:', settings.discountCode);
+        } else if (settings.offerType === "fixed" && settings.discountAmount > 0) {
+          console.log('Creating fixed amount discount:', settings.discountAmount);
+          settings.discountCode = await createFixedAmountDiscountCode(admin, settings.discountAmount);
+          console.log('Created code:', settings.discountCode);
+        } else if (settings.offerType === "giftcard" && settings.discountAmount > 0) {
+          console.log('Creating gift card:', settings.discountAmount);
+          settings.discountCode = await createGiftCard(admin, settings.discountAmount);
+          console.log('Created gift card code:', settings.discountCode);
+        } else {
+          console.log('No discount code created - conditions not met');
+        }
+      } else {
+        console.log('Generic mode selected but no generic code provided');
+      }
+    } else {
+      console.log('Discount not enabled');
+    }
+
+    // Update or create shop record in database (after discount creation)
     await db.shop.upsert({
       where: { shopifyDomain: shopDomain },
       update: {
@@ -266,7 +323,7 @@ export async function action({ request }) {
         modalBody: settings.modalBody,
         ctaButton: settings.ctaButton,
         redirectDestination: settings.redirectDestination,
-         discountCode: settings.discountCode,
+        discountCode: settings.discountCode,
         discountEnabled: settings.discountEnabled,
         offerType: settings.offerType,
         manualDiscountCodeMode: settings.manualDiscountCodeMode,
@@ -304,83 +361,19 @@ export async function action({ request }) {
         modalBody: settings.modalBody,
         ctaButton: settings.ctaButton,
         redirectDestination: settings.redirectDestination,
-        discountCodeMode: settings.discountCodeMode,
-        genericDiscountCode: settings.genericDiscountCode,
-        discountCodePrefix: settings.discountCodePrefix
+        discountCode: settings.discountCode,
+        discountEnabled: settings.discountEnabled,
+        offerType: settings.offerType,
+        manualDiscountCodeMode: settings.manualDiscountCodeMode,
+        manualGenericDiscountCode: settings.manualGenericDiscountCode,
+        manualDiscountCodePrefix: settings.manualDiscountCodePrefix,
+        aiDiscountCodeMode: settings.aiDiscountCodeMode,
+        aiGenericDiscountCode: settings.aiGenericDiscountCode,
+        aiDiscountCodePrefix: settings.aiDiscountCodePrefix
       }
     });
-    
-    console.log(` Shop settings saved to database for ${shopDomain}`);
-    
-    // Debug logging
-    console.log('=== DISCOUNT DEBUG ===');
-    console.log('Discount enabled:', settings.discountEnabled);
-    console.log('App mode:', settings.mode);
-    console.log('Manual discount mode:', settings.manualDiscountCodeMode);
-    console.log('AI discount mode:', settings.aiDiscountCodeMode);
-    console.log('Offer type:', settings.offerType);
-    console.log('Discount percentage:', settings.discountPercentage);
-    console.log('Discount amount:', settings.discountAmount);
 
-    // Create discount code based on mode and offer type
-    // Use manual settings for manual mode, AI settings for AI mode
-    if (settings.discountEnabled) {
-      console.log('Creating discount code...');
-
-      // Determine which settings to use based on app mode
-      const discountCodeMode = settings.mode === "ai"
-        ? settings.aiDiscountCodeMode
-        : settings.manualDiscountCodeMode;
-      const genericDiscountCode = settings.mode === "ai"
-        ? settings.aiGenericDiscountCode
-        : settings.manualGenericDiscountCode;
-      const discountCodePrefix = settings.mode === "ai"
-        ? settings.aiDiscountCodePrefix
-        : settings.manualDiscountCodePrefix;
-
-      console.log(`Using ${settings.mode} mode settings:`, { discountCodeMode, genericDiscountCode, discountCodePrefix });
-
-      // MODE: Generic - Create or verify generic code
-      if (discountCodeMode === "generic" && genericDiscountCode) {
-        console.log('Creating generic discount code:', genericDiscountCode);
-
-        const discountAmount = settings.offerType === "percentage"
-          ? settings.discountPercentage
-          : settings.discountAmount;
-
-        const result = await createGenericDiscountCode(
-          admin,
-          genericDiscountCode,
-          settings.offerType,
-          discountAmount
-        );
-
-        settings.discountCode = result.code;
-        console.log('Generic code ready:', settings.discountCode, result.exists ? '(reused)' : '(created)');
-      }
-      // MODE: Unique - Create unique code with 24h expiry (current behavior)
-      else if (discountCodeMode === "unique") {
-        if (settings.offerType === "percentage" && settings.discountPercentage > 0) {
-          console.log('Creating unique percentage discount:', settings.discountPercentage);
-          settings.discountCode = await createOldDiscountCode(admin, settings.discountPercentage);
-          console.log('Created code:', settings.discountCode);
-        } else if (settings.offerType === "fixed" && settings.discountAmount > 0) {
-          console.log('Creating unique fixed amount discount:', settings.discountAmount);
-          settings.discountCode = await createFixedAmountDiscountCode(admin, settings.discountAmount);
-          console.log('Created code:', settings.discountCode);
-        } else if (settings.offerType === "giftcard" && settings.discountAmount > 0) {
-          console.log('Creating gift card:', settings.discountAmount);
-          settings.discountCode = await createGiftCard(admin, settings.discountAmount);
-          console.log('Created gift card code:', settings.discountCode);
-        } else {
-          console.log('No discount code created - conditions not met');
-        }
-      } else {
-        console.log('Generic mode selected but no generic code provided');
-      }
-    } else {
-      console.log('Discount not enabled');
-    }
+    console.log(` Shop settings saved to database for ${shopDomain} with discount code: ${settings.discountCode}`);
 
     // Get shop ID
     const shopResponse = await admin.graphql(
@@ -544,57 +537,7 @@ export async function action({ request }) {
       );
     }
 
-    // Save to database for API access
-    await db.shop.upsert({
-      where: { shopifyDomain: shopDomain },
-      update: {
-        mode: settings.mode,
-        exitIntentEnabled: settings.exitIntentEnabled,
-        timeDelayEnabled: settings.timeDelayEnabled,
-        timeDelaySeconds: settings.timeDelaySeconds,
-        cartValueEnabled: settings.cartValueEnabled,
-        cartValueMin: settings.cartValueMin,
-        cartValueMax: settings.cartValueMax,
-        modalHeadline: settings.modalHeadline,
-        modalBody: settings.modalBody,
-        ctaButton: settings.ctaButton,
-        redirectDestination: settings.redirectDestination,
-        discountCode: settings.discountCode,
-        discountEnabled: settings.discountEnabled,
-        offerType: settings.offerType,
-        manualDiscountCodeMode: settings.manualDiscountCodeMode,
-        manualGenericDiscountCode: settings.manualGenericDiscountCode,
-        manualDiscountCodePrefix: settings.manualDiscountCodePrefix,
-        aiDiscountCodeMode: settings.aiDiscountCodeMode,
-        aiGenericDiscountCode: settings.aiGenericDiscountCode,
-        aiDiscountCodePrefix: settings.aiDiscountCodePrefix,
-        updatedAt: new Date()
-      },
-      create: {
-        shopifyDomain: shopDomain,
-        mode: settings.mode,
-        exitIntentEnabled: settings.exitIntentEnabled,
-        timeDelayEnabled: settings.timeDelayEnabled,
-        timeDelaySeconds: settings.timeDelaySeconds,
-        cartValueEnabled: settings.cartValueEnabled,
-        cartValueMin: settings.cartValueMin,
-        cartValueMax: settings.cartValueMax,
-        modalHeadline: settings.modalHeadline,
-        modalBody: settings.modalBody,
-        ctaButton: settings.ctaButton,
-        redirectDestination: settings.redirectDestination,
-        discountCode: settings.discountCode,
-        discountEnabled: settings.discountEnabled,
-        offerType: settings.offerType,
-        discountCodeMode: settings.discountCodeMode,
-        genericDiscountCode: settings.genericDiscountCode,
-        discountCodePrefix: settings.discountCodePrefix
-      }
-    });
-
-    console.log(` Settings saved to database including discount code: ${settings.discountCode}`);
-
-    return { 
+    return {
       success: true, 
       message: isNewModal 
         ? `Settings saved as ${modalName}${settings.discountCode ? `. Discount code ${settings.discountCode} created` : ''}`

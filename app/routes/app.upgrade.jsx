@@ -7,7 +7,7 @@ import db from "../db.server";
 
 export async function loader({ request }) {
   const { admin, session } = await authenticate.admin(request);
-  const { getActiveSubscription } = await import("../utils/billing.server");
+  const { getActiveSubscription, tierFromSubscriptionName, billingCycleFromSubscription } = await import("../utils/billing.server");
 
   try {
     const response = await admin.graphql(`
@@ -46,16 +46,12 @@ export async function loader({ request }) {
       console.error("Error checking subscription:", e);
     }
 
-    // Extract current billing cycle from active subscription
+    // Derive active tier and billing cycle from the Shopify subscription
+    let activeTier = null;
     let currentBillingCycle = null;
     if (activeSubscription) {
-      for (const lineItem of activeSubscription.lineItems || []) {
-        const pricing = lineItem.plan?.pricingDetails;
-        if (pricing && pricing.interval) {
-          currentBillingCycle = pricing.interval === 'ANNUAL' ? 'annual' : 'monthly';
-          break;
-        }
-      }
+      activeTier = tierFromSubscriptionName(activeSubscription.name);
+      currentBillingCycle = billingCycleFromSubscription(activeSubscription);
     }
 
     // Calculate remaining trial days for the CTA text
@@ -69,10 +65,10 @@ export async function loader({ request }) {
       trialDaysRemaining = 14;
     }
 
-    return { plan, activeSubscription, trialDaysRemaining, currentBillingCycle };
+    return { plan, activeSubscription, activeTier, currentBillingCycle, trialDaysRemaining };
   } catch (error) {
     console.error("Error loading upgrade page:", error);
-    return { plan: { tier: "starter" }, activeSubscription: null, trialDaysRemaining: 14, currentBillingCycle: null };
+    return { plan: { tier: "starter" }, activeSubscription: null, activeTier: null, currentBillingCycle: null, trialDaysRemaining: 14 };
   }
 }
 
@@ -94,10 +90,7 @@ export async function action({ request }) {
     // test: true for development, set to false for production
     const isTest = process.env.NODE_ENV !== "production";
 
-    // Determine how many trial days this subscription should get:
-    // - Never trialed: 14 days
-    // - Mid-trial plan switch: remaining days from original trial
-    // - Trial expired: 0 days
+    // Determine how many trial days this subscription should get
     let trialDays = 0;
     try {
       const planResponse = await admin.graphql(`
@@ -115,13 +108,11 @@ export async function action({ request }) {
         : null;
 
       if (currentPlan?.hasUsedTrial && currentPlan?.trialStartedAt) {
-        // They've started a trial before — check if it's still active
         const daysSinceTrialStart = Math.floor(
           (Date.now() - new Date(currentPlan.trialStartedAt).getTime()) / (1000 * 60 * 60 * 24)
         );
         trialDays = Math.max(0, 14 - daysSinceTrialStart);
       } else if (!currentPlan?.hasUsedTrial) {
-        // Check if they have an active subscription (edge case: flag not set yet)
         const activeSub = await getActiveSubscription(admin);
         if (!activeSub) {
           trialDays = 14;
@@ -140,7 +131,6 @@ export async function action({ request }) {
       trialDays
     );
 
-    // Return URL to client — client redirects via _top to escape iframe
     return { confirmationUrl };
   } catch (error) {
     console.error("[Billing] Error creating subscription:", error);
@@ -149,7 +139,7 @@ export async function action({ request }) {
 }
 
 export default function Upgrade() {
-  const { plan, activeSubscription, trialDaysRemaining, currentBillingCycle } = useLoaderData();
+  const { plan, activeSubscription, activeTier, currentBillingCycle, trialDaysRemaining } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -170,7 +160,6 @@ export default function Upgrade() {
       monthlyPrice: 29,
       annualPrice: 24.65,
       annualTotal: 296,
-      revenueShare: "5%",
       description: "Perfect for testing exit intent",
       features: [
         "Manual mode (you set what appears and when)",
@@ -188,7 +177,6 @@ export default function Upgrade() {
       monthlyPrice: 79,
       annualPrice: 67.15,
       annualTotal: 806,
-      revenueShare: "2%",
       description: "AI-powered optimization for growing stores",
       popular: true,
       features: [
@@ -210,7 +198,6 @@ export default function Upgrade() {
       monthlyPrice: 199,
       annualPrice: 169.15,
       annualTotal: 2030,
-      revenueShare: "1%",
       description: "Maximum control for high-volume stores",
       features: [
         "Everything in Pro",
@@ -336,12 +323,10 @@ export default function Upgrade() {
           marginBottom: 40
         }}>
           {plans.map((planOption) => {
-            // "Current Plan" only applies when there's an active paid subscription
-            // AND the tier AND billing cycle both match the current selection
-            const hasPaidSubscription = activeSubscription !== null;
-            const isCurrent = hasPaidSubscription &&
-              plan.tier === planOption.tier &&
-              (currentBillingCycle === null || currentBillingCycle === billingCycle);
+            // "Current Plan" only when there's an active Shopify subscription
+            // matching both tier AND billing cycle
+            const isCurrent = activeTier === planOption.tier &&
+              currentBillingCycle === billingCycle;
             const isPopular = planOption.popular;
             const displayPrice = billingCycle === "monthly" ? planOption.monthlyPrice : planOption.annualPrice;
 
@@ -415,16 +400,6 @@ export default function Upgrade() {
                     }}>
                       /mo
                     </span>
-                  </div>
-
-                  {/* Revenue Share */}
-                  <div style={{
-                    fontSize: 14,
-                    color: "#10b981",
-                    fontWeight: 500,
-                    marginBottom: 8
-                  }}>
-                    + {planOption.revenueShare} of recovered revenue
                   </div>
 
                   {/* Annual Total */}
@@ -536,28 +511,6 @@ export default function Upgrade() {
           })}
         </div>
 
-        {/* Recovered Revenue Explanation */}
-        <div style={{
-          padding: 24,
-          background: "rgba(30, 20, 50, 0.6)",
-          borderRadius: 12,
-          border: "1px solid rgba(139, 92, 246, 0.25)",
-          marginBottom: 24
-        }}>
-          <h3 style={{ fontSize: 16, color: "#fff", marginBottom: 12, fontWeight: 600 }}>
-            How usage charges work
-          </h3>
-          <p style={{ color: "#9ca3af", fontSize: 14, lineHeight: "1.7", margin: 0 }}>
-            In addition to your flat monthly/annual subscription, a small usage-based commission applies only to
-            orders where a customer used a Resparq-generated discount code (i.e., revenue that was recovered by the app).
-            Commission rates: <strong style={{ color: "#d1d5db" }}>5% on Starter</strong>,{" "}
-            <strong style={{ color: "#d1d5db" }}>2% on Pro</strong>, and{" "}
-            <strong style={{ color: "#d1d5db" }}>1% on Enterprise</strong>.
-            Monthly caps ($500/$2,000/$5,000) ensure charges never exceed the limits shown above.
-            These charges are billed automatically through Shopify&apos;s billing system — no separate invoicing.
-          </p>
-        </div>
-
         {/* 14-Day Money-Back Guarantee */}
         <div style={{
           marginTop: 48,
@@ -604,7 +557,7 @@ export default function Upgrade() {
             <div>
               <div style={{ fontWeight: 600, marginBottom: 8, color: "#fff" }}>Simple Pricing</div>
               <div style={{ fontSize: 14, color: "#a78bfa" }}>
-                Flat monthly pricing. No surprises, no hidden fees.
+                Flat monthly or annual pricing. No surprises, no hidden fees.
               </div>
             </div>
           </div>
@@ -652,7 +605,7 @@ export default function Upgrade() {
           <div style={{ marginBottom: 20 }}>
             <strong style={{ fontSize: 16, color: "#fff" }}>How does annual billing work?</strong>
             <p style={{ color: "#9ca3af", marginTop: 8, lineHeight: "1.6", marginBottom: 0 }}>
-              Pay for 12 months upfront and save 15% (approximately 2 months free). Annual plans are billed once per year.
+              Pay for 12 months upfront and save 15% (approximately 2 months free). Annual plans are billed once per year through Shopify.
             </p>
           </div>
 
@@ -660,17 +613,6 @@ export default function Upgrade() {
             <strong style={{ fontSize: 16, color: "#fff" }}>What's the difference between AI mode and manual control?</strong>
             <p style={{ color: "#9ca3af", marginTop: 8, lineHeight: "1.6", marginBottom: 0 }}>
               AI mode (Pro) lets the AI handle everything automatically. Enterprise adds manual controls so you can override AI decisions when you need to (like during sales or special events).
-            </p>
-          </div>
-
-          <div style={{ marginBottom: 20 }}>
-            <strong style={{ fontSize: 16, color: "#fff" }}>What does "% of recovered revenue" mean?</strong>
-            <p style={{ color: "#9ca3af", marginTop: 8, lineHeight: "1.6", marginBottom: 0 }}>
-              &ldquo;Recovered revenue&rdquo; refers to the total order value of purchases where a customer used a
-              Resparq-generated discount code at checkout — meaning the app directly helped convert that sale.
-              The percentage commission (5%, 2%, or 1% depending on your plan) is charged only on those specific orders,
-              not on your overall store revenue. These usage charges are billed monthly through Shopify&apos;s billing system,
-              subject to the monthly cap for your plan.
             </p>
           </div>
 
