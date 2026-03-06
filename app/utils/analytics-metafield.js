@@ -34,6 +34,10 @@ export async function trackAnalyticsEvent(admin, eventType, extraData = {}) {
   } else if (eventType === 'conversion') {
     analytics.conversions = (analytics.conversions || 0) + 1;
     analytics.revenue = (analytics.revenue || 0) + (extraData.revenue || 0);
+  } else if (eventType === 'no_intervention') {
+    // Track when AI decides no modal is the optimal outcome
+    // This helps measure how often the AI protects margin by not intervening
+    analytics.noInterventions = (analytics.noInterventions || 0) + 1;
   }
 
   analytics.events.push({

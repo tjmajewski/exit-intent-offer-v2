@@ -2,194 +2,213 @@
 // Each baseline has its own gene pool with ~432 possible combinations
 
 export const genePools = {
+  // REVENUE + DISCOUNT: Threshold offers to increase cart value (e.g., "Spend $X more, save $Y")
   revenue_with_discount: {
     offerAmounts: [10, 15, 20, 25],  // $ off for thresholds
-    
+
     headlines: [
-      'Almost there! Add {{threshold_remaining}} more',
-      'Unlock {{amount}} off with {{threshold_remaining}} more',
-      'You\'re {{percent_to_goal}}% of the way to {{amount}} off!'
+      'You\'re just {{threshold_remaining}} away from {{amount}} off',
+      'Spend {{threshold_remaining}} more, save {{amount}} instantly',
+      'So close! {{percent_to_goal}}% to unlocking {{amount}} off'
     ],
-    
+
     headlinesWithSocialProof: [
-      '{{social_proof_count}} customers unlocked this discount',
-      'Join {{social_proof_count}} shoppers saving today',
-      'Rated {{rating}} stars - add {{threshold_remaining}} to save'
+      '{{social_proof_count}} shoppers unlocked this deal today',
+      'This discount helped {{social_proof_count}} customers save',
+      '{{rating}}-star favorites — add {{threshold_remaining}} to save'
     ],
-    
+
     subheads: [
-      'Complete your order and save big',
-      'Don\'t miss out on this exclusive offer',
-      'Limited time - discount expires in 24 hours'
+      'Add a little more and save on your entire order',
+      'This offer is only available right now',
+      'Your cart qualifies — don\'t let this deal slip away'
     ],
-    
+
     subheadsWithSocialProof: [
-      '{{social_proof_count}} orders saved with this offer',
-      'Trusted by {{social_proof_count}} happy shoppers',
-      'Join our {{rating}}-star rated community'
+      '{{social_proof_count}} orders saved with this offer today',
+      '{{social_proof_count}} shoppers grabbed this deal — your turn',
+      '{{rating}}-star rated products at a price you\'ll love'
     ],
-    
+
     ctas: [
-      'Add More Items',
-      'Keep Shopping',
-      'Unlock My Discount'
+      'Unlock My Savings',
+      'Add Items & Save',
+      'Get {{amount}} Off'
     ],
-    
+
     redirects: ['cart', 'checkout'],
-    urgency: [true, false]
+    urgency: [true, false],
+
+    // Trigger strategy: how to fire the modal
+    // exit_intent = mouse leave (desktop) / back-button (mobile fallback)
+    // idle = show after X seconds idle on page with cart items
+    // exit_intent_or_idle = whichever fires first (covers both desktop & mobile)
+    triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60]  // Only used when trigger includes idle
   },
-  
+
+  // REVENUE + NO DISCOUNT: Upsell without discount (high-propensity customers)
   revenue_no_discount: {
     offerAmounts: [0],  // No discount, no incentive
-    
+
     headlines: [
-      'Complete your order to unlock rewards',
-      'You\'re building a great cart!',
-      'Almost ready to checkout?'
+      'Great picks — make it the perfect order',
+      'Customers who bought these also added...',
+      'Your order is almost complete'
     ],
-    
+
     headlinesWithSocialProof: [
       '{{social_proof_count}} customers completed their orders today',
-      'Join {{social_proof_count}} satisfied shoppers',
-      'Rated {{rating}} stars by real customers'
+      'Join {{social_proof_count}} shoppers who found the perfect combo',
+      '{{rating}}-star favorites picked just for you'
     ],
-    
+
     subheads: [
-      'Complete your purchase with confidence',
-      'Join our community of satisfied customers',
-      'Your items are reserved and waiting'
+      'Free shipping and easy returns on every order',
+      'Most customers add one more item before checkout',
+      'Everything ships fast — add something you\'ll love'
     ],
-    
+
     subheadsWithSocialProof: [
-      '{{social_proof_count}} orders shipped this month',
-      'Trusted by {{social_proof_count}} happy customers',
-      '{{rating}}-star service guaranteed'
+      '{{social_proof_count}} orders shipped this week — yours is next',
+      '{{social_proof_count}} happy customers can\'t be wrong',
+      '{{rating}}-star quality, guaranteed'
     ],
-    
+
     ctas: [
+      'Continue Shopping',
       'Complete My Order',
-      'Go to Checkout',
-      'Finish Shopping'
+      'See What Pairs Well'
     ],
-    
+
     redirects: ['cart', 'checkout'],
-    urgency: [false]  // No urgency without incentive
+    urgency: [false],  // No urgency without incentive
+    triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60]
   },
-  
+
+  // CONVERSION + DISCOUNT: % off to prevent cart abandonment
   conversion_with_discount: {
     offerAmounts: [10, 15, 20, 25],  // % off
-    
+
     headlines: [
-      'Wait! Get {{amount}}% off before you go',
-      'Don\'t leave empty-handed - save {{amount}}%',
-      'Your exclusive {{amount}}% discount is ready'
+      'Hold on — take {{amount}}% off your order',
+      'Your {{amount}}% discount is waiting',
+      'Before you go — save {{amount}}% right now'
     ],
-    
+
     headlinesWithSocialProof: [
-      '{{social_proof_count}} customers claimed this {{amount}}% off',
-      'Join {{social_proof_count}} shoppers who saved {{amount}}%',
-      'Rated {{rating}} stars - get {{amount}}% off now'
+      '{{social_proof_count}} shoppers claimed this {{amount}}% off today',
+      'Join {{social_proof_count}} customers saving {{amount}}%',
+      '{{rating}}-star products, now {{amount}}% off for you'
     ],
-    
+
     subheads: [
-      'This offer won\'t last long',
-      'Join thousands of happy customers',
-      'Complete your order risk-free'
+      'Use it now — this offer expires soon',
+      'Apply at checkout in one click',
+      'This exclusive offer won\'t be here tomorrow'
     ],
-    
+
     subheadsWithSocialProof: [
-      '{{social_proof_count}} orders placed with this discount',
-      'Trusted by {{social_proof_count}} satisfied customers',
-      '{{rating}}-star rated by verified buyers'
+      '{{social_proof_count}} orders placed with this discount today',
+      '{{social_proof_count}} customers saved — don\'t miss your turn',
+      '{{rating}}-star products at {{amount}}% off? Easy decision'
     ],
-    
+
     ctas: [
-      'Claim My Discount',
-      'Apply & Checkout',
-      'Get {{amount}}% Off Now'
+      'Claim {{amount}}% Off',
+      'Apply My Discount',
+      'Save {{amount}}% Now'
     ],
-    
+
     redirects: ['cart', 'checkout'],
-    urgency: [true, false]
+    urgency: [true, false],
+    triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60]
   },
-  
+
+  // CONVERSION + NO DISCOUNT: Convert without discount (social proof / trust focus)
   conversion_no_discount: {
     offerAmounts: [0],  // No discount, social proof only
-    
+
     headlines: [
-      'Complete your order with confidence',
-      'Join our community of satisfied customers',
-      'Your items are waiting for you'
+      'You left something great in your cart',
+      'Your order is just one click away',
+      'Still thinking it over?'
     ],
-    
+
     headlinesWithSocialProof: [
-      '{{social_proof_count}} customers trust us',
-      'Rated {{rating}} stars by verified buyers',
-      'Join {{social_proof_count}} happy customers'
+      '{{social_proof_count}} customers bought this — and loved it',
+      '{{rating}} stars from verified buyers',
+      'Join {{social_proof_count}} happy customers today'
     ],
-    
+
     subheads: [
-      'Secure checkout and risk-free returns',
-      'Trusted by customers like you',
-      'Fast processing and reliable shipping'
+      'Free returns — zero risk to try it',
+      'Checkout takes less than 60 seconds',
+      'Your items are selling fast — grab yours'
     ],
-    
+
     subheadsWithSocialProof: [
-      '{{social_proof_count}} orders shipped and counting',
-      'Join {{social_proof_count}} satisfied shoppers',
-      'Rated {{rating}} stars by real customers'
+      '{{social_proof_count}} five-star reviews and counting',
+      '{{social_proof_count}} orders shipped this week — hassle-free',
+      '{{rating}} stars — see why customers keep coming back'
     ],
-    
+
     ctas: [
       'Complete My Order',
-      'Checkout Securely',
-      'Finish Purchase'
+      'Return to Checkout',
+      'Yes, I Want This'
     ],
-    
+
     redirects: ['cart', 'checkout'],
-    urgency: [false]  // No urgency without incentive
+    urgency: [false],  // No urgency without incentive
+    triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60]
   },
-  
+
   // PURE REMINDER: No offers, no discounts, no incentives
   // Used when AI decides customer doesn't need any offer (aggression=0 or offerAmount=0)
   pure_reminder: {
     offerAmounts: [0],  // No offer at all
-    
+
     headlines: [
-      'You have items in your cart',
-      'Your cart is waiting',
-      'Ready to complete your order?',
-      'Don\'t forget about your items'
+      'You left something behind',
+      'Still interested? Your cart is saved',
+      'Your picks are going fast',
+      'Don\'t let your cart expire'
     ],
-    
+
     headlinesWithSocialProof: [
-      '{{social_proof_count}} customers completed their orders',
-      'Join {{social_proof_count}} shoppers',
-      'Rated {{rating}} stars by verified buyers'
+      '{{social_proof_count}} customers checked out today',
+      '{{social_proof_count}} shoppers are browsing this right now',
+      '{{rating}}-star products — still in your cart'
     ],
-    
+
     subheads: [
-      'Complete your purchase when you\'re ready',
-      'Your items are reserved',
-      'Checkout at your convenience',
-      'Your cart will be here when you return'
+      'Stock levels change — grab yours before it\'s gone',
+      'Your cart is saved, but not reserved forever',
+      'Come back and finish what you started',
+      'One click and it\'s yours'
     ],
-    
+
     subheadsWithSocialProof: [
-      '{{social_proof_count}} orders delivered successfully',
-      'Trusted by {{social_proof_count}} customers',
-      '{{rating}}-star service you can count on'
+      '{{social_proof_count}} orders delivered this week',
+      '{{social_proof_count}} customers grabbed theirs — will you?',
+      '{{rating}}-star quality, ready to ship'
     ],
-    
+
     ctas: [
-      'View Cart',
-      'Go to Checkout',
-      'Complete Order',
-      'Return to Cart'
+      'Back to My Cart',
+      'Finish Checkout',
+      'Complete My Order',
+      'View My Cart'
     ],
-    
+
     redirects: ['cart', 'checkout'],
-    urgency: [false]  // No urgency for reminders
+    urgency: [false],  // No urgency for reminders
+    triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60]
   }
 };
 
@@ -202,7 +221,9 @@ export function getCombinationCount(baseline) {
     pool.subheads.length *
     pool.ctas.length *
     pool.redirects.length *
-    pool.urgency.length
+    pool.urgency.length *
+    pool.triggerTypes.length *
+    pool.idleSeconds.length
   );
 }
 
