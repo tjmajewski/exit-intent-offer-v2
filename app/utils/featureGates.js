@@ -100,8 +100,23 @@ export function getDefaultPlan() {
   };
 }
 export function checkAndResetUsage(plan, shopId, admin) {
-  if (!plan || !plan.usage || !plan.usage.resetDate) {
+  if (!plan) {
     return { needsReset: false, plan };
+  }
+
+  // Ensure usage object exists
+  if (!plan.usage) {
+    plan.usage = { impressionsThisMonth: 0 };
+  }
+
+  // If resetDate is missing, initialize it (recover from corrupt/incomplete state)
+  if (!plan.usage.resetDate) {
+    const nextReset = new Date();
+    nextReset.setMonth(nextReset.getMonth() + 1);
+    nextReset.setHours(0, 0, 0, 0);
+    plan.usage.resetDate = nextReset.toISOString();
+    console.log(` Recovered missing resetDate, set to: ${plan.usage.resetDate}`);
+    return { needsReset: true, plan };
   }
 
   const now = new Date();
