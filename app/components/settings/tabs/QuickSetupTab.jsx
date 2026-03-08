@@ -499,17 +499,32 @@ export default function QuickSetupTab({
                 </label>
               </div>
               
-              {settings.discountCode && (
-                <div style={{ 
-                  marginTop: 16, 
-                  padding: 12, 
-                  background: "#f9fafb", 
+              {manualDiscountCodeMode === "generic" && settings.discountCode && (
+                <div style={{
+                  marginTop: 16,
+                  padding: 12,
+                  background: "#f9fafb",
                   borderRadius: 6,
                   fontSize: 14
                 }}>
                   <strong>Current code:</strong> {settings.discountCode}
                   <div style={{ color: "#666", marginTop: 4 }}>
                     This code will be automatically applied at checkout
+                  </div>
+                </div>
+              )}
+              {manualDiscountCodeMode === "unique" && (
+                <div style={{
+                  marginTop: 16,
+                  padding: 12,
+                  background: "#f0fdf4",
+                  borderRadius: 6,
+                  fontSize: 14,
+                  border: "1px solid #bbf7d0"
+                }}>
+                  <strong>Unique codes enabled</strong>
+                  <div style={{ color: "#15803d", marginTop: 4 }}>
+                    A fresh code (e.g. <strong>{settings.manualDiscountCodePrefix || "EXIT"}-A1B2C3</strong>) will be generated for each customer. Codes expire in 24 hours and can only be used once.
                   </div>
                 </div>
               )}

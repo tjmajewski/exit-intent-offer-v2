@@ -31,6 +31,11 @@ export async function loader({ request }) {
       });
     }
 
+    // Determine discount code mode based on app mode (manual vs AI)
+    const discountCodeMode = shopRecord.mode === "ai"
+      ? shopRecord.aiDiscountCodeMode
+      : shopRecord.manualDiscountCodeMode;
+
     return json({
       plan: shopRecord.plan || 'starter',
       mode: shopRecord.mode || 'manual',
@@ -41,6 +46,7 @@ export async function loader({ request }) {
       redirectDestination: shopRecord.redirectDestination || "checkout",
       discountCode: shopRecord.discountCode,
       discountEnabled: shopRecord.discountEnabled || false,
+      discountCodeMode: discountCodeMode || "unique",
       offerType: shopRecord.offerType || "percentage",
       triggers: {
         exitIntent: shopRecord.exitIntentEnabled ?? true,

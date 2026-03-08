@@ -1051,6 +1051,10 @@
       }
       // STARTER TIER: Still collect signals for learning (but don't change the offer)
       else if (this.settings.plan === 'starter' || this.settings.mode === 'manual') {
+        // If unique code mode is enabled, generate a fresh code for this customer
+        if (this.settings.discountEnabled && this.settings.discountCodeMode === 'unique') {
+          await this.generateUniqueCode();
+        }
         await this.trackStarterImpression();
       }
 
@@ -1097,6 +1101,34 @@
       this.trackVariant('impression');
     }
     
+    /**
+     * For manual mode + unique code mode: mint a fresh discount code for this
+     * customer session so every visitor gets their own non-transferable code.
+     */
+    async generateUniqueCode() {
+      try {
+        console.log('[Unique Code] Generating per-session discount code...');
+        const response = await fetch('/apps/exit-intent/api/generate-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shop: window.Shopify.shop })
+        });
+
+        if (!response.ok) {
+          console.error('[Unique Code] API error:', response.status);
+          return;
+        }
+
+        const result = await response.json();
+        if (result.code) {
+          this.settings.discountCode = result.code;
+          console.log(`[Unique Code] Generated: ${result.code} (expires: ${result.expiresAt})`);
+        }
+      } catch (error) {
+        console.error('[Unique Code] Failed to generate:', error);
+      }
+    }
+
     async getAIDecision() {
       try {
         // Collect customer signals

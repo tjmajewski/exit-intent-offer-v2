@@ -4,7 +4,8 @@ import { authenticate } from "../shopify.server";
 import { hasFeature } from "../utils/featureGates";
 import { getAvailableTemplates, MODAL_TEMPLATES } from "../utils/templates";
 import { generateModalHash, getDefaultModalLibrary, findModalByHash, getNextModalName } from "../utils/modalHash";
- import { createDiscountCode as createOldDiscountCode, createFixedAmountDiscountCode, createGiftCard } from "../utils/discounts";
+// Old generic discount helpers are no longer used at save time —
+// unique codes are now minted per-session via /api/generate-code
 import { createGenericDiscountCode } from "../utils/discount-codes";
 import { getTriggerDisplay, getDiscountDisplay } from "../utils/settingsHelpers";
 import AppLayout from "../components/AppLayout";
@@ -270,23 +271,12 @@ export async function action({ request }) {
         settings.discountCode = result.code;
         console.log('Generic code ready:', settings.discountCode, result.exists ? '(reused)' : '(created)');
       }
-      // MODE: Unique - Create reusable code in Shopify
+      // MODE: Unique - Codes are generated per-session at modal display time
+      // Don't pre-generate a static code here; the frontend will call
+      // /apps/exit-intent/api/generate-code to mint a fresh unique code for each customer
       else if (discountCodeMode === "unique") {
-        if (settings.offerType === "percentage" && settings.discountPercentage > 0) {
-          console.log('Creating percentage discount:', settings.discountPercentage);
-          settings.discountCode = await createOldDiscountCode(admin, settings.discountPercentage);
-          console.log('Created code:', settings.discountCode);
-        } else if (settings.offerType === "fixed" && settings.discountAmount > 0) {
-          console.log('Creating fixed amount discount:', settings.discountAmount);
-          settings.discountCode = await createFixedAmountDiscountCode(admin, settings.discountAmount);
-          console.log('Created code:', settings.discountCode);
-        } else if (settings.offerType === "giftcard" && settings.discountAmount > 0) {
-          console.log('Creating gift card:', settings.discountAmount);
-          settings.discountCode = await createGiftCard(admin, settings.discountAmount);
-          console.log('Created gift card code:', settings.discountCode);
-        } else {
-          console.log('No discount code created - conditions not met');
-        }
+        settings.discountCode = null; // Clear any stale static code
+        console.log('Unique code mode: codes will be generated per-session (no static code created)');
       } else {
         console.log('Generic mode selected but no generic code provided');
       }
