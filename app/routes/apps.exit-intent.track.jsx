@@ -194,6 +194,15 @@ export async function action({ request }) {
     if (event === "impression" && plan) {
       plan.usage = plan.usage || {};
       plan.usage.impressionsThisMonth = (plan.usage.impressionsThisMonth || 0) + 1;
+
+      // Ensure resetDate exists (recover from missing state)
+      if (!plan.usage.resetDate) {
+        const nextReset = new Date();
+        nextReset.setMonth(nextReset.getMonth() + 1);
+        nextReset.setHours(0, 0, 0, 0);
+        plan.usage.resetDate = nextReset.toISOString();
+        console.log(` Recovered missing resetDate in track endpoint: ${plan.usage.resetDate}`);
+      }
       
       console.log(` Usage updated: ${plan.usage.impressionsThisMonth}/${PLAN_FEATURES[plan.tier].impressionLimit || '∞'}`);
       

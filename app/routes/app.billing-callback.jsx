@@ -42,6 +42,22 @@ export async function loader({ request }) {
     currentPlan.status = "active";
     currentPlan.subscriptionId = subscription.id;
 
+    // Ensure usage object exists with resetDate (prevents "Resets Unknown")
+    if (!currentPlan.usage) {
+      const resetDate = new Date();
+      resetDate.setMonth(resetDate.getMonth() + 1);
+      resetDate.setHours(0, 0, 0, 0);
+      currentPlan.usage = {
+        impressionsThisMonth: 0,
+        resetDate: resetDate.toISOString()
+      };
+    } else if (!currentPlan.usage.resetDate) {
+      const resetDate = new Date();
+      resetDate.setMonth(resetDate.getMonth() + 1);
+      resetDate.setHours(0, 0, 0, 0);
+      currentPlan.usage.resetDate = resetDate.toISOString();
+    }
+
     // Mark trial as used so the merchant can never get another free trial
     if (!currentPlan.hasUsedTrial) {
       currentPlan.hasUsedTrial = true;
