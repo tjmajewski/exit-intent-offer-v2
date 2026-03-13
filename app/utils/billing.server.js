@@ -184,3 +184,54 @@ export function billingCycleFromSubscription(subscription) {
   }
   return "monthly";
 }
+
+/**
+ * Sync the active Shopify subscription to the DB plan tier.
+ * Call this in admin loaders to self-heal if the billing callback
+ * missed the update (race condition, transient error, etc.).
+ *
+ * Returns the corrected tier, or the current DB tier if no subscription.
+ */
+export async function syncSubscriptionToPlan(admin, session, db) {
+  try {
+    const subscription = await getActiveSubscription(admin);
+    const shopRecord = await db.shop.findUnique({
+      where: { shopifyDomain: session.shop },
+      select: { plan: true, subscriptionId: true }
+    });
+
+    if (subscription && subscription.status === "ACTIVE") {
+      const subscriptionTier = tierFromSubscriptionName(subscription.name);
+      const currentDbTier = shopRecord?.plan || "starter";
+
+      // DB tier doesn't match what Shopify says — fix it
+      if (currentDbTier !== subscriptionTier) {
+        console.log(`[Billing Sync] Correcting plan for ${session.shop}: DB had "${currentDbTier}", subscription says "${subscriptionTier}"`);
+        await db.shop.upsert({
+          where: { shopifyDomain: session.shop },
+          update: { plan: subscriptionTier, subscriptionId: subscription.id },
+          create: { shopifyDomain: session.shop, plan: subscriptionTier, subscriptionId: subscription.id },
+        });
+        return subscriptionTier;
+      }
+
+      return currentDbTier;
+    }
+
+    // No active subscription — if DB still says a paid tier, downgrade to starter
+    if (shopRecord?.plan && shopRecord.plan !== "starter" && !shopRecord.subscriptionId) {
+      // Only downgrade if there was never a subscriptionId (i.e. the "pro" default bug)
+      console.log(`[Billing Sync] No subscription found for ${session.shop}, DB has "${shopRecord.plan}" with no subscriptionId — correcting to starter`);
+      await db.shop.update({
+        where: { shopifyDomain: session.shop },
+        data: { plan: "starter" },
+      });
+      return "starter";
+    }
+
+    return shopRecord?.plan || "starter";
+  } catch (e) {
+    console.error("[Billing Sync] Error:", e);
+    return null; // Caller falls back to existing logic
+  }
+}

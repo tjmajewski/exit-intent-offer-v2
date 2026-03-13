@@ -35,7 +35,7 @@ model Shop {
   id                String   @id @default(uuid())
   shopifyDomain     String   @unique
   mode              String   @default("manual")
-  plan              String   @default("pro")
+  plan              String   @default("starter")
   subscriptionId    String?  // Shopify subscription ID for usage billing
   aiGoal            String   @default("revenue")
   aggression        Int      @default(5)
