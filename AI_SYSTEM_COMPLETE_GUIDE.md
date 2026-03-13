@@ -1,6 +1,6 @@
 # Repsarq AI System - Complete Guide
-**Last Updated:** January 19, 2026
-**Version:** 2.1 (with Promotional Intelligence & Variant Analytics)
+**Last Updated:** March 13, 2026
+**Version:** 2.2 (add-to-cart activation, evolved triggers)
 
 ---
 
@@ -28,10 +28,16 @@ Repsarq uses a **genetic algorithm** + **Bayesian statistics** to automatically 
 
 ### The Flow
 ```
-User Exits → AI Detects → Baseline Selected → Variant Selected (Thompson Sampling)
-→ Social Proof Applied → Modal Shown → Impression Recorded → User Interacts
-→ Evolution Cycle (every 100 impressions) → Champion Detection
+Page Load (or Add-to-Cart) → AI Activates → Signals Collected → Baseline Selected
+→ Variant Selected (Thompson Sampling) → Trigger Set (exit_intent/idle/immediate)
+→ Trigger Fires → Social Proof Applied → Modal Shown → Impression Recorded
+→ User Interacts → Evolution Cycle (every 100 impressions) → Champion Detection
 ```
+
+**Activation**: AI pre-fetches its decision as soon as the cart has items. If the
+cart is empty at page load, a `watchForAddToCart()` listener activates AI the
+moment items are added (via `cart:updated` events, button click detection, or
+polling fallback).
 
 ---
 

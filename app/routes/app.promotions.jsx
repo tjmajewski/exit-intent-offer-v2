@@ -1,6 +1,7 @@
 import { useLoaderData, useFetcher } from "react-router";
 import { useState } from "react";
 import { authenticate } from "../shopify.server";
+import { syncSubscriptionToPlan } from "../utils/billing.server";
 import db from "../db.server";
 import AppLayout from "../components/AppLayout";
 
@@ -22,16 +23,21 @@ export async function loader({ request }) {
     const data = await response.json();
     let plan = data.data.shop?.plan?.value
       ? JSON.parse(data.data.shop.plan.value)
-      : { tier: "pro" };
+      : { tier: "starter" };
 
-    // Get shop from database and use database plan as source of truth
+    // Sync subscription state with DB (self-heals if billing callback missed)
+    const syncedTier = await syncSubscriptionToPlan(admin, session, db);
+    if (syncedTier) {
+      plan = { ...plan, tier: syncedTier };
+    }
+
     const shopDomain = session.shop;
     const shopRecord = await db.shop.findUnique({
       where: { shopifyDomain: shopDomain }
     });
 
-    // Override plan with database value
-    if (shopRecord?.plan) {
+    // Fallback to DB value if sync returned null
+    if (!syncedTier && shopRecord?.plan) {
       plan = { ...plan, tier: shopRecord.plan };
     }
 
@@ -109,7 +115,7 @@ export async function loader({ request }) {
       promotions: [],
       unseenCount: 0,
       newPromotions: [],
-      plan: { tier: "pro" }
+      plan: { tier: "starter" }
     };
   }
 }

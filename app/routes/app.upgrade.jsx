@@ -2,6 +2,7 @@ import { useLoaderData, useActionData, Link, Form, useNavigation } from "react-r
 import { useState, useEffect } from "react";
 import { authenticate } from "../shopify.server";
 import { PLAN_FEATURES } from "../utils/featureGates";
+import { syncSubscriptionToPlan } from "../utils/billing.server";
 import AppLayout from "../components/AppLayout";
 import db from "../db.server";
 
@@ -25,17 +26,22 @@ export async function loader({ request }) {
       ? JSON.parse(data.data.shop.plan.value)
       : { tier: "starter" };
 
-    // Override plan with database value (more reliable than metafields)
-    try {
-      const shopRecord = await db.shop.findUnique({
-        where: { shopifyDomain: session.shop },
-        select: { plan: true }
-      });
-      if (shopRecord?.plan) {
-        plan = { ...plan, tier: shopRecord.plan };
+    // Sync subscription state with DB (self-heals if billing callback missed)
+    const syncedTier = await syncSubscriptionToPlan(admin, session, db);
+    if (syncedTier) {
+      plan = { ...plan, tier: syncedTier };
+    } else {
+      try {
+        const shopRecord = await db.shop.findUnique({
+          where: { shopifyDomain: session.shop },
+          select: { plan: true }
+        });
+        if (shopRecord?.plan) {
+          plan = { ...plan, tier: shopRecord.plan };
+        }
+      } catch (e) {
+        console.error("Error fetching shop plan from DB:", e);
       }
-    } catch (e) {
-      console.error("Error fetching shop plan from DB:", e);
     }
 
     // Check active Shopify subscription

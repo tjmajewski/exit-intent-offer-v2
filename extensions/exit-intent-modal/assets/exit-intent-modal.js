@@ -115,21 +115,31 @@
       // AI Mode: Set up intelligent triggers
       if (this.settings.mode === 'ai' && this.settings.plan === 'enterprise') {
         // Enterprise AI evaluation (decides if/when to show)
-        await this.evaluateEnterpriseCustomer();
-
-        // Enterprise AI controls timing completely - don't set up manual triggers
-        // The AI decides: immediate, exit_intent, or delayed timing
-        console.log('[Enterprise AI] AI controls all timing decisions');
+        const hasItems = await this.hasItemsInCart();
+        if (hasItems) {
+          await this.evaluateEnterpriseCustomer();
+          console.log('[Enterprise AI] AI controls all timing decisions');
+        } else {
+          // Cart is empty now — watch for add-to-cart then evaluate
+          console.log('[Enterprise AI] Cart empty, waiting for add-to-cart to evaluate');
+          this.watchForAddToCart('enterprise');
+        }
       } else if (this.settings.mode === 'ai') {
-        // Pro AI: Use exit intent trigger (no time delays)
-        // AI determines WHAT to show, exit intent determines WHEN
-        console.log('[Pro AI] Using exit intent trigger with AI-optimized offers');
-        this.setupAITriggers();
+        // Pro AI: AI determines WHAT to show and WHEN via evolved trigger genes
+        const hasItems = await this.hasItemsInCart();
+        if (hasItems) {
+          console.log('[Pro AI] Using AI-optimized offers with evolved triggers');
+          this.setupAITriggers();
+        } else {
+          // Cart is empty now — watch for add-to-cart then set up AI
+          console.log('[Pro AI] Cart empty, waiting for add-to-cart to activate');
+          this.watchForAddToCart('pro');
+        }
       } else {
         // Manual mode: Use configured triggers
         this.setupTriggers();
       }
-      
+
       // Set up event listeners
       this.setupEventListeners();
     }
@@ -959,6 +969,52 @@
       });
 
       console.log(`[Pro AI] Idle trigger enabled: ${seconds}s`);
+    }
+
+    /**
+     * Watch for add-to-cart events and activate AI when the cart
+     * goes from empty to having items. This ensures AI evaluates
+     * customers who add to cart after page load.
+     */
+    watchForAddToCart(aiMode) {
+      let activated = false;
+      const activate = async () => {
+        if (activated || this.modalShown) return;
+        const hasItems = await this.hasItemsInCart();
+        if (!hasItems) return;
+        activated = true;
+
+        console.log(`[${aiMode === 'enterprise' ? 'Enterprise AI' : 'Pro AI'}] Cart now has items — activating AI`);
+
+        if (aiMode === 'enterprise') {
+          await this.evaluateEnterpriseCustomer();
+        } else {
+          await this.setupAITriggers();
+        }
+      };
+
+      // Listen for Shopify cart update events
+      document.addEventListener('cart:updated', () => setTimeout(activate, 300));
+
+      // Listen for add-to-cart button clicks (fallback for themes without cart:updated)
+      document.addEventListener('click', (e) => {
+        const addBtn = e.target.closest(
+          '[name="add"], [type="submit"][name="add"], .product-form__submit, button[name="add"], .add-to-cart, [data-add-to-cart]'
+        );
+        if (addBtn) {
+          // Small delay for the cart API to update
+          setTimeout(activate, 800);
+        }
+      });
+
+      // Poll cart as final fallback (some AJAX themes don't fire events)
+      const pollInterval = setInterval(async () => {
+        if (activated) {
+          clearInterval(pollInterval);
+          return;
+        }
+        await activate();
+      }, 3000);
     }
 
     setupTriggers() {

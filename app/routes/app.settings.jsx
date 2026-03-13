@@ -8,6 +8,7 @@ import { generateModalHash, getDefaultModalLibrary, findModalByHash, getNextModa
 // unique codes are now minted per-session via /api/generate-code
 import { createGenericDiscountCode } from "../utils/discount-codes";
 import { getTriggerDisplay, getDiscountDisplay } from "../utils/settingsHelpers";
+import { syncSubscriptionToPlan } from "../utils/billing.server";
 import AppLayout from "../components/AppLayout";
 import QuickSetupTab from "../components/settings/tabs/QuickSetupTab";
 import AISettingsTab from "../components/settings/tabs/AISettingsTab";
@@ -73,9 +74,12 @@ export async function loader({ request }) {
 
     const settings = settingsValue ? JSON.parse(settingsValue) : defaultSettings;
     
-    // Use plan from database if available, fallback to metafield
+    // Sync subscription state with DB (self-heals if billing callback missed)
     let plan = planValue ? JSON.parse(planValue) : null;
-    if (shopRecord && shopRecord.plan) {
+    const syncedTier = await syncSubscriptionToPlan(admin, session, db);
+    if (syncedTier) {
+      plan = plan ? { ...plan, tier: syncedTier } : { tier: syncedTier, billingCycle: "monthly" };
+    } else if (shopRecord && shopRecord.plan) {
       plan = { tier: shopRecord.plan, billingCycle: "monthly" };
     }
     
@@ -96,17 +100,12 @@ export async function loader({ request }) {
       ? JSON.parse(modalLibraryData.data.shop.modalLibrary.value)
       : getDefaultModalLibrary();
 
-    // Add brand settings to settings object and override plan from database
+    // Add brand settings to settings object
     if (shopRecord) {
       settings.brandPrimaryColor = shopRecord.brandPrimaryColor;
       settings.brandSecondaryColor = shopRecord.brandSecondaryColor;
       settings.brandAccentColor = shopRecord.brandAccentColor;
       settings.brandFont = shopRecord.brandFont;
-      
-      // Override plan with database value (more reliable than metafields)
-      if (shopRecord.plan) {
-        plan = { tier: shopRecord.plan, billingCycle: "monthly" };
-      }
     }
 
     // Load AI variants for Enterprise users
@@ -224,7 +223,7 @@ export async function action({ request }) {
 
     // Apply tier-based population size limits
     let populationSize = parseInt(formData.get("populationSize")) || 10;
-    const planTier = existingShop?.plan || 'pro'; // Default to pro if new shop
+    const planTier = existingShop?.plan || 'starter';
 
     if (planTier === 'pro') {
       // Pro tier: max 2 variants
@@ -373,6 +372,9 @@ export async function action({ request }) {
           currentSettings: metafield(namespace: "exit_intent", key: "settings") {
             value
           }
+          plan: metafield(namespace: "exit_intent", key: "plan") {
+            value
+          }
           modalLibrary: metafield(namespace: "exit_intent", key: "modal_library") {
             value
           }
@@ -386,6 +388,11 @@ export async function action({ request }) {
     const currentSettings = shopData.data.shop?.currentSettings?.value
       ? JSON.parse(shopData.data.shop.currentSettings.value)
       : null;
+
+    // Read existing plan metafield to preserve billing data (usage, subscriptionId, etc.)
+    const existingPlan = shopData.data.shop?.plan?.value
+      ? JSON.parse(shopData.data.shop.plan.value)
+      : { tier: "starter", billingCycle: "monthly" };
 
    const modalLibrary = shopData.data.shop?.modalLibrary?.value
       ? JSON.parse(shopData.data.shop.modalLibrary.value)
@@ -468,8 +475,8 @@ export async function action({ request }) {
           ownerId: shopId,
           settingsValue: JSON.stringify(settings),
           planValue: JSON.stringify({
-            tier: formData.get("tier") || "pro",
-            billingCycle: formData.get("billingCycle") || "monthly"
+            ...existingPlan,
+            tier: formData.get("tier") || existingPlan.tier || "starter"
           })
         }
       }
@@ -767,7 +774,7 @@ export default function Settings() {
         {/* Hidden input to always submit current mode regardless of active tab */}
         <input type="hidden" name="mode" value={optimizationMode} />
         {/* Hidden input to preserve current plan tier */}
-        <input type="hidden" name="tier" value={plan?.tier || "pro"} />
+        <input type="hidden" name="tier" value={plan?.tier || "starter"} />
 
         {/* Quick Setup Tab */}
       {activeTab === 'quick' && (

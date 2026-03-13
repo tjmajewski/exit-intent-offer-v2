@@ -2,6 +2,7 @@ import { useLoaderData, Link, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import { useState } from "react";
 import { checkAndResetUsage } from "../utils/featureGates";
+import { syncSubscriptionToPlan } from "../utils/billing.server";
 import AppLayout from "../components/AppLayout";
 import db from "../db.server";
 
@@ -222,8 +223,11 @@ export async function loader({ request }) {
       select: { id: true, populationSize: true, plan: true }
     });
 
-    // Override plan with database value (more reliable than metafields)
-    if (shopRecord?.plan) {
+    // Sync subscription state with DB (self-heals if billing callback missed)
+    const syncedTier = await syncSubscriptionToPlan(admin, session, db);
+    if (syncedTier) {
+      plan = { ...plan, tier: syncedTier };
+    } else if (shopRecord?.plan) {
       plan = { ...plan, tier: shopRecord.plan };
     }
 

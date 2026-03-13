@@ -1,5 +1,5 @@
 # Repsarq AI - Technical Architecture
-**Last Updated:** January 31, 2026
+**Last Updated:** March 13, 2026
 **Audience:** Developers
 
 ---
@@ -122,7 +122,8 @@ Even though Starter customers can't enable AI, their data helps train it:
 - AI determines **what**, **when**, and **whether** to show
 - Uses 9 core signals + basic high-value signals for decision-making
 - Simpler "should we show" logic than Enterprise
-- Exit intent as primary trigger
+- Trigger type is an evolved gene (`exit_intent`, `idle`, or `exit_intent_or_idle`)
+- Activates at add-to-cart time (watches for cart changes if cart is initially empty)
 
 **Pro AI Scoring:**
 ```
@@ -469,37 +470,57 @@ analyzeCartComposition(signals)
 ┌─────────────────────────────────────────────────────────────┐
 │                     PRO AI FLOW                             │
 ├─────────────────────────────────────────────────────────────┤
-│ 1. Collect signals (core + basic high-value)                │
-│ 2. Calculate intent score                                   │
-│ 3. SHOULD WE SHOW? (simple rules)                           │
+│ 1. ACTIVATION (page load or add-to-cart):                   │
+│    - If cart has items → activate immediately               │
+│    - If cart empty → watchForAddToCart() listens for:       │
+│      • cart:updated event                                   │
+│      • Add-to-cart button click                             │
+│      • Cart polling fallback (every 3s)                     │
+│    - Once cart has items → activate                         │
+│ 2. Pre-fetch AI decision (POST /api/ai-decision)           │
+│ 3. Collect signals (core + basic high-value)                │
+│ 4. Calculate intent score                                   │
+│ 5. SHOULD WE SHOW? (simple rules)                           │
 │    - Score < 20 + small cart → NO                           │
 │    - Score < 0 → NO                                         │
 │    - First visit + quick exit + low cart → NO               │
 │    - Score > 80 → YES, minimal offer                        │
-│ 4. Wait for exit intent trigger                             │
-│ 5. Calculate offer based on score + aggression              │
-│ 6. Show modal with offer                                    │
+│ 6. WHEN TO SHOW? (evolved trigger gene)                     │
+│    - exit_intent: mouseout on desktop                       │
+│    - idle: fires after X seconds of inactivity              │
+│    - exit_intent_or_idle: whichever fires first             │
+│    - Mobile fallback: idle 30s if exit_intent-only          │
+│ 7. Calculate offer based on score + aggression              │
+│ 8. Show modal with offer                                    │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
 │                   ENTERPRISE AI FLOW                        │
 ├─────────────────────────────────────────────────────────────┤
-│ 1. Collect ALL 16+ signals (including high-value)           │
-│ 2. CHECK HIGH-VALUE SIGNALS FIRST:                          │
+│ 1. ACTIVATION (page load or add-to-cart):                   │
+│    - Same watchForAddToCart() as Pro (see above)            │
+│    - Once cart has items → evaluate                         │
+│ 2. Collect ALL 16+ signals (including high-value)           │
+│ 3. Enrich signals server-side (POST /api/enrich-signals):   │
+│    - Purchase history, CLV, avg order value                 │
+│    - Cart composition, premium item detection               │
+│    - Temporal patterns (hour/day)                           │
+│    - Propensity score (0-100)                               │
+│ 4. CHECK HIGH-VALUE SIGNALS FIRST:                          │
 │    - Failed coupon? → IMMEDIATE targeted offer              │
 │    - Checkout exit? → IMMEDIATE recovery offer              │
 │    - Cart hesitation > 1? → Price-sensitive offer           │
 │    - Stale cart (60+ min)? → IMMEDIATE nudge                │
-│ 3. Calculate propensity score with full signal set          │
-│ 4. SHOULD WE SHOW? (advanced rules)                         │
+│ 5. Calculate propensity score with full signal set          │
+│ 6. SHOULD WE SHOW? (advanced rules)                         │
 │    - High propensity + high CLV → NO (they'll buy anyway)   │
 │    - Low propensity + small cart → NO                       │
-│ 5. WHEN TO SHOW? (dynamic timing)                           │
-│    - immediate: High-value signals detected                 │
-│    - exit_intent: Standard behavior                         │
-│    - delayed: Building engagement                           │
-│ 6. Calculate specialized offer for situation                │
-│ 7. Return decision with timing control                      │
+│ 7. WHEN TO SHOW? (dynamic timing)                           │
+│    - immediate: High-value signals detected (1s delay)      │
+│    - exit_intent: Wait for mouseout                         │
+│    - delayed: Wait X seconds                                │
+│ 8. Calculate specialized offer for situation                │
+│ 9. Return decision with timing control                      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -507,14 +528,16 @@ analyzeCartComposition(signals)
 
 | Capability | Pro | Enterprise |
 |------------|-----|------------|
+| Add-to-cart activation | ✓ watchForAddToCart | ✓ watchForAddToCart |
 | Decides whether to show | ✓ Simple rules | ✓ Advanced rules |
 | Decides what offer | ✓ Score-based | ✓ Situation-specific |
-| Decides when (timing) | Exit intent only | Immediate/exit/delayed |
+| Decides when (timing) | Evolved gene (exit/idle/both) | Immediate/exit/delayed |
 | Failed coupon detection | Scores it | Acts on it immediately |
 | Checkout recovery | Scores it | Special recovery offer |
 | Cart hesitation handling | Scores it | Price-sensitive offer |
 | Stale cart detection | Scores it | Proactive nudge |
 | High-CLV customer handling | ✗ | ✓ Skip to avoid waste |
+| Signal enrichment | ✗ | ✓ Server-side propensity scoring |
 
 **Enterprise-Only Helper Functions:**
 ```javascript
@@ -926,7 +949,13 @@ model Promotion {
 
 ### Impression Flow
 ```
-1. User exits page
+0. ACTIVATION:
+   - Page load: check cart → has items? → activate AI
+   - Page load: cart empty? → watchForAddToCart()
+     → listens for cart:updated, button clicks, polls /cart.js
+     → once items detected → activate AI
+   ↓
+1. AI activates (pre-fetches decision)
    ↓
 2. Frontend calls POST /api/ai-decision
    {

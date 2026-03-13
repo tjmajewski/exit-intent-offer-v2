@@ -19,7 +19,7 @@ export async function loader({ request }) {
     const data = await response.json();
     const plan = data.data.shop?.plan?.value
       ? JSON.parse(data.data.shop.plan.value)
-      : { tier: "pro" };
+      : { tier: "starter" };
 
     // Only Enterprise customers get promotional intelligence
     if (plan.tier !== 'enterprise') {
