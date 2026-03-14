@@ -1322,21 +1322,30 @@
         
         this.settings.discountCode = decision.code;
         this.settings.offerType = decision.type;
-        this.settings.redirectDestination = decision.variant.redirect || this.settings.redirectDestination;
+
+        // For no-discount offers, derive redirect from the CTA text so they always align.
+        // The redirect gene is independent and can conflict (e.g., "See What Pairs Well" + checkout).
+        if (decision.type === 'no-discount') {
+          const ctaLower = ctaText.toLowerCase();
+          if (ctaLower.includes('complete') || ctaLower.includes('checkout') || ctaLower.includes('order')) {
+            this.settings.redirectDestination = 'checkout';
+          } else if (ctaLower.includes('pairs') || ctaLower.includes('recommend')) {
+            this.settings.redirectDestination = 'recommendations';
+          } else {
+            this.settings.redirectDestination = 'shop';
+          }
+        } else {
+          this.settings.redirectDestination = decision.variant.redirect || this.settings.redirectDestination;
+        }
 
         console.log(`[Modal] Using variant copy, tracking variant ${this.currentVariantId}`);
 
-        // Revenue no-discount offers: primary goes to checkout, secondary keeps shopping
+        // Revenue no-discount offers: show secondary button with complementary action
         if (decision.type === 'no-discount' && decision.baseline && decision.baseline.includes('revenue')) {
           const secondaryBtn = modal.querySelector('#modal-secondary-cta');
-          const primaryBtn = modal.querySelector('#modal-primary-cta');
-          if (primaryBtn) {
-            primaryBtn.textContent = 'Complete My Order';
-          }
-          this.settings.redirectDestination = 'checkout';
           if (secondaryBtn) {
             secondaryBtn.style.display = 'block';
-            secondaryBtn.textContent = 'Keep Shopping';
+            secondaryBtn.textContent = this.settings.redirectDestination === 'checkout' ? 'Keep Shopping' : 'Complete My Order';
           }
         }
 
@@ -1446,7 +1455,98 @@
       // Track close
       this.trackEvent('closeout');
     }
-    
+
+    /**
+     * Navigate to a complementary product using Shopify's recommendations API.
+     * Uses intent=complementary which returns products frequently bought together
+     * (e.g., snowboard → helmet, not another snowboard). Falls back through:
+     * 1. Complementary products for each cart item (not already in cart)
+     * 2. Related products as fallback
+     * 3. Most expensive cart item's product page (theme shows recs)
+     * 4. /collections
+     */
+    async navigateToRecommendations() {
+      try {
+        const cart = await fetch('/cart.js').then(r => r.json());
+        if (!cart.items || cart.items.length === 0) {
+          window.location.href = '/collections';
+          return;
+        }
+
+        // Get product IDs already in cart so we don't recommend them
+        const cartProductIds = new Set(cart.items.map(item => item.product_id));
+
+        // Try complementary recommendations for each cart item (most expensive first)
+        const sortedItems = [...cart.items].sort((a, b) => b.price - a.price);
+
+        for (const item of sortedItems) {
+          const rec = await this.fetchRecommendation(item.product_id, 'complementary', cartProductIds);
+          if (rec) {
+            console.log(`[Recommendations] Complementary product found for "${item.title}": "${rec.title}"`);
+            window.location.href = rec.url;
+            return;
+          }
+        }
+
+        // Fallback: try related products (still filters out items already in cart)
+        for (const item of sortedItems) {
+          const rec = await this.fetchRecommendation(item.product_id, 'related', cartProductIds);
+          if (rec) {
+            console.log(`[Recommendations] Related product found for "${item.title}": "${rec.title}"`);
+            window.location.href = rec.url;
+            return;
+          }
+        }
+
+        // Final fallback: go to the most expensive item's product page
+        // (theme's built-in recommendation section will show something)
+        if (sortedItems[0].url) {
+          console.log(`[Recommendations] No API results, falling back to product page: ${sortedItems[0].url}`);
+          window.location.href = sortedItems[0].url;
+          return;
+        }
+      } catch (e) {
+        console.error('[Recommendations] Error:', e);
+      }
+      window.location.href = '/collections';
+    }
+
+    /**
+     * Fetch a single best recommendation from Shopify's product recommendations API.
+     * Returns the first product that isn't already in the customer's cart, or null.
+     */
+    async fetchRecommendation(productId, intent, cartProductIds) {
+      try {
+        const response = await fetch(
+          `/recommendations/products.json?product_id=${productId}&limit=4&intent=${intent}`
+        );
+        if (!response.ok) return null;
+
+        const data = await response.json();
+        if (!data.products || data.products.length === 0) return null;
+
+        // Return first product not already in cart
+        return data.products.find(p => !cartProductIds.has(p.id)) || null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    /**
+     * Navigate back to where the customer was shopping.
+     * Priority: previous product/collection page > /collections
+     */
+    navigateToShopping() {
+      const referrer = document.referrer;
+      const currentDomain = window.location.origin;
+      if (referrer && referrer.startsWith(currentDomain) &&
+          (referrer.includes('/products/') || referrer.includes('/collections/'))) {
+        window.location.href = referrer;
+      } else {
+        window.location.href = '/collections';
+      }
+    }
+
  async handleCTAClick() {
       // Track button click
       this.trackEvent('click');
@@ -1484,9 +1584,9 @@
       const offerType = this.settings.offerType || 'percentage';
       const destination = this.settings.redirectDestination || 'checkout';
 
-      // NO-DISCOUNT OFFER: Primary CTA always goes to checkout
+      // NO-DISCOUNT OFFER: Primary CTA redirect derived from CTA text
       if (offerType === 'no-discount') {
-        console.log('[No Discount] Primary CTA — redirecting to checkout');
+        console.log(`[No Discount] Primary CTA — redirecting to ${destination}`);
         try {
           await fetch('/cart/update.js', {
             method: 'POST',
@@ -1494,7 +1594,17 @@
             body: JSON.stringify({ attributes: { exit_intent: 'true' } })
           });
         } catch (e) { /* non-fatal */ }
-        window.location.href = '/checkout';
+
+        if (destination === 'checkout') {
+          window.location.href = '/checkout';
+        } else if (destination === 'recommendations') {
+          // "See What Pairs Well" — navigate to a product page so the theme's
+          // recommendation section ("You may also like") shows relevant cross-sells
+          await this.navigateToRecommendations();
+        } else {
+          // "Continue Shopping" — go back to where they were browsing
+          this.navigateToShopping();
+        }
         return;
       }
 
@@ -1639,17 +1749,15 @@
         return;
       }
 
-      // NO-DISCOUNT REVENUE: Secondary CTA keeps shopping
+      // NO-DISCOUNT REVENUE: Secondary CTA does the opposite of primary
       if (offerType === 'no-discount') {
-        const referrer = document.referrer;
-        const currentDomain = window.location.origin;
-        if (referrer && referrer.startsWith(currentDomain) &&
-            (referrer.includes('/products/') || referrer.includes('/collections/'))) {
-          window.location.href = referrer;
-        } else if (window.location.pathname !== '/collections') {
-          window.location.href = '/collections';
+        const primaryDestination = this.settings.redirectDestination || 'checkout';
+        if (primaryDestination === 'checkout') {
+          // Primary went to checkout, so secondary keeps shopping
+          this.navigateToShopping();
         } else {
-          window.location.href = '/';
+          // Primary kept shopping / showed recommendations, so secondary goes to checkout
+          window.location.href = '/checkout';
         }
         return;
       }
