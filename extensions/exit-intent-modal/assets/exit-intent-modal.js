@@ -1457,31 +1457,79 @@
     }
 
     /**
-     * Navigate to a product page for cross-sell recommendations.
-     * Fetches cart, picks the most expensive item, and navigates to its product page
-     * where the theme's "You may also like" / "Frequently bought together" section
-     * shows relevant pairings.
+     * Navigate to a complementary product using Shopify's recommendations API.
+     * Uses intent=complementary which returns products frequently bought together
+     * (e.g., snowboard → helmet, not another snowboard). Falls back through:
+     * 1. Complementary products for each cart item (not already in cart)
+     * 2. Related products as fallback
+     * 3. Most expensive cart item's product page (theme shows recs)
+     * 4. /collections
      */
     async navigateToRecommendations() {
       try {
         const cart = await fetch('/cart.js').then(r => r.json());
-        if (cart.items && cart.items.length > 0) {
-          // Pick the most expensive item — its product page will have the most relevant recommendations
-          const topItem = cart.items.reduce((best, item) =>
-            item.price > best.price ? item : best
-          , cart.items[0]);
+        if (!cart.items || cart.items.length === 0) {
+          window.location.href = '/collections';
+          return;
+        }
 
-          if (topItem.url) {
-            console.log(`[No Discount] Navigating to product recommendations: ${topItem.url}`);
-            window.location.href = topItem.url;
+        // Get product IDs already in cart so we don't recommend them
+        const cartProductIds = new Set(cart.items.map(item => item.product_id));
+
+        // Try complementary recommendations for each cart item (most expensive first)
+        const sortedItems = [...cart.items].sort((a, b) => b.price - a.price);
+
+        for (const item of sortedItems) {
+          const rec = await this.fetchRecommendation(item.product_id, 'complementary', cartProductIds);
+          if (rec) {
+            console.log(`[Recommendations] Complementary product found for "${item.title}": "${rec.title}"`);
+            window.location.href = rec.url;
             return;
           }
         }
+
+        // Fallback: try related products (still filters out items already in cart)
+        for (const item of sortedItems) {
+          const rec = await this.fetchRecommendation(item.product_id, 'related', cartProductIds);
+          if (rec) {
+            console.log(`[Recommendations] Related product found for "${item.title}": "${rec.title}"`);
+            window.location.href = rec.url;
+            return;
+          }
+        }
+
+        // Final fallback: go to the most expensive item's product page
+        // (theme's built-in recommendation section will show something)
+        if (sortedItems[0].url) {
+          console.log(`[Recommendations] No API results, falling back to product page: ${sortedItems[0].url}`);
+          window.location.href = sortedItems[0].url;
+          return;
+        }
       } catch (e) {
-        console.error('[No Discount] Error fetching cart for recommendations:', e);
+        console.error('[Recommendations] Error:', e);
       }
-      // Fallback to collections
       window.location.href = '/collections';
+    }
+
+    /**
+     * Fetch a single best recommendation from Shopify's product recommendations API.
+     * Returns the first product that isn't already in the customer's cart, or null.
+     */
+    async fetchRecommendation(productId, intent, cartProductIds) {
+      try {
+        const response = await fetch(
+          `/recommendations/products.json?product_id=${productId}&limit=4&intent=${intent}`
+        );
+        if (!response.ok) return null;
+
+        const data = await response.json();
+        if (!data.products || data.products.length === 0) return null;
+
+        // Return first product not already in cart
+        return data.products.find(p => !cartProductIds.has(p.id)) || null;
+      } catch (e) {
+        return null;
+      }
     }
 
     /**
