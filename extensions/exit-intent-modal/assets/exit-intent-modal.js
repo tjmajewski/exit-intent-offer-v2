@@ -1255,7 +1255,11 @@
           console.log('%c Variant ID:', 'color: #64748b', dec.variantId || 'N/A');
           console.log('%c Segment:', 'color: #64748b', dec.segment || 'default');
           if (dec.triggerType) {
-            console.log('%c Trigger:', 'color: #ec4899; font-weight: bold', `${dec.triggerType}${dec.triggerType !== 'exit_intent' ? ` (${dec.idleSeconds}s idle)` : ''}`);
+            const isMobile = isMobileDevice();
+            const effectiveTrigger = (isMobile && dec.triggerType === 'exit_intent')
+              ? `idle (mobile fallback, ${Math.min(dec.idleSeconds || 30, 15)}s)`
+              : `${dec.triggerType}${dec.triggerType !== 'exit_intent' ? ` (${dec.idleSeconds}s idle)` : ''}`;
+            console.log('%c Trigger:', 'color: #ec4899; font-weight: bold', effectiveTrigger);
           }
           console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
 
@@ -1354,14 +1358,37 @@
           const secondaryBtn = modal.querySelector('#modal-secondary-cta');
           const primaryBtn = modal.querySelector('#modal-primary-cta');
 
+          // Get current cart value for threshold messaging
+          const cartValue = await this.getCartValue();
+          const thresholdRemaining = Math.ceil((decision.threshold - cartValue) / 5) * 5;
+
+          // ENFORCE: Headline/subhead MUST mention the offer.
+          // AI or gene pool may produce generic copy (e.g., "Don't Leave Empty-Handed!")
+          // that says nothing about the threshold deal — override it.
+          const headlineEl = modal.querySelector('h2');
+          const bodyEl = modal.querySelector('p');
+          const headlineLC = (headlineEl?.textContent || '').toLowerCase();
+          const mentionsOffer = headlineLC.includes('off') || headlineLC.includes('save') || headlineLC.includes('away') || headlineLC.includes('unlock');
+          if (!mentionsOffer && headlineEl && bodyEl) {
+            if (cartValue >= decision.threshold) {
+              headlineEl.textContent = `You unlocked ${formatCurrency(decision.amount)} off!`;
+              bodyEl.textContent = `Your cart qualifies — this discount is applied at checkout.`;
+            } else {
+              headlineEl.textContent = `You're ${formatCurrency(thresholdRemaining)} away from ${formatCurrency(decision.amount)} off`;
+              bodyEl.textContent = `Add a little more to your cart and save on your entire order.`;
+            }
+            console.log('[Threshold] Overrode generic copy with threshold-aware messaging');
+          }
+
           if (secondaryBtn) {
             secondaryBtn.style.display = 'block';
             secondaryBtn.textContent = 'Checkout Now';
           }
 
-          // Update primary button text to be about shopping, not checkout
-          if (primaryBtn && primaryBtn.textContent.toLowerCase().includes('checkout')) {
-            primaryBtn.textContent = 'Keep Shopping';
+          // ENFORCE: Primary CTA must encourage shopping, never checkout.
+          // Always override — "Complete My Order", "Checkout Now", etc. all conflict.
+          if (primaryBtn) {
+            primaryBtn.textContent = cartValue >= decision.threshold ? 'Keep Shopping' : 'Add Items & Save';
           }
 
           // Store threshold offer for cart monitor
@@ -1396,8 +1423,15 @@
         this.settings.discountCode = decision.code;
         this.settings.offerType = 'fixed';
       } else if (decision.type === 'threshold') {
-        headline.textContent = `Special Offer for You!`;
-        body.textContent = `Spend ${formatCurrency(decision.threshold)} and get ${formatCurrency(decision.amount)} off your order!`;
+        const defaultCartValue = await this.getCartValue();
+        const defaultRemaining = Math.ceil((decision.threshold - defaultCartValue) / 5) * 5;
+        if (defaultCartValue >= decision.threshold) {
+          headline.textContent = `You unlocked ${formatCurrency(decision.amount)} off!`;
+          body.textContent = `Your cart qualifies — this discount is applied at checkout.`;
+        } else {
+          headline.textContent = `You're ${formatCurrency(defaultRemaining)} away from ${formatCurrency(decision.amount)} off`;
+          body.textContent = `Add a little more to your cart and save on your entire order.`;
+        }
         this.settings.discountCode = decision.code;
         this.settings.offerType = 'threshold';
 
@@ -1408,10 +1442,10 @@
           secondaryBtn.textContent = 'Checkout Now';
         }
 
-        // Update primary button text to encourage MORE shopping
+        // Primary CTA encourages shopping if below threshold, otherwise keep shopping
         const primaryBtn = modal.querySelector('#modal-primary-cta');
         if (primaryBtn) {
-          primaryBtn.textContent = 'Keep Shopping';
+          primaryBtn.textContent = defaultCartValue >= decision.threshold ? 'Keep Shopping' : 'Add Items & Save';
         }
 
         // 🆕 STORE THRESHOLD INFO FOR CART MONITORING
