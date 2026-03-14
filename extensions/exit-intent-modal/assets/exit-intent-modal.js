@@ -1326,17 +1326,13 @@
 
         console.log(`[Modal] Using variant copy, tracking variant ${this.currentVariantId}`);
 
-        // Revenue no-discount offers: primary goes to checkout, secondary keeps shopping
+        // Revenue no-discount offers: show secondary button with complementary action
         if (decision.type === 'no-discount' && decision.baseline && decision.baseline.includes('revenue')) {
           const secondaryBtn = modal.querySelector('#modal-secondary-cta');
-          const primaryBtn = modal.querySelector('#modal-primary-cta');
-          if (primaryBtn) {
-            primaryBtn.textContent = 'Complete My Order';
-          }
-          this.settings.redirectDestination = 'checkout';
           if (secondaryBtn) {
             secondaryBtn.style.display = 'block';
-            secondaryBtn.textContent = 'Keep Shopping';
+            // Secondary is the opposite of primary: if primary goes to checkout, secondary keeps shopping and vice versa
+            secondaryBtn.textContent = this.settings.redirectDestination === 'checkout' ? 'Keep Shopping' : 'Complete My Order';
           }
         }
 
@@ -1484,9 +1480,9 @@
       const offerType = this.settings.offerType || 'percentage';
       const destination = this.settings.redirectDestination || 'checkout';
 
-      // NO-DISCOUNT OFFER: Primary CTA always goes to checkout
+      // NO-DISCOUNT OFFER: Primary CTA uses variant's redirect destination
       if (offerType === 'no-discount') {
-        console.log('[No Discount] Primary CTA — redirecting to checkout');
+        console.log(`[No Discount] Primary CTA — redirecting to ${destination}`);
         try {
           await fetch('/cart/update.js', {
             method: 'POST',
@@ -1494,7 +1490,19 @@
             body: JSON.stringify({ attributes: { exit_intent: 'true' } })
           });
         } catch (e) { /* non-fatal */ }
-        window.location.href = '/checkout';
+        if (destination === 'checkout') {
+          window.location.href = '/checkout';
+        } else {
+          // Send to collections/previous page for "keep shopping" variants
+          const referrer = document.referrer;
+          const currentDomain = window.location.origin;
+          if (referrer && referrer.startsWith(currentDomain) &&
+              (referrer.includes('/products/') || referrer.includes('/collections/'))) {
+            window.location.href = referrer;
+          } else {
+            window.location.href = '/collections';
+          }
+        }
         return;
       }
 
@@ -1639,17 +1647,21 @@
         return;
       }
 
-      // NO-DISCOUNT REVENUE: Secondary CTA keeps shopping
+      // NO-DISCOUNT REVENUE: Secondary CTA does the opposite of primary
       if (offerType === 'no-discount') {
-        const referrer = document.referrer;
-        const currentDomain = window.location.origin;
-        if (referrer && referrer.startsWith(currentDomain) &&
-            (referrer.includes('/products/') || referrer.includes('/collections/'))) {
-          window.location.href = referrer;
-        } else if (window.location.pathname !== '/collections') {
-          window.location.href = '/collections';
+        if (destination === 'checkout') {
+          // Primary went to checkout, so secondary keeps shopping
+          const referrer = document.referrer;
+          const currentDomain = window.location.origin;
+          if (referrer && referrer.startsWith(currentDomain) &&
+              (referrer.includes('/products/') || referrer.includes('/collections/'))) {
+            window.location.href = referrer;
+          } else {
+            window.location.href = '/collections';
+          }
         } else {
-          window.location.href = '/';
+          // Primary kept shopping, so secondary goes to checkout
+          window.location.href = '/checkout';
         }
         return;
       }
