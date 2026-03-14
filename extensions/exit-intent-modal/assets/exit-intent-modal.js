@@ -640,7 +640,7 @@
       `;
       
       const body = document.createElement('p');
-      body.textContent = this.settings.modalBody || 'Complete your purchase now and get free shipping on your order!';
+      body.textContent = this.settings.modalBody || 'Your items are waiting for you. Complete your purchase now!';
       body.style.cssText = `
         margin: 0 0 ${isMobile ? '24px' : '32px'} 0;
         font-size: ${isMobile ? '16px' : '17px'};
@@ -893,8 +893,23 @@
         return;
       }
 
-      // Pre-fetch AI decision (includes triggerType and idleSeconds genes)
-      await this.getAIDecision();
+      const isMobile = isMobileDevice();
+
+      // Register exit intent listener IMMEDIATELY on desktop (before API call)
+      // so there's zero delay if the user tries to leave during the fetch
+      if (!isMobile) {
+        document.addEventListener('mouseout', (e) => {
+          if (e.clientY < 0 && !this.modalShown) {
+            console.log('[Pro AI] Exit intent triggered (mouse left viewport)');
+            this.showModal();
+          }
+        });
+        console.log('[Pro AI] Exit intent trigger registered (pre-fetch)');
+      }
+
+      // Start AI decision fetch as a shared promise so showModal() can await it
+      this.aiDecisionPromise = this.getAIDecision();
+      await this.aiDecisionPromise;
 
       if (this.aiDecidedNoIntervention) {
         console.log('[Pro AI] AI decided no intervention — no triggers set');
@@ -904,33 +919,20 @@
       // Read the AI's trigger strategy from the pre-fetched decision
       const triggerType = this.preloadedDecision?.triggerType || 'exit_intent';
       const idleSeconds = this.preloadedDecision?.idleSeconds || 30;
-      const isMobile = isMobileDevice();
 
       console.log(`[Pro AI] Trigger strategy: ${triggerType}, idle: ${idleSeconds}s, mobile: ${isMobile}`);
-
-      // Set up exit intent listener (desktop only — no mouseout on mobile)
-      if (triggerType === 'exit_intent' || triggerType === 'exit_intent_or_idle') {
-        if (!isMobile) {
-          document.addEventListener('mouseout', (e) => {
-            if (e.clientY < 0 && !this.modalShown) {
-              console.log('[Pro AI] Exit intent triggered (mouse left viewport)');
-              this.showModal();
-            }
-          });
-          console.log('[Pro AI] Exit intent trigger enabled');
-        }
-      }
 
       // Set up idle timer (works on BOTH desktop and mobile)
       if (triggerType === 'idle' || triggerType === 'exit_intent_or_idle') {
         this.setupIdleTrigger(idleSeconds);
       }
 
-      // On mobile with exit_intent-only strategy, fall back to idle
+      // On mobile with exit_intent-only strategy, fall back to idle with capped delay
       // (exit intent can't fire on mobile — mouseout doesn't happen)
       if (isMobile && triggerType === 'exit_intent') {
-        console.log('[Pro AI] Mobile + exit_intent only → adding idle fallback (30s)');
-        this.setupIdleTrigger(30);
+        const mobileIdle = Math.min(idleSeconds, 15);
+        console.log(`[Pro AI] Mobile + exit_intent only → adding idle fallback (${mobileIdle}s)`);
+        this.setupIdleTrigger(mobileIdle);
       }
 
       // Only use cart value trigger if explicitly configured
@@ -1096,10 +1098,17 @@
       else if (this.preloadedDecision) {
         console.log('[Pro AI] Using pre-loaded AI decision');
       }
+      // If AI decision is already in-flight (from setupAITriggers), await it
+      else if (this.aiDecisionPromise) {
+        await this.aiDecisionPromise;
+        if (this.aiDecidedNoIntervention) {
+          console.log('[AI Mode] No intervention — modal will not be shown');
+          return;
+        }
+      }
       // Otherwise if AI mode is enabled, get AI decision on demand
       else if (this.settings.mode === 'ai') {
         await this.getAIDecision();
-        // If AI decided no intervention is optimal, abort showing the modal
         if (this.aiDecidedNoIntervention) {
           console.log('[AI Mode] No intervention — modal will not be shown');
           return;
@@ -1313,9 +1322,24 @@
         
         this.settings.discountCode = decision.code;
         this.settings.offerType = decision.type;
-        
-        console.log(`[Modal] Enterprise - Using variant ${decision.variant.id} for segment ${decision.variant.segment}`);
-        
+        this.settings.redirectDestination = decision.variant.redirect || this.settings.redirectDestination;
+
+        console.log(`[Modal] Using variant copy, tracking variant ${this.currentVariantId}`);
+
+        // Revenue no-discount offers: primary goes to checkout, secondary keeps shopping
+        if (decision.type === 'no-discount' && decision.baseline && decision.baseline.includes('revenue')) {
+          const secondaryBtn = modal.querySelector('#modal-secondary-cta');
+          const primaryBtn = modal.querySelector('#modal-primary-cta');
+          if (primaryBtn) {
+            primaryBtn.textContent = 'Complete My Order';
+          }
+          this.settings.redirectDestination = 'checkout';
+          if (secondaryBtn) {
+            secondaryBtn.style.display = 'block';
+            secondaryBtn.textContent = 'Keep Shopping';
+          }
+        }
+
         // Show secondary button for threshold offers
         if (decision.type === 'threshold') {
           const secondaryBtn = modal.querySelector('#modal-secondary-cta');
@@ -1460,6 +1484,20 @@
       const offerType = this.settings.offerType || 'percentage';
       const destination = this.settings.redirectDestination || 'checkout';
 
+      // NO-DISCOUNT OFFER: Primary CTA always goes to checkout
+      if (offerType === 'no-discount') {
+        console.log('[No Discount] Primary CTA — redirecting to checkout');
+        try {
+          await fetch('/cart/update.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attributes: { exit_intent: 'true' } })
+          });
+        } catch (e) { /* non-fatal */ }
+        window.location.href = '/checkout';
+        return;
+      }
+
       // THRESHOLD OFFER: Primary CTA should encourage MORE shopping
       if (offerType === 'threshold') {
         console.log('[Threshold Offer] Primary CTA - redirecting to continue shopping');
@@ -1598,9 +1636,25 @@
           : '/checkout';
         console.log('[Threshold Offer] Secondary CTA - redirecting to checkout' + (discountCode ? ' with discount: ' + discountCode : ''));
         window.location.href = redirectUrl;
+        return;
       }
 
-      // For non-threshold offers, just close the modal (current behavior)
+      // NO-DISCOUNT REVENUE: Secondary CTA keeps shopping
+      if (offerType === 'no-discount') {
+        const referrer = document.referrer;
+        const currentDomain = window.location.origin;
+        if (referrer && referrer.startsWith(currentDomain) &&
+            (referrer.includes('/products/') || referrer.includes('/collections/'))) {
+          window.location.href = referrer;
+        } else if (window.location.pathname !== '/collections') {
+          window.location.href = '/collections';
+        } else {
+          window.location.href = '/';
+        }
+        return;
+      }
+
+      // For other offers, just close the modal (current behavior)
     }
     
     async trackEvent(eventType) {
