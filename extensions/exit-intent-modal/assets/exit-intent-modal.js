@@ -1322,7 +1322,21 @@
         
         this.settings.discountCode = decision.code;
         this.settings.offerType = decision.type;
-        this.settings.redirectDestination = decision.variant.redirect || this.settings.redirectDestination;
+
+        // For no-discount offers, derive redirect from the CTA text so they always align.
+        // The redirect gene is independent and can conflict (e.g., "See What Pairs Well" + checkout).
+        if (decision.type === 'no-discount') {
+          const ctaLower = ctaText.toLowerCase();
+          if (ctaLower.includes('complete') || ctaLower.includes('checkout') || ctaLower.includes('order')) {
+            this.settings.redirectDestination = 'checkout';
+          } else if (ctaLower.includes('pairs') || ctaLower.includes('recommend')) {
+            this.settings.redirectDestination = 'recommendations';
+          } else {
+            this.settings.redirectDestination = 'shop';
+          }
+        } else {
+          this.settings.redirectDestination = decision.variant.redirect || this.settings.redirectDestination;
+        }
 
         console.log(`[Modal] Using variant copy, tracking variant ${this.currentVariantId}`);
 
@@ -1331,7 +1345,6 @@
           const secondaryBtn = modal.querySelector('#modal-secondary-cta');
           if (secondaryBtn) {
             secondaryBtn.style.display = 'block';
-            // Secondary is the opposite of primary: if primary goes to checkout, secondary keeps shopping and vice versa
             secondaryBtn.textContent = this.settings.redirectDestination === 'checkout' ? 'Keep Shopping' : 'Complete My Order';
           }
         }
@@ -1442,7 +1455,50 @@
       // Track close
       this.trackEvent('closeout');
     }
-    
+
+    /**
+     * Navigate to a product page for cross-sell recommendations.
+     * Fetches cart, picks the most expensive item, and navigates to its product page
+     * where the theme's "You may also like" / "Frequently bought together" section
+     * shows relevant pairings.
+     */
+    async navigateToRecommendations() {
+      try {
+        const cart = await fetch('/cart.js').then(r => r.json());
+        if (cart.items && cart.items.length > 0) {
+          // Pick the most expensive item — its product page will have the most relevant recommendations
+          const topItem = cart.items.reduce((best, item) =>
+            item.price > best.price ? item : best
+          , cart.items[0]);
+
+          if (topItem.url) {
+            console.log(`[No Discount] Navigating to product recommendations: ${topItem.url}`);
+            window.location.href = topItem.url;
+            return;
+          }
+        }
+      } catch (e) {
+        console.error('[No Discount] Error fetching cart for recommendations:', e);
+      }
+      // Fallback to collections
+      window.location.href = '/collections';
+    }
+
+    /**
+     * Navigate back to where the customer was shopping.
+     * Priority: previous product/collection page > /collections
+     */
+    navigateToShopping() {
+      const referrer = document.referrer;
+      const currentDomain = window.location.origin;
+      if (referrer && referrer.startsWith(currentDomain) &&
+          (referrer.includes('/products/') || referrer.includes('/collections/'))) {
+        window.location.href = referrer;
+      } else {
+        window.location.href = '/collections';
+      }
+    }
+
  async handleCTAClick() {
       // Track button click
       this.trackEvent('click');
@@ -1480,7 +1536,7 @@
       const offerType = this.settings.offerType || 'percentage';
       const destination = this.settings.redirectDestination || 'checkout';
 
-      // NO-DISCOUNT OFFER: Primary CTA uses variant's redirect destination
+      // NO-DISCOUNT OFFER: Primary CTA redirect derived from CTA text
       if (offerType === 'no-discount') {
         console.log(`[No Discount] Primary CTA — redirecting to ${destination}`);
         try {
@@ -1490,18 +1546,16 @@
             body: JSON.stringify({ attributes: { exit_intent: 'true' } })
           });
         } catch (e) { /* non-fatal */ }
+
         if (destination === 'checkout') {
           window.location.href = '/checkout';
+        } else if (destination === 'recommendations') {
+          // "See What Pairs Well" — navigate to a product page so the theme's
+          // recommendation section ("You may also like") shows relevant cross-sells
+          await this.navigateToRecommendations();
         } else {
-          // Send to collections/previous page for "keep shopping" variants
-          const referrer = document.referrer;
-          const currentDomain = window.location.origin;
-          if (referrer && referrer.startsWith(currentDomain) &&
-              (referrer.includes('/products/') || referrer.includes('/collections/'))) {
-            window.location.href = referrer;
-          } else {
-            window.location.href = '/collections';
-          }
+          // "Continue Shopping" — go back to where they were browsing
+          this.navigateToShopping();
         }
         return;
       }
@@ -1649,18 +1703,12 @@
 
       // NO-DISCOUNT REVENUE: Secondary CTA does the opposite of primary
       if (offerType === 'no-discount') {
-        if (destination === 'checkout') {
+        const primaryDestination = this.settings.redirectDestination || 'checkout';
+        if (primaryDestination === 'checkout') {
           // Primary went to checkout, so secondary keeps shopping
-          const referrer = document.referrer;
-          const currentDomain = window.location.origin;
-          if (referrer && referrer.startsWith(currentDomain) &&
-              (referrer.includes('/products/') || referrer.includes('/collections/'))) {
-            window.location.href = referrer;
-          } else {
-            window.location.href = '/collections';
-          }
+          this.navigateToShopping();
         } else {
-          // Primary kept shopping, so secondary goes to checkout
+          // Primary kept shopping / showed recommendations, so secondary goes to checkout
           window.location.href = '/checkout';
         }
         return;
