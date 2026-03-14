@@ -107,15 +107,20 @@
     
     getActiveOffer() {
       try {
+        // Only activate if the modal was actually shown this session
+        if (!sessionStorage.getItem('exitIntentShown')) {
+          return null;
+        }
+
         const stored = sessionStorage.getItem('exitIntentThresholdOffer');
         if (!stored) return null;
 
         const offer = JSON.parse(stored);
-        
+
         // Check if offer is still valid (24 hours)
         const age = Date.now() - offer.timestamp;
         const maxAge = 24 * 60 * 60 * 1000; // 24 hours
-        
+
         if (age > maxAge) {
           console.log('[Cart Monitor] Offer expired, removing');
           sessionStorage.removeItem('exitIntentThresholdOffer');
@@ -282,134 +287,6 @@
       if (banner) {
         banner.remove();
         console.log('[Cart Monitor] Qualification banner removed');
-      }
-    }
-
-    showProgressBanner(offer, currentTotal) {
-      // Check if banner already exists
-      let banner = document.getElementById('exit-intent-progress-banner');
-      
-      const remaining = offer.threshold - currentTotal;
-      
-      if (!banner) {
-        // Create banner
-        banner = document.createElement('div');
-        banner.id = 'exit-intent-progress-banner';
-        banner.style.cssText = `
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-          color: white;
-          padding: 16px;
-          text-align: center;
-          font-size: 16px;
-          font-weight: 600;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-          z-index: 9998;
-          animation: slideDown 0.5s ease-out;
-        `;
-        
-        banner.innerHTML = `
-          <style>
-            @keyframes slideDown {
-              from { transform: translateY(-100%); }
-              to { transform: translateY(0); }
-            }
-            #exit-intent-progress-banner .close-banner {
-              position: absolute;
-              right: 20px;
-              top: 50%;
-              transform: translateY(-50%);
-              background: rgba(255,255,255,0.2);
-              border: none;
-              color: white;
-              width: 30px;
-              height: 30px;
-              border-radius: 50%;
-              cursor: pointer;
-              font-size: 20px;
-              line-height: 1;
-              transition: background 0.2s;
-            }
-            #exit-intent-progress-banner .close-banner:hover {
-              background: rgba(255,255,255,0.3);
-            }
-          </style>
-          <span> Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off!</span>
-          <button class="close-banner" onclick="this.parentElement.remove()">×</button>
-        `;
-        
-        document.body.appendChild(banner);
-        console.log('[Cart Monitor] Progress banner displayed');
-      } else {
-        // Update existing banner
-        banner.querySelector('span').textContent = ` Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off!`;
-      }
-    }
-
-    showProgressBanner(offer, currentTotal) {
-      // Check if banner already exists
-      let banner = document.getElementById('exit-intent-progress-banner');
-      
-      const remaining = offer.threshold - currentTotal;
-      
-      if (!banner) {
-        // Create banner
-        banner = document.createElement('div');
-        banner.id = 'exit-intent-progress-banner';
-        banner.style.cssText = `
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-          color: white;
-          padding: 16px;
-          text-align: center;
-          font-size: 16px;
-          font-weight: 600;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-          z-index: 9998;
-          animation: slideDown 0.5s ease-out;
-        `;
-        
-        banner.innerHTML = `
-          <style>
-            @keyframes slideDown {
-              from { transform: translateY(-100%); }
-              to { transform: translateY(0); }
-            }
-            #exit-intent-progress-banner .close-banner {
-              position: absolute;
-              right: 20px;
-              top: 50%;
-              transform: translateY(-50%);
-              background: rgba(255,255,255,0.2);
-              border: none;
-              color: white;
-              width: 30px;
-              height: 30px;
-              border-radius: 50%;
-              cursor: pointer;
-              font-size: 20px;
-              line-height: 1;
-              transition: background 0.2s;
-            }
-            #exit-intent-progress-banner .close-banner:hover {
-              background: rgba(255,255,255,0.3);
-            }
-          </style>
-          <span> Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off!</span>
-          <button class="close-banner" onclick="this.parentElement.remove()">×</button>
-        `;
-        
-        document.body.appendChild(banner);
-        console.log('[Cart Monitor] Progress banner displayed');
-      } else {
-        // Update existing banner
-        banner.querySelector('span').textContent = ` Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off!`;
       }
     }
 
