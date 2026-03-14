@@ -64,15 +64,15 @@ export const genePools = {
     ],
 
     subheads: [
-      'Free shipping and easy returns on every order',
-      'Most customers add one more item before checkout',
-      'Everything ships fast — add something you\'ll love'
+      'You\'ve got great taste — see what goes with it',
+      'Make the most of your order before you go',
+      'Browse a few more favorites before checkout'
     ],
 
     subheadsWithSocialProof: [
-      '{{social_proof_count}} orders shipped this week — yours is next',
+      '{{social_proof_count}} customers added more items to their order',
       '{{social_proof_count}} happy customers can\'t be wrong',
-      '{{rating}}-star quality, guaranteed'
+      '{{rating}}-star quality across the board'
     ],
 
     ctas: [
@@ -144,14 +144,14 @@ export const genePools = {
     ],
 
     subheads: [
-      'Free returns — zero risk to try it',
+      'Your cart is saved and ready for you',
       'Checkout takes less than 60 seconds',
       'Your items are selling fast — grab yours'
     ],
 
     subheadsWithSocialProof: [
       '{{social_proof_count}} five-star reviews and counting',
-      '{{social_proof_count}} orders shipped this week — hassle-free',
+      '{{social_proof_count}} happy orders this week — yours is next',
       '{{rating}} stars — see why customers keep coming back'
     ],
 
