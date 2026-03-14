@@ -62,7 +62,7 @@ export default function SettingsPreview({
     : (modalHeadline || "Wait! Don't leave yet ");
   const displayBody = isAIMode 
     ? "The AI will test different headlines, body text, and CTAs to find what converts best for your audience."
-    : (modalBody || "Complete your purchase now and get free shipping on your order!");
+    : (modalBody || "Your items are waiting for you. Complete your purchase now!");
   const displayCTA = isAIMode 
     ? "AI-Generated CTA" 
     : (ctaButton || "Complete My Order");

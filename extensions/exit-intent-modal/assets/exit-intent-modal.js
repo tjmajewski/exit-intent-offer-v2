@@ -640,7 +640,7 @@
       `;
       
       const body = document.createElement('p');
-      body.textContent = this.settings.modalBody || 'Complete your purchase now and get free shipping on your order!';
+      body.textContent = this.settings.modalBody || 'Your items are waiting for you. Complete your purchase now!';
       body.style.cssText = `
         margin: 0 0 ${isMobile ? '24px' : '32px'} 0;
         font-size: ${isMobile ? '16px' : '17px'};
