@@ -193,9 +193,9 @@ export const genePools = {
     ],
 
     subheadsWithSocialProof: [
-      '{{social_proof_count}} orders delivered this week',
+      '{{social_proof_count}} orders placed this week',
       '{{social_proof_count}} customers grabbed theirs — will you?',
-      '{{rating}}-star quality, ready to ship'
+      '{{rating}}-star quality — still in your cart'
     ],
 
     ctas: [
