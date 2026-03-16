@@ -146,7 +146,7 @@ export default function AppLayout({ children, plan }) {
       icon: "variants",
       badge: plan?.tier !== "enterprise" ? "ENTERPRISE" : null
     },
-    ...(plan?.tier !== "enterprise" ? [{ path: "/app/upgrade", label: "Upgrade", icon: "upgrade", highlight: true }] : [])
+    { path: "/app/upgrade", label: plan?.tier === "enterprise" ? "Manage Plan" : "Upgrade", icon: "upgrade", highlight: plan?.tier !== "enterprise" }
   ];
 
   return (
