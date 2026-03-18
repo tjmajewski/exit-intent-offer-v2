@@ -4,6 +4,7 @@ import { useState } from "react";
 import { checkAndResetUsage } from "../utils/featureGates";
 import { syncSubscriptionToPlan } from "../utils/billing.server";
 import AppLayout from "../components/AppLayout";
+import OnboardingChecklist from "../components/OnboardingChecklist";
 import db from "../db.server";
 
 export async function loader({ request }) {
@@ -26,27 +27,34 @@ export async function loader({ request }) {
           modalLibrary: metafield(namespace: "exit_intent", key: "modal_library") {
             value
           }
+          onboarding: metafield(namespace: "exit_intent", key: "onboarding") {
+            value
+          }
         }
       }
     `);
 
     const data = await response.json();
-    
-    const settings = data.data.shop?.settings?.value 
-      ? JSON.parse(data.data.shop.settings.value) 
-      : null;
-      
-    const status = data.data.shop?.status?.value 
-      ? JSON.parse(data.data.shop.status.value) 
-      : { enabled: false };
-      
-    let plan = data.data.shop?.plan?.value 
-      ? JSON.parse(data.data.shop.plan.value) 
+
+    const settings = data.data.shop?.settings?.value
+      ? JSON.parse(data.data.shop.settings.value)
       : null;
 
-    const modalLibrary = data.data.shop?.modalLibrary?.value 
-      ? JSON.parse(data.data.shop.modalLibrary.value) 
+    const status = data.data.shop?.status?.value
+      ? JSON.parse(data.data.shop.status.value)
+      : { enabled: false };
+
+    let plan = data.data.shop?.plan?.value
+      ? JSON.parse(data.data.shop.plan.value)
       : null;
+
+    const modalLibrary = data.data.shop?.modalLibrary?.value
+      ? JSON.parse(data.data.shop.modalLibrary.value)
+      : null;
+
+    const onboarding = data.data.shop?.onboarding?.value
+      ? JSON.parse(data.data.shop.onboarding.value)
+      : { themeEditorClicked: false, dismissed: false };
 
     // If no plan exists, create default plan
     if (!plan) {
@@ -297,6 +305,7 @@ export async function loader({ request }) {
       promoWarning,
       activePromotions,
       modalLibrary,
+      onboarding,
       populationSize: shopRecord?.populationSize || 0,
       shopDomain: session.shop
     };
@@ -566,6 +575,50 @@ export async function action({ request }) {
       }
     }
 
+    // Handle onboarding actions (theme editor clicked, dismiss checklist)
+    if (actionType === "onboardingAction") {
+      const field = formData.get("onboardingField");
+      const value = formData.get("onboardingValue") === "true";
+
+      // Read current onboarding state
+      const onboardingResponse = await admin.graphql(`
+        query {
+          shop {
+            onboarding: metafield(namespace: "exit_intent", key: "onboarding") {
+              value
+            }
+          }
+        }
+      `);
+      const onboardingData = await onboardingResponse.json();
+      const currentOnboarding = onboardingData.data.shop?.onboarding?.value
+        ? JSON.parse(onboardingData.data.shop.onboarding.value)
+        : { themeEditorClicked: false, dismissed: false };
+
+      currentOnboarding[field] = value;
+
+      await admin.graphql(`
+        mutation UpdateOnboarding($ownerId: ID!, $value: String!) {
+          metafieldsSet(metafields: [{
+            ownerId: $ownerId
+            namespace: "exit_intent"
+            key: "onboarding"
+            value: $value
+            type: "json"
+          }]) {
+            metafields { id }
+          }
+        }
+      `, {
+        variables: {
+          ownerId: shopId,
+          value: JSON.stringify(currentOnboarding)
+        }
+      });
+
+      return { success: true };
+    }
+
     // Handle status toggle
     if (actionType === "toggleStatus") {
       const enabled = formData.get("enabled") === "true";
@@ -689,7 +742,7 @@ function InfoTooltip({ content }) {
 
 
 export default function Dashboard() {
-  const { settings, status, plan, analytics, promoWarning, activePromotions, modalLibrary, populationSize, shopDomain } = useLoaderData();
+  const { settings, status, plan, analytics, promoWarning, activePromotions, modalLibrary, onboarding, populationSize, shopDomain } = useLoaderData();
   const fetcher = useFetcher();
   const [isEnabled, setIsEnabled] = useState(status.enabled);
 
@@ -708,13 +761,24 @@ export default function Dashboard() {
 
   const handlePlanSwitch = (newTier) => {
     fetcher.submit(
-      { 
+      {
         actionType: "switchPlan",
-        tier: newTier 
+        tier: newTier
       },
       { method: "post" }
     );
   };
+
+  // Compute onboarding step completion
+  const tier = plan?.tier || "starter";
+  const completedSteps = {
+    themeExtension: onboarding?.themeEditorClicked || false,
+    configureOffer: modalLibrary?.modals?.length > 0,
+    configureAI: settings?.mode === "ai",
+    enableModal: isEnabled,
+    firstImpression: (analytics?.last30Days?.impressions || 0) > 0 || (analytics?.lifetime?.impressions || 0) > 0,
+  };
+  const showOnboarding = !onboarding?.dismissed;
 
   const getStrategyLabel = (strategy) => {
     switch(strategy) {
@@ -868,110 +932,14 @@ export default function Dashboard() {
         </div>
       )}
       
-      {/* Setup Instructions - App Block / Theme Extension */}
-      {!settings && (
-        <div style={{
-          background: "linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)",
-          border: "1px solid #93c5fd",
-          borderRadius: 12,
-          padding: 24,
-          marginBottom: 32
-        }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-            <div style={{ fontSize: 32, flexShrink: 0 }}>🧩</div>
-            <div style={{ flex: 1 }}>
-              <h3 style={{ margin: "0 0 4px 0", fontSize: 18, fontWeight: 700, color: "#1e40af" }}>
-                Step 1: Install the App Block in Your Theme
-              </h3>
-              <p style={{ margin: "0 0 16px 0", fontSize: 14, color: "#1e3a8a", lineHeight: 1.6 }}>
-                Before the exit-intent modal can appear on your storefront, you need to add the
-                Resparq app block to your theme. Follow the steps below:
-              </p>
-              <ol style={{ margin: "0 0 16px 0", paddingLeft: 20, color: "#1d4ed8", fontSize: 14, lineHeight: 2 }}>
-                <li>Click <strong>Open Theme Editor</strong> below to go directly to your theme customiser.</li>
-                <li>In the left-hand panel click <strong>App embeds</strong> (the puzzle-piece icon).</li>
-                <li>Find <strong>Resparq – Exit Intent Modal</strong> and toggle it <strong>ON</strong>.</li>
-                <li>Click <strong>Save</strong> in the theme editor.</li>
-                <li>Return here and configure your modal in <strong>Settings</strong>.</li>
-              </ol>
-              <a
-                href={`https://${shopDomain}/admin/themes/current/editor?context=apps`}
-                target="_top"
-                rel="noreferrer"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  background: "#2563eb",
-                  color: "white",
-                  padding: "10px 20px",
-                  borderRadius: 8,
-                  textDecoration: "none",
-                  fontWeight: 600,
-                  fontSize: 14
-                }}
-              >
-                Open Theme Editor →
-              </a>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Persistent Setup Guide (always visible, collapsible) */}
-      {settings && (
-        <details style={{ marginBottom: 24 }}>
-          <summary style={{
-            cursor: "pointer",
-            fontSize: 14,
-            color: "#6b7280",
-            userSelect: "none",
-            listStyle: "none",
-            display: "flex",
-            alignItems: "center",
-            gap: 6
-          }}>
-            <span>▶</span>
-            <span>Theme setup guide — how to install the app block &amp; app embed</span>
-          </summary>
-          <div style={{
-            marginTop: 12,
-            background: "#f9fafb",
-            border: "1px solid #e5e7eb",
-            borderRadius: 10,
-            padding: 20,
-            fontSize: 14,
-            color: "#374151",
-            lineHeight: 1.7
-          }}>
-            <p style={{ margin: "0 0 10px 0", fontWeight: 600 }}>
-              To activate the exit-intent modal on your storefront:
-            </p>
-            <ol style={{ margin: "0 0 14px 0", paddingLeft: 20 }}>
-              <li>Open your <strong>Theme Editor</strong> using the button below.</li>
-              <li>Select <strong>App embeds</strong> from the left sidebar (puzzle-piece icon).</li>
-              <li>Enable <strong>Resparq – Exit Intent Modal</strong> and click <strong>Save</strong>.</li>
-              <li>Optionally, add the <strong>Exit Intent Modal app block</strong> to a specific template
-                  if you want it only on certain pages.</li>
-            </ol>
-            <a
-              href={`https://${shopDomain}/admin/themes/current/editor?context=apps`}
-              target="_top"
-              rel="noreferrer"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                color: "#2563eb",
-                fontWeight: 600,
-                textDecoration: "none",
-                fontSize: 14
-              }}
-            >
-              Open Theme Editor →
-            </a>
-          </div>
-        </details>
+      {/* Onboarding Checklist */}
+      {showOnboarding && (
+        <OnboardingChecklist
+          completedSteps={completedSteps}
+          planTier={tier}
+          shopDomain={shopDomain}
+          onToggle={handleToggle}
+        />
       )}
 
       {/* Header with Toggle */}
