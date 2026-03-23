@@ -37,6 +37,8 @@ model Shop {
   mode              String   @default("manual")
   plan              String   @default("starter")
   subscriptionId    String?  // Shopify subscription ID for usage billing
+  promoCode         String?  // Promo code used (e.g. "EARLYACCESS")
+  promoAppliedAt    DateTime?
   aiGoal            String   @default("revenue")
   aggression        Int      @default(5)
   budgetEnabled     Boolean  @default(false)
