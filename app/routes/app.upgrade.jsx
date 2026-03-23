@@ -1,4 +1,4 @@
-import { useLoaderData, useActionData, Link, Form, useNavigation } from "react-router";
+import { useLoaderData, useActionData, Link, Form, useNavigation, useNavigate, useSearchParams } from "react-router";
 import { useState, useEffect } from "react";
 import { authenticate } from "../shopify.server";
 import { PLAN_FEATURES } from "../utils/featureGates";
@@ -8,7 +8,7 @@ import db from "../db.server";
 
 export async function loader({ request }) {
   const { admin, session } = await authenticate.admin(request);
-  const { getActiveSubscription, tierFromSubscriptionName, billingCycleFromSubscription } = await import("../utils/billing.server");
+  const { getActiveSubscription, tierFromSubscriptionName, billingCycleFromSubscription, validatePromoCode } = await import("../utils/billing.server");
 
   try {
     const response = await admin.graphql(`
@@ -28,19 +28,53 @@ export async function loader({ request }) {
 
     // Sync subscription state with DB (self-heals if billing callback missed)
     const syncedTier = await syncSubscriptionToPlan(admin, session, db);
+    let shopRecord = null;
     if (syncedTier) {
       plan = { ...plan, tier: syncedTier };
     } else {
       try {
-        const shopRecord = await db.shop.findUnique({
+        shopRecord = await db.shop.findUnique({
           where: { shopifyDomain: session.shop },
-          select: { plan: true }
+          select: { plan: true, promoCode: true }
         });
         if (shopRecord?.plan) {
           plan = { ...plan, tier: shopRecord.plan };
         }
       } catch (e) {
         console.error("Error fetching shop plan from DB:", e);
+      }
+    }
+
+    // Check for promo code: URL param takes priority, then DB
+    const url = new URL(request.url);
+    const promoParam = url.searchParams.get("promo");
+    let promoCode = null;
+    let promoConfig = null;
+
+    if (promoParam) {
+      promoConfig = validatePromoCode(promoParam);
+      if (promoConfig) {
+        promoCode = promoParam.toUpperCase().trim();
+      }
+    }
+
+    // If no URL promo, check if shop has a stored promo code
+    if (!promoCode) {
+      if (!shopRecord) {
+        try {
+          shopRecord = await db.shop.findUnique({
+            where: { shopifyDomain: session.shop },
+            select: { promoCode: true }
+          });
+        } catch (e) {
+          // ignore
+        }
+      }
+      if (shopRecord?.promoCode) {
+        promoConfig = validatePromoCode(shopRecord.promoCode);
+        if (promoConfig) {
+          promoCode = shopRecord.promoCode;
+        }
       }
     }
 
@@ -71,27 +105,38 @@ export async function loader({ request }) {
       trialDaysRemaining = 14;
     }
 
-    return { plan, activeSubscription, activeTier, currentBillingCycle, trialDaysRemaining };
+    return { plan, activeSubscription, activeTier, currentBillingCycle, trialDaysRemaining, promoCode, promoConfig };
   } catch (error) {
     console.error("Error loading upgrade page:", error);
-    return { plan: { tier: "starter" }, activeSubscription: null, activeTier: null, currentBillingCycle: null, trialDaysRemaining: 14 };
+    return { plan: { tier: "starter" }, activeSubscription: null, activeTier: null, currentBillingCycle: null, trialDaysRemaining: 14, promoCode: null, promoConfig: null };
   }
 }
 
 export async function action({ request }) {
   const { admin, session } = await authenticate.admin(request);
-  const { createSubscription, getActiveSubscription } = await import("../utils/billing.server");
+  const { createSubscription, getActiveSubscription, validatePromoCode } = await import("../utils/billing.server");
   const formData = await request.formData();
   const tier = formData.get("tier");
   const billingCycle = formData.get("billingCycle");
+  const promoCodeInput = formData.get("promoCode");
 
   if (!["starter", "pro", "enterprise"].includes(tier)) {
     return { error: "Invalid plan tier" };
   }
 
+  // Validate promo code server-side — only applies to the target tier
+  let validatedPromo = null;
+  if (promoCodeInput) {
+    const promo = validatePromoCode(promoCodeInput);
+    if (promo && tier === promo.targetTier) {
+      validatedPromo = promo;
+    }
+  }
+
   try {
     const appUrl = process.env.SHOPIFY_APP_URL || "";
-    const returnUrl = `${appUrl}/app/billing-callback?tier=${tier}&cycle=${billingCycle}`;
+    const promoParam = validatedPromo ? `&promo=${promoCodeInput.toUpperCase().trim()}` : "";
+    const returnUrl = `${appUrl}/app/billing-callback?tier=${tier}&cycle=${billingCycle}${promoParam}`;
 
     // test: true for development, set to false for production
     const isTest = process.env.NODE_ENV !== "production";
@@ -134,7 +179,8 @@ export async function action({ request }) {
       billingCycle,
       returnUrl,
       isTest,
-      trialDays
+      trialDays,
+      validatedPromo
     );
 
     return { confirmationUrl };
@@ -145,12 +191,16 @@ export async function action({ request }) {
 }
 
 export default function Upgrade() {
-  const { plan, activeSubscription, activeTier, currentBillingCycle, trialDaysRemaining } = useLoaderData();
+  const { plan, activeSubscription, activeTier, currentBillingCycle, trialDaysRemaining, promoCode, promoConfig } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const submittingTier = isSubmitting ? navigation.formData?.get("tier") : null;
   const [billingCycle, setBillingCycle] = useState(currentBillingCycle || "monthly");
+  const [searchParams] = useSearchParams();
+  const urlHasInvalidPromo = searchParams.has("promo") && !promoCode;
+  const [promoInput, setPromoInput] = useState("");
+  const navigate = useNavigate();
 
   // Redirect to Shopify billing approval page (must break out of iframe)
   useEffect(() => {
@@ -229,6 +279,25 @@ export default function Upgrade() {
         background: "linear-gradient(180deg, #0f0a1f 0%, #1a0f2e 50%, #0f0a1f 100%)",
         minHeight: "100vh"
       }}>
+        {/* Promo Banner */}
+        {promoCode && promoConfig && (
+          <div style={{
+            background: "linear-gradient(135deg, rgba(236,72,153,0.15) 0%, rgba(139,92,246,0.15) 100%)",
+            border: "1px solid rgba(236,72,153,0.4)",
+            borderRadius: 12,
+            padding: "16px 24px",
+            marginBottom: 16,
+            textAlign: "center"
+          }}>
+            <div style={{ color: "#ec4899", fontWeight: 700, fontSize: 18, marginBottom: 4 }}>
+              You've been invited! Get the Pro plan at ${promoConfig.monthlyPrice}/mo
+            </div>
+            <div style={{ color: "#f9a8d4", fontSize: 14 }}>
+              Exclusive early access pricing — locked in for as long as you're subscribed.
+            </div>
+          </div>
+        )}
+
         {/* Free Trial Banner */}
         <div style={{
           background: "linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(5,150,105,0.15) 100%)",
@@ -245,6 +314,64 @@ export default function Upgrade() {
             Try any plan free for 14 days — no charge until your trial ends. Cancel anytime.
           </div>
         </div>
+
+        {/* Promo Code Input — shown when no promo is active */}
+        {!promoCode && (
+          <div style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 32
+          }}>
+            <span style={{ color: "#9ca3af", fontSize: 14 }}>Have a promo code?</span>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <input
+                type="text"
+                value={promoInput}
+                onChange={(e) => setPromoInput(e.target.value)}
+                placeholder="Enter code"
+                style={{
+                  padding: "8px 12px",
+                  background: "rgba(30, 20, 50, 0.8)",
+                  border: urlHasInvalidPromo ? "1px solid #ef4444" : "1px solid rgba(139, 92, 246, 0.3)",
+                  borderRadius: 8,
+                  color: "#fff",
+                  fontSize: 14,
+                  width: 160,
+                  outline: "none"
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && promoInput.trim()) {
+                    navigate(`/app/upgrade?promo=${encodeURIComponent(promoInput.trim())}`);
+                  }
+                }}
+              />
+              {urlHasInvalidPromo && (
+                <span style={{ color: "#ef4444", fontSize: 12 }}>Invalid promo code</span>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                if (promoInput.trim()) {
+                  navigate(`/app/upgrade?promo=${encodeURIComponent(promoInput.trim())}`);
+                }
+              }}
+              style={{
+                padding: "8px 16px",
+                background: "linear-gradient(90deg, #8B5CF6 0%, #a78bfa 100%)",
+                color: "white",
+                border: "none",
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer"
+              }}
+            >
+              Apply
+            </button>
+          </div>
+        )}
 
         {/* Error Banner */}
         {actionData?.error && (
@@ -333,8 +460,12 @@ export default function Upgrade() {
             // matching both tier AND billing cycle
             const isCurrent = activeTier === planOption.tier &&
               currentBillingCycle === billingCycle;
-            const isPopular = planOption.popular;
-            const displayPrice = billingCycle === "monthly" ? planOption.monthlyPrice : planOption.annualPrice;
+            const isPromoTarget = promoCode && promoConfig && planOption.tier === promoConfig.targetTier;
+            const isPopular = planOption.popular && !isPromoTarget;
+            const displayPrice = isPromoTarget
+              ? (billingCycle === "monthly" ? promoConfig.monthlyPrice : promoConfig.annualPrice)
+              : (billingCycle === "monthly" ? planOption.monthlyPrice : planOption.annualPrice);
+            const originalPrice = billingCycle === "monthly" ? planOption.monthlyPrice : planOption.annualPrice;
 
             return (
               <div
@@ -350,14 +481,16 @@ export default function Upgrade() {
                     : "inset 0 1px 0 rgba(255,255,255,0.05)"
                 }}
               >
-                {/* Popular Badge */}
-                {isPopular && (
+                {/* Badge */}
+                {(isPopular || isPromoTarget) && (
                   <div style={{
                     position: "absolute",
                     top: -14,
                     left: "50%",
                     transform: "translateX(-50%)",
-                    background: "linear-gradient(90deg, #8B5CF6 0%, #a78bfa 100%)",
+                    background: isPromoTarget
+                      ? "linear-gradient(90deg, #ec4899 0%, #f472b6 100%)"
+                      : "linear-gradient(90deg, #8B5CF6 0%, #a78bfa 100%)",
                     color: "white",
                     padding: "6px 20px",
                     borderRadius: 20,
@@ -366,7 +499,7 @@ export default function Upgrade() {
                     textTransform: "uppercase",
                     letterSpacing: "0.5px"
                   }}>
-                    Most Popular
+                    {isPromoTarget ? "Special Offer" : "Most Popular"}
                   </div>
                 )}
 
@@ -390,6 +523,17 @@ export default function Upgrade() {
 
                   {/* Price */}
                   <div style={{ marginBottom: 8 }}>
+                    {isPromoTarget && (
+                      <span style={{
+                        fontSize: 24,
+                        fontWeight: "bold",
+                        color: "#6b7280",
+                        textDecoration: "line-through",
+                        marginRight: 8
+                      }}>
+                        ${originalPrice.toFixed(2).replace(/\.00$/, '')}
+                      </span>
+                    )}
                     <span style={{
                       fontSize: 48,
                       fontWeight: "bold",
@@ -414,7 +558,10 @@ export default function Upgrade() {
                       fontSize: 13,
                       color: "#6b7280"
                     }}>
-                      ${planOption.annualTotal.toLocaleString()}/year (save 15%)
+                      {isPromoTarget
+                        ? `$${promoConfig.annualTotal.toLocaleString()}/year`
+                        : `$${planOption.annualTotal.toLocaleString()}/year (save 15%)`
+                      }
                     </div>
                   )}
                 </div>
@@ -440,6 +587,7 @@ export default function Upgrade() {
                   <Form method="post">
                     <input type="hidden" name="tier" value={planOption.tier} />
                     <input type="hidden" name="billingCycle" value={billingCycle} />
+                    {promoCode && <input type="hidden" name="promoCode" value={promoCode} />}
                     <button
                       type="submit"
                       disabled={isSubmitting}

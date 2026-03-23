@@ -1,6 +1,20 @@
 // Shopify App Billing - Subscription management via Shopify Billing API
 // Uses appSubscriptionCreate mutation for recurring charges
 
+const PROMO_CONFIGS = {
+  EARLYACCESS: {
+    targetTier: "pro",
+    monthlyPrice: 29,
+    annualPrice: 24.65,
+    annualTotal: 296,
+  },
+};
+
+export function validatePromoCode(code) {
+  if (!code) return null;
+  return PROMO_CONFIGS[code.toUpperCase().trim()] || null;
+}
+
 const PLAN_CONFIGS = {
   starter: {
     name: "Starter",
@@ -37,14 +51,16 @@ export function getPlanConfig(tier) {
  * @param {boolean} isTest - Whether this is a test charge (use true in development)
  * @param {number} trialDays - Number of trial days (0 if trial already used)
  */
-export async function createSubscription(admin, tier, billingCycle, returnUrl, isTest = true, trialDays = 0) {
+export async function createSubscription(admin, tier, billingCycle, returnUrl, isTest = true, trialDays = 0, priceOverride = null) {
   const config = PLAN_CONFIGS[tier];
   if (!config) {
     throw new Error(`Invalid plan tier: ${tier}`);
   }
 
   const isAnnual = billingCycle === "annual";
-  const price = isAnnual ? config.annualPrice : config.monthlyPrice;
+  const price = priceOverride
+    ? (isAnnual ? priceOverride.annualPrice : priceOverride.monthlyPrice)
+    : (isAnnual ? config.annualPrice : config.monthlyPrice);
   const interval = isAnnual ? "ANNUAL" : "EVERY_30_DAYS";
   const planName = `Resparq ${config.name} (${isAnnual ? "Annual" : "Monthly"})`;
 

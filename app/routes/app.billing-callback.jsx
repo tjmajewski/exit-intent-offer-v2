@@ -1,11 +1,11 @@
 import { redirect } from "react-router";
 import { authenticate } from "../shopify.server";
-import { getActiveSubscription, tierFromSubscriptionName } from "../utils/billing.server";
+import { getActiveSubscription, tierFromSubscriptionName, validatePromoCode } from "../utils/billing.server";
 
 /**
  * Billing callback route.
  * Shopify redirects here after a merchant approves or declines a subscription.
- * URL format: /app/billing-callback?tier=pro&cycle=monthly&charge_id=xxx
+ * URL format: /app/billing-callback?tier=pro&cycle=monthly&promo=EARLYACCESS&charge_id=xxx
  */
 export async function loader({ request }) {
   const { admin, session } = await authenticate.admin(request);
@@ -13,6 +13,9 @@ export async function loader({ request }) {
 
   const url = new URL(request.url);
   const requestedTier = url.searchParams.get("tier");
+  const promoParam = url.searchParams.get("promo");
+  const validatedPromo = promoParam ? validatePromoCode(promoParam) : null;
+  const promoCode = validatedPromo ? promoParam.toUpperCase().trim() : null;
 
   // Check if subscription is now active (with retry for race condition)
   let subscription = await getActiveSubscription(admin);
@@ -26,8 +29,8 @@ export async function loader({ request }) {
 
   if (subscription && subscription.status === "ACTIVE") {
     const tier = requestedTier || tierFromSubscriptionName(subscription.name);
-    await updatePlanData(admin, session, db, tier, subscription);
-    console.log(`[Billing] Plan updated to ${tier} for ${session.shop}`);
+    await updatePlanData(admin, session, db, tier, subscription, promoCode);
+    console.log(`[Billing] Plan updated to ${tier} for ${session.shop}${promoCode ? ` (promo: ${promoCode})` : ""}`);
   } else if (requestedTier) {
     // Subscription not yet active but we have the tier from our own returnUrl.
     // Update the DB immediately so features are accessible. The metafield will
@@ -35,8 +38,15 @@ export async function loader({ request }) {
     console.log(`[Billing] Subscription not yet active for ${session.shop}, updating DB to ${requestedTier} from callback params`);
     await db.shop.upsert({
       where: { shopifyDomain: session.shop },
-      update: { plan: requestedTier },
-      create: { shopifyDomain: session.shop, plan: requestedTier },
+      update: {
+        plan: requestedTier,
+        ...(promoCode ? { promoCode, promoAppliedAt: new Date() } : {}),
+      },
+      create: {
+        shopifyDomain: session.shop,
+        plan: requestedTier,
+        ...(promoCode ? { promoCode, promoAppliedAt: new Date() } : {}),
+      },
     });
   } else {
     console.log(`[Billing] Subscription not active for ${session.shop}, status: ${subscription?.status || "none"}`);
@@ -48,7 +58,7 @@ export async function loader({ request }) {
 /**
  * Update both metafield and DB with the confirmed plan data.
  */
-async function updatePlanData(admin, session, db, tier, subscription) {
+async function updatePlanData(admin, session, db, tier, subscription, promoCode = null) {
   const shopResponse = await admin.graphql(`
     query {
       shop {
@@ -69,6 +79,9 @@ async function updatePlanData(admin, session, db, tier, subscription) {
   currentPlan.tier = tier;
   currentPlan.status = "active";
   currentPlan.subscriptionId = subscription.id;
+  if (promoCode) {
+    currentPlan.promoCode = promoCode;
+  }
 
   // Ensure usage object exists with resetDate (prevents "Resets Unknown")
   if (!currentPlan.usage) {
@@ -119,12 +132,14 @@ async function updatePlanData(admin, session, db, tier, subscription) {
     where: { shopifyDomain: session.shop },
     update: {
       plan: tier,
-      subscriptionId: subscription.id
+      subscriptionId: subscription.id,
+      ...(promoCode ? { promoCode, promoAppliedAt: new Date() } : {}),
     },
     create: {
       shopifyDomain: session.shop,
       plan: tier,
       subscriptionId: subscription.id,
+      ...(promoCode ? { promoCode, promoAppliedAt: new Date() } : {}),
     },
   });
 }
