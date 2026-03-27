@@ -49,6 +49,7 @@ The AI uses **propensity scoring** (0-100) to predict purchase likelihood:
 | **Core Signals** | visitFrequency, cartValue, itemCount, deviceType, accountStatus, trafficSource, timeOnSite, pageViews, hasAbandonedBefore | Pro + Enterprise |
 | **Engagement Signals** | scrollDepth, productDwellTime, cartHesitation, abandonmentCount | Enterprise |
 | **High-Value Signals** | failedCouponAttempt, exitPage, cartAgeMinutes | Enterprise |
+| **Time-Based Signals** | localHour (customer's local time of day, 0-23) | Pro + Enterprise |
 | **Server-Enriched** | purchaseHistoryCount, customerLifetimeValue, averageOrderValue, cartComposition | Pro + Enterprise |
 
 ### Signal Scoring Logic
@@ -87,6 +88,18 @@ The AI uses **propensity scoring** (0-100) to predict purchase likelihood:
 | `cartAgeMinutes > 60` | +10 | Cart sitting = needs a push |
 | `productDwellTime > 60s` | +15 | Serious consideration |
 
+**TIME-BASED signals (customer's local time of day):**
+
+| Signal | Impact | Reasoning |
+|--------|--------|-----------|
+| `localHour` 22-4 (late night) | +20 | Deliberate, impulsive shopping — high intent |
+| `localHour` 5-7 (early morning) | +10 | Intentional pre-day shopping |
+| `localHour` 11-12 (lunch break) | +5 | Quick decision window, moderate intent |
+| `localHour` 14-16 (mid-afternoon) | -5 | Casual browsing, lowest conversion window |
+| `localHour` 8-10, 17-21 (neutral) | 0 | No adjustment |
+
+Enterprise AI also uses time of day to adjust discount sizing: late-night shoppers get ~20% smaller discounts (impulse buyers need less incentive), while afternoon browsers get ~15% larger discounts (casual browsers need more nudging). Low-propensity late-night shoppers are given a longer leash (show offers down to $20 carts vs $30 at other times).
+
 ---
 
 ## Tier Comparison
@@ -120,7 +133,7 @@ Even though Starter customers can't enable AI, their data helps train it:
 ### Pro Tier
 - **Basic AI** with core signals
 - AI determines **what**, **when**, and **whether** to show
-- Uses 9 core signals + basic high-value signals for decision-making
+- Uses 10 core signals (including time-of-day) + basic high-value signals for decision-making
 - Simpler "should we show" logic than Enterprise
 - Trigger type is an evolved gene (`exit_intent`, `idle`, or `exit_intent_or_idle`)
 - Activates at add-to-cart time (watches for cart changes if cart is initially empty)
@@ -136,10 +149,14 @@ score = 0
 + Failed coupon attempt: +35
 + Previous abandoner: +25
 + Checkout/cart exit: +15 to +30
++ Late night shopping (10pm-5am): +20
++ Early morning (5am-8am): +10
++ Lunch break (11am-1pm): +5
 - First-time visitor: -10
 - Quick exit (timeOnSite < 30s): -15
 - Mobile device: -5
 - Low cart value (<$30): -10
+- Afternoon browsing (2pm-5pm): -5
 ```
 
 **Pro AI "Should We Show" Logic:**
@@ -154,7 +171,7 @@ score = 0
 ### Enterprise Tier
 - **Advanced AI** with all signals including high-value indicators
 - AI determines **what**, **when**, and **whether** to show
-- Access to 16+ signals including failed coupon detection
+- Access to 17+ signals including failed coupon detection and time-of-day
 - Dynamic timing control (immediate, exit_intent, delayed)
 - Smart "should we show" logic
 - Promotional intelligence integration
