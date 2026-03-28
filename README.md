@@ -12,7 +12,7 @@ Repsarq is a Shopify app that uses AI-powered exit intent modals and cart recove
 
 ### Key Features
 
-- **AI Decision Engine** - Analyzes 13+ customer signals to personalize offers
+- **AI Decision Engine** - Analyzes 17+ customer signals to personalize offers
 - **Evolutionary Variant System** - Genetic algorithm automatically improves modal performance
 - **Promotional Intelligence** - Detects site-wide promos and adjusts strategy
 - **Cart Monitoring** - Real-time cart value tracking with threshold offers
@@ -328,9 +328,10 @@ npm run deploy           # Deploy app and extension
 
 ### 2. AI Decision Engine
 
-Analyzes 13 customer signals:
+Analyzes 17 customer signals:
 - Visit frequency (first-time, returning, frequent)
 - Cart value ($0-$1000+)
+- Item count
 - Device type (mobile, tablet, desktop)
 - Account status (guest, logged-in)
 - Traffic source (direct, organic, paid, social, email)
@@ -338,10 +339,13 @@ Analyzes 13 customer signals:
 - Page views
 - Scroll depth
 - Abandonment history
-- Cart hesitation (time in cart without checkout)
+- Cart hesitation (add/remove behavior indicating price sensitivity)
 - Product dwell time
-- Add-to-cart velocity
-- Exit velocity
+- Failed coupon attempt (tried an invalid discount code)
+- Exit page context (cart, checkout, or product page)
+- Cart age (how long items have been sitting)
+- Abandonment count (lifetime abandonments)
+- Local time of day (customer's timezone — late night, morning, afternoon, etc.)
 
 **Output:** Offer type, discount amount, urgency level, copy tone
 

@@ -199,6 +199,29 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
   if (signals.cartAgeMinutes > 30) score += 10;
   if (signals.cartAgeMinutes > 60) score += 5;
 
+  // TIME-OF-DAY SIGNALS (customer's local time)
+  // Late-night shoppers (10pm-5am) show higher purchase intent — they're
+  // browsing deliberately, not casually. Also more impulsive / emotional.
+  // Early morning (5am-8am) and lunch (11am-1pm) are moderate intent windows.
+  // Mid-afternoon (2pm-5pm) is casual browsing — lowest conversion rates.
+  const hour = signals.localHour;
+  if (hour !== undefined && hour !== null) {
+    if (hour >= 22 || hour < 5) {
+      // Late night: high intent, impulsive, willing to treat themselves
+      score += 20;
+    } else if (hour >= 5 && hour < 8) {
+      // Early morning: intentional shopping before the day starts
+      score += 10;
+    } else if (hour >= 11 && hour < 13) {
+      // Lunch break: quick decision window, moderate intent
+      score += 5;
+    } else if (hour >= 14 && hour < 17) {
+      // Mid-afternoon: casual browsing, lowest conversion window
+      score -= 5;
+    }
+    // 8am-11am and 5pm-10pm are neutral — no adjustment
+  }
+
   console.log(` [Pro AI] Intent score: ${score}`);
 
   // =============================================================================
@@ -403,8 +426,16 @@ export function enterpriseAI(signals, aggression, aiGoal = 'revenue') {
     failedCouponAttempt: signals.failedCouponAttempt,
     exitPage: signals.exitPage,
     cartAgeMinutes: signals.cartAgeMinutes,
-    cartHesitation: signals.cartHesitation
+    cartHesitation: signals.cartHesitation,
+    localHour: signals.localHour
   });
+
+  // TIME-OF-DAY INTELLIGENCE
+  // Late-night shoppers convert at higher rates with smaller discounts (impulse buying).
+  // Afternoon browsers need bigger incentives (casual browsing, more comparison shopping).
+  const hour = signals.localHour;
+  const isLateNight = hour !== undefined && (hour >= 22 || hour < 5);
+  const isAfternoon = hour !== undefined && (hour >= 14 && hour < 17);
 
   // =============================================================================
   // ENTERPRISE-EXCLUSIVE: SHOULD WE SHOW AT ALL?
@@ -414,8 +445,8 @@ export function enterpriseAI(signals, aggression, aiGoal = 'revenue') {
   // =============================================================================
 
   // NO INTERVENTION: Very high propensity + loyal customer = would buy anyway
-  // Discount here would only reduce profit
-  if (propensity > 85 && signals.purchaseHistoryCount > 2) {
+  // Discount here would only reduce profit (unless it's afternoon casual browsing — they may leave)
+  if (propensity > 85 && signals.purchaseHistoryCount > 2 && !isAfternoon) {
     console.log(' [Enterprise AI] Very high propensity + loyal customer - no intervention (protecting margin)');
     return null;
   }
@@ -542,20 +573,32 @@ export function enterpriseAI(signals, aggression, aiGoal = 'revenue') {
       };
     }
     
-    // Conversion mode: Percentage offer
-    const offer = 10 + (aggression * 1.5);
+    // Conversion mode: Percentage offer — adjust by time of day
+    let offer = 10 + (aggression * 1.5);
+    let timeReasoning = '';
+    if (isLateNight) {
+      offer *= 0.8; // Late-night impulse buyers need less incentive
+      timeReasoning = ' (reduced for late-night impulse window)';
+    } else if (isAfternoon) {
+      offer *= 1.15; // Afternoon browsers need more nudging
+      timeReasoning = ' (increased for afternoon casual browsing)';
+    }
     return {
       type: 'percentage',
       amount: Math.round(offer),
       timing: 'exit_intent',
       confidence: 'medium',
-      reasoning: 'Medium propensity - standard offer'
+      reasoning: `Medium propensity - standard offer${timeReasoning}`
     };
   }
   
   // Low propensity (<40) = aggressive offer or don't waste discount
-  if (cartValue < 30) {
+  // Late-night shoppers with low propensity still convert better than daytime ones
+  if (cartValue < 30 && !isLateNight) {
     return null; // Don't show - unlikely to convert
+  }
+  if (cartValue < 20) {
+    return null; // Even late-night can't save a very low cart
   }
   
   // Revenue mode: Big threshold offer to capture high-intent browsers

@@ -206,6 +206,10 @@
       // 15. Cart age in minutes (how long items have been in cart)
       const cartAgeMinutes = this.getCartAge();
 
+      // 16. Local time of day (customer's browser time)
+      const now = new Date();
+      const localHour = now.getHours(); // 0-23 in customer's timezone
+
       return {
         visitFrequency: visits,
         cartValue,
@@ -223,7 +227,9 @@
         // New high-value signals
         failedCouponAttempt,
         exitPage,
-        cartAgeMinutes
+        cartAgeMinutes,
+        // Time-based signal
+        localHour
       };
     }
     

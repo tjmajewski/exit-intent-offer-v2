@@ -159,6 +159,7 @@ export async function action({ request }) {
           visitFrequency: signals.visitFrequency,
           timeOnSite: signals.timeOnSite,
           deviceType: signals.deviceType,
+          localHour: signals.localHour,
         }
       };
 
