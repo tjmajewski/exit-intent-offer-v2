@@ -25,32 +25,26 @@ The **Evolution System** is Repsarq's Enterprise-tier feature that automatically
 A **gene** is a heritable trait that defines modal appearance or behavior.
 
 **Content Genes:**
-- `headline` - Main modal headline text
-- `subhead` - Supporting text below headline
-- `ctaText` - Call-to-action button text
+- `headline` - Main modal headline text (drawn from regular, social proof, or urgency pools)
+- `subhead` - Supporting text below headline (drawn from regular, social proof, or urgency pools)
+- `cta` - Call-to-action button text
 - `offerAmount` - Discount percentage or fixed amount
-- `urgencyLevel` - Urgency messaging intensity (`low`, `medium`, `high`)
-
-**Visual Genes:**
-- `colorScheme` - Color palette (`purple`, `green`, `blue`, `gradient`)
-- `layout` - Modal positioning (`centered`, `bottom`, `side`)
-- `buttonStyle` - CTA button styling (`rounded`, `sharp`, `pill`)
-- `animation` - Entry animation (`fade`, `slide`, `bounce`)
-- `typography` - Font styling (`modern`, `classic`, `bold`)
+- `redirect` - Where the CTA sends the customer (`cart`, `checkout`)
+- `urgency` - Expiry presentation mode (`true`, `false`). When `true`, headline/subhead use urgency-specific copy that communicates the 24h code expiry. When `false`, a subtle countdown timer is shown instead.
+- `triggerType` - How the modal fires (`exit_intent`, `idle`, `exit_intent_or_idle`)
+- `idleSeconds` - Idle timer duration (`15`, `30`, `45`, `60`)
 
 **Example Variant Genome:**
 ```javascript
 {
-  headline: "Wait! Don't miss out on 15% off",
-  subhead: "Complete your order in the next 10 minutes",
-  ctaText: "Claim My Discount",
+  headline: "Your 15% discount expires in 24 hours",
+  subhead: "Your personal discount code is only valid for 24 hours",
+  cta: "Claim 15% Off",
   offerAmount: 15,
-  urgencyLevel: "high",
-  colorScheme: "purple",
-  layout: "centered",
-  buttonStyle: "rounded",
-  animation: "fade",
-  typography: "modern"
+  redirect: "checkout",
+  urgency: true,
+  triggerType: "exit_intent_or_idle",
+  idleSeconds: 30
 }
 ```
 
@@ -232,17 +226,24 @@ function generateRandomGenes(baseline) {
 
   const offerAmounts = baseline.includes('no_discount') ? [0] : [5, 10, 15, 20];
 
+  // Select urgency first — it determines which headline/subhead pool to use
+  const urgencyValue = pool.urgency[Math.floor(Math.random() * pool.urgency.length)];
+
+  // Urgency variants use dedicated expiry-aware copy
+  const headlinePool = urgencyValue && pool.headlinesWithUrgency
+    ? pool.headlinesWithUrgency : pool.headlines;
+  const subheadPool = urgencyValue && pool.subheadsWithUrgency
+    ? pool.subheadsWithUrgency : pool.subheads;
+
   return {
     headline: headlinePool[Math.floor(Math.random() * headlinePool.length)],
     subhead: subheadPool[Math.floor(Math.random() * subheadPool.length)],
-    ctaText: ctaPool[Math.floor(Math.random() * ctaPool.length)],
-    offerAmount: offerAmounts[Math.floor(Math.random() * offerAmounts.length)],
-    urgencyLevel: ['low', 'medium', 'high'][Math.floor(Math.random() * 3)],
-    colorScheme: ['purple', 'green', 'blue', 'gradient'][Math.floor(Math.random() * 4)],
-    layout: ['centered', 'bottom'][Math.floor(Math.random() * 2)],
-    buttonStyle: ['rounded', 'sharp', 'pill'][Math.floor(Math.random() * 3)],
-    animation: ['fade', 'slide', 'bounce'][Math.floor(Math.random() * 3)],
-    typography: ['modern', 'classic', 'bold'][Math.floor(Math.random() * 3)]
+    cta: pool.ctas[Math.floor(Math.random() * pool.ctas.length)],
+    offerAmount: pool.offerAmounts[Math.floor(Math.random() * pool.offerAmounts.length)],
+    redirect: pool.redirects[Math.floor(Math.random() * pool.redirects.length)],
+    urgency: urgencyValue,
+    triggerType: pool.triggerTypes[Math.floor(Math.random() * pool.triggerTypes.length)],
+    idleSeconds: pool.idleSeconds[Math.floor(Math.random() * pool.idleSeconds.length)]
   };
 }
 ```
@@ -335,7 +336,7 @@ function calculateFitness(variant, baseline) {
 ```javascript
 // app/utils/variant-engine.js
 
-function crossover(parentA, parentB) {
+function crossover(parentA, parentB, crossoverRate = 0.7) {
   const offspring = {
     generation: Math.max(parentA.generation, parentB.generation) + 1,
     parentIds: `${parentA.id},${parentB.id}`,
@@ -345,12 +346,14 @@ function crossover(parentA, parentB) {
 
   // Randomly inherit genes from either parent
   const genes = [
-    'headline', 'subhead', 'ctaText', 'offerAmount', 'urgencyLevel',
-    'colorScheme', 'layout', 'buttonStyle', 'animation', 'typography'
+    'headline', 'subhead', 'cta', 'offerAmount',
+    'redirect', 'urgency', 'triggerType', 'idleSeconds'
   ];
 
   for (const gene of genes) {
-    offspring[gene] = Math.random() < 0.5 ? parentA[gene] : parentB[gene];
+    offspring[gene] = Math.random() < crossoverRate
+      ? (Math.random() < 0.5 ? parentA[gene] : parentB[gene])
+      : parentA[gene];
   }
 
   return offspring;
@@ -364,32 +367,21 @@ function crossover(parentA, parentB) {
 ```javascript
 // app/utils/variant-engine.js
 
-function mutate(variant, mutationRate = 0.1) {
-  const genes = ['headline', 'subhead', 'ctaText', 'offerAmount', 'urgencyLevel'];
-
-  for (const gene of genes) {
-    if (Math.random() < mutationRate) {
-      // Mutate this gene
-      variant[gene] = getRandomGeneValue(gene, variant.baseline);
-    }
-  }
-
-  return variant;
-}
-
-function getRandomGeneValue(geneType, baseline) {
-  const genePools = {
-    headline: [
-      "Wait! Don't miss out on {amount}% off",
-      "Special offer just for you",
-      "Complete your purchase and save"
-    ],
-    offerAmount: baseline.includes('no_discount') ? [0] : [5, 10, 15, 20],
-    urgencyLevel: ['low', 'medium', 'high']
+function mutate(variant, mutationRate = 0.15) {
+  const geneToPoolKey = {
+    headline: 'headlines', subhead: 'subheads', cta: 'ctas',
+    offerAmount: 'offerAmounts', redirect: 'redirects',
+    urgency: 'urgency', triggerType: 'triggerTypes', idleSeconds: 'idleSeconds'
   };
 
-  const pool = genePools[geneType];
-  return pool[Math.floor(Math.random() * pool.length)];
+  Object.keys(geneToPoolKey).forEach(gene => {
+    if (Math.random() < mutationRate) {
+      const options = pool[geneToPoolKey[gene]];
+      variant[gene] = options[Math.floor(Math.random() * options.length)];
+    }
+  });
+
+  return variant;
 }
 ```
 
