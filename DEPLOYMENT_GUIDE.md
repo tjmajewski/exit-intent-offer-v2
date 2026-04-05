@@ -47,7 +47,7 @@ This document covers the complete deployment process for Repsarq on Fly.io with 
 
 **Database:**
 - **Provider:** Fly Managed PostgreSQL
-- **Connection:** Via PgBouncer at `pgbouncer.gjpkdonm7j40yln4.flympg.net`
+- **Connection:** Via PgBouncer at `pgbouncer.dzx6qo61vlgrjpv5.flympg.net`
 - **Database Name:** fly-db
 
 ---
@@ -204,7 +204,7 @@ flyctl mpg attach resparq -a resparq
 flyctl mpg connect
 
 # Select:
-# - Cluster: resparq [gjpkdonm7j40yln4]
+# - Cluster: resparq [dzx6qo61vlgrjpv5]
 # - User: fly-user [schema_admin]
 # - Database: fly-db
 ```
@@ -622,5 +622,5 @@ flyctl machine restart -a resparq --force
 
 ---
 
-*Last updated: January 30, 2026*
-*Deployment completed successfully after resolving SQLite-to-PostgreSQL migration issues.*
+*Last updated: April 4, 2026*
+*Staging PostgreSQL cluster (gjpkdonm7j40yln4) removed to reduce costs. Single production cluster (dzx6qo61vlgrjpv5) remains. Test migrations locally before deploying to prod.*
