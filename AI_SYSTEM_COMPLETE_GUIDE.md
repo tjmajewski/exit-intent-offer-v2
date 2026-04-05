@@ -84,28 +84,42 @@ polling fallback).
 | subhead | Supporting text | 3-6 per baseline |
 | cta | Button text | 3-4 per baseline |
 | redirect | Destination | cart, checkout |
-| urgency | Time pressure | true, false |
+| urgency | Expiry presentation | true, false |
 
 ### Gene Pools Structure
 
-Each baseline has separate pools for regular and social proof genes:
+Each baseline has separate pools for regular, social proof, and urgency genes:
 ```javascript
 conversion_with_discount: {
   offerAmounts: [10, 15, 20, 25],
-  
+
   headlines: [
-    'Wait! Get {{amount}}% off before you go',
-    'Your exclusive {{amount}}% discount is ready'
+    'Hold on — take {{amount}}% off your order',
+    'Your {{amount}}% discount is waiting'
   ],
-  
+
   headlinesWithSocialProof: [
-    '{{social_proof_count}} customers claimed this {{amount}}% off',
-    'Rated {{rating}} stars - get {{amount}}% off now'
+    '{{social_proof_count}} shoppers claimed this {{amount}}% off today',
+    'Join {{social_proof_count}} customers saving {{amount}}%'
   ],
-  
-  // Same pattern for subheads
+
+  headlinesWithUrgency: [
+    'Your {{amount}}% discount expires in 24 hours',
+    'Act fast — {{amount}}% off won\'t last forever'
+  ],
+
+  // Same pattern for subheads, subheadsWithSocialProof, subheadsWithUrgency
 }
 ```
+
+### Urgency Gene & Countdown Timer
+
+The `urgency` gene controls how unique discount code expiry (24 hours) is shown to the customer. Only active for discount baselines (`revenue_with_discount`, `conversion_with_discount`):
+
+- **`urgency: false`** — Subtle countdown timer in the modal (bottom-left, "Offer expires in 23:59:45"). Regular headline/subhead copy used.
+- **`urgency: true`** — No timer element. Headline/subhead drawn exclusively from `headlinesWithUrgency` / `subheadsWithUrgency` pools that integrate expiry into the copy.
+
+No timer or urgency copy for generic codes (no expiry) or no-discount offers. The variant engine selects the urgency gene first, then picks the appropriate headline/subhead pool. Thompson Sampling converges on whichever approach (timer vs. copy) drives more profit.
 
 **Possible Combinations:** 4 × 6 × 6 × 3 × 2 × 2 = **864 variants per baseline**
 

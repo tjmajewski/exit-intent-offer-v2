@@ -328,8 +328,10 @@ export const genePools = {
     offerAmounts: [10, 15, 20, 25],
     headlines: [...],
     headlinesWithSocialProof: [...],
+    headlinesWithUrgency: [...],    // Expiry-aware copy for unique codes
     subheads: [...],
     subheadsWithSocialProof: [...],
+    subheadsWithUrgency: [...],     // Expiry-aware copy for unique codes
     ctas: [...],
     redirects: ['cart', 'checkout'],
     urgency: [true, false]
@@ -343,6 +345,17 @@ isValidGene(baseline, geneType, geneValue)
 getAllBaselines()
 getCombinationCount(baseline)
 ```
+
+**Urgency Gene & Countdown Timer:**
+
+The `urgency` gene controls how the 24-hour discount code expiry is communicated to the customer. It is only active for baselines with discount codes (`revenue_with_discount`, `conversion_with_discount`):
+
+- **`urgency: false`** — A subtle countdown timer appears in the bottom-left of the modal (e.g., "Offer expires in 23:59:45"). Regular headline/subhead copy is used.
+- **`urgency: true`** — No separate timer element. Instead, the headline and subhead are drawn exclusively from `headlinesWithUrgency` / `subheadsWithUrgency` pools, which integrate the expiry into the copy (e.g., "Your 15% discount expires in 24 hours").
+
+The timer/urgency copy only appears for **unique discount codes** (which have a 24h expiry via `expiresAt`). Generic codes and no-discount offers never show a timer.
+
+The system A/B tests both approaches via Thompson Sampling and converges on whichever drives more `profitPerImpression`.
 
 **Total Gene Space:**
 - 5 baselines × ~800 combinations each = 4,000+ possible variants
