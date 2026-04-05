@@ -30,6 +30,18 @@ export const genePools = {
       '{{rating}}-star rated products at a price you\'ll love'
     ],
 
+    headlinesWithUrgency: [
+      'Save {{amount}} — this offer expires in 24 hours',
+      '{{amount}} off is yours, but not for long',
+      'Unlock {{amount}} off before this deal disappears'
+    ],
+
+    subheadsWithUrgency: [
+      'This exclusive offer expires soon — act now',
+      'Your personal discount code is only valid for 24 hours',
+      'Once the timer runs out, this deal is gone'
+    ],
+
     ctas: [
       'Unlock My Savings',
       'Add Items & Save',
@@ -113,6 +125,18 @@ export const genePools = {
       '{{social_proof_count}} orders placed with this discount today',
       '{{social_proof_count}} customers saved — don\'t miss your turn',
       '{{rating}}-star products at {{amount}}% off? Easy decision'
+    ],
+
+    headlinesWithUrgency: [
+      'Your {{amount}}% discount expires in 24 hours',
+      'Act fast — {{amount}}% off won\'t last forever',
+      'Exclusive {{amount}}% off, just for you — limited time'
+    ],
+
+    subheadsWithUrgency: [
+      'This unique code was created just for you and expires soon',
+      'Your personal discount code is only valid for 24 hours',
+      'Grab this deal before your exclusive offer expires'
     ],
 
     ctas: [

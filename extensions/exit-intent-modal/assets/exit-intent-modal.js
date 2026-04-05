@@ -774,12 +774,35 @@
         }, { passive: true });
       }
       
+      // Countdown timer for unique discount codes (hidden by default)
+      const countdownTimer = document.createElement('div');
+      countdownTimer.id = 'modal-countdown-timer';
+      countdownTimer.style.cssText = `
+        display: none;
+        margin: 16px 0 0 0;
+        font-size: 12px;
+        color: #9ca3af;
+        font-family: ${this.settings.brandFont || 'inherit'};
+        text-align: left;
+      `;
+
+      const countdownValue = document.createElement('span');
+      countdownValue.id = 'modal-countdown-value';
+      countdownValue.style.cssText = `
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.02em;
+      `;
+      countdownValue.textContent = '';
+
+      countdownTimer.appendChild(countdownValue);
+
       // Assemble modal
       modal.appendChild(closeBtn);
       modal.appendChild(headline);
       modal.appendChild(body);
       modal.appendChild(ctaButton);
       modal.appendChild(secondaryButton);
+      modal.appendChild(countdownTimer);
       modal.appendChild(poweredBy);
       overlay.appendChild(modal);
       
@@ -1148,7 +1171,10 @@
       });
 
       this.modalShown = true;
-      
+
+      // Start countdown timer if this offer has an expiry (unique codes only)
+      this.startCountdownTimer();
+
       // Mark as shown in session storage (won't show again this session)
       try {
   sessionStorage.setItem(this.sessionKey, 'true');
@@ -1193,6 +1219,7 @@
         const result = await response.json();
         if (result.code) {
           this.settings.discountCode = result.code;
+          this.offerExpiresAt = result.expiresAt ? new Date(result.expiresAt) : null;
           console.log(`[Unique Code] Generated: ${result.code} (expires: ${result.expiresAt})`);
         }
       } catch (error) {
@@ -1295,7 +1322,12 @@
       this.currentSegment = decision.segment || null;
       this.currentImpressionId = decision.impressionId || null;
       this.currentImpressionId = decision.impressionId || null;
-      
+
+      // Store expiry for countdown timer (null = generic code or no-discount = no timer)
+      this.offerExpiresAt = decision.expiresAt ? new Date(decision.expiresAt) : null;
+      // Store urgency gene — when true, expiry is in the copy so hide the separate timer
+      this.offerUrgency = decision.variant?.urgency || false;
+
       // Use variant copy if provided (from evolution system)
       if (decision.variant) {
         // Get current cart value
@@ -1469,9 +1501,15 @@
     
     closeModal() {
       if (!this.modalElement) return;
-      
+
+      // Clean up countdown timer interval
+      if (this.countdownInterval) {
+        clearInterval(this.countdownInterval);
+        this.countdownInterval = null;
+      }
+
       const modal = this.modalElement.querySelector('#exit-intent-modal');
-      
+
       // Animate out
       if (modal) {
         modal.style.transform = isMobileDevice() ? 'translateY(100%)' : 'scale(0.9)';
@@ -1494,6 +1532,54 @@
       
       // Track close
       this.trackEvent('closeout');
+    }
+
+    /**
+     * Start countdown timer for unique discount codes (24h expiry).
+     * Only runs when this.offerExpiresAt is set (unique codes) and the
+     * urgency gene is false (when true, expiry is in the headline/subhead copy instead).
+     */
+    startCountdownTimer() {
+      if (!this.offerExpiresAt) return;
+      if (this.offerUrgency) return;
+
+      const container = this.modalElement?.querySelector('#modal-countdown-timer');
+      const valueEl = this.modalElement?.querySelector('#modal-countdown-value');
+      if (!container || !valueEl) return;
+
+      container.style.display = 'block';
+
+      const updateTimer = () => {
+        const remaining = this.offerExpiresAt.getTime() - Date.now();
+
+        if (remaining <= 0) {
+          valueEl.textContent = 'This offer has expired';
+          clearInterval(this.countdownInterval);
+
+          // Disable the CTA button
+          const ctaButton = this.modalElement?.querySelector('#modal-primary-cta');
+          if (ctaButton) {
+            ctaButton.disabled = true;
+            ctaButton.style.opacity = '0.5';
+            ctaButton.style.cursor = 'not-allowed';
+            ctaButton.style.pointerEvents = 'none';
+            ctaButton.textContent = 'Offer Expired';
+          }
+          return;
+        }
+
+        const hours = Math.floor(remaining / (1000 * 60 * 60));
+        const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+
+        valueEl.textContent = 'Offer expires in ' +
+          String(hours).padStart(2, '0') + ':' +
+          String(minutes).padStart(2, '0') + ':' +
+          String(seconds).padStart(2, '0');
+      };
+
+      updateTimer();
+      this.countdownInterval = setInterval(updateTimer, 1000);
     }
 
     /**
