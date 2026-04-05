@@ -158,7 +158,7 @@ export async function aggregateCopyPatterns(prisma, segment) {
     
     segmentVariants.forEach(variant => {
       const hasEmoji = /[\u{1F300}-\u{1F9FF}]/u.test(variant.headline);
-      const hasUrgency = /limited|hurry|now|today|expires|don't miss/i.test(variant.headline);
+      const hasUrgency = /limited|hurry|now|today|expires|don't miss|act fast|won't last|disappears|not for long/i.test(variant.headline);
       
       const perf = variant.performance;
       
@@ -349,7 +349,7 @@ function analyzeHeadlinePatterns(impressions) {
     }
 
     // Check for urgency words
-    if (/limited|hurry|now|today|expires|don't miss|last chance|ending/i.test(headline)) {
+    if (/limited|hurry|now|today|expires|don't miss|last chance|ending|act fast|won't last|disappears|not for long/i.test(headline)) {
       patterns.withUrgency.impressions++;
       if (imp.converted) patterns.withUrgency.conversions++;
     }

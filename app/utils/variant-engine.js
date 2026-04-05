@@ -32,16 +32,24 @@ function generateVariantId() {
  */
 function createRandomVariant(baseline, segment = 'all', useSocialProof = false) {
   const pool = genePools[baseline];
-  
-  // Decide which gene pools to use based on social proof availability
-  const headlinePool = useSocialProof && pool.headlinesWithSocialProof
-    ? [...pool.headlines, ...pool.headlinesWithSocialProof]
-    : pool.headlines;
-  
-  const subheadPool = useSocialProof && pool.subheadsWithSocialProof
-    ? [...pool.subheads, ...pool.subheadsWithSocialProof]
-    : pool.subheads;
-  
+
+  // Select urgency gene first — it determines which headline/subhead pool to use
+  const urgencyValue = pool.urgency[Math.floor(Math.random() * pool.urgency.length)];
+
+  // Urgency variants use dedicated expiry-aware copy (exclusively, not merged)
+  // so the headline/subhead always communicates the 24h expiry
+  let headlinePool, subheadPool;
+  if (urgencyValue && pool.headlinesWithUrgency) {
+    headlinePool = pool.headlinesWithUrgency;
+    subheadPool = pool.subheadsWithUrgency;
+  } else if (useSocialProof && pool.headlinesWithSocialProof) {
+    headlinePool = [...pool.headlines, ...pool.headlinesWithSocialProof];
+    subheadPool = [...pool.subheads, ...pool.subheadsWithSocialProof];
+  } else {
+    headlinePool = pool.headlines;
+    subheadPool = pool.subheads;
+  }
+
   return {
     variantId: generateVariantId(),
     baseline: baseline,
@@ -49,14 +57,14 @@ function createRandomVariant(baseline, segment = 'all', useSocialProof = false) 
     status: 'alive',
     generation: 0,
     parents: null,
-    
+
     // Random genes (using appropriate pools)
     offerAmount: pool.offerAmounts[Math.floor(Math.random() * pool.offerAmounts.length)],
     headline: headlinePool[Math.floor(Math.random() * headlinePool.length)],
     subhead: subheadPool[Math.floor(Math.random() * subheadPool.length)],
     cta: pool.ctas[Math.floor(Math.random() * pool.ctas.length)],
     redirect: pool.redirects[Math.floor(Math.random() * pool.redirects.length)],
-    urgency: pool.urgency[Math.floor(Math.random() * pool.urgency.length)],
+    urgency: urgencyValue,
     triggerType: pool.triggerTypes[Math.floor(Math.random() * pool.triggerTypes.length)],
     idleSeconds: pool.idleSeconds[Math.floor(Math.random() * pool.idleSeconds.length)],
     
@@ -133,13 +141,19 @@ function generateDiverseVariants(count, baseline, segment = 'all') {
   for (let i = 0; i < count; i++) {
     // Deterministically spread variants across gene space
     const offerIndex = Math.floor(i / (count / pool.offerAmounts.length)) % pool.offerAmounts.length;
-    const headlineIndex = i % pool.headlines.length;
-    const subheadIndex = Math.floor(i / 3.3) % pool.subheads.length;
     const ctaIndex = i % pool.ctas.length;
     const redirectIndex = i % 2;
     const urgencyValue = i < count / 2;
     const triggerIndex = i % pool.triggerTypes.length;
     const idleIndex = i % pool.idleSeconds.length;
+
+    // Urgency variants use dedicated expiry-aware copy
+    const activeHeadlines = urgencyValue && pool.headlinesWithUrgency
+      ? pool.headlinesWithUrgency : pool.headlines;
+    const activeSubheads = urgencyValue && pool.subheadsWithUrgency
+      ? pool.subheadsWithUrgency : pool.subheads;
+    const headlineIndex = i % activeHeadlines.length;
+    const subheadIndex = Math.floor(i / 3.3) % activeSubheads.length;
 
     variants.push({
       variantId: generateVariantId(),
@@ -150,8 +164,8 @@ function generateDiverseVariants(count, baseline, segment = 'all') {
       parents: null,
 
       offerAmount: pool.offerAmounts[offerIndex],
-      headline: pool.headlines[headlineIndex],
-      subhead: pool.subheads[subheadIndex],
+      headline: activeHeadlines[headlineIndex],
+      subhead: activeSubheads[subheadIndex],
       cta: pool.ctas[ctaIndex],
       redirect: pool.redirects[redirectIndex],
       urgency: urgencyValue,
