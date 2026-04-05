@@ -1,5 +1,5 @@
 # Repsarq Feature Roadmap
-**Updated: March 5, 2026**
+**Updated: April 5, 2026**
 **App:** Exit Intent Modal with AI-Powered Cart Recovery
 
 ---
@@ -16,30 +16,14 @@ Example: shipping "Countdown Timer" means the analytics page shows timer-driven 
 
 These features directly increase conversion rates and recovered revenue. Ship these first.
 
-### 1.1 Countdown Timer in Modal
-**Impact:** High — urgency is the #1 psychological conversion driver
-**Effort:** Medium (3-5 days)
-**Tier:** Pro+
+### ~~1.1 Countdown Timer in Modal~~ SHIPPED
 
-Add a visible countdown timer to the modal that creates urgency around the offer expiring.
+Countdown timer for unique discount codes (24h expiry). Two presentation modes A/B tested via the `urgency` gene:
 
-**Core scope:**
-- Configurable duration (5min, 15min, 30min, 1hr, custom)
-- Visual styles: bar countdown, digital clock, circular progress
-- Behavior on expiry: dismiss modal, show "expired" state, or extend silently
-- Mobile-optimized rendering (no layout shift)
+- **`urgency: false`** — Subtle HH:MM:SS countdown timer below CTAs
+- **`urgency: true`** — Expiry woven into headline/subhead copy (dedicated `headlinesWithUrgency` / `subheadsWithUrgency` pools)
 
-**Analytics surface:**
-- Conversion rate with timer vs. without timer (historical baseline)
-- Avg time-to-click when timer is present
-- Drop-off rate at different remaining-time thresholds
-- Optimal duration discovery per store
-
-**Variant genes:**
-- Timer duration
-- Timer visual style
-- Timer position (top of modal, inline with CTA, below offer)
-- Urgency copy paired with timer ("Only X:XX left!", "Expires soon")
+Timer auto-disables CTA on expiry. No timer for generic codes or no-discount offers. Meta-learning urgency regex updated to track new copy patterns across the network. Thompson Sampling converges on whichever approach (timer vs. copy) drives more profit per impression.
 
 ---
 
@@ -379,7 +363,7 @@ Merchants choose between two code modes. This choice affects behavior across all
 
 | Quarter | Focus | Key Deliverables |
 |---------|-------|-----------------|
-| **Q2 2026** | Revenue drivers | Countdown timer, product images, shipping bar, promo automation, live preview |
+| **Q2 2026** | Revenue drivers | ~~Countdown timer~~, product images, shipping bar, promo automation, live preview |
 | **Q3 2026** | Intelligence | Enhanced AI, 3rd party awareness, advanced targeting, support mirror view |
 | **Q4 2026** | Platform | Full-funnel orchestrator, cart CTA, developer docs, API/webhooks |
 | **Q1 2027** | Expansion | Tier 5 exploration based on merchant feedback and data |
