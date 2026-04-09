@@ -1,6 +1,6 @@
 # Repsarq AI System - Complete Guide
-**Last Updated:** March 13, 2026
-**Version:** 2.2 (add-to-cart activation, evolved triggers)
+**Last Updated:** April 6, 2026
+**Version:** 2.3 (adaptive intervention thresholds, continuous propensity scoring)
 
 ---
 
@@ -28,10 +28,18 @@ Repsarq uses a **genetic algorithm** + **Bayesian statistics** to automatically 
 
 ### The Flow
 ```
-Page Load (or Add-to-Cart) → AI Activates → Signals Collected → Baseline Selected
-→ Variant Selected (Thompson Sampling) → Trigger Set (exit_intent/idle/immediate)
-→ Trigger Fires → Social Proof Applied → Modal Shown → Impression Recorded
-→ User Interacts → Evolution Cycle (every 100 impressions) → Champion Detection
+Page Load (or Add-to-Cart) → AI Activates → Signals Collected
+→ Holdout Check (5% random → never show, stamp cart for incrementality measurement)
+→ Should We Show? (Adaptive Threshold per score bucket)
+  → NO: stamp cart with decision ID, track natural conversion if purchase happens
+  → YES: Baseline Selected → Variant Selected (Thompson Sampling)
+    → Trigger Set (exit_intent/idle/immediate) → Trigger Fires
+    → Social Proof Applied → Modal Shown → Impression Recorded
+    → User Interacts → Evolution Cycle (every 100 impressions) → Champion Detection
+    → Threshold Learning Cycle (every 50 outcomes) → Per-bucket show/skip refinement
+    → If Dismissed (not CTA click): 60s later → Reminder Toast (discount offers only)
+      → Click toast → checkout with discount (attributed as conversion)
+      → Auto-dismiss after 30s or manual close
 ```
 
 **Activation**: AI pre-fetches its decision as soon as the cart has items. If the
@@ -158,37 +166,64 @@ If ANY fails → only regular genes used, no broken placeholders
 
 ---
 
-## Four AI Modes
+## Four AI Modes (Auto-Selected by Funnel Stage)
 
-### Mode Selection
+### Funnel-Stage Detection
+
+The AI automatically selects between revenue (upsell/threshold) and conversion (direct discount) mode per customer based on their position in the post-ATC journey. This replaces the old static merchant toggle.
+
 ```javascript
+// Funnel-stage scoring: revenue vs conversion signals
+// Revenue signals: browsing products, fresh cart, multiple page views, high cart value
+// Conversion signals: on cart/checkout page, cart hesitation, failed coupon, stale cart, abandoner
+// Higher score wins → determines baseline selection
+
+// Then: adaptive threshold decides whether to show at all
+// If show:
 if (aggression === 0) return 'pure_reminder';
-if (aiGoal === 'revenue') {
+if (funnelGoal === 'revenue') {
   return propensityScore < 70 ? 'revenue_with_discount' : 'revenue_no_discount';
 } else {
   return propensityScore < 70 ? 'conversion_with_discount' : 'conversion_no_discount';
 }
 ```
 
+**Funnel-Stage Signals:**
+| Signal | Revenue | Conversion |
+|--------|---------|------------|
+| Exit from product/collection page | +25 | — |
+| Exit from cart page | — | +25 |
+| Exit from checkout page | — | +40 |
+| Cart hesitation > 1 | — | +20 |
+| No cart hesitation | +10 | — |
+| Failed coupon attempt | — | +30 |
+| Cart age < 10 min | +15 | — |
+| Cart age > 30 min | — | +15 |
+| Previous abandoner | — | +15 |
+| 5+ page views | +15 | — |
+| < 2 page views | — | +5 |
+| Cart value > $100 | +10 | — |
+| Cart value < $30 | — | +10 |
+
 ### 1. Revenue with Discount
 - Goal: Increase cart size
 - Example: "Add $25 more, save $10"
-- When: Low propensity, revenue mode
+- When: Low propensity + browsing after ATC (revenue funnel stage)
 
 ### 2. Revenue without Discount
 - Goal: Increase cart size
 - Example: "You're building a great cart!"
-- When: High propensity, revenue mode
+- When: High propensity + browsing after ATC (revenue funnel stage)
 
 ### 3. Conversion with Discount
 - Goal: Convert immediately
 - Example: "Get 15% off before you go"
-- When: Low propensity, conversion mode
+- When: Low propensity + on cart/checkout page or price-sensitive (conversion funnel stage)
 
 ### 4. Conversion without Discount
 - Goal: Convert immediately
 - Example: "Rated 4.8★ by verified buyers"
-- When: High propensity, conversion mode
+- When: High propensity + evaluating purchase (conversion funnel stage)
 
 ### 5. Pure Reminder
 - Goal: Remind only
@@ -222,6 +257,133 @@ if (aiGoal === 'revenue') {
 - Champion exists → 70% traffic to Champion
 - Remaining 30% → Thompson Sampling among others
 - Balance: Exploit winner (70%) + Explore alternatives (30%)
+
+---
+
+## Adaptive Intervention Thresholds (Per-Store Learning)
+
+### What It Learns
+
+The variant system learns **what** to show (copy, offer, CTA). The adaptive threshold system learns **whether** to show at all. Each store develops its own show/no-show policy per propensity score bucket.
+
+### How It Works
+
+1. **Score Bucketing**: Propensity scores (0-100) split into 10 buckets: 0-10, 10-20, ..., 90-100
+2. **Two Arms**: For each bucket, "show modal" and "skip modal" are competing strategies
+3. **Thompson Sampling**: Same Bayesian bandit as variant selection — sample from each arm's beta distribution, pick the winner
+4. **Profit-Weighted**: Not just conversion rate — the system optimizes for profit per impression (revenue minus discount cost)
+5. **Exploration Floor**: 5% of traffic always tests the losing arm to keep gathering data
+6. **Natural Conversion Tracking**: When AI skips the modal, the cart is stamped so we know if the customer buys anyway
+
+### Hard Overrides
+
+Some signals always trigger a show regardless of learned thresholds:
+- `failedCouponAttempt` — customer explicitly wants a discount
+- `exitPage = 'checkout'` — needs help completing purchase
+- `cartHesitation > 1` — price-sensitive behavior
+- `cartAgeMinutes > 60` — stale cart needs a nudge (Enterprise)
+
+### Cold Start
+
+New stores start with "always show" defaults. After ~10 outcomes per bucket, Thompson Sampling begins. After ~200 outcomes, the system has strong per-store recommendations.
+
+### Cron Job
+
+Runs every 5 minutes. When a store has 50+ new intervention outcomes since last update, recalculates all bucket thresholds using 10,000-sample Monte Carlo Bayesian comparison.
+
+---
+
+## Incrementality Measurement (5% Holdout)
+
+### Purpose
+
+Proves the causal revenue lift from Repsarq. Without a holdout, the system can optimize but can't answer "how much incremental revenue did we generate?"
+
+### How It Works
+
+1. **Random Assignment**: 5% of eligible traffic is randomly assigned to the holdout group at add-to-cart time — before hard overrides, before Thompson Sampling, before any AI logic
+2. **No Intervention**: Holdout customers never see a modal, regardless of signals
+3. **Cart Stamping**: Holdout carts are stamped with `exit_intent_holdout: {aiDecisionId}` so the webhook can track conversions
+4. **Separate Tracking**: Holdout outcomes are stored with `isHoldout: true` in InterventionOutcome — excluded from the Thompson Sampling learning loop
+5. **Incrementality Calculation**: Treatment CVR minus Holdout CVR = incremental lift attributable to the app
+
+### Key Design Decisions
+
+- Holdout coin flip happens **before** hard overrides to avoid systematic bias (if holdout excluded hard-override signals, the comparison would be unfair)
+- Holdout outcomes **never** train the adaptive threshold system — they're measurement-only
+- 5% holdout is small enough that the revenue cost is minimal while still gathering enough data for statistical significance
+- Unique decision IDs (not booleans) stamped on cart attributes for accurate webhook matching at any traffic volume
+
+### Statistical Requirements
+
+- ~500-1000 holdout conversions needed for meaningful results
+- At 5% holdout rate and ~5% CVR, that's ~10,000-20,000 eligible sessions
+- Bayesian comparison (same pattern as variant evolution) determines confidence
+
+---
+
+## Post-Dismissal Reminder Toast
+
+### Purpose
+
+Recovers value from customers who dismissed the main modal but are still browsing. Instead of giving up after one attempt, a small non-intrusive reminder appears 60 seconds after dismissal.
+
+### Design
+
+- **Small floating pill** in the bottom corner (not a full-width bar that blocks content)
+- Dark background (#1f2937) with white text — minimal, unobtrusive
+- Shows "Your offer is still available" + the discount code
+- Matches store's `brandFont` for consistency
+- Click → applies discount and redirects to checkout
+- Close button (×) to dismiss manually
+- Auto-dismisses after 30 seconds
+
+### When It Shows
+
+- Only for offers with a discount code (percentage, fixed, threshold)
+- Only when the customer **dismissed** the modal (not when they clicked the CTA)
+- 60-second delay after dismissal — gives the customer time to continue browsing
+- Does NOT show for no-discount offers (nothing to remind about)
+
+### Chat Widget Detection
+
+Detects common chat widgets (Tidio, HubSpot, Intercom, Drift, Gorgias, Shopify Chat, Crisp, Tawk, Zendesk) in the bottom-right corner. If found, the toast appears in the bottom-left instead to avoid overlap.
+
+### Attribution
+
+Toast clicks stamp the same cart attributes (`exit_intent: true`, `exit_intent_ai_decision: {id}`) as CTA clicks, so conversions are attributed correctly through the existing webhook pipeline.
+
+---
+
+## Trigger-Reason Variant Evolution
+
+### Why
+
+Different trigger reasons need different copy. A customer who tried a failed coupon needs "We have something for you" — not the same messaging as someone whose cart has been sitting for an hour ("Still thinking it over?"). Without trigger-aware evolution, the system optimizes copy across ALL customers, which means the winning copy is a compromise that's mediocre for every trigger reason.
+
+### How It Works
+
+1. Every `VariantImpression` is tagged with a `triggerReason`: `failedCoupon`, `checkoutExit`, `cartHesitation`, `staleCart`, or `general`
+2. When selecting a variant via Thompson Sampling, if the current trigger reason has 20+ impressions for any variant, the sampling uses trigger-specific conversion rates instead of overall stats
+3. This means a variant with 15% CVR for `failedCoupon` customers will be preferred over one with 10% CVR for `failedCoupon`, even if the second variant has higher overall CVR
+4. When trigger-specific data is insufficient (<20 impressions), the system falls back to overall stats — no cold start penalty
+
+### Trigger Reasons
+
+| Trigger Reason | Source | Description |
+|---|---|---|
+| `failedCoupon` | Hard override | Customer tried a coupon code that didn't work |
+| `checkoutExit` | Hard override | Customer is leaving from the checkout page |
+| `cartHesitation` | Hard override | Customer added/removed items multiple times |
+| `staleCart` | Hard override | Cart has been sitting for 60+ minutes |
+| `general` | Adaptive threshold | No specific hard-override signal; AI decided to show via Thompson Sampling |
+
+### Key Design Decision
+
+Trigger reason is NOT a separate variant population dimension (like baseline × segment). That would fragment data too aggressively. Instead, all trigger reasons share the same variant pool, but Thompson Sampling uses trigger-specific conversion rates when enough data exists. This means:
+- Variants are shared across trigger reasons (no population explosion)
+- Evolution (breeding, killing) uses overall stats (sufficient data)
+- Selection biases toward variants proven for the current trigger context
 
 ---
 

@@ -99,30 +99,6 @@ export default function AISettingsTab({
 
         <div style={{ marginBottom: 24 }}>
           <label style={{ display: "block", marginBottom: 8, fontWeight: 500, fontSize: 16 }}>
-            Optimization Goal
-          </label>
-          <p style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>
-            What should the AI optimize for?
-          </p>
-          <select
-            name="aiGoal"
-            defaultValue={settings.aiGoal || "revenue"}
-            onChange={(e) => setFormChanged(true)}
-            style={{
-              width: "100%",
-              padding: "12px 16px",
-              border: "1px solid #d1d5db",
-              borderRadius: 8,
-              fontSize: 16
-            }}
-          >
-            <option value="revenue">Maximize Revenue (recommended)</option>
-            <option value="conversions">Maximize Conversions</option>
-          </select>
-        </div>
-
-        <div style={{ marginBottom: 24 }}>
-          <label style={{ display: "block", marginBottom: 8, fontWeight: 500, fontSize: 16 }}>
             Discount Aggression: {aggressionLevel}
           </label>
           <p style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>

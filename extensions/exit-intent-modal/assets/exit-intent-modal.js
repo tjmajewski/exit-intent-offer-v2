@@ -892,13 +892,42 @@
             mode: 'enterprise' // Tell backend to use Enterprise AI
           })
         });
-        
+
         const data = await response.json();
+
+        // Handle holdout group — stamp cart for incrementality tracking
+        if (data.isHoldout) {
+          console.log('[Enterprise AI] Holdout group — no intervention (incrementality measurement)');
+          fetch('/cart/update.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              attributes: { exit_intent_holdout: data.aiDecisionId || 'true' }
+            })
+          }).catch(() => {});
+          return null;
+        }
+
         // Handle explicit no_intervention from AI
         if (data.shouldShow === false || data.decision?.type === 'no_intervention') {
           console.log('[Enterprise AI] No intervention — AI decided no modal is optimal');
+          // Stamp cart with unique decision ID for accurate conversion tracking
+          const decisionId = data.aiDecisionId || 'no_intervention';
+          fetch('/cart/update.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              attributes: { exit_intent_decision: decisionId }
+            })
+          }).catch(() => {});
           return null;
         }
+
+        // Store the aiDecisionId for shown modals (used in CTA click stamping)
+        if (data.aiDecisionId) {
+          this.currentAiDecisionId = data.aiDecisionId;
+        }
+
         return data.decision || null; // Return decision object or null
       } catch (error) {
         console.error('[Enterprise AI] Error getting decision:', error);
@@ -1191,7 +1220,7 @@
       fetch('/cart/update.js', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attributes: { exit_intent: 'true' } })
+        body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}) } })
       }).catch(() => {}); // fire-and-forget, non-fatal
 
       // Track variant impression (both Pro and Enterprise)
@@ -1251,6 +1280,20 @@
         console.log('%c AI DECISION', 'color: #8B5CF6; font-weight: bold; font-size: 16px');
         console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
 
+        // Handle holdout group — stamp cart for incrementality tracking
+        if (result.isHoldout) {
+          console.log('%c AI DECISION: HOLDOUT GROUP', 'color: #64748b; font-weight: bold; font-size: 16px');
+          console.log('%c This customer is in the 5% holdout group for incrementality measurement', 'color: #64748b');
+          console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
+          this.aiDecidedNoIntervention = true;
+          fetch('/cart/update.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attributes: { exit_intent_holdout: result.aiDecisionId || 'true' } })
+          }).catch(() => {});
+          return;
+        }
+
         // Handle "no_intervention" — AI decided showing nothing is optimal
         if (result.shouldShow === false || result.decision?.type === 'no_intervention') {
           console.log('%c AI DECISION: NO INTERVENTION', 'color: #64748b; font-weight: bold; font-size: 16px');
@@ -1259,6 +1302,14 @@
           console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
           // Mark as shown to prevent retrigger, but don't display the modal
           this.aiDecidedNoIntervention = true;
+          // Stamp cart with unique decision ID for accurate conversion tracking —
+          // lets the order webhook match this exact decision instead of a fuzzy time search.
+          const decisionId = result.aiDecisionId || 'no_intervention';
+          fetch('/cart/update.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attributes: { exit_intent_decision: decisionId } })
+          }).catch(() => {}); // fire-and-forget
           return;
         }
 
@@ -1295,6 +1346,11 @@
             console.log('%c Trigger:', 'color: #ec4899; font-weight: bold', effectiveTrigger);
           }
           console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
+
+          // Store the aiDecisionId for shown modals (used in webhook matching)
+          if (result.aiDecisionId) {
+            this.currentAiDecisionId = result.aiDecisionId;
+          }
 
           // Store the decision for trigger setup (triggerType, idleSeconds) and later use
           this.preloadedDecision = result.decision;
@@ -1514,14 +1570,20 @@
       if (modal) {
         modal.style.transform = isMobileDevice() ? 'translateY(100%)' : 'scale(0.9)';
       }
-      
+
       // Restore body scroll on mobile
       if (isMobileDevice()) {
         document.body.style.overflow = '';
         document.body.style.position = '';
         document.body.style.width = '';
       }
-      
+
+      // Check if we should show a reminder toast after dismissal.
+      // Only for offers with a discount code — no-discount offers have nothing to remind about.
+      const hasDiscountOffer = this.settings.discountCode &&
+        this.settings.offerType !== 'no-discount';
+      const shouldShowReminder = hasDiscountOffer && !this.ctaClicked;
+
       // Remove from DOM after animation
       setTimeout(() => {
         if (this.modalElement) {
@@ -1529,9 +1591,175 @@
           this.modalElement = null;
         }
       }, 300);
-      
+
       // Track close
       this.trackEvent('closeout');
+
+      // Show a subtle reminder toast 60s after dismissal
+      if (shouldShowReminder) {
+        this.reminderTimeout = setTimeout(() => {
+          this.showReminderToast();
+        }, 60000);
+      }
+    }
+
+    /**
+     * Show a small, non-intrusive reminder toast in the bottom corner after
+     * the customer dismisses the main modal. This recovers value from customers
+     * who received an offer but didn't act on it immediately.
+     *
+     * Design: small floating pill, matches store's brand font, dismissible.
+     * Positioned bottom-right by default; shifts to bottom-left if a chat
+     * widget is detected in the bottom-right.
+     */
+    showReminderToast() {
+      if (!this.settings.discountCode) return;
+
+      const code = this.settings.discountCode;
+      const isMobile = isMobileDevice();
+      const font = this.settings.brandFont || 'inherit';
+
+      // Detect common chat widgets in the bottom-right corner
+      const chatSelectors = [
+        '#tidio-chat', '#hubspot-messages-iframe-container',
+        '.intercom-lightweight-app', '#drift-widget',
+        '.gorgias-chat-container', '#shopify-chat',
+        '.crisp-client', '#tawk-bubble-container',
+        '[class*="zendesk"]', '[id*="chat-widget"]'
+      ];
+      const hasBottomRightWidget = chatSelectors.some(sel => document.querySelector(sel));
+      const side = hasBottomRightWidget ? 'left' : 'right';
+
+      // Create toast container
+      const toast = document.createElement('div');
+      toast.id = 'exit-intent-reminder-toast';
+      toast.style.cssText = `
+        position: fixed;
+        bottom: ${isMobile ? '16px' : '24px'};
+        ${side}: ${isMobile ? '16px' : '24px'};
+        z-index: 999998;
+        background: #1f2937;
+        color: #ffffff;
+        padding: ${isMobile ? '14px 16px' : '16px 20px'};
+        border-radius: 12px;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+        font-family: ${font};
+        font-size: ${isMobile ? '14px' : '15px'};
+        max-width: ${isMobile ? 'calc(100vw - 32px)' : '320px'};
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        cursor: pointer;
+        transform: translateY(120%);
+        opacity: 0;
+        transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease;
+      `;
+
+      // Toast content
+      const textWrap = document.createElement('div');
+      textWrap.style.cssText = 'flex: 1; min-width: 0;';
+
+      const label = document.createElement('div');
+      label.textContent = 'Your offer is still available';
+      label.style.cssText = `
+        font-weight: 600;
+        margin-bottom: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      `;
+
+      const codeEl = document.createElement('div');
+      codeEl.textContent = `Use code ${code}`;
+      codeEl.style.cssText = `
+        font-size: ${isMobile ? '12px' : '13px'};
+        opacity: 0.75;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      `;
+
+      textWrap.appendChild(label);
+      textWrap.appendChild(codeEl);
+
+      // Close button
+      const closeBtn = document.createElement('button');
+      closeBtn.innerHTML = '&times;';
+      closeBtn.style.cssText = `
+        background: rgba(255,255,255,0.15);
+        border: none;
+        color: #ffffff;
+        font-size: 18px;
+        cursor: pointer;
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        transition: background 0.2s;
+      `;
+      closeBtn.onmouseover = () => closeBtn.style.background = 'rgba(255,255,255,0.25)';
+      closeBtn.onmouseout = () => closeBtn.style.background = 'rgba(255,255,255,0.15)';
+      closeBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.dismissReminderToast();
+      };
+
+      toast.appendChild(textWrap);
+      toast.appendChild(closeBtn);
+
+      // Click the toast → go to checkout with discount
+      toast.onclick = () => {
+        this.dismissReminderToast();
+        // Stamp cart for attribution
+        fetch('/cart/update.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}) } })
+        }).catch(() => {});
+        // Track as a click
+        this.trackEvent('click');
+        // Apply discount and go to checkout
+        sessionStorage.setItem('exitIntentDiscount', code);
+        window.location.replace(`/discount/${encodeURIComponent(code)}?redirect=/checkout`);
+      };
+
+      document.body.appendChild(toast);
+      this.reminderToast = toast;
+
+      // Animate in
+      requestAnimationFrame(() => {
+        toast.style.transform = 'translateY(0)';
+        toast.style.opacity = '1';
+      });
+
+      // Auto-dismiss after 30 seconds
+      this.reminderAutoDismiss = setTimeout(() => {
+        this.dismissReminderToast();
+      }, 30000);
+
+      console.log('[Reminder Toast] Shown 60s after modal dismissal');
+    }
+
+    /**
+     * Dismiss the reminder toast with animation.
+     */
+    dismissReminderToast() {
+      if (!this.reminderToast) return;
+      if (this.reminderAutoDismiss) {
+        clearTimeout(this.reminderAutoDismiss);
+        this.reminderAutoDismiss = null;
+      }
+      this.reminderToast.style.transform = 'translateY(120%)';
+      this.reminderToast.style.opacity = '0';
+      setTimeout(() => {
+        if (this.reminderToast) {
+          this.reminderToast.remove();
+          this.reminderToast = null;
+        }
+      }, 400);
     }
 
     /**
@@ -1674,6 +1902,9 @@
     }
 
  async handleCTAClick() {
+      // Mark CTA as clicked so the reminder toast doesn't show after close
+      this.ctaClicked = true;
+
       // Track button click
       this.trackEvent('click');
 
@@ -1717,7 +1948,7 @@
           await fetch('/cart/update.js', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ attributes: { exit_intent: 'true' } })
+            body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}) } })
           });
         } catch (e) { /* non-fatal */ }
 
@@ -1786,7 +2017,7 @@
           await fetch('/cart/update.js', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ attributes: { exit_intent: 'true' } })
+            body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}) } })
           });
         } catch (e) { /* non-fatal */ }
 
@@ -1832,7 +2063,7 @@
         await fetch('/cart/update.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ attributes: { exit_intent: 'true' } })
+          body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}) } })
         });
         console.log('[Exit Intent] Cart attribute stamped for conversion tracking');
       } catch (e) {

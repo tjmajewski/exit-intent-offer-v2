@@ -136,16 +136,142 @@ export async function action({ request }) {
       console.log(` Budget check passed. Remaining: $${budgetCheck.remaining}`);
     }
     
+    // =========================================================================
+    // HOLDOUT GROUP: 5% of eligible traffic is randomly excluded from ALL
+    // intervention. This happens BEFORE hard overrides and Thompson Sampling
+    // so the holdout is unbiased. Holdout outcomes are recorded for
+    // incrementality measurement but never fed into the learning loop.
+    // =========================================================================
+    const HOLDOUT_RATE = 0.05;
+    const isHoldout = Math.random() < HOLDOUT_RATE;
+
+    if (isHoldout) {
+      const holdoutDecision = {
+        type: 'holdout',
+        amount: 0,
+        reasoning: 'Randomly assigned to holdout group for incrementality measurement'
+      };
+
+      const aiDecisionRecord = await db.aIDecision.create({
+        data: {
+          shopId: shopRecord.id,
+          signals: JSON.stringify(signals),
+          decision: JSON.stringify(holdoutDecision)
+        }
+      });
+
+      // Record holdout outcome — excluded from threshold learning
+      const { recordInterventionOutcome: recordHoldout } = await import('../utils/intervention-threshold.server.js');
+      const holdoutSegment = (signals.deviceType === 'mobile') ? 'mobile'
+                           : (signals.deviceType === 'desktop') ? 'desktop' : 'all';
+      await recordHoldout(db, {
+        shopId: shopRecord.id,
+        wasShown: false,
+        isHoldout: true,
+        propensityScore: signals.propensityScore ?? null,
+        cartValue: signals.cartValue,
+        deviceType: signals.deviceType,
+        trafficSource: signals.trafficSource,
+        segment: holdoutSegment,
+        aiDecisionId: aiDecisionRecord.id
+      }).catch(e => console.error('[Holdout] Failed to record holdout outcome:', e));
+
+      console.log(`[AI Decision] Holdout group for ${shop} — no intervention (incrementality measurement)`);
+
+      return json({
+        shouldShow: false,
+        isHoldout: true,
+        decision: holdoutDecision,
+        aiDecisionId: aiDecisionRecord.id
+      });
+    }
+
     // PRE-CHECK: Run AI scoring to determine if intervention is warranted
     // This enables "no_intervention" as a learned outcome
-    const preScore = await determineOffer(
-      signals,
-      aggression,
-      aiGoal,
-      signals.cartValue || 0,
-      shopRecord.id,
-      shopRecord.plan || 'pro'
-    );
+    // Enterprise customers use the dedicated enterpriseAI() engine which
+    // leverages propensity scores, high-value signals, and timing control.
+    // Pro customers use the simpler determineOffer() intent-score logic.
+    const isEnterprisePlan = (shopRecord.plan || 'pro') === 'enterprise';
+
+    // Enterprise promotional intelligence: check for active site-wide promos
+    // and adjust aggression before the AI decision runs.
+    // (Pro handles this inside determineOffer itself.)
+    let effectiveAggression = aggression;
+    if (isEnterprisePlan) {
+      const activePromo = await db.promotion.findFirst({
+        where: {
+          shopId: shopRecord.id,
+          status: "active",
+          classification: "site_wide",
+          aiStrategy: { not: "ignore" }
+        },
+        orderBy: { amount: 'desc' }
+      });
+
+      if (activePromo) {
+        console.log(` [Enterprise] Active site-wide promo: ${activePromo.code} - ${activePromo.amount}%`);
+
+        if (activePromo.merchantOverride) {
+          const override = JSON.parse(activePromo.merchantOverride);
+          console.log(` Merchant override active: ${override.type}`);
+
+          if (override.type === 'pause') {
+            // Record no-intervention and return early
+            await db.aIDecision.create({
+              data: {
+                shopId: shopRecord.id,
+                signals: JSON.stringify(signals),
+                decision: JSON.stringify({ type: 'no_intervention', amount: 0, reasoning: 'Merchant override: paused during promo' })
+              }
+            });
+            return json({ shouldShow: false, decision: { type: 'no_intervention', amount: 0, reasoning: 'Merchant override: paused during promo' } });
+          }
+
+          if (override.type === 'force_zero') {
+            return json({
+              shouldShow: true,
+              decision: {
+                type: 'no-discount',
+                amount: 0,
+                code: null,
+                message: `Merchant override: announcement mode during ${activePromo.code}`
+              }
+            });
+          }
+
+          effectiveAggression = override.customAggression || aggression;
+        } else {
+          if (activePromo.aiStrategy === "pause") {
+            console.log("AI paused due to site-wide promotion");
+            await db.aIDecision.create({
+              data: {
+                shopId: shopRecord.id,
+                signals: JSON.stringify(signals),
+                decision: JSON.stringify({ type: 'no_intervention', amount: 0, reasoning: 'AI paused during site-wide promo' })
+              }
+            });
+            return json({ shouldShow: false, decision: { type: 'no_intervention', amount: 0, reasoning: 'AI paused during site-wide promo' } });
+          }
+
+          if (activePromo.aiStrategy === "decrease") {
+            const maxOffer = Math.max(5, Math.floor(activePromo.amount * 0.3));
+            effectiveAggression = Math.min(aggression, Math.ceil(maxOffer / 2.5));
+            console.log(`AI auto-decreased aggression to preserve margin during ${activePromo.amount}% promo (max exit offer: ${maxOffer}%)`);
+          }
+        }
+      }
+    }
+
+    const preScore = isEnterprisePlan
+      ? await enterpriseAI(signals, effectiveAggression, aiGoal, shopRecord.id)
+      : await determineOffer(
+          signals,
+          aggression,
+          aiGoal,
+          signals.cartValue || 0,
+          shopRecord.id,
+          shopRecord.plan || 'pro'
+        );
 
     if (preScore === null) {
       // AI determined no modal intervention is needed — record this decision
@@ -163,13 +289,29 @@ export async function action({ request }) {
         }
       };
 
-      await db.aIDecision.create({
+      const aiDecisionRecord = await db.aIDecision.create({
         data: {
           shopId: shopRecord.id,
           signals: JSON.stringify(signals),
           decision: JSON.stringify(noInterventionDecision)
         }
       });
+
+      // Record intervention outcome for adaptive threshold learning
+      const { recordInterventionOutcome } = await import('../utils/intervention-threshold.server.js');
+      const segment = (signals.deviceType === 'mobile') ? 'mobile'
+                    : (signals.deviceType === 'desktop') ? 'desktop' : 'all';
+      await recordInterventionOutcome(db, {
+        shopId: shopRecord.id,
+        wasShown: false,
+        propensityScore: signals.propensityScore ?? null,
+        intentScore: isEnterprisePlan ? null : (preScore?.intentScore ?? null),
+        cartValue: signals.cartValue,
+        deviceType: signals.deviceType,
+        trafficSource: signals.trafficSource,
+        segment,
+        aiDecisionId: aiDecisionRecord.id
+      }).catch(e => console.error('[Threshold] Failed to record no_intervention outcome:', e));
 
       // Track as an analytics event for learning
       trackAnalyticsEvent(admin, 'no_intervention').catch(e =>
@@ -180,7 +322,8 @@ export async function action({ request }) {
 
       return json({
         shouldShow: false,
-        decision: noInterventionDecision
+        decision: noInterventionDecision,
+        aiDecisionId: aiDecisionRecord.id
       });
     }
 
@@ -197,9 +340,10 @@ export async function action({ request }) {
     //    Aggression 5 → ~50% of visitors get a discount baseline, rest get no-discount copy.
     //    Aggression 10 → up to 100% can get discounts. Aggression 0 → pure reminder only.
     // 2. Max discount size — aggression caps how large the discount can be (see Step 4).
-    const aggressionNormalized = Math.max(0, Math.min(10, aggression)) / 10; // 0.0 – 1.0
+    // Use effectiveAggression which accounts for Enterprise promo adjustments.
+    const aggressionNormalized = Math.max(0, Math.min(10, effectiveAggression)) / 10; // 0.0 – 1.0
 
-    if (aggression === 0) {
+    if (effectiveAggression === 0) {
       baseline = 'pure_reminder';
       console.log(`[Variant Selection] Aggression = 0 → forcing pure_reminder baseline`);
     } else if (baseline.includes('with_discount')) {
@@ -208,10 +352,10 @@ export async function action({ request }) {
       if (discountRoll > aggressionNormalized) {
         // Downgrade to no-discount version of the same goal
         const noDiscountBaseline = baseline.replace('with_discount', 'no_discount');
-        console.log(`[Variant Selection] Aggression ${aggression}/10 — roll ${discountRoll.toFixed(2)} > ${aggressionNormalized.toFixed(2)} → downgrading to ${noDiscountBaseline}`);
+        console.log(`[Variant Selection] Aggression ${effectiveAggression}/10 — roll ${discountRoll.toFixed(2)} > ${aggressionNormalized.toFixed(2)} → downgrading to ${noDiscountBaseline}`);
         baseline = noDiscountBaseline;
       } else {
-        console.log(`[Variant Selection] Aggression ${aggression}/10 — roll ${discountRoll.toFixed(2)} ≤ ${aggressionNormalized.toFixed(2)} → keeping discount baseline`);
+        console.log(`[Variant Selection] Aggression ${effectiveAggression}/10 — roll ${discountRoll.toFixed(2)} ≤ ${aggressionNormalized.toFixed(2)} → keeping discount baseline`);
       }
     }
 
@@ -232,8 +376,10 @@ export async function action({ request }) {
     }
 
     // Step 3: Use Thompson Sampling to select variant
-    const selectedVariant = await selectVariantForImpression(shopRecord.id, baseline, segment);
-    console.log(`[Variant Selection] Selected ${selectedVariant.variantId} (Gen ${selectedVariant.generation})`);
+    // Pass triggerReason so Thompson Sampling can use trigger-specific conversion stats
+    const triggerReason = preScore?.triggerReason || 'general';
+    const selectedVariant = await selectVariantForImpression(shopRecord.id, baseline, segment, triggerReason);
+    console.log(`[Variant Selection] Selected ${selectedVariant.variantId} (Gen ${selectedVariant.generation}, trigger: ${triggerReason})`);
 
     // Step 4: Build decision from variant genes
     // Cap the offer amount based on aggression level.
@@ -245,7 +391,7 @@ export async function action({ request }) {
       const poolMax = Math.max(...pool.offerAmounts);
       const maxAllowed = Math.round(poolMax * aggressionNormalized);
       if (cappedOfferAmount > maxAllowed) {
-        console.log(`[Aggression Cap] Capping offer from ${cappedOfferAmount} to ${maxAllowed} (aggression ${aggression}/10, pool max ${poolMax})`);
+        console.log(`[Aggression Cap] Capping offer from ${cappedOfferAmount} to ${maxAllowed} (aggression ${effectiveAggression}/10, pool max ${poolMax})`);
         cappedOfferAmount = maxAllowed;
       }
     }
@@ -274,7 +420,8 @@ export async function action({ request }) {
       segment: segment,
       deviceType: signals.deviceType || 'unknown',
       trafficSource: signals.trafficSource || 'unknown',
-      cartValue: signals.cartValue
+      cartValue: signals.cartValue,
+      triggerReason
     });
 
     // Update analytics metafield for dashboard metrics (fire-and-forget to avoid blocking)
@@ -284,7 +431,7 @@ export async function action({ request }) {
 
     // If no discount needed (no-discount baseline or 0 amount), return with copy but no code
     if (decision.type === 'no-discount' || decision.amount === 0) {
-      await db.aIDecision.create({
+      const noDiscAiDec = await db.aIDecision.create({
         data: {
           shopId: shopRecord.id,
           signals: JSON.stringify(signals),
@@ -292,8 +439,25 @@ export async function action({ request }) {
         }
       });
 
+      // Record "shown" intervention outcome (no discount, but modal was displayed)
+      const { recordInterventionOutcome: recordShownOutcome } = await import('../utils/intervention-threshold.server.js');
+      const noDiscSegment = (signals.deviceType === 'mobile') ? 'mobile'
+                          : (signals.deviceType === 'desktop') ? 'desktop' : 'all';
+      await recordShownOutcome(db, {
+        shopId: shopRecord.id,
+        wasShown: true,
+        propensityScore: signals.propensityScore ?? null,
+        cartValue: signals.cartValue,
+        deviceType: signals.deviceType,
+        trafficSource: signals.trafficSource,
+        segment: noDiscSegment,
+        aiDecisionId: noDiscAiDec.id,
+        impressionId: impressionRecord.id
+      }).catch(e => console.error('[Threshold] Failed to record shown outcome:', e));
+
       return json({
         shouldShow: true,
+        aiDecisionId: noDiscAiDec.id,
         decision: {
           type: 'no-discount',
           amount: 0,
@@ -360,7 +524,7 @@ export async function action({ request }) {
     });
     
     // Log AI decision
-    await db.aIDecision.create({
+    const discountAiDec = await db.aIDecision.create({
       data: {
         shopId: shopRecord.id,
         signals: JSON.stringify(signals),
@@ -381,6 +545,7 @@ export async function action({ request }) {
     // Build response - only include variant for Enterprise users
     const response = {
       shouldShow: true,
+      aiDecisionId: discountAiDec.id,
       decision: {
         type: decision.type,
         amount: decision.amount,
@@ -408,7 +573,23 @@ export async function action({ request }) {
     response.decision.impressionId = impressionRecord.id; // For tracking clicks/conversions
     
     console.log(`[Variant Engine] Returning variant ${decision.variantPublicId} (Gen ${selectedVariant.generation})`);
-    
+
+    // Record "shown" intervention outcome for adaptive threshold learning
+    const { recordInterventionOutcome: recordShown } = await import('../utils/intervention-threshold.server.js');
+    const shownSegment = (signals.deviceType === 'mobile') ? 'mobile'
+                       : (signals.deviceType === 'desktop') ? 'desktop' : 'all';
+    await recordShown(db, {
+      shopId: shopRecord.id,
+      wasShown: true,
+      propensityScore: signals.propensityScore ?? null,
+      cartValue: signals.cartValue,
+      deviceType: signals.deviceType,
+      trafficSource: signals.trafficSource,
+      segment: shownSegment,
+      aiDecisionId: discountAiDec.id,
+      impressionId: impressionRecord.id
+    }).catch(e => console.error('[Threshold] Failed to record shown outcome:', e));
+
     return json(response);
     
   } catch (error) {
