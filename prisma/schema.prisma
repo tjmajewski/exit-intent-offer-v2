@@ -117,12 +117,17 @@ model Shop {
   genericDiscountCode String?
   discountCodePrefix  String?
 
+  // Adaptive Threshold System
+  lastThresholdUpdate DateTime?
+
   discountOffers    DiscountOffer[]
   aiDecisions       AIDecision[]
   promotions        Promotion[]
   variants          Variant[]       @relation("ShopVariants")
   seasonalPatterns  SeasonalPattern[] @relation("ShopSeasonalPatterns")
   brandSafetyRule   BrandSafetyRule? @relation("ShopBrandSafetyRules")
+  interventionThresholds InterventionThreshold[] @relation("ShopInterventionThresholds")
+  interventionOutcomes   InterventionOutcome[]   @relation("ShopInterventionOutcomes")
 }
 
 model DiscountOffer {
@@ -239,6 +244,7 @@ model VariantImpression {
   cartValue         Float?
   accountStatus     String?  // guest, logged_in
   visitFrequency    Int?     // 1 = first-time, 2+ = returning
+  triggerReason     String?  // failedCoupon, checkoutExit, cartHesitation, staleCart, general
   duringPromo       Boolean  @default(false)
   timestamp         DateTime @default(now())
 
@@ -248,6 +254,7 @@ model VariantImpression {
   @@index([segment, timestamp])
   @@index([shopId, deviceType])
   @@index([shopId, accountStatus])
+  @@index([shopId, triggerReason])
 }
 
 model MetaLearningGene {
@@ -446,4 +453,74 @@ model UsageCharge {
   @@index([shopId, status])
   @@index([shopId, createdAt])
   @@index([status, createdAt])
+}
+
+// Adaptive Intervention Threshold Learning
+// Tracks whether showing/skipping the modal was the right call per score bucket.
+// This is the per-shop feedback loop that makes show/no-show decisions smarter.
+
+model InterventionOutcome {
+  id              String   @id @default(uuid())
+  shopId          String
+  shop            Shop     @relation(fields: [shopId], references: [id], name: "ShopInterventionOutcomes")
+
+  // What happened
+  wasShown        Boolean              // true = modal shown, false = no_intervention
+  isHoldout       Boolean  @default(false) // true = 5% holdout group (excluded from learning)
+  converted       Boolean  @default(false)
+  revenue         Float?
+  discountAmount  Float?
+  profit          Float?               // revenue - discountAmount (null if not converted)
+
+  // Signals at decision time (denormalized for fast aggregation)
+  propensityScore Int?                 // 0-100 (Enterprise), null for Pro
+  intentScore     Int?                 // Pro AI score, null for Enterprise
+  cartValue       Float?
+  deviceType      String?
+  trafficSource   String?
+  segment         String   @default("all") // mobile, desktop, all
+
+  // Bucketing (which threshold bucket this fell into)
+  scoreBucket     String               // "0-10", "10-20", ..., "90-100"
+
+  // Linking
+  aiDecisionId    String?              // Links to AIDecision record
+  impressionId    String?              // Links to VariantImpression (if shown)
+
+  timestamp       DateTime @default(now())
+
+  @@index([shopId, scoreBucket, wasShown])
+  @@index([shopId, timestamp])
+  @@index([shopId, wasShown, converted])
+}
+
+model InterventionThreshold {
+  id              String   @id @default(uuid())
+  shopId          String
+  shop            Shop     @relation(fields: [shopId], references: [id], name: "ShopInterventionThresholds")
+
+  // Thompson Sampling state per score bucket
+  scoreBucket     String               // "0-10", "10-20", ..., "90-100"
+  segment         String   @default("all")
+
+  // "Show" arm stats
+  showImpressions   Int    @default(0)
+  showConversions   Int    @default(0)
+  showRevenue       Float  @default(0)
+  showProfit        Float  @default(0)  // revenue - discount cost
+
+  // "Don't show" arm stats
+  skipImpressions   Int    @default(0)
+  skipConversions   Int    @default(0)
+  skipRevenue       Float  @default(0)  // natural conversions (full margin)
+  skipProfit        Float  @default(0)  // = skipRevenue (no discount cost)
+
+  // Derived decision
+  shouldShow        Boolean @default(true) // Current recommendation
+  confidence        Float   @default(0.5)  // How confident (0-1)
+
+  lastUpdated       DateTime @updatedAt
+
+  @@unique([shopId, scoreBucket, segment])
+  @@index([shopId, segment])
 }

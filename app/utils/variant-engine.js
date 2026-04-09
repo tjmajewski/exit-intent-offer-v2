@@ -372,59 +372,127 @@ function betaSample(alpha, beta) {
  * among contenders. This balances exploitation (use winner) with
  * exploration (try new variants).
  */
-export async function selectVariantForImpression(shopId, baseline, segment = 'all') {
+/**
+ * Minimum trigger-specific impressions required before we use
+ * trigger-specific stats in Thompson Sampling instead of overall stats.
+ */
+const MIN_TRIGGER_IMPRESSIONS = 20;
+
+export async function selectVariantForImpression(shopId, baseline, segment = 'all', triggerReason = null) {
   // Get all live variants
   const liveVariants = await getLiveVariants(shopId, baseline, segment);
-  
+
   if (liveVariants.length === 0) {
     throw new Error(`No live variants found for shop ${shopId}, baseline ${baseline}, segment ${segment}`);
   }
-  
+
   // If only one variant, return it
   if (liveVariants.length === 1) {
     return liveVariants[0];
   }
-  
+
+  // If we have a trigger reason (not 'general'), try to load trigger-specific
+  // conversion stats for each variant. This lets variants that perform well for
+  // failedCoupon customers be preferred when the trigger is failedCoupon.
+  let triggerStats = null;
+  if (triggerReason && triggerReason !== 'general') {
+    const db = await getDb();
+    const variantIds = liveVariants.map(v => v.id);
+    const rawStats = await db.variantImpression.groupBy({
+      by: ['variantId'],
+      where: {
+        variantId: { in: variantIds },
+        triggerReason: triggerReason
+      },
+      _count: { id: true },
+      _sum: { converted: false }
+    });
+
+    // Also get conversion counts (groupBy _sum doesn't work on Boolean, use count with filter)
+    const conversionCounts = await db.variantImpression.groupBy({
+      by: ['variantId'],
+      where: {
+        variantId: { in: variantIds },
+        triggerReason: triggerReason,
+        converted: true
+      },
+      _count: { id: true }
+    });
+
+    const conversionMap = {};
+    for (const c of conversionCounts) {
+      conversionMap[c.variantId] = c._count.id;
+    }
+
+    // Build trigger stats map: variantId → { impressions, conversions }
+    const statsMap = {};
+    for (const s of rawStats) {
+      statsMap[s.variantId] = {
+        impressions: s._count.id,
+        conversions: conversionMap[s.variantId] || 0
+      };
+    }
+
+    // Only use trigger-specific stats if we have enough data for at least one variant
+    const hasEnoughData = Object.values(statsMap).some(s => s.impressions >= MIN_TRIGGER_IMPRESSIONS);
+    if (hasEnoughData) {
+      triggerStats = statsMap;
+      console.log(` [Thompson] Using trigger-specific stats for '${triggerReason}' (${Object.keys(statsMap).length} variants with data)`);
+    }
+  }
+
   // Check if there's a champion
   const champion = liveVariants.find(v => v.status === 'champion');
-  
+
   // Champion gets 70% of traffic
   if (champion && Math.random() < 0.7) {
     console.log(` Champion ${champion.variantId} selected (70% traffic)`);
     return champion;
   }
-  
+
   // Remaining 30% (or 100% if no champion): Thompson Sampling
   const contenders = liveVariants.filter(v => v.status !== 'champion');
-  
+
   if (contenders.length === 0) {
     // Edge case: champion is the only variant
     return champion;
   }
-  
-  // Thompson Sampling: Sample from beta distribution for each variant
+
+  // Thompson Sampling: Sample from beta distribution for each variant.
+  // When trigger-specific stats are available and a variant has enough
+  // trigger-specific impressions, use those stats instead of overall stats.
+  // This makes the system prefer variants proven for this specific trigger.
   const samples = contenders.map(variant => {
+    let impressions = variant.impressions;
+    let conversions = variant.conversions;
+
+    // Override with trigger-specific stats when available
+    if (triggerStats && triggerStats[variant.id] && triggerStats[variant.id].impressions >= MIN_TRIGGER_IMPRESSIONS) {
+      impressions = triggerStats[variant.id].impressions;
+      conversions = triggerStats[variant.id].conversions;
+    }
+
     // Beta distribution parameters
     // alpha = successes + 1 (prior of 1)
     // beta = failures + 1 (prior of 1)
-    const alpha = variant.conversions + 1;
-    const beta_param = (variant.impressions - variant.conversions) + 1;
-    
+    const alpha = conversions + 1;
+    const beta_param = (impressions - conversions) + 1;
+
     // Sample from beta(alpha, beta)
     const sample = betaSample(alpha, beta_param);
-    
+
     return {
       variant: variant,
       sample: sample
     };
   });
-  
+
   // Sort by sample value (highest wins this "tournament")
   samples.sort((a, b) => b.sample - a.sample);
-  
+
   const winner = samples[0].variant;
-  console.log(` Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)})`);
-  
+  console.log(` Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)}${triggerStats ? `, trigger: ${triggerReason}` : ''})`);
+
   return winner;
 }
 
@@ -457,6 +525,7 @@ export async function recordImpression(variantId, shopId, context = {}) {
       deviceType: context.deviceType || null,
       trafficSource: context.trafficSource || null,
       cartValue: context.cartValue || null,
+      triggerReason: context.triggerReason || null,
       duringPromo: activePromo ? true : false,
       clicked: false,
       converted: false

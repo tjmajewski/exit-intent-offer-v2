@@ -31,6 +31,66 @@ function capDiscountForProfitability(discountAmount, discountType, cartValue, ag
   return discountAmount;
 }
 
+// Helper: Detect funnel stage to automatically choose revenue vs conversion goal.
+// Replaces the static merchant toggle — the AI now picks the right strategy
+// per customer based on their position in the post-ATC journey.
+function detectFunnelGoalFromSignals(signals) {
+  let revenueScore = 0;
+  let conversionScore = 0;
+
+  // Exit page is the strongest funnel-stage signal
+  if (signals.exitPage === 'checkout') {
+    conversionScore += 40;
+  } else if (signals.exitPage === 'cart') {
+    conversionScore += 25;
+  } else if (signals.exitPage === 'product' || signals.exitPage === 'collection') {
+    revenueScore += 25;
+  }
+
+  // Cart hesitation = price sensitivity → conversion
+  if (signals.cartHesitation > 1) {
+    conversionScore += 20;
+  } else if (signals.cartHesitation === 0) {
+    revenueScore += 10;
+  }
+
+  // Failed coupon attempt → wants a discount now
+  if (signals.failedCouponAttempt) {
+    conversionScore += 30;
+  }
+
+  // Cart age: fresh = still shopping, stale = need a push
+  if (signals.cartAgeMinutes > 30) {
+    conversionScore += 15;
+  } else if (signals.cartAgeMinutes != null && signals.cartAgeMinutes < 10) {
+    revenueScore += 15;
+  }
+
+  // Previous abandoner = high risk → conversion
+  if (signals.hasAbandonedBefore) {
+    conversionScore += 15;
+  }
+
+  // Multiple page views = still browsing = revenue opportunity
+  if (signals.pageViews >= 5) {
+    revenueScore += 15;
+  } else if (signals.pageViews < 2) {
+    conversionScore += 5;
+  }
+
+  // Low cart value = less room for threshold, direct discount better
+  const cartValue = signals.cartValue || 0;
+  if (cartValue < 30) {
+    conversionScore += 10;
+  } else if (cartValue > 100) {
+    revenueScore += 10;
+  }
+
+  const goal = revenueScore >= conversionScore ? 'revenue' : 'conversion';
+  console.log(` [Funnel Stage] revenue=${revenueScore} conversion=${conversionScore} → ${goal}`);
+  return goal;
+}
+
 // Helper: Analyze cart composition to adjust strategy
 function analyzeCartComposition(signals) {
   const cartValue = signals.cartValue || 0;
@@ -46,7 +106,10 @@ function analyzeCartComposition(signals) {
   };
 }
 
-export async function determineOffer(signals, aggression, aiGoal, cartValue, shopId = null, plan = 'pro') {
+export async function determineOffer(signals, aggression, _aiGoal, cartValue, shopId = null, plan = 'pro') {
+  // Funnel-stage detection: automatically choose revenue (upsell) vs conversion
+  // (direct discount) based on customer signals instead of static merchant toggle.
+  const aiGoal = detectFunnelGoalFromSignals(signals);
   // PHASE 5: Promotional intelligence (detection for all, control for Enterprise only)
   let activePromoWarning = null;
   
@@ -225,37 +288,50 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
   console.log(` [Pro AI] Intent score: ${score}`);
 
   // =============================================================================
-  // PRO AI: SHOULD WE SHOW? (simpler logic than Enterprise)
-  // Goal: Increase revenue while keeping the store profitable
-  // The AI must balance conversion uplift vs margin erosion
+  // PRO AI: SHOULD WE SHOW? (Adaptive threshold + hard overrides)
+  // Uses per-shop learned thresholds when available; falls back to hardcoded
+  // defaults for cold-start. Hard overrides for strongest signals are kept.
   // =============================================================================
 
   const currentCartValue = cartValue || signals.cartValue || 0;
 
-  // DON'T SHOW: Very low score + low cart = unlikely to convert
-  if (score < 20 && currentCartValue < 40) {
-    console.log(` [Pro AI] Score too low (${score}) with small cart ($${currentCartValue}) - no intervention`);
-    return null;
-  }
-
-  // DON'T SHOW: Negative score = very unlikely to convert
+  // HARD OVERRIDE: Negative score = very unlikely to convert (always skip)
   if (score < 0) {
     console.log(` [Pro AI] Negative score (${score}) - no intervention (preserving margin)`);
     return null;
   }
 
-  // DON'T SHOW: First-time visitor + quick exit + low cart = accidental visit
+  // HARD OVERRIDE: First-time visitor + quick exit + low cart = accidental visit
   if (signals.visitFrequency === 1 && signals.timeOnSite < 30 && currentCartValue < 50) {
     console.log(` [Pro AI] First-time quick exit with low cart - no intervention`);
     return null;
   }
 
-  // NO INTERVENTION: High-propensity customer will likely convert without discount
-  // Offering a discount here would erode margin for no benefit
-  if (score > 80 && signals.purchaseHistoryCount > 0) {
-    console.log(` [Pro AI] High score (${score}) + repeat buyer - no intervention (protect margin)`);
-    return null;
+  // ADAPTIVE THRESHOLD: consult per-shop learned thresholds for the gray zone
+  if (shopId) {
+    const { default: db } = await import('../db.server.js');
+    const { shouldIntervene } = await import('./intervention-threshold.server.js');
+    const segment = signals.deviceType === 'mobile' ? 'mobile'
+                  : signals.deviceType === 'desktop' ? 'desktop' : 'all';
+
+    const decision = await shouldIntervene(db, shopId, score, segment);
+    if (!decision.shouldShow) {
+      console.log(` [Pro AI] Adaptive threshold: no intervention for score ${score} bucket ${decision.bucket}${decision.isExploring ? ' (exploring)' : ''}`);
+      return null;
+    }
+    if (decision.isExploring) {
+      console.log(` [Pro AI] Adaptive threshold: showing for score ${score} bucket ${decision.bucket} (exploring)`);
+    }
   }
+
+  // Derive the dominant trigger reason from signals (for variant evolution tracking).
+  // Priority order matches Enterprise hard overrides so the same customer gets
+  // the same triggerReason regardless of Pro vs Enterprise tier.
+  const triggerReason = signals.failedCouponAttempt ? 'failedCoupon'
+    : signals.exitPage === 'checkout' ? 'checkoutExit'
+    : signals.cartHesitation > 1 ? 'cartHesitation'
+    : signals.cartAgeMinutes > 60 ? 'staleCart'
+    : 'general';
 
   // HIGH SCORE: Customer likely to convert anyway - minimal or no offer
   if (score > 80) {
@@ -266,6 +342,7 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
         type: 'percentage',
         amount: 5, // Minimal discount - they're already likely to buy
         confidence: 'high',
+        triggerReason,
         reasoning: `High intent score (${score}) - minimal nudge needed, protecting margin`
       };
     }
@@ -277,6 +354,7 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
       type: 'no-discount',
       amount: 0,
       confidence: 'high',
+      triggerReason,
       reasoning: 'Aggression set to 0 - announcement only mode'
     };
   }
@@ -314,6 +392,7 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
         threshold: Math.max(threshold, currentCart + 20),
         amount: Math.max(discountAmount, 5),
         confidence: 'high',
+        triggerReason,
         reasoning: `High-ticket item ($${cart.avgItemPrice.toFixed(0)}) - encouraging accessory add-on to $${threshold}`
       };
     }
@@ -350,7 +429,8 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
       threshold: Math.max(targetThreshold, currentCart + 10),
       amount: Math.max(discountAmount, 5),
       confidence: score > 60 ? 'high' : 'medium',
-      reasoning: cart.isMultiItem 
+      triggerReason,
+      reasoning: cart.isMultiItem
         ? `Multi-item cart - encouraging bundle expansion to $${targetThreshold}`
         : `Revenue mode: Encouraging cart increase from $${currentCart} to $${targetThreshold}`
     };
@@ -367,6 +447,7 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
       type: 'percentage',
       amount: Math.min(cappedOffer, 15), // Cap at 15%
       confidence: 'high',
+      triggerReason,
       reasoning: `High-ticket single item ($${cart.avgItemPrice.toFixed(0)}) - conservative discount to close (margin-protected)`
     };
   }
@@ -388,6 +469,7 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
       type: 'fixed',
       amount: cappedFixed,
       confidence: score > 60 ? 'high' : 'medium',
+      triggerReason,
       reasoning: `Conversion mode: Small cart, offering fixed discount (margin-protected)`
     };
   } else {
@@ -398,6 +480,7 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
       type: 'percentage',
       amount: cappedPercent,
       confidence: score > 60 ? 'high' : 'medium',
+      triggerReason,
       reasoning: `Conversion mode: Score ${score}, offering ${cappedPercent}% discount (margin-protected)`
     };
   }
@@ -415,7 +498,10 @@ export async function determineOffer(signals, aggression, aiGoal, cartValue, sho
  * 6. Profitability-aware: understands that stores need to be profitable,
  *    not just maximize raw revenue. No intervention is sometimes the best outcome.
  */
-export function enterpriseAI(signals, aggression, aiGoal = 'revenue') {
+export async function enterpriseAI(signals, aggression, _aiGoal = 'revenue', shopId = null) {
+  // Funnel-stage detection: automatically choose revenue (upsell) vs conversion
+  // (direct discount) based on customer signals instead of static merchant toggle.
+  const aiGoal = detectFunnelGoalFromSignals(signals);
   const propensity = signals.propensityScore;
   const cartValue = signals.cartValue || 0;
   const cart = analyzeCartComposition(signals);
@@ -439,54 +525,61 @@ export function enterpriseAI(signals, aggression, aiGoal = 'revenue') {
 
   // =============================================================================
   // ENTERPRISE-EXCLUSIVE: SHOULD WE SHOW AT ALL?
-  // Goal: Maximize revenue while keeping the store profitable.
-  // Sometimes the best decision is NO intervention — giving discounts to
-  // customers who would buy anyway erodes margin without adding value.
+  // Hard overrides for strongest signals, then adaptive thresholds for the gray zone.
   // =============================================================================
 
-  // NO INTERVENTION: Very high propensity + loyal customer = would buy anyway
-  // Discount here would only reduce profit (unless it's afternoon casual browsing — they may leave)
-  if (propensity > 85 && signals.purchaseHistoryCount > 2 && !isAfternoon) {
-    console.log(' [Enterprise AI] Very high propensity + loyal customer - no intervention (protecting margin)');
-    return null;
-  }
-
-  // HIGH-VALUE SIGNAL: Failed coupon attempt - ALWAYS show, they want a discount
+  // HARD OVERRIDE: Failed coupon attempt - ALWAYS show, they want a discount
   if (signals.failedCouponAttempt) {
     console.log(' [Enterprise AI] Failed coupon detected - guaranteed show');
     const offer = calculateOfferForDiscountSeeker(signals, aggression, aiGoal, cartValue, cart);
-    return { ...offer, timing: 'immediate', confidence: 'high', reasoning: 'Customer tried a coupon code - they want a discount' };
+    return { ...offer, timing: 'immediate', confidence: 'high', triggerReason: 'failedCoupon', reasoning: 'Customer tried a coupon code - they want a discount' };
   }
 
-  // EXIT PAGE CONTEXT: Checkout exit is highest intent
+  // HARD OVERRIDE: Checkout exit is highest intent - ALWAYS show
   if (signals.exitPage === 'checkout') {
     console.log(' [Enterprise AI] Checkout exit detected - high-value recovery');
-    // They were about to buy - give them a reason to complete
     const offer = calculateCheckoutRecoveryOffer(signals, aggression, cartValue, cart);
-    return { ...offer, timing: 'immediate', confidence: 'high', reasoning: 'Customer abandoned at checkout - recovery offer' };
+    return { ...offer, timing: 'immediate', confidence: 'high', triggerReason: 'checkoutExit', reasoning: 'Customer abandoned at checkout - recovery offer' };
   }
 
-  // CART HESITATION: Add/remove behavior indicates price sensitivity
+  // HARD OVERRIDE: Cart hesitation indicates price sensitivity - ALWAYS show
   if (signals.cartHesitation > 1) {
     console.log(' [Enterprise AI] Cart hesitation detected - price sensitive customer');
     const offer = calculateOfferForPriceSensitive(signals, aggression, aiGoal, cartValue, cart);
-    return { ...offer, timing: 'exit_intent', confidence: 'medium', reasoning: 'Customer showing price sensitivity (add/remove behavior)' };
+    return { ...offer, timing: 'exit_intent', confidence: 'medium', triggerReason: 'cartHesitation', reasoning: 'Customer showing price sensitivity (add/remove behavior)' };
   }
 
-  // CART AGE: Old carts may need a push
+  // HARD OVERRIDE: Stale cart may need a push - ALWAYS show
   if (signals.cartAgeMinutes > 60) {
     console.log(' [Enterprise AI] Stale cart detected (' + signals.cartAgeMinutes + ' minutes old)');
-    // They've been thinking about it for a while - nudge them
     const offer = calculateStaleCartOffer(signals, aggression, aiGoal, cartValue, cart);
-    return { ...offer, timing: 'immediate', confidence: 'medium', reasoning: 'Cart has been sitting for over an hour' };
+    return { ...offer, timing: 'immediate', confidence: 'medium', triggerReason: 'staleCart', reasoning: 'Cart has been sitting for over an hour' };
   }
-  
-  // High propensity (>75) = likely to buy anyway
-  if (propensity > 75) {
-    // Don't show discount if high-value customer
-    if (signals.customerLifetimeValue > 500) {
-      return null; // Don't show modal at all
+
+  // ADAPTIVE THRESHOLD: consult per-shop learned thresholds for the gray zone.
+  // Replaces the old hardcoded propensity > 85/75/40 checks.
+  if (shopId && propensity != null) {
+    const { default: db } = await import('../db.server.js');
+    const { shouldIntervene } = await import('./intervention-threshold.server.js');
+    const segment = signals.deviceType === 'mobile' ? 'mobile'
+                  : signals.deviceType === 'desktop' ? 'desktop' : 'all';
+
+    const decision = await shouldIntervene(db, shopId, propensity, segment);
+    if (!decision.shouldShow) {
+      console.log(` [Enterprise AI] Adaptive threshold: no intervention for propensity ${propensity} bucket ${decision.bucket}${decision.isExploring ? ' (exploring)' : ''}`);
+      return null;
     }
+    if (decision.isExploring) {
+      console.log(` [Enterprise AI] Adaptive threshold: showing for propensity ${propensity} bucket ${decision.bucket} (exploring)`);
+    }
+  }
+
+  // =============================================================================
+  // ENTERPRISE: WHAT OFFER TO SHOW (based on propensity and aggression)
+  // =============================================================================
+
+  // High propensity (>75) = likely to buy anyway — minimal offer
+  if (propensity > 75) {
     
     // Revenue mode: Try to increase cart size even for high-propensity
     if (aiGoal === 'revenue' && cartValue > 20) {
@@ -507,16 +600,18 @@ export function enterpriseAI(signals, aggression, aiGoal = 'revenue') {
         amount: Math.max(discountAmount, 5),
         timing: 'exit_intent',
         confidence: 'high',
+        triggerReason: 'general',
         reasoning: `High propensity - encouraging cart increase from $${cartValue} to $${threshold}`
       };
     }
-    
+
     // Conversion mode: Show small discount - they're already likely to convert
     return {
       type: 'percentage',
       amount: 5,
       timing: 'exit_intent',
       confidence: 'high',
+      triggerReason: 'general',
       reasoning: 'High propensity - minimal discount needed'
     };
   }
@@ -546,6 +641,7 @@ export function enterpriseAI(signals, aggression, aiGoal = 'revenue') {
           amount: Math.max(discountAmount, 5),
           timing: 'exit_intent',
           confidence: 'medium',
+          triggerReason: 'general',
           reasoning: `Medium propensity + high-ticket item ($${cart.avgItemPrice.toFixed(0)}) - encouraging accessory add-on to $${threshold}`
         };
       }
@@ -569,6 +665,7 @@ export function enterpriseAI(signals, aggression, aiGoal = 'revenue') {
         amount: Math.max(discountAmount, 5),
         timing: 'exit_intent',
         confidence: 'medium',
+        triggerReason: 'general',
         reasoning: `Medium propensity - encouraging cart increase from $${cartValue} to $${threshold}`
       };
     }
@@ -588,18 +685,13 @@ export function enterpriseAI(signals, aggression, aiGoal = 'revenue') {
       amount: Math.round(offer),
       timing: 'exit_intent',
       confidence: 'medium',
+      triggerReason: 'general',
       reasoning: `Medium propensity - standard offer${timeReasoning}`
     };
   }
   
-  // Low propensity (<40) = aggressive offer or don't waste discount
-  // Late-night shoppers with low propensity still convert better than daytime ones
-  if (cartValue < 30 && !isLateNight) {
-    return null; // Don't show - unlikely to convert
-  }
-  if (cartValue < 20) {
-    return null; // Even late-night can't save a very low cart
-  }
+  // Low propensity (<40) = aggressive offer needed
+  // (The adaptive threshold already decided to show — these customers need a big nudge)
   
   // Revenue mode: Big threshold offer to capture high-intent browsers
   if (aiGoal === 'revenue') {
@@ -625,37 +717,40 @@ export function enterpriseAI(signals, aggression, aiGoal = 'revenue') {
         amount: Math.max(discountAmount, 10),
         timing: 'immediate',
         confidence: 'low',
+        triggerReason: 'general',
         reasoning: `Low propensity + high-ticket ($${cart.avgItemPrice.toFixed(0)}) - aggressive accessory upsell to $${threshold}`
       };
     }
-    
+
     // NORMAL LOW PROPENSITY THRESHOLD
     const rawThreshold = cartValue * 1.4;
-    const threshold = rawThreshold < 50 ? Math.round(rawThreshold / 5) * 5 
-                    : rawThreshold < 200 ? Math.round(rawThreshold / 10) * 10 
+    const threshold = rawThreshold < 50 ? Math.round(rawThreshold / 5) * 5
+                    : rawThreshold < 200 ? Math.round(rawThreshold / 10) * 10
                     : Math.round(rawThreshold / 25) * 25;
-    
+
     const rawDiscount = threshold * 0.15;
     const discountAmount = rawDiscount < 20 ? Math.round(rawDiscount / 5) * 5
                          : rawDiscount < 100 ? Math.round(rawDiscount / 10) * 10
                          : Math.round(rawDiscount / 25) * 25;
-    
+
     return {
       type: 'threshold',
       threshold: threshold,
       amount: Math.max(discountAmount, 10),
       timing: 'immediate',
       confidence: 'low',
+      triggerReason: 'general',
       reasoning: `Low propensity but $${cartValue} cart - aggressive threshold offer`
     };
   }
-  
+
   // Conversion mode: Low propensity but decent cart value - go aggressive immediately
   return {
     type: 'percentage',
     amount: 20 + aggression,
     timing: 'immediate', // Show right away, don't wait for exit
     confidence: 'low',
+    triggerReason: 'general',
     reasoning: 'Low propensity but high cart - aggressive immediate offer'
   };
 }

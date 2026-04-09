@@ -1,5 +1,5 @@
 # Repsarq Feature Roadmap
-**Updated: April 5, 2026**
+**Updated: April 6, 2026**
 **App:** Exit Intent Modal with AI-Powered Cart Recovery
 
 ---
@@ -187,6 +187,37 @@ Go beyond the current triggers with audience-level targeting.
 
 ---
 
+### 2.4 Incrementality Dashboard
+**Impact:** High — proves ROI to merchants, reduces churn ("this app made you $X")
+**Effort:** Medium (3-5 days for backend + dashboard integration)
+**Tier:** All tiers
+
+Show merchants the causal revenue lift from Repsarq using the 5% holdout group.
+
+**Core scope (backend — SHIPPED):**
+- 5% holdout group randomly assigned at add-to-cart time (before hard overrides)
+- Holdout customers never see a modal, period — unbiased measurement
+- Cart attribute stamping (`exit_intent_holdout`) for webhook conversion tracking
+- Holdout outcomes stored in InterventionOutcome with `isHoldout: true`
+- Holdout excluded from Thompson Sampling learning loop (measurement-only)
+- Unique decision ID matching for accurate conversion attribution at any volume
+
+**Core scope (dashboard — TODO):**
+- **Incremental conversion rate**: treatment group CVR minus holdout CVR
+- **Incremental revenue**: (incremental CVR × total eligible sessions × AOV)
+- **Statistical confidence**: Bayesian comparison of treatment vs holdout
+- **ROI**: incremental revenue minus total discounts given minus subscription cost
+- "Gathering data" state until confidence crosses threshold (~500-1000 holdout conversions)
+- Time-series chart showing incremental lift over time
+- Integrate with existing analytics dashboard layout
+
+**Key design decisions:**
+- Holdout coin flip happens BEFORE hard overrides to avoid systematic bias
+- Holdout never trains the AI — pure measurement group
+- ~10,000-20,000 eligible sessions needed for statistically meaningful results at 5% holdout + ~5% CVR
+
+---
+
 ## Priority Tier 3: Competitive Moat & Intelligence
 
 These features build defensible advantages that competitors can't easily replicate.
@@ -199,6 +230,17 @@ These features build defensible advantages that competitors can't easily replica
 Level up the existing AI evolution system with smarter signals and faster learning.
 
 **Core scope:**
+
+~~**Continuous propensity scoring:**~~ SHIPPED — Replaced binary if/else thresholds with continuous logarithmic functions across all 23 signals. Score distribution now spreads across 0-100 instead of clustering at extremes. Handles contradictions (returning customer on new session). All previously-collected-but-unused signals now contribute (productDwellTime, exitPage, cartAgeMinutes, itemCount, abandonmentCount, dayOfWeek, customerLifetimeValue).
+
+~~**Adaptive intervention thresholds:**~~ SHIPPED — Per-store, per-score-bucket learning of whether to show the modal. Uses Thompson Sampling (same pattern as variant evolution) with profit-weighted arms. Tracks natural conversions via cart attribute stamping. Cron recalculates every 5 minutes when 50+ new outcomes exist. Replaces hardcoded show/no-show rules with data-driven per-store decisions.
+
+~~**Per-trigger-reason variant evolution:**~~ SHIPPED — Different trigger reasons (failedCoupon, checkoutExit, cartHesitation, staleCart, general) now track separate conversion stats on VariantImpressions. Thompson Sampling uses trigger-specific conversion rates when 20+ impressions exist, so copy evolves independently per trigger context without fragmenting variant populations.
+
+~~**Funnel-stage-aware offer selection:**~~ SHIPPED — Replaced the static merchant "revenue mode vs conversion mode" toggle with automatic per-customer funnel-stage detection. The AI scores revenue signals (browsing, fresh cart, high page views) against conversion signals (cart/checkout page, hesitation, failed coupon, stale cart) and selects the right offer type per customer. Removed the Optimization Goal dropdown from AI settings.
+
+~~**Post-dismissal reminder toast:**~~ SHIPPED — Small floating pill appears 60s after a customer dismisses the modal (discount offers only). Shows "Your offer is still available" with the code. Click → checkout with discount applied. Auto-dismisses after 30s. Detects chat widgets to avoid overlap. Recovers value from customers who received an offer but didn't act immediately.
+
 - **More signals:** Add scroll velocity, mouse movement patterns, tab-switching behavior, referral page context
 - **Faster convergence:** Bayesian optimization to replace pure genetic algorithm for small-traffic stores
 - **Cross-store learning improvements:** Better normalization, industry-specific baselines, seasonal adjustment
@@ -370,5 +412,5 @@ Merchants choose between two code modes. This choice affects behavior across all
 
 ---
 
-**Last Updated:** March 5, 2026
+**Last Updated:** April 6, 2026
 **Status:** Post-launch — feature expansion phase

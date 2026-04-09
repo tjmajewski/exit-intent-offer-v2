@@ -182,7 +182,7 @@ export async function action({ request }) {
     redirectDestination: formData.get("redirectDestination") || "checkout",
     template: formData.get("template") || "discount",
     mode: formData.get("mode") || "manual",
-    aiGoal: formData.get("aiGoal") || "revenue",
+    aiGoal: "auto", // Funnel-stage detection: AI auto-selects revenue vs conversion per customer
     aggression: parseInt(formData.get("aggression") || "5"),
     budgetEnabled: formData.get("budgetEnabled") === "on",
     budgetAmount: parseFloat(formData.get("budgetAmount") || "500"),

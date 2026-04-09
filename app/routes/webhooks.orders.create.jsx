@@ -1,5 +1,6 @@
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import { recordInterventionOutcome, recordInterventionConversion } from "../utils/intervention-threshold.server.js";
 
 export const action = async ({ request }) => {
   try {
@@ -135,14 +136,180 @@ export const action = async ({ request }) => {
       item.product_id === 7790476951630
     );
 
+    // HOLDOUT CONVERSION TRACKING: Detect orders from the 5% holdout group.
+    // These conversions are recorded for incrementality measurement but are
+    // excluded from the adaptive threshold learning loop.
+    const holdoutAttr = noteAttributes.find(
+      attr => attr.name === 'exit_intent_holdout'
+    );
+
+    if (holdoutAttr && shopRecord) {
+      console.log('[Webhook] Holdout group conversion detected');
+      try {
+        const holdoutDecisionId = holdoutAttr.value;
+        const revenue = parseFloat(payload.total_price);
+
+        // Look up the AI decision by ID for signal data
+        let signalData = {};
+        let aiDecisionId = null;
+        if (holdoutDecisionId && holdoutDecisionId !== 'true') {
+          aiDecisionId = holdoutDecisionId;
+          const decision = await db.aIDecision.findUnique({
+            where: { id: holdoutDecisionId }
+          });
+          if (decision?.signals) {
+            try { signalData = JSON.parse(decision.signals); } catch { /* ignore */ }
+          }
+        }
+
+        await recordInterventionOutcome(db, {
+          shopId: shopRecord.id,
+          wasShown: false,
+          isHoldout: true,
+          converted: true,
+          revenue,
+          discountAmount: 0,
+          propensityScore: signalData.propensityScore ?? signalData.propensity ?? null,
+          intentScore: signalData.intentScore ?? null,
+          cartValue: signalData.cartValue ?? null,
+          deviceType: signalData.deviceType ?? null,
+          trafficSource: signalData.trafficSource ?? null,
+          segment: signalData.deviceType === 'mobile' ? 'mobile' : (signalData.deviceType === 'desktop' ? 'desktop' : 'all'),
+          aiDecisionId
+        });
+
+        console.log(`[Webhook] Holdout conversion recorded: $${revenue}`);
+      } catch (err) {
+        console.error('[Webhook] Error recording holdout conversion:', err.message);
+      }
+
+      // Holdout conversions don't flow into analytics/revenue attribution
+      return new Response(null, { status: 200 });
+    }
+
+    // NATURAL CONVERSION TRACKING: Detect orders where AI decided NOT to show a modal
+    // but the customer converted anyway. This closes the feedback loop for the
+    // adaptive intervention threshold system.
+    // The cart attribute value is now the unique aiDecisionId (not a boolean).
+    const noInterventionAttr = noteAttributes.find(
+      attr => attr.name === 'exit_intent_decision'
+    );
+
+    if (noInterventionAttr && shopRecord) {
+      console.log('[Webhook] Natural conversion detected — customer bought without modal');
+      try {
+        const decisionId = noInterventionAttr.value;
+        const revenue = parseFloat(payload.total_price);
+
+        // Look up the exact AI decision by ID (precise matching, no fuzzy search)
+        let recentDecision = null;
+        let signalData = {};
+        if (decisionId && decisionId !== 'no_intervention') {
+          recentDecision = await db.aIDecision.findUnique({
+            where: { id: decisionId }
+          });
+        }
+        // Fallback: legacy 'no_intervention' string (from before the ID fix)
+        if (!recentDecision) {
+          recentDecision = await db.aIDecision.findFirst({
+            where: {
+              shopId: shopRecord.id,
+              decision: { contains: 'no_intervention' },
+              createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+            },
+            orderBy: { createdAt: 'desc' }
+          });
+        }
+
+        if (recentDecision?.signals) {
+          try { signalData = JSON.parse(recentDecision.signals); } catch { /* ignore */ }
+        }
+
+        await recordInterventionOutcome(db, {
+          shopId: shopRecord.id,
+          wasShown: false,
+          converted: true,
+          revenue,
+          discountAmount: 0,
+          propensityScore: signalData.propensityScore ?? signalData.propensity ?? null,
+          intentScore: signalData.intentScore ?? null,
+          cartValue: signalData.cartValue ?? null,
+          deviceType: signalData.deviceType ?? null,
+          trafficSource: signalData.trafficSource ?? null,
+          segment: signalData.deviceType === 'mobile' ? 'mobile' : (signalData.deviceType === 'desktop' ? 'desktop' : 'all'),
+          aiDecisionId: recentDecision?.id ?? null
+        });
+
+        console.log(`[Webhook] Natural conversion recorded: $${revenue}`);
+      } catch (err) {
+        console.error('[Webhook] Error recording natural conversion:', err.message);
+      }
+    }
+
+    // INTERVENTION CONVERSION TRACKING: When a modal WAS shown and the customer converts,
+    // update the existing InterventionOutcome record with conversion data.
+    // Uses the unique aiDecisionId stamped on the cart for precise matching.
+    const aiDecisionAttr = noteAttributes.find(
+      attr => attr.name === 'exit_intent_ai_decision'
+    );
+
+    if ((exitIntentAttribute || exitDiscountUsed || exitIntentDiscount || configuredDiscountUsed) && shopRecord) {
+      try {
+        let recentOutcome = null;
+
+        // Prefer exact match by aiDecisionId
+        if (aiDecisionAttr?.value) {
+          recentOutcome = await db.interventionOutcome.findFirst({
+            where: {
+              shopId: shopRecord.id,
+              aiDecisionId: aiDecisionAttr.value,
+              wasShown: true,
+              converted: false
+            }
+          });
+        }
+
+        // Fallback: most recent unconverted shown outcome (for legacy orders without ID)
+        if (!recentOutcome) {
+          recentOutcome = await db.interventionOutcome.findFirst({
+            where: {
+              shopId: shopRecord.id,
+              wasShown: true,
+              converted: false,
+              timestamp: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+            },
+            orderBy: { timestamp: 'desc' }
+          });
+        }
+
+        if (recentOutcome) {
+          const revenue = parseFloat(payload.total_price);
+          const discountAmount = parseFloat(payload.total_discounts) || 0;
+          await recordInterventionConversion(db, recentOutcome.id, revenue, discountAmount);
+          console.log(`[Webhook] Intervention conversion recorded for outcome ${recentOutcome.id}`);
+        }
+      } catch (err) {
+        console.error('[Webhook] Error recording intervention conversion:', err.message);
+      }
+    }
+
     // If no exit intent signal at all, skip
     // exitIntentAttribute  → cart attribute stamped by modal JS on CTA click (primary)
     // exitDiscountUsed     → legacy codes (e.g. 10OFF, 10DOLLARSOFF)
     // exitIntentDiscount   → EXIT-prefixed codes generated by the app
     // configuredDiscountUsed → manually-configured codes (manual mode)
     // giftCardVoucher      → gift-card voucher product in line items
-    if (!exitIntentAttribute && !exitDiscountUsed && !exitIntentDiscount && !giftCardVoucher && !configuredDiscountUsed) {
+    // noInterventionAttr   → AI decided no modal, but customer converted naturally
+    // holdoutAttr          → holdout group (already handled above with early return)
+    if (!exitIntentAttribute && !exitDiscountUsed && !exitIntentDiscount && !giftCardVoucher && !configuredDiscountUsed && !noInterventionAttr) {
       console.log("No exit intent offer used, skipping");
+      return new Response(null, { status: 200 });
+    }
+
+    // Natural conversion only (no modal was shown) — intervention tracking is done above,
+    // don't flow into analytics/revenue attribution since the modal wasn't shown.
+    if (noInterventionAttr && !exitIntentAttribute && !exitDiscountUsed && !exitIntentDiscount && !giftCardVoucher && !configuredDiscountUsed) {
+      console.log('[Webhook] Natural conversion tracked, no modal attribution needed');
       return new Response(null, { status: 200 });
     }
 

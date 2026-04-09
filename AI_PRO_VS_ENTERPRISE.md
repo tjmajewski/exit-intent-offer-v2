@@ -1,5 +1,5 @@
 # Pro vs Enterprise - Feature Comparison
-**Last Updated:** January 19, 2026
+**Last Updated:** April 6, 2026
 
 ---
 
@@ -15,6 +15,8 @@
 | **Social Proof** | ✅ | ✅ |
 | **Revenue/Conversion Modes** | ✅ | ✅ |
 | **Network Meta-Learning** | ✅ | ✅ |
+| **Adaptive Intervention Thresholds** | ✅ | ✅ |
+| **5% Holdout / Incrementality** | ✅ | ✅ |
 | **Manual Variant Controls** | ❌ | ✅ |
 | **Evolution Settings Control** | ❌ | ✅ |
 | **Device-Specific Evolution** | ❌ | ✅ |
@@ -48,6 +50,13 @@
 - New stores inherit proven genes
 - Faster initial performance
 - Contribute to network (opt-out available)
+
+✅ **Adaptive Intervention Thresholds**
+- Per-store learning of whether to show or skip the modal
+- Thompson Sampling per propensity score bucket
+- Optimizes for profit (revenue minus discount cost)
+- Natural conversion tracking for "skip" decisions
+- Gets smarter with every visitor interaction
 
 ✅ **Promotional Intelligence (Detection)**
 - Detects site-wide promotions

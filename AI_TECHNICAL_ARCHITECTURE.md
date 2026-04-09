@@ -1,5 +1,5 @@
 # Repsarq AI - Technical Architecture
-**Last Updated:** March 13, 2026
+**Last Updated:** April 6, 2026
 **Audience:** Developers
 
 ---
@@ -17,6 +17,7 @@
 9. [Evolution Algorithm Details](#evolution-algorithm-details)
 10. [Thompson Sampling Implementation](#thompson-sampling-implementation)
 11. [Social Proof Integration](#social-proof-integration)
+12. [Adaptive Intervention Thresholds](#adaptive-intervention-thresholds)
 
 ---
 
@@ -52,53 +53,67 @@ The AI uses **propensity scoring** (0-100) to predict purchase likelihood:
 | **Time-Based Signals** | localHour (customer's local time of day, 0-23) | Pro + Enterprise |
 | **Server-Enriched** | purchaseHistoryCount, customerLifetimeValue, averageOrderValue, cartComposition | Pro + Enterprise |
 
-### Signal Scoring Logic
+### Signal Scoring Logic (Continuous Propensity Model)
 
-**POSITIVE signals (customer likely to convert):**
+Propensity scoring uses **continuous functions with logarithmic diminishing returns** rather than binary thresholds. Baseline score starts at 45 (shifted from 50 for more resolution at the top). All 23 available signals contribute, clamped to 0-100.
 
-| Signal | Impact | Reasoning |
-|--------|--------|-----------|
-| `visitFrequency > 1` | +15 to +30 | Returning visitors convert 2-3x better |
-| `accountStatus = 'logged_in'` | +15 | Committed customers have accounts |
-| `timeOnSite > 120s` | +15 to +25 | Genuine consideration, not accidental |
-| `pageViews >= 5` | +10 to +15 | Engaged browsing behavior |
-| `cartValue > $100` | +10 to +15 | Invested in purchase |
-| `purchaseHistoryCount > 0` | +20 to +30 | Knows and trusts the brand |
-| `scrollDepth > 75%` | +5 to +10 | Read the content, engaged |
+**Customer Commitment (max ~30 points):**
 
-**NEGATIVE signals (customer may need incentive):**
+| Signal | Formula | Examples | Reasoning |
+|--------|---------|----------|-----------|
+| `purchaseHistoryCount` | `min(20, 8 × ln(count + 1))` | 1 order = +5.5, 3 = +11, 10 = +19 | Knows and trusts the brand |
+| `customerLifetimeValue` | `min(8, 3 × ln(clv/50 + 1))` | $200 = +4.5, $500 = +7 | High-value customer |
+| `accountStatus = 'logged_in'` | +6 flat | — | Committed enough to create account |
+| `accountStatus = 'guest'` | -3 flat | — | Less committed |
 
-| Signal | Impact | Reasoning |
-|--------|--------|-----------|
-| `visitFrequency = 1` | -10 to -15 | First-time visitors have ~2% conversion |
-| `timeOnSite < 30s` | -15 to -20 | Quick exit = low intent |
-| `deviceType = 'mobile'` | -5 to -10 | Mobile converts ~50% lower than desktop |
-| `cartValue < $30` | -10 | Less committed to purchase |
-| `pageViews < 2` | -10 | Shallow engagement |
+**Engagement Depth (max ~25 points):**
 
-**HIGH-VALUE signals (strong intent indicators - Enterprise only):**
+| Signal | Formula | Examples | Reasoning |
+|--------|---------|----------|-----------|
+| `timeOnSite` ≥ 30s | `min(12, 4 × ln(sec/30 + 1))` | 2m = +7, 5m = +10 | Genuine consideration |
+| `timeOnSite` < 30s | `max(-12, -12 × (1 - sec/30))` | 10s = -8, 25s = -2 | Quick exit = low intent |
+| `pageViews` | `min(8, 3 × ln(views + 1))` | 3 = +4, 5 = +5.5, 10 = +7 | Engaged browsing |
+| `scrollDepth` | `(depth/100) × 8` | 50% = +4, 80% = +6.4 | Read content, engaged |
+| `productDwellTime` | `min(6, 2.5 × ln(sec/15 + 1))` | 30s = +2.7, 60s = +4, 120s = +5.3 | Serious product consideration |
 
-| Signal | Impact | Reasoning |
-|--------|--------|-----------|
-| `failedCouponAttempt` | +35 / -35 | Customer explicitly wants a discount |
-| `exitPage = 'checkout'` | +30 | Was about to buy, something stopped them |
-| `exitPage = 'cart'` | +15 | Reviewing cart, considering purchase |
-| `hasAbandonedBefore` | +25 / -15 | Second chance, high intent but hesitant |
-| `cartHesitation > 0` | +15 / -15 | Add/remove = price sensitivity |
-| `cartAgeMinutes > 60` | +10 | Cart sitting = needs a push |
-| `productDwellTime > 60s` | +15 | Serious consideration |
+**Visit Intent (max ~20 points):**
 
-**TIME-BASED signals (customer's local time of day):**
+| Signal | Formula | Examples | Reasoning |
+|--------|---------|----------|-----------|
+| `visitFrequency` > 1 | `min(12, 5 × ln(visits))` | 2 = +3.5, 4 = +7, 10 = +11.5 | Returning visitors convert 2-3x better |
+| `visitFrequency` = 1 | -8 flat (skipped if purchaseHistory > 0) | — | First-time visitor penalty |
+| `trafficSource` | paid: +5, email: +4, direct: +2, social: +1, organic: 0 | — | Pre-qualified traffic |
+| `exitPage` | checkout: -8, cart: -4, product: 0, collection/other: +2 | — | Where exit intent fired |
 
-| Signal | Impact | Reasoning |
-|--------|--------|-----------|
-| `localHour` 22-4 (late night) | +20 | Deliberate, impulsive shopping — high intent |
-| `localHour` 5-7 (early morning) | +10 | Intentional pre-day shopping |
-| `localHour` 11-12 (lunch break) | +5 | Quick decision window, moderate intent |
-| `localHour` 14-16 (mid-afternoon) | -5 | Casual browsing, lowest conversion window |
-| `localHour` 8-10, 17-21 (neutral) | 0 | No adjustment |
+**Cart Signals (max ~15 points):**
 
-Enterprise AI also uses time of day to adjust discount sizing: late-night shoppers get ~20% smaller discounts (impulse buyers need less incentive), while afternoon browsers get ~15% larger discounts (casual browsers need more nudging). Low-propensity late-night shoppers are given a longer leash (show offers down to $20 carts vs $30 at other times).
+| Signal | Formula | Examples | Reasoning |
+|--------|---------|----------|-----------|
+| `cartValue` ≥ $20 | `min(8, 3 × ln(value/20 + 1))` | $50 = +4, $100 = +5.5, $200 = +7 | Invested in purchase |
+| `cartValue` < $20 | `max(-6, -6 × (1 - value/20))` | $5 = -4.5, $10 = -3 | Low commitment |
+| `itemCount` > 1 | `min(4, 1.5 × ln(count + 1))` | 2 = +1.6, 3 = +2, 5 = +2.7 | Multi-item = higher commitment |
+| `cartAgeMinutes` | >60m: -5, >30m: -3 | — | Indecision signal |
+
+**Discount-Seeking Signals (max ~-30 points):**
+
+| Signal | Formula | Examples | Reasoning |
+|--------|---------|----------|-----------|
+| `failedCouponAttempt` | -18 flat | — | Explicitly wants a discount |
+| `cartHesitation` | `max(-12, -5 × ln(h + 1))` | 1 = -3.5, 3 = -7, 5+ = -10 | Add/remove = price sensitivity |
+| `hasAbandonedBefore` | -8 flat | — | Second chance, needs nudge |
+| `abandonmentCount` | `max(-6, -2.5 × ln(count + 1))` | 1 = -1.7, 3 = -3.5 | Repeat abandoner |
+
+**Context Signals (max ~10 points):**
+
+| Signal | Formula | Examples | Reasoning |
+|--------|---------|----------|-----------|
+| `deviceType` | mobile: -4, desktop: +2, tablet: 0 | — | Mobile converts ~50% lower |
+| `localHour` | 22-5: +4, 5-8: +2, 11-13: +1, 14-17: -3 | — | Time-of-day intent patterns |
+| `dayOfWeek` | Sat/Sun: +2, weekday: 0 | — | Weekend leisure shopping |
+
+**Contradiction Handling:** If `visitFrequency = 1` but `purchaseHistoryCount > 0`, the first-visit penalty is skipped (returning customer on a new device/session).
+
+Enterprise AI also uses time of day to adjust discount sizing: late-night shoppers get ~20% smaller discounts (impulse buyers need less incentive), while afternoon browsers get ~15% larger discounts (casual browsers need more nudging).
 
 ---
 
@@ -138,35 +153,18 @@ Even though Starter customers can't enable AI, their data helps train it:
 - Trigger type is an evolved gene (`exit_intent`, `idle`, or `exit_intent_or_idle`)
 - Activates at add-to-cart time (watches for cart changes if cart is initially empty)
 
-**Pro AI Scoring:**
-```
-score = 0
-+ Returning visitor (visitFrequency > 1): +20
-+ Paid traffic: +15
-+ Long browsing (timeOnSite > 120s): +20
-+ Engaged (pageViews >= 3): +10
-+ Purchase history: +20
-+ Failed coupon attempt: +35
-+ Previous abandoner: +25
-+ Checkout/cart exit: +15 to +30
-+ Late night shopping (10pm-5am): +20
-+ Early morning (5am-8am): +10
-+ Lunch break (11am-1pm): +5
-- First-time visitor: -10
-- Quick exit (timeOnSite < 30s): -15
-- Mobile device: -5
-- Low cart value (<$30): -10
-- Afternoon browsing (2pm-5pm): -5
-```
-
 **Pro AI "Should We Show" Logic:**
+
+Pro uses an intent scoring system to make show/no-show decisions. Hard overrides are kept for the strongest signals, but the gray zone is now handled by **adaptive intervention thresholds** (see [Adaptive Intervention Thresholds](#adaptive-intervention-thresholds)).
+
 | Condition | Decision |
 |-----------|----------|
-| Score < 20 AND cart < $40 | Don't show - unlikely to convert |
-| Score < 0 | Don't show - very unlikely to convert |
-| First visit + quick exit + cart < $50 | Don't show - accidental visit |
-| Score > 80 | Show minimal offer (5%) - they'll convert anyway |
-| Otherwise | Show calculated offer |
+| Score < 0 | Don't show — very unlikely to convert |
+| First visit + quick exit + cart < $50 | Don't show — accidental visit |
+| `failedCouponAttempt` | Always show — explicitly seeking discount |
+| `exitPage = 'checkout'` | Always show — needs help completing |
+| `cartHesitation > 1` | Always show — price-sensitive |
+| Otherwise | **Adaptive threshold decides** (Thompson Sampling per score bucket) |
 
 ### Enterprise Tier
 - **Advanced AI** with all signals including high-value indicators
@@ -279,12 +277,15 @@ seedInitialPopulation(shopId, baseline, segment)
 getLiveVariants(shopId, baseline, segment)
 → Array of variants with status 'alive' or 'champion'
 
-// Thompson Sampling selection
-selectVariantForImpression(shopId, baseline, segment)
+// Thompson Sampling selection (trigger-aware)
+selectVariantForImpression(shopId, baseline, segment, triggerReason?)
 → Variant (Champion gets 70%, others use Thompson Sampling)
+// When triggerReason is provided and ≥20 trigger-specific impressions exist,
+// Thompson Sampling uses trigger-specific conversion rates instead of overall stats.
+// This lets different copy win for different trigger reasons (e.g., failedCoupon vs general).
 
 // Record events
-recordImpression(variantId, shopId, context)
+recordImpression(variantId, shopId, context) // context includes triggerReason
 recordClick(impressionId)
 recordConversion(impressionId, revenue, discountAmount)
 
@@ -364,24 +365,22 @@ The system A/B tests both approaches via Thompson Sampling and converges on whic
 
 ### 3. `baseline-selector.js`
 
-**Purpose:** Determine which baseline to use based on signals and goal
+**Purpose:** Determine which baseline to use based on funnel-stage detection from signals
+
+The AI automatically selects between revenue (upsell/threshold) and conversion (direct discount) per customer based on their journey position. This replaced the old static `aiGoal` merchant toggle.
 
 **Logic:**
 ```javascript
-export function selectBaseline(signals, aiGoal) {
-  // Force pure_reminder if aggression = 0
-  if (shop.aggression === 0) {
-    return 'pure_reminder';
-  }
+export function selectBaseline(signals) {
+  // Auto-detect funnel stage from signals
+  const goal = detectFunnelGoal(signals);
+  // Revenue signals: browsing products, fresh cart, multiple page views, high cart value
+  // Conversion signals: cart/checkout page, cart hesitation, failed coupon, stale cart
 
-  // Calculate propensity score (0-100)
-  const propensity = calculatePropensityScore(signals);
-
-  // Determine if customer needs incentive
+  const propensity = signals.propensityScore || 50;
   const needsIncentive = propensity < 70;
 
-  // Select baseline
-  if (aiGoal === 'revenue') {
+  if (goal === 'revenue') {
     return needsIncentive
       ? 'revenue_with_discount'
       : 'revenue_no_discount';
@@ -478,11 +477,11 @@ clearAllSocialProofCache()
 **Key Functions:**
 ```javascript
 // Pro AI: Main decision function
-determineOffer(signals, aggression, aiGoal, cartValue, shopId, plan)
+determineOffer(signals, aggression, _aiGoal, cartValue, shopId, plan)  // aiGoal ignored, auto-detected from signals
 → { type, amount, threshold, confidence, reasoning }
 
 // Enterprise AI: Advanced decision with timing and high-value signals
-enterpriseAI(signals, aggression, aiGoal)
+enterpriseAI(signals, aggression, _aiGoal, shopId)  // aiGoal ignored, auto-detected from signals
 → { type, amount, timing, confidence, reasoning }
 
 // Budget check
@@ -510,11 +509,11 @@ analyzeCartComposition(signals)
 │ 2. Pre-fetch AI decision (POST /api/ai-decision)           │
 │ 3. Collect signals (core + basic high-value)                │
 │ 4. Calculate intent score                                   │
-│ 5. SHOULD WE SHOW? (simple rules)                           │
-│    - Score < 20 + small cart → NO                           │
+│ 5. SHOULD WE SHOW? (adaptive thresholds)                     │
 │    - Score < 0 → NO                                         │
 │    - First visit + quick exit + low cart → NO               │
-│    - Score > 80 → YES, minimal offer                        │
+│    - Hard overrides (coupon/checkout/hesitation) → YES      │
+│    - Otherwise: shouldIntervene() per score bucket           │
 │ 6. WHEN TO SHOW? (evolved trigger gene)                     │
 │    - exit_intent: mouseout on desktop                       │
 │    - idle: fires after X seconds of inactivity              │
@@ -542,9 +541,9 @@ analyzeCartComposition(signals)
 │    - Cart hesitation > 1? → Price-sensitive offer           │
 │    - Stale cart (60+ min)? → IMMEDIATE nudge                │
 │ 5. Calculate propensity score with full signal set          │
-│ 6. SHOULD WE SHOW? (advanced rules)                         │
-│    - High propensity + high CLV → NO (they'll buy anyway)   │
-│    - Low propensity + small cart → NO                       │
+│ 6. SHOULD WE SHOW? (adaptive thresholds)                    │
+│    - Hard overrides: failedCoupon/checkout/hesitation/stale │
+│    - Otherwise: adaptive threshold per score bucket          │
 │ 7. WHEN TO SHOW? (dynamic timing)                           │
 │    - immediate: High-value signals detected (1s delay)      │
 │    - exit_intent: Wait for mouseout                         │
@@ -559,14 +558,14 @@ analyzeCartComposition(signals)
 | Capability | Pro | Enterprise |
 |------------|-----|------------|
 | Add-to-cart activation | ✓ watchForAddToCart | ✓ watchForAddToCart |
-| Decides whether to show | ✓ Simple rules | ✓ Advanced rules |
+| Decides whether to show | ✓ Adaptive thresholds | ✓ Adaptive thresholds |
 | Decides what offer | ✓ Score-based | ✓ Situation-specific |
 | Decides when (timing) | Evolved gene (exit/idle/both) | Immediate/exit/delayed |
 | Failed coupon detection | Scores it | Acts on it immediately |
 | Checkout recovery | Scores it | Special recovery offer |
 | Cart hesitation handling | Scores it | Price-sensitive offer |
 | Stale cart detection | Scores it | Proactive nudge |
-| High-CLV customer handling | ✗ | ✓ Skip to avoid waste |
+| Per-store threshold learning | ✓ Per score bucket | ✓ Per score bucket |
 | Signal enrichment | ✗ | ✓ Server-side propensity scoring |
 
 **Enterprise-Only Helper Functions:**
@@ -586,6 +585,57 @@ calculateStaleCartOffer(signals, aggression, aiGoal, cartValue, cart)
 
 ---
 
+### 7. `intervention-threshold.server.js`
+
+**Purpose:** Adaptive per-store learning of whether to show or skip the modal per propensity/intent score bucket. Uses the same Thompson Sampling pattern as `variant-engine.js`.
+
+**Key Functions:**
+```javascript
+// Map a score (0-100) into its bucket label
+scoreToBucket(score) → "0-10" | "10-20" | ... | "90-100"
+
+// Core decision: should we show the modal for this customer?
+// Thompson Sampling between show/skip arms per bucket.
+// Falls through to defaults for cold-start (<10 outcomes).
+shouldIntervene(db, shopId, score, segment)
+→ { shouldShow: boolean, isExploring: boolean, bucket: string }
+
+// Record an intervention outcome (shown, skipped, or holdout)
+// Updates running counters on InterventionThreshold (holdout excluded from learning)
+recordInterventionOutcome(db, { shopId, wasShown, isHoldout, converted, revenue, ... })
+→ InterventionOutcome record
+
+// Update existing outcome when a conversion comes in later (webhook)
+recordInterventionConversion(db, outcomeId, revenue, discountAmount)
+→ Updated InterventionOutcome
+
+// Recalculate shouldShow/confidence for all buckets (called by cron)
+// Uses Monte Carlo Bayesian comparison (10k samples)
+recalculateThresholds(db, shopId) → number of updated thresholds
+```
+
+**Constants:**
+- `MIN_OUTCOMES_FOR_LEARNING = 10` — Below this, use defaults
+- `EXPLORATION_FLOOR = 0.05` — Always allocate 5% to the losing arm
+
+---
+
+### 8. `threshold-learning-cycle.js` (Cron)
+
+**Purpose:** Recalculate intervention thresholds for all shops when enough new data exists
+
+**Schedule:** Every 5 minutes (alongside evolution-cycle.js)
+
+**Process:**
+1. Find all shops in AI mode (pro or enterprise plan)
+2. Count `InterventionOutcome` records since `lastThresholdUpdate`
+3. If 50+ new outcomes → run `recalculateThresholds(shopId)`
+4. Update `shop.lastThresholdUpdate`
+
+Trigger threshold (50) is lower than variant evolution (100) because each outcome is binary show/skip — we need data in both arms to learn.
+
+---
+
 ## Database Schema
 
 ### Core Tables
@@ -597,7 +647,7 @@ model Shop {
   shopifyDomain     String   @unique
   mode              String   @default("manual")
   plan              String   @default("pro")
-  aiGoal            String   @default("revenue")
+  aiGoal            String   @default("revenue")  // Deprecated: now auto-detected per customer from funnel-stage signals
   aggression        Int      @default(5)
   budgetEnabled     Boolean  @default(false)
   budgetAmount      Float    @default(500)
@@ -626,10 +676,15 @@ model Shop {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  // Adaptive Threshold System
+  lastThresholdUpdate DateTime?
+
   variants          Variant[]
   discountOffers    DiscountOffer[]
   aiDecisions       AIDecision[]
   promotions        Promotion[]
+  interventionThresholds InterventionThreshold[]
+  interventionOutcomes   InterventionOutcome[]
 }
 ```
 
@@ -684,6 +739,7 @@ model VariantImpression {
   cartValue      Float?
   accountStatus  String?  // guest, logged_in
   visitFrequency Int?     // 1 = first-time, 2+ = returning
+  triggerReason  String?  // failedCoupon, checkoutExit, cartHesitation, staleCart, general
   duringPromo    Boolean  @default(false)
 
   clicked        Boolean  @default(false)
@@ -762,6 +818,67 @@ model Promotion {
   updatedAt       DateTime @updatedAt
 
   @@index([shopId, seenByMerchant])
+}
+```
+
+**InterventionOutcome** (Adaptive Threshold Learning)
+```prisma
+model InterventionOutcome {
+  id              String   @id @default(uuid())
+  shopId          String
+  shop            Shop     @relation(...)
+
+  wasShown        Boolean              // true = modal shown, false = no_intervention
+  isHoldout       Boolean  @default(false) // true = 5% holdout group (excluded from learning)
+  converted       Boolean  @default(false)
+  revenue         Float?
+  discountAmount  Float?
+  profit          Float?               // revenue - discountAmount
+
+  propensityScore Int?                 // 0-100 (Enterprise)
+  intentScore     Int?                 // Pro AI score
+  cartValue       Float?
+  deviceType      String?
+  trafficSource   String?
+  segment         String   @default("all")
+  scoreBucket     String               // "0-10", "10-20", ..., "90-100"
+
+  aiDecisionId    String?
+  impressionId    String?
+  timestamp       DateTime @default(now())
+
+  @@index([shopId, scoreBucket, wasShown])
+  @@index([shopId, timestamp])
+  @@index([shopId, wasShown, converted])
+}
+```
+
+**InterventionThreshold** (Per-Bucket Thompson Sampling State)
+```prisma
+model InterventionThreshold {
+  id              String   @id @default(uuid())
+  shopId          String
+  shop            Shop     @relation(...)
+
+  scoreBucket     String               // "0-10", "10-20", ..., "90-100"
+  segment         String   @default("all")
+
+  showImpressions   Int    @default(0)
+  showConversions   Int    @default(0)
+  showRevenue       Float  @default(0)
+  showProfit        Float  @default(0)
+
+  skipImpressions   Int    @default(0)
+  skipConversions   Int    @default(0)
+  skipRevenue       Float  @default(0)
+  skipProfit        Float  @default(0)
+
+  shouldShow        Boolean @default(true)
+  confidence        Float   @default(0.5)
+  lastUpdated       DateTime @updatedAt
+
+  @@unique([shopId, scoreBucket, segment])
+  @@index([shopId, segment])
 }
 ```
 
@@ -994,7 +1111,7 @@ model Promotion {
    }
    ↓
 3. Backend:
-   - selectBaseline(signals, aiGoal)
+   - selectBaseline(signals) — auto-detects revenue vs conversion from funnel-stage signals
    - seedInitialPopulation() if needed
    - selectVariantForImpression() via Thompson Sampling
    - createRandomVariantWithSocialProof() applies social proof
@@ -1585,6 +1702,107 @@ console.log(variant.headline); // Should show "5k+" if shop qualifies
 2. Is jStat library loaded?
 3. Check beta distribution sampling
 4. Verify champion gets 70% traffic
+
+---
+
+## Adaptive Intervention Thresholds
+
+### The Problem
+
+The AI system learned **what** to show (variant genes via genetic algorithm) but not **whether** to show. Show/no-show thresholds were hardcoded and identical across all stores, despite the fact that a luxury brand's customers at propensity 60 behave completely differently from a fast-fashion store's customers at the same score.
+
+### The Solution
+
+Per-store, per-score-bucket learning using Thompson Sampling (same Bayesian bandit pattern as variant selection). The system treats "show modal" and "skip modal" as two arms and learns which generates more profit per impression for each score bucket.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              ADAPTIVE THRESHOLD FLOW                         │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  1. Customer triggers AI decision                            │
+│     ↓                                                         │
+│  1.5 HOLDOUT CHECK: 5% random → no intervention              │
+│     → Stamp cart: exit_intent_holdout={aiDecisionId}         │
+│     → Record outcome(isHoldout: true) — excluded from learning│
+│     → If customer buys → webhook tracks holdout conversion   │
+│     ↓ (95% continue)                                          │
+│  2. Hard override check (failedCoupon, checkout, etc.)       │
+│     → If match: ALWAYS SHOW (bypass adaptive system)         │
+│     ↓                                                         │
+│  3. shouldIntervene(shopId, score, segment)                   │
+│     → Find InterventionThreshold for score bucket            │
+│     → Cold start (<10 outcomes): use defaults (show)         │
+│     → Thompson Sample: show arm vs skip arm                  │
+│     → 5% exploration floor (always test losing arm)          │
+│     ↓                                                         │
+│  4A. SHOW → recordInterventionOutcome(wasShown: true)        │
+│      → Later: webhook fires → recordInterventionConversion() │
+│      → Matched by unique aiDecisionId on cart attribute      │
+│                                                               │
+│  4B. SKIP → recordInterventionOutcome(wasShown: false)       │
+│      → Frontend stamps cart: exit_intent_decision={decisionId}│
+│      → If customer buys → webhook looks up exact decision ID │
+│      → recordInterventionOutcome(wasShown: false, conv: true)│
+│                                                               │
+│  5. Cron (every 5 min): 50+ new outcomes per shop?           │
+│     → recalculateThresholds() — 10k Monte Carlo samples      │
+│     → Update shouldShow + confidence per bucket              │
+│                                                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Score Buckets
+
+Propensity/intent scores (0-100) are partitioned into 10-point buckets:
+`0-10`, `10-20`, `20-30`, `30-40`, `40-50`, `50-60`, `60-70`, `70-80`, `80-90`, `90-100`
+
+Each bucket × segment (mobile/desktop/all) gets its own `InterventionThreshold` record with independent Thompson Sampling state.
+
+### Natural Conversion Tracking
+
+The critical feedback loop: when the AI decides NOT to show a modal, we need to know if the customer converted anyway (proving "don't show" was the right call).
+
+**Mechanism:**
+1. Frontend stamps cart attribute `exit_intent_decision: {aiDecisionId}` on no-show (unique ID, not a boolean)
+2. Order webhook detects this attribute and looks up the exact `AIDecision` record by ID
+3. Creates `InterventionOutcome(wasShown: false, converted: true, revenue)`
+4. Updates the "skip" arm counters on the matching `InterventionThreshold`
+
+**Decision ID matching** ensures accurate attribution even on high-traffic stores where multiple no_intervention decisions may exist within the same time window. Legacy `no_intervention` string values are handled as a fallback.
+
+Without this, the system can only learn from shown-modal conversions and would never have evidence that skipping is profitable.
+
+### Holdout Group Conversion Tracking
+
+Separate from natural conversion tracking. Holdout conversions:
+1. Frontend stamps cart attribute `exit_intent_holdout: {aiDecisionId}`
+2. Order webhook detects this attribute (checked before other signals)
+3. Creates `InterventionOutcome(wasShown: false, isHoldout: true, converted: true, revenue)`
+4. Returns immediately — holdout conversions don't flow into analytics/revenue attribution
+5. Holdout outcomes are **never** fed into the Thompson Sampling learning loop
+
+### Cold Start / Bootstrap
+
+For new stores with no `InterventionOutcome` data:
+1. Use current behavior as defaults (`shouldIntervene` returns `shouldShow: true`)
+2. Every AI decision creates an `InterventionOutcome` record
+3. After ~10 outcomes per bucket, Thompson Sampling kicks in
+4. After ~50 outcomes per bucket, the cron recalculates confidence
+5. After ~200 outcomes per bucket, the system has enough data to confidently deviate from defaults
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `app/utils/intervention-threshold.server.js` | Core engine: `shouldIntervene()`, `recordInterventionOutcome()`, `recalculateThresholds()` |
+| `app/cron/threshold-learning-cycle.js` | Cron job: recalculate thresholds every 5 min when 50+ new outcomes |
+| `app/utils/ai-decision.server.js` | Calls `shouldIntervene()` instead of hardcoded rules |
+| `app/routes/apps.exit-intent.api.ai-decision.jsx` | 5% holdout coin flip, records `InterventionOutcome` on every show/no-show/holdout, returns `aiDecisionId` |
+| `app/routes/webhooks.orders.create.jsx` | Holdout conversion tracking, natural conversion tracking (by decision ID), intervention conversion tracking (by decision ID) |
+| `extensions/exit-intent-modal/assets/exit-intent-modal.js` | Stamps cart with unique `aiDecisionId` on no-intervention, holdout, and CTA click |
 
 ---
 
