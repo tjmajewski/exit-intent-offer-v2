@@ -1,6 +1,8 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { createPercentageDiscount, createFixedDiscount } from "../utils/discount-codes";
+import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { isValidShopDomain } from "../utils/shop-validation.js";
 
 /**
  * Per-session unique discount code generator for manual mode.
@@ -14,12 +16,20 @@ import { createPercentageDiscount, createFixedDiscount } from "../utils/discount
  *   Body: { shop: "mystore.myshopify.com" }
  */
 export async function action({ request }) {
+  // Per-IP rate limit: code generation hits the Shopify Admin API and the DB
+  // on every call, so abuse is especially expensive. Keep this tight.
+  const limited = enforceRateLimit(request, "generate-code", {
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (limited) return limited;
+
   try {
     const { admin } = await authenticate.public.appProxy(request);
     const { shop } = await request.json();
 
-    if (!shop) {
-      return json({ error: "Missing shop" }, { status: 400 });
+    if (!shop || !isValidShopDomain(shop)) {
+      return json({ error: "Invalid shop" }, { status: 400 });
     }
 
     const { default: db } = await import("../db.server.js");
@@ -102,6 +112,6 @@ export async function action({ request }) {
 
   } catch (error) {
     console.error("[Generate Code] Error:", error);
-    return json({ error: error.message }, { status: 500 });
+    return json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -24,7 +24,7 @@ export async function action({ request }) {
       });
     }
 
-    // Get shop ID and plan
+    // Get shop ID from Shopify (needed for metafield writes)
     const shopResponse = await admin.graphql(
       `query {
         shop {
@@ -37,12 +37,28 @@ export async function action({ request }) {
     );
     const shopData = await shopResponse.json();
     const shopId = shopData.data.shop.id;
-    const plan = shopData.data.shop?.plan?.value 
+
+    // SECURITY: Plan tier must come from Prisma — the metafield is
+    // merchant-writable and cannot be trusted as the source of truth for
+    // billing / limit enforcement. We still use the metafield JSON for the
+    // rolling usage counter (which has no DB column), but we overwrite the
+    // tier with whatever Prisma says.
+    const { default: db } = await import("../db.server.js");
+    const shopRecord = await db.shop.findUnique({
+      where: { shopifyDomain: session.shop },
+      select: { plan: true },
+    });
+
+    const metafieldPlan = shopData.data.shop?.plan?.value
       ? JSON.parse(shopData.data.shop.plan.value)
-      : null;
+      : {};
+    const plan = {
+      ...metafieldPlan,
+      tier: shopRecord?.plan || "starter",
+    };
 
     // Check impression limit BEFORE tracking
-    if (event === "impression" && plan) {
+    if (event === "impression") {
       const usageCheck = checkUsageLimit(plan, "impressionsThisMonth");
       
       if (!usageCheck.allowed) {
@@ -191,7 +207,7 @@ export async function action({ request }) {
     }
 
     // Increment usage counter for impressions
-    if (event === "impression" && plan) {
+    if (event === "impression") {
       plan.usage = plan.usage || {};
       plan.usage.impressionsThisMonth = (plan.usage.impressionsThisMonth || 0) + 1;
 
