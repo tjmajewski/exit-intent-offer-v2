@@ -21,6 +21,6 @@ export async function action({ request }) {
     return json({ success: true, message: "Variants initialized" });
   } catch (error) {
     console.error("[Init Variants] Error:", error);
-    return json({ error: error.message }, { status: 500 });
+    return json({ error: "Internal server error" }, { status: 500 });
   }
 }

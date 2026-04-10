@@ -55,6 +55,6 @@ export async function action({ request }) {
     
   } catch (error) {
     console.error("[Test Meta-Learning] Error:", error);
-    return json({ error: error.message }, { status: 500 });
+    return json({ error: "Internal server error" }, { status: 500 });
   }
 }

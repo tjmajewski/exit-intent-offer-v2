@@ -1,11 +1,21 @@
 import { json } from "@remix-run/node";
+import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { isValidShopDomain } from "../utils/shop-validation.js";
 
 // Public endpoint - returns shop settings for modal initialization
 export async function loader({ request }) {
+  // Per-IP rate limit: settings are cached client-side, so legitimate
+  // traffic sits well below this ceiling.
+  const limited = enforceRateLimit(request, "shop-settings", {
+    limit: 120,
+    windowMs: 60_000,
+  });
+  if (limited) return limited;
+
   const url = new URL(request.url);
   const shop = url.searchParams.get('shop');
 
-  if (!shop) {
+  if (!shop || !isValidShopDomain(shop)) {
     return json({ plan: 'starter', mode: 'manual', enabled: true, triggers: { exitIntent: true } }, { status: 400 });
   }
 

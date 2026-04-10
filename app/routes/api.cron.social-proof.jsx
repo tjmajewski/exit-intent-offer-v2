@@ -5,18 +5,32 @@ import { collectStoreMetrics } from "../utils/social-proof";
 /**
  * Cron job to collect social proof metrics for all shops
  * Run this daily via a cron service (e.g., EasyCron, GitHub Actions)
- * 
- * GET /api/cron/social-proof?secret=YOUR_SECRET_KEY
+ *
+ * GET /api/cron/social-proof
+ *   Header: Authorization: Bearer <CRON_SECRET>
+ *
+ * CRON_SECRET must be set in the environment. The module will refuse to load
+ * if it is missing or left at the placeholder value.
  */
+const CRON_SECRET = process.env.CRON_SECRET;
+if (!CRON_SECRET || CRON_SECRET === "change-me-in-production") {
+  throw new Error(
+    "CRON_SECRET env var is not set (or still at the placeholder value). " +
+    "Refusing to start — set a strong secret before deploying."
+  );
+}
+
 export async function loader({ request }) {
   const { default: db } = await import("../db.server.js");
-  const url = new URL(request.url);
-  const secret = url.searchParams.get('secret');
-  
-  // Protect this endpoint with a secret key
-  const CRON_SECRET = process.env.CRON_SECRET || 'change-me-in-production';
-  
-  if (secret !== CRON_SECRET) {
+
+  // Read the secret from the Authorization header so it doesn't end up in
+  // access logs / referer headers the way a query string would.
+  const authHeader = request.headers.get("authorization") || "";
+  const providedSecret = authHeader.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : "";
+
+  if (!providedSecret || providedSecret !== CRON_SECRET) {
     return json({ error: 'Unauthorized' }, { status: 401 });
   }
   
