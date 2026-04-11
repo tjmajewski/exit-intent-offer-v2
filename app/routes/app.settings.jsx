@@ -32,7 +32,15 @@ export async function loader({ request }) {
         brandSecondaryColor: true,
         brandAccentColor: true,
         brandFont: true,
-        plan: true
+        plan: true,
+        socialProofEnabled: true,
+        socialProofType: true,
+        socialProofMinimum: true,
+        socialProofUpdatedAt: true,
+        orderCount: true,
+        customerCount: true,
+        avgRating: true,
+        reviewCount: true
       }
     });
     
@@ -100,12 +108,22 @@ export async function loader({ request }) {
       ? JSON.parse(modalLibraryData.data.shop.modalLibrary.value)
       : getDefaultModalLibrary();
 
-    // Add brand settings to settings object
+    // Add brand + social proof settings to settings object
     if (shopRecord) {
       settings.brandPrimaryColor = shopRecord.brandPrimaryColor;
       settings.brandSecondaryColor = shopRecord.brandSecondaryColor;
       settings.brandAccentColor = shopRecord.brandAccentColor;
       settings.brandFont = shopRecord.brandFont;
+      settings.socialProofEnabled = shopRecord.socialProofEnabled;
+      settings.socialProofType = shopRecord.socialProofType;
+      settings.socialProofMinimum = shopRecord.socialProofMinimum;
+      settings.socialProofUpdatedAt = shopRecord.socialProofUpdatedAt
+        ? shopRecord.socialProofUpdatedAt.toISOString()
+        : null;
+      settings.orderCount = shopRecord.orderCount;
+      settings.customerCount = shopRecord.customerCount;
+      settings.avgRating = shopRecord.avgRating;
+      settings.reviewCount = shopRecord.reviewCount;
     }
 
     // Load AI variants for Enterprise users
@@ -321,6 +339,9 @@ export async function action({ request }) {
         aiDiscountCodeMode: settings.aiDiscountCodeMode,
         aiGenericDiscountCode: settings.aiGenericDiscountCode,
         aiDiscountCodePrefix: settings.aiDiscountCodePrefix,
+        socialProofEnabled: formData.get("socialProofEnabled") === "on",
+        socialProofType: formData.get("socialProofType") || "orders",
+        socialProofMinimum: parseInt(formData.get("socialProofMinimum") || "100"),
         updatedAt: new Date()
       },
       create: {
@@ -358,7 +379,10 @@ export async function action({ request }) {
         manualDiscountCodePrefix: settings.manualDiscountCodePrefix,
         aiDiscountCodeMode: settings.aiDiscountCodeMode,
         aiGenericDiscountCode: settings.aiGenericDiscountCode,
-        aiDiscountCodePrefix: settings.aiDiscountCodePrefix
+        aiDiscountCodePrefix: settings.aiDiscountCodePrefix,
+        socialProofEnabled: formData.get("socialProofEnabled") === "on",
+        socialProofType: formData.get("socialProofType") || "orders",
+        socialProofMinimum: parseInt(formData.get("socialProofMinimum") || "100")
       }
     });
 
