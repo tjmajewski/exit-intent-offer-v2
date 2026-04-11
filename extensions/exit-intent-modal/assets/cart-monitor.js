@@ -1,18 +1,21 @@
 (function() {
   'use strict';
 
-  // Currency formatting helper - uses shop's active currency
+  // Currency formatting helper - uses shop's active currency + buyer locale.
   function formatCurrency(amount) {
     try {
       const currencyCode = window.Shopify?.currency?.active || 'USD';
-      return new Intl.NumberFormat('en', {
+      const locale = (window.Shopify && (window.Shopify.locale || window.Shopify.country)) ||
+        (typeof navigator !== 'undefined' && (navigator.language || (navigator.languages && navigator.languages[0]))) ||
+        'en';
+      return new Intl.NumberFormat(locale, {
         style: 'currency',
         currency: currencyCode,
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
       }).format(amount);
     } catch (e) {
-      return `$${amount}`;
+      return `${amount}`;
     }
   }
 

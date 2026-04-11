@@ -1,6 +1,32 @@
 // Shopify App Billing - Subscription management via Shopify Billing API
 // Uses appSubscriptionCreate mutation for recurring charges
 
+// Currencies Shopify supports for app subscription billing (multi-currency
+// app billing, released 2023). If a shop's currency isn't in this list we
+// fall back to USD and Shopify converts at the merchant's payout currency.
+// Source: https://shopify.dev/docs/apps/launch/billing/multi-currency-pricing
+const SUPPORTED_BILLING_CURRENCIES = new Set([
+  "USD", "AUD", "CAD", "DKK", "EUR", "GBP", "HKD", "JPY", "NZD", "SGD",
+]);
+
+/**
+ * Fetch the shop's primary currency via the Admin API and return a code that
+ * is safe to pass to appSubscriptionCreate. Falls back to "USD" on any error
+ * or when the shop's currency isn't on Shopify's supported billing list.
+ */
+export async function getShopBillingCurrency(admin) {
+  try {
+    const res = await admin.graphql(`query { shop { currencyCode } }`);
+    const json = await res.json();
+    const code = json?.data?.shop?.currencyCode;
+    if (code && SUPPORTED_BILLING_CURRENCIES.has(code)) return code;
+    return "USD";
+  } catch (e) {
+    console.error("[Billing] getShopBillingCurrency failed:", e);
+    return "USD";
+  }
+}
+
 const PROMO_CONFIGS = {
   EARLYACCESS: {
     targetTier: "pro",
@@ -64,11 +90,16 @@ export async function createSubscription(admin, tier, billingCycle, returnUrl, i
   const interval = isAnnual ? "ANNUAL" : "EVERY_30_DAYS";
   const planName = `Resparq ${config.name} (${isAnnual ? "Annual" : "Monthly"})`;
 
+  // Bill in the shop's local currency when Shopify supports it. Passing
+  // "USD" to a EUR-only shop causes appSubscriptionCreate to fail, which
+  // previously blocked all non-USD merchants from upgrading.
+  const currencyCode = await getShopBillingCurrency(admin);
+
   const lineItems = [
     {
       plan: {
         appRecurringPricingDetails: {
-          price: { amount: price, currencyCode: "USD" },
+          price: { amount: price, currencyCode },
           interval,
         },
       },

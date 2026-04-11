@@ -15,7 +15,7 @@ export const action = async ({ request }) => {
     const discountCodes = payload.discount_codes || [];
     const lineItems = payload.line_items || [];
     let exitDiscountUsed = discountCodes.find(dc =>
-      dc.code && /^\d+(OFF|DOLLARSOFF|GIFT)$/i.test(dc.code)
+      dc.code && (/^\d+(OFF|DOLLARSOFF|GIFT)$/i.test(dc.code) || /^SAVE\d+$/i.test(dc.code))
     );
 
     // PRIMARY DETECTION: cart attribute stamped by modal JS on CTA click.

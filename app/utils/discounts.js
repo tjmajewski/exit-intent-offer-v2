@@ -83,7 +83,9 @@ export async function createDiscountCode(admin, discountPercentage) {
 }
 
 export async function createFixedAmountDiscountCode(admin, discountAmount, currencyCode = 'USD') {
-  const discountCode = `${discountAmount}DOLLARSOFF`;
+  // Currency-neutral code name — Shopify applies the discount in the shop's
+  // own currency, so naming it "DOLLARSOFF" was misleading for non-USD shops.
+  const discountCode = `SAVE${discountAmount}`;
 
   console.log(`Creating fixed amount discount code: ${discountCode}`);
 
@@ -132,7 +134,7 @@ export async function createFixedAmountDiscountCode(admin, discountAmount, curre
 
   const variables = {
     basicCodeDiscount: {
-      title: `$${discountAmount} Off - Exit Intent Offer`,
+      title: `${discountAmount} Off - Exit Intent Offer`,
       code: discountCode,
       startsAt: new Date().toISOString(),
       customerSelection: {

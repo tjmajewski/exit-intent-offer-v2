@@ -5,8 +5,22 @@ import { useState } from "react";
 import AppLayout from "../components/AppLayout";
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
+
+  // Read shop's primary currency + locale so amounts render correctly for
+  // EU/UK/non-USD merchants (was hardcoded "$" before).
+  let currencyCode = "USD";
+  let primaryLocale = "en-US";
+  try {
+    const shopRes = await admin.graphql(`
+      query { shop { currencyCode primaryDomain { url } } }
+    `);
+    const shopJson = await shopRes.json();
+    currencyCode = shopJson?.data?.shop?.currencyCode || "USD";
+  } catch (e) {
+    console.error("Conversions loader: failed to read shop currency", e);
+  }
 
   // Get URL params for date filtering
   const url = new URL(request.url);
@@ -19,7 +33,7 @@ export const loader = async ({ request }) => {
     });
 
     if (!shopRecord) {
-      return { conversions: [], plan: null, range, shop };
+      return { conversions: [], plan: null, range, shop, currencyCode };
     }
 
     // Calculate date range
@@ -52,17 +66,34 @@ export const loader = async ({ request }) => {
       conversions,
       plan: shopRecord.plan,
       range,
-      shop
+      shop,
+      currencyCode
     };
   } catch (error) {
     console.error("Conversions loader error:", error);
-    return { conversions: [], plan: null, range, shop, dbError: true };
+    return { conversions: [], plan: null, range, shop, currencyCode, dbError: true };
   }
 };
 
 export default function Conversions() {
-  const { conversions, plan, range, shop, dbError } = useLoaderData();
+  const { conversions, plan, range, shop, currencyCode, dbError } = useLoaderData();
   const [selectedConversion, setSelectedConversion] = useState(null);
+
+  // Locale-aware currency formatter — falls back to browser locale so a
+  // German merchant viewing EUR sees "1.234,56 €" rather than "$1,234.56".
+  const currencyFormatter = (() => {
+    try {
+      const locale = (typeof navigator !== "undefined" && navigator.language) || "en-US";
+      return new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency: currencyCode || "USD",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    } catch {
+      return null;
+    }
+  })();
 
   // Tier access control
   const canAccess = plan === "pro" || plan === "enterprise";
@@ -80,9 +111,11 @@ export default function Conversions() {
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   };
 
-  // Format currency
+  // Format currency using the shop's currency + browser locale.
   const formatCurrency = (amount) => {
-    return `$${amount.toFixed(2)}`;
+    const num = Number(amount) || 0;
+    if (currencyFormatter) return currencyFormatter.format(num);
+    return `${(currencyCode || "USD")} ${num.toFixed(2)}`;
   };
 
   // Format customer contact — email shown as-is, phone numbers made readable
@@ -505,9 +538,9 @@ export default function Conversions() {
                           textAlign: 'center',
                           fontWeight: 500
                         }}>
-                          {config.offerType === 'percentage' 
-                            ? `${config.discountPercentage}% discount` 
-                            : `$${config.discountAmount} off`
+                          {config.offerType === 'percentage'
+                            ? `${config.discountPercentage}% discount`
+                            : `${formatCurrency(config.discountAmount)} off`
                           }
                         </p>
                       )}
