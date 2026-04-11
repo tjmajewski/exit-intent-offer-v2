@@ -475,11 +475,10 @@ export default function QuickSetupTab({
                     style={{ marginRight: 12, marginTop: 4 }}
                   />
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 500, marginBottom: 4 }}>Dollar Amount Off</div>
+                    <div style={{ fontWeight: 500, marginBottom: 4 }}>Fixed Amount Off</div>
                     <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
-                      e.g., "10DOLLARSOFF" for $10 discount
+                      e.g., "SAVE10" for 10 off (in your store's currency)
                     </div>
-                    <span style={{ marginRight: 8, color: "#666" }}>$</span>
                     <input
                       type="number"
                       name="discountAmount"

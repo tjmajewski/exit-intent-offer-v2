@@ -20,18 +20,23 @@
     return window.innerWidth <= 768 || /mobile/i.test(navigator.userAgent);
   }
 
-  // Currency formatting helper - uses shop's active currency
+  // Currency formatting helper - uses shop's active currency + buyer locale.
+  // The locale comes from Shopify (set per market) or the browser, so a French
+  // shopper sees "1 234 €" rather than "€1,234".
   function formatCurrency(amount) {
     try {
       const currencyCode = window.Shopify?.currency?.active || 'USD';
-      return new Intl.NumberFormat('en', {
+      const locale = (window.Shopify && (window.Shopify.locale || window.Shopify.country)) ||
+        (typeof navigator !== 'undefined' && (navigator.language || (navigator.languages && navigator.languages[0]))) ||
+        'en';
+      return new Intl.NumberFormat(locale, {
         style: 'currency',
         currency: currencyCode,
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
       }).format(amount);
     } catch (e) {
-      return `$${amount}`;
+      return `${amount}`;
     }
   }
 

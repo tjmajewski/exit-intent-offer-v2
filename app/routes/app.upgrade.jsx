@@ -8,7 +8,7 @@ import db from "../db.server";
 
 export async function loader({ request }) {
   const { admin, session } = await authenticate.admin(request);
-  const { getActiveSubscription, tierFromSubscriptionName, billingCycleFromSubscription, validatePromoCode } = await import("../utils/billing.server");
+  const { getActiveSubscription, tierFromSubscriptionName, billingCycleFromSubscription, validatePromoCode, getShopBillingCurrency } = await import("../utils/billing.server");
 
   try {
     const response = await admin.graphql(`
@@ -105,10 +105,14 @@ export async function loader({ request }) {
       trialDaysRemaining = 14;
     }
 
-    return { plan, activeSubscription, activeTier, currentBillingCycle, trialDaysRemaining, promoCode, promoConfig };
+    // Determine the shop's billing currency so the UI shows the same code
+    // Shopify will actually charge in (avoids "$29" then a EUR receipt).
+    const currencyCode = await getShopBillingCurrency(admin);
+
+    return { plan, activeSubscription, activeTier, currentBillingCycle, trialDaysRemaining, promoCode, promoConfig, currencyCode };
   } catch (error) {
     console.error("Error loading upgrade page:", error);
-    return { plan: { tier: "starter" }, activeSubscription: null, activeTier: null, currentBillingCycle: null, trialDaysRemaining: 14, promoCode: null, promoConfig: null };
+    return { plan: { tier: "starter" }, activeSubscription: null, activeTier: null, currentBillingCycle: null, trialDaysRemaining: 14, promoCode: null, promoConfig: null, currencyCode: "USD" };
   }
 }
 
@@ -191,7 +195,38 @@ export async function action({ request }) {
 }
 
 export default function Upgrade() {
-  const { plan, activeSubscription, activeTier, currentBillingCycle, trialDaysRemaining, promoCode, promoConfig } = useLoaderData();
+  const { plan, activeSubscription, activeTier, currentBillingCycle, trialDaysRemaining, promoCode, promoConfig, currencyCode } = useLoaderData();
+
+  // Locale-aware currency formatter for plan prices. Numeric tier prices stay
+  // the same (e.g. 29) but render with the shop's currency symbol — so a EUR
+  // shop sees "€29/mo" instead of a misleading "$29/mo".
+  const formatPrice = (amount) => {
+    try {
+      const locale = (typeof navigator !== "undefined" && navigator.language) || "en-US";
+      const f = new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency: currencyCode || "USD",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+      });
+      return f.format(Number(amount) || 0).replace(/[\u00A0\s]?\.00$/, "");
+    } catch {
+      return `${currencyCode || "USD"} ${amount}`;
+    }
+  };
+  const formatPriceWhole = (amount) => {
+    try {
+      const locale = (typeof navigator !== "undefined" && navigator.language) || "en-US";
+      return new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency: currencyCode || "USD",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(Number(amount) || 0);
+    } catch {
+      return `${currencyCode || "USD"} ${amount}`;
+    }
+  };
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -290,7 +325,7 @@ export default function Upgrade() {
             textAlign: "center"
           }}>
             <div style={{ color: "#ec4899", fontWeight: 700, fontSize: 18, marginBottom: 4 }}>
-              You've been invited! Get the Pro plan at ${promoConfig.monthlyPrice}/mo
+              You've been invited! Get the Pro plan at {formatPrice(promoConfig.monthlyPrice)}/mo
             </div>
             <div style={{ color: "#f9a8d4", fontSize: 14 }}>
               Exclusive early access pricing — locked in for as long as you're subscribed.
@@ -531,7 +566,7 @@ export default function Upgrade() {
                         textDecoration: "line-through",
                         marginRight: 8
                       }}>
-                        ${originalPrice.toFixed(2).replace(/\.00$/, '')}
+                        {formatPrice(originalPrice)}
                       </span>
                     )}
                     <span style={{
@@ -542,7 +577,7 @@ export default function Upgrade() {
                       WebkitBackgroundClip: "text",
                       WebkitTextFillColor: "transparent"
                     }}>
-                      ${displayPrice.toFixed(2).replace(/\.00$/, '')}
+                      {formatPrice(displayPrice)}
                     </span>
                     <span style={{
                       fontSize: 16,
@@ -559,8 +594,8 @@ export default function Upgrade() {
                       color: "#6b7280"
                     }}>
                       {isPromoTarget
-                        ? `$${promoConfig.annualTotal.toLocaleString()}/year`
-                        : `$${planOption.annualTotal.toLocaleString()}/year (save 15%)`
+                        ? `${formatPriceWhole(promoConfig.annualTotal)}/year`
+                        : `${formatPriceWhole(planOption.annualTotal)}/year (save 15%)`
                       }
                     </div>
                   )}
