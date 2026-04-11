@@ -19,6 +19,83 @@ export default function AISettingsTab({
   const [aiDiscountCodeMode, setAiDiscountCodeMode] = useState(
     settings.aiDiscountCodeMode || "unique"
   );
+
+  // ---- Social Proof local state (live preview + threshold status) ----
+  const [spEnabled, setSpEnabled] = useState(settings.socialProofEnabled ?? true);
+  const [spType, setSpType] = useState(settings.socialProofType || "orders");
+  const [spMinimum, setSpMinimum] = useState(
+    Number.isFinite(settings.socialProofMinimum) ? settings.socialProofMinimum : 100
+  );
+  const [spOrderCount, setSpOrderCount] = useState(settings.orderCount ?? null);
+  const [spCustomerCount, setSpCustomerCount] = useState(settings.customerCount ?? null);
+  const [spAvgRating, setSpAvgRating] = useState(settings.avgRating ?? null);
+  const [spLastUpdated, setSpLastUpdated] = useState(settings.socialProofUpdatedAt ?? null);
+  const [spRefreshState, setSpRefreshState] = useState("idle"); // idle | loading | success | error
+  const [spRefreshMessage, setSpRefreshMessage] = useState("");
+
+  // Round counts the same way the runtime formatter does, so the preview matches reality
+  const formatRoundedCount = (count) => {
+    if (!count || count < 100) return null;
+    if (count < 1000) return `${Math.floor(count / 100) * 100}+`;
+    if (count < 100000) return `${Math.floor(count / 1000)}k+`;
+    return `${Math.floor(count / 100000) * 100}k+`;
+  };
+
+  const spCurrentValue =
+    spType === "customers" ? spCustomerCount :
+    spType === "reviews" ? null : // not yet wired up
+    spOrderCount;
+
+  const spMeetsThreshold =
+    spType === "reviews"
+      ? !!(spAvgRating && spAvgRating >= 4.0)
+      : !!(spCurrentValue && spCurrentValue >= spMinimum);
+
+  const spPreviewText = (() => {
+    if (spType === "reviews") {
+      if (!spAvgRating) return null;
+      return `Rated ${spAvgRating.toFixed(1)}/5 by our customers`;
+    }
+    const rounded = formatRoundedCount(spCurrentValue);
+    if (!rounded) return null;
+    if (spType === "customers") return `Join ${rounded} happy customers`;
+    return `Join ${rounded} orders placed`;
+  })();
+
+  const formatRelativeTime = (iso) => {
+    if (!iso) return "Never";
+    const then = new Date(iso).getTime();
+    if (Number.isNaN(then)) return "Never";
+    const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+    if (diffSec < 60) return "just now";
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)} min ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} hr ago`;
+    return `${Math.floor(diffSec / 86400)} day${diffSec >= 172800 ? "s" : ""} ago`;
+  };
+
+  const handleRefreshSocialProof = async () => {
+    setSpRefreshState("loading");
+    setSpRefreshMessage("");
+    try {
+      const response = await fetch("/api/admin/collect-social-proof", { method: "POST" });
+      const data = await response.json();
+      if (data.success) {
+        const m = data.metrics || {};
+        if (typeof m.orderCount === "number") setSpOrderCount(m.orderCount);
+        if (typeof m.customerCount === "number") setSpCustomerCount(m.customerCount);
+        if (typeof m.avgRating === "number") setSpAvgRating(m.avgRating);
+        setSpLastUpdated(new Date().toISOString());
+        setSpRefreshState("success");
+        setSpRefreshMessage("Metrics updated from Shopify.");
+      } else {
+        setSpRefreshState("error");
+        setSpRefreshMessage(data.error || "Could not refresh metrics.");
+      }
+    } catch (error) {
+      setSpRefreshState("error");
+      setSpRefreshMessage(error.message || "Could not refresh metrics.");
+    }
+  };
   if (!canUseAIMode) {
     return (
       <div style={{
@@ -395,45 +472,60 @@ export default function AISettingsTab({
               Show customer trust indicators in your modals
             </p>
           </div>
-          <span style={{
-            padding: "4px 12px",
-            background: "#fbbf24",
-            color: "#78350f",
-            borderRadius: 4,
-            fontSize: 12,
-            fontWeight: 600
-          }}>
-            ENTERPRISE
-          </span>
+          {plan?.tier === 'enterprise' && (
+            <span style={{
+              padding: "4px 12px",
+              background: "#fbbf24",
+              color: "#78350f",
+              borderRadius: 4,
+              fontSize: 12,
+              fontWeight: 600
+            }}>
+              ENTERPRISE
+            </span>
+          )}
         </div>
 
-        <div style={{ marginBottom: 24 }}>
+        <div
+          style={{ marginBottom: 24 }}
+          aria-hidden={plan?.tier !== 'enterprise' ? 'true' : undefined}
+        >
           <div style={{ display: "flex", alignItems: "center", marginBottom: 20 }}>
             <input
+              id="socialProofEnabled"
               type="checkbox"
               name="socialProofEnabled"
-              defaultChecked={settings.socialProofEnabled ?? true}
-              onChange={(e) => setFormChanged(true)}
+              checked={spEnabled}
+              onChange={(e) => { setSpEnabled(e.target.checked); setFormChanged(true); }}
               disabled={plan?.tier !== 'enterprise'}
+              tabIndex={plan?.tier !== 'enterprise' ? -1 : 0}
               style={{ marginRight: 12, width: 20, height: 20, cursor: plan?.tier === 'enterprise' ? "pointer" : "not-allowed" }}
             />
-            <label style={{ fontWeight: 500, fontSize: 16, cursor: plan?.tier === 'enterprise' ? "pointer" : "not-allowed" }}>
+            <label
+              htmlFor="socialProofEnabled"
+              style={{ fontWeight: 500, fontSize: 16, cursor: plan?.tier === 'enterprise' ? "pointer" : "not-allowed" }}
+            >
               Enable social proof in modals
             </label>
           </div>
 
           <div style={{ marginBottom: 20 }}>
-            <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
-              Display Metric
+            <label
+              htmlFor="socialProofType"
+              style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}
+            >
+              What number do you want to show shoppers?
             </label>
             <p style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
-              Which number to show in your modals
+              Each option shows the example phrase your modals will display.
             </p>
             <select
+              id="socialProofType"
               name="socialProofType"
-              defaultValue={settings.socialProofType || "orders"}
-              onChange={(e) => setFormChanged(true)}
+              value={spType}
+              onChange={(e) => { setSpType(e.target.value); setFormChanged(true); }}
               disabled={plan?.tier !== 'enterprise'}
+              tabIndex={plan?.tier !== 'enterprise' ? -1 : 0}
               style={{
                 width: "100%",
                 padding: "10px 12px",
@@ -443,27 +535,36 @@ export default function AISettingsTab({
                 cursor: plan?.tier === 'enterprise' ? "pointer" : "not-allowed"
               }}
             >
-              <option value="orders">Total orders placed</option>
-              <option value="customers">Total customers served</option>
-              <option value="reviews">Total reviews received</option>
+              <option value="orders">Number of orders — “Join 5,000+ orders placed”</option>
+              <option value="customers">Number of customers — “Join 5,000+ happy customers”</option>
+              <option value="reviews" disabled>Average rating — “Rated 4.8/5 by our customers” (requires Judge.me / Yotpo — coming soon)</option>
             </select>
           </div>
 
           <div style={{ marginBottom: 20 }}>
-            <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
-              Minimum Threshold
+            <label
+              htmlFor="socialProofMinimum"
+              style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 500 }}
+            >
+              Hide until you reach
             </label>
             <p style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
-              Only display if your metric exceeds this value
+              Small numbers can hurt trust more than help. We’ll keep the social proof line hidden until your metric reaches this value.
             </p>
             <input
+              id="socialProofMinimum"
               type="number"
               name="socialProofMinimum"
-              defaultValue={settings.socialProofMinimum || 100}
+              value={spMinimum}
+              onChange={(e) => {
+                const v = parseInt(e.target.value || "0", 10);
+                setSpMinimum(Number.isFinite(v) ? v : 0);
+                setFormChanged(true);
+              }}
               min="0"
               step="10"
-              onChange={(e) => setFormChanged(true)}
               disabled={plan?.tier !== 'enterprise'}
+              tabIndex={plan?.tier !== 'enterprise' ? -1 : 0}
               style={{
                 width: "100%",
                 padding: "10px 12px",
@@ -473,10 +574,59 @@ export default function AISettingsTab({
                 cursor: plan?.tier === 'enterprise' ? "pointer" : "not-allowed"
               }}
             />
+            {/* Threshold status: tells the merchant whether their metric currently clears the bar */}
+            {spType !== "reviews" && (
+              <div
+                role="status"
+                style={{
+                  marginTop: 8,
+                  padding: "8px 12px",
+                  borderRadius: 6,
+                  fontSize: 13,
+                  background: spMeetsThreshold ? "#f0fdf4" : "#fffbeb",
+                  color: spMeetsThreshold ? "#166534" : "#92400e",
+                  border: `1px solid ${spMeetsThreshold ? "#bbf7d0" : "#fde68a"}`
+                }}
+              >
+                {spCurrentValue == null ? (
+                  <>No data yet — click <strong>Refresh Metrics</strong> to pull from Shopify.</>
+                ) : spMeetsThreshold ? (
+                  <>✓ Your current value: <strong>{spCurrentValue.toLocaleString()}</strong> {spType === "customers" ? "customers" : "orders"} — will display.</>
+                ) : (
+                  <>⚠ Your current value: <strong>{spCurrentValue.toLocaleString()}</strong> {spType === "customers" ? "customers" : "orders"} — below threshold, will not display.</>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Live preview of the exact line shoppers will see */}
+          <div style={{
+            marginTop: 16,
+            padding: 16,
+            background: "#f8fafc",
+            border: "1px dashed #cbd5e1",
+            borderRadius: 8
+          }}>
+            <div style={{ fontSize: 12, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+              Live preview
+            </div>
+            {spEnabled && spPreviewText && spMeetsThreshold ? (
+              <div style={{ fontSize: 16, color: "#0f172a", fontWeight: 500 }}>
+                {spPreviewText}
+              </div>
+            ) : (
+              <div style={{ fontSize: 14, color: "#64748b", fontStyle: "italic" }}>
+                {!spEnabled
+                  ? "Social proof is turned off — nothing will be shown."
+                  : !spPreviewText
+                    ? "No metric available yet for this option."
+                    : "Your metric is below the threshold — nothing will be shown."}
+              </div>
+            )}
           </div>
 
           <div style={{
-            marginTop: 16,
+            marginTop: 12,
             padding: 12,
             background: "#eff6ff",
             borderRadius: 6,
@@ -484,55 +634,50 @@ export default function AISettingsTab({
             color: "#1e40af",
             lineHeight: "1.5"
           }}>
-            <strong>How it works:</strong> The system automatically fetches your store metrics daily from Shopify. When enabled, modals will display text like "Join 5,000+ happy customers" to build trust and credibility with shoppers who are considering leaving.
+            <strong>How it works:</strong> Your store metrics are pulled from Shopify automatically once a day. You can also refresh them manually below.
           </div>
 
-          {(settings.orderCount || settings.customerCount) && (
-            <div style={{
-              marginTop: 12,
-              padding: 12,
-              background: "#f0fdf4",
-              borderRadius: 6,
-              fontSize: 13,
-              color: "#166534",
-              lineHeight: "1.5"
+          {/* Refresh row: button + last-synced timestamp + inline status (no native alerts) */}
+          <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={handleRefreshSocialProof}
+              disabled={plan?.tier !== 'enterprise' || spRefreshState === "loading"}
+              tabIndex={plan?.tier !== 'enterprise' ? -1 : 0}
+              style={{
+                padding: '10px 16px',
+                background: plan?.tier === 'enterprise' ? '#8B5CF6' : '#9ca3af',
+                color: 'white',
+                border: 'none',
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: plan?.tier === 'enterprise' && spRefreshState !== "loading" ? 'pointer' : 'not-allowed',
+                opacity: spRefreshState === "loading" ? 0.7 : 1
+              }}
+            >
+              {spRefreshState === "loading" ? "Refreshing…" : "Refresh Metrics Now"}
+            </button>
+            <span style={{ fontSize: 13, color: "#64748b" }}>
+              Last updated: {formatRelativeTime(spLastUpdated)}
+            </span>
+          </div>
+          {spRefreshState === "success" && (
+            <div role="status" style={{
+              marginTop: 8, padding: "8px 12px", borderRadius: 6, fontSize: 13,
+              background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0"
             }}>
-              <strong>Current store metrics:</strong> {settings.orderCount ? `${settings.orderCount} orders` : ''}{settings.orderCount && settings.customerCount ? ', ' : ''}{settings.customerCount ? `${settings.customerCount} customers` : ''}{settings.avgRating ? `, ${settings.avgRating.toFixed(1)}/5.0 average rating` : ''}
+              ✓ {spRefreshMessage}
             </div>
           )}
-
-          <button
-            type="button"
-            onClick={async () => {
-              if (confirm('Refresh social proof metrics from Shopify? This may take a moment.')) {
-                try {
-                  const response = await fetch('/api/admin/collect-social-proof', { method: 'POST' });
-                  const data = await response.json();
-                  if (data.success) {
-                    alert('Metrics updated successfully! Refresh the page to see new values.');
-                  } else {
-                    alert('Error updating metrics: ' + data.error);
-                  }
-                } catch (error) {
-                  alert('Error refreshing metrics: ' + error.message);
-                }
-              }
-            }}
-            disabled={plan?.tier !== 'enterprise'}
-            style={{
-              marginTop: 12,
-              padding: '10px 16px',
-              background: plan?.tier === 'enterprise' ? '#8B5CF6' : '#9ca3af',
-              color: 'white',
-              border: 'none',
-              borderRadius: 6,
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: plan?.tier === 'enterprise' ? 'pointer' : 'not-allowed'
-            }}
-          >
-            Refresh Metrics Now
-          </button>
+          {spRefreshState === "error" && (
+            <div role="alert" style={{
+              marginTop: 8, padding: "8px 12px", borderRadius: 6, fontSize: 13,
+              background: "#fef2f2", color: "#991b1b", border: "1px solid #fecaca"
+            }}>
+              Couldn’t refresh metrics: {spRefreshMessage}
+            </div>
+          )}
         </div>
       </div>
 
