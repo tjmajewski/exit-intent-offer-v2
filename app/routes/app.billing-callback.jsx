@@ -33,8 +33,9 @@ export async function loader({ request }) {
     console.log(`[Billing] Plan updated to ${tier} for ${session.shop}${promoCode ? ` (promo: ${promoCode})` : ""}`);
   } else if (requestedTier) {
     // Subscription not yet active but we have the tier from our own returnUrl.
-    // Update the DB immediately so features are accessible. The metafield will
-    // be synced on the next page load via syncSubscriptionToPlan.
+    // Update the DB immediately so features are accessible. The metafield
+    // plan object (usage tracking) is updated by updatePlanData() above on
+    // the next successful callback, or via the dashboard's usage-reset path.
     console.log(`[Billing] Subscription not yet active for ${session.shop}, updating DB to ${requestedTier} from callback params`);
     await db.shop.upsert({
       where: { shopifyDomain: session.shop },

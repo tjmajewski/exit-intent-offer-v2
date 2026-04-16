@@ -8,7 +8,7 @@ import { generateModalHash, getDefaultModalLibrary, findModalByHash, getNextModa
 // unique codes are now minted per-session via /api/generate-code
 import { createGenericDiscountCode } from "../utils/discount-codes";
 import { getTriggerDisplay, getDiscountDisplay } from "../utils/settingsHelpers";
-import { syncSubscriptionToPlan } from "../utils/billing.server";
+import { getShopPlan } from "../utils/plan.server";
 import AppLayout from "../components/AppLayout";
 import QuickSetupTab from "../components/settings/tabs/QuickSetupTab";
 import AISettingsTab from "../components/settings/tabs/AISettingsTab";
@@ -82,14 +82,10 @@ export async function loader({ request }) {
 
     const settings = settingsValue ? JSON.parse(settingsValue) : defaultSettings;
     
-    // Sync subscription state with DB (self-heals if billing callback missed)
-    let plan = planValue ? JSON.parse(planValue) : null;
-    const syncedTier = await syncSubscriptionToPlan(admin, session, db);
-    if (syncedTier) {
-      plan = plan ? { ...plan, tier: syncedTier } : { tier: syncedTier, billingCycle: "monthly" };
-    } else if (shopRecord && shopRecord.plan) {
-      plan = { tier: shopRecord.plan, billingCycle: "monthly" };
-    }
+    // DB is the single source of truth for plan tier (see utils/plan.server.js).
+    const canonicalPlan = await getShopPlan(session);
+    let plan = planValue ? JSON.parse(planValue) : {};
+    plan = { ...plan, tier: canonicalPlan.tier, billingCycle: plan.billingCycle || "monthly" };
     
     const availableTemplates = plan ? getAvailableTemplates(plan.tier) : getAvailableTemplates("starter");
 

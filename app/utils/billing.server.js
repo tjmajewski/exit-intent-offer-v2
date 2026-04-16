@@ -265,17 +265,10 @@ export async function syncSubscriptionToPlan(admin, session, db) {
       return currentDbTier;
     }
 
-    // No active subscription — if DB still says a paid tier, downgrade to starter
-    if (shopRecord?.plan && shopRecord.plan !== "starter" && !shopRecord.subscriptionId) {
-      // Only downgrade if there was never a subscriptionId (i.e. the "pro" default bug)
-      console.log(`[Billing Sync] No subscription found for ${session.shop}, DB has "${shopRecord.plan}" with no subscriptionId — correcting to starter`);
-      await db.shop.update({
-        where: { shopifyDomain: session.shop },
-        data: { plan: "starter" },
-      });
-      return "starter";
-    }
-
+    // No active subscription — leave the DB plan alone.
+    // Dev plans set via the dev switcher have no real subscription; auto-
+    // downgrading here would silently reset them. Real downgrades must go
+    // through the billing callback, not a passive page load.
     return shopRecord?.plan || "starter";
   } catch (e) {
     console.error("[Billing Sync] Error:", e);

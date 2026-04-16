@@ -3,6 +3,7 @@ import { useState } from "react";
 import { authenticate } from "../shopify.server";
 import { hasFeature } from "../utils/featureGates";
 import { getDefaultModalLibrary } from "../utils/modalHash";
+import { getShopPlan } from "../utils/plan.server";
 import AppLayout from "../components/AppLayout";
 import db from "../db.server";
 
@@ -288,18 +289,12 @@ export async function loader({ request }) {
 
     const data = await response.json();
 
-    let plan = data.data.shop?.plan?.value
+    // DB is the single source of truth for plan tier (see utils/plan.server.js).
+    const canonicalPlan = await getShopPlan(session);
+    const metafieldPlan = data.data.shop?.plan?.value
       ? JSON.parse(data.data.shop.plan.value)
-      : { tier: "starter" };
-
-    // Override plan with database value (more reliable than metafields)
-    const shopRecord = await db.shop.findUnique({
-      where: { shopifyDomain: session.shop },
-      select: { plan: true }
-    });
-    if (shopRecord?.plan) {
-      plan = { ...plan, tier: shopRecord.plan };
-    }
+      : {};
+    const plan = { ...metafieldPlan, tier: canonicalPlan.tier };
 
     const modalLibrary = data.data.shop?.modalLibrary?.value
       ? JSON.parse(data.data.shop.modalLibrary.value)
