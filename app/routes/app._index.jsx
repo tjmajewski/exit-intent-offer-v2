@@ -2,7 +2,7 @@ import { useLoaderData, Link, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import { useState } from "react";
 import { checkAndResetUsage, PLAN_FEATURES } from "../utils/featureGates";
-import { syncSubscriptionToPlan } from "../utils/billing.server";
+import { getShopPlan } from "../utils/plan.server";
 import AppLayout from "../components/AppLayout";
 import OnboardingChecklist from "../components/OnboardingChecklist";
 import db from "../db.server";
@@ -276,13 +276,10 @@ export async function loader({ request }) {
       select: { id: true, populationSize: true, plan: true }
     });
 
-    // Sync subscription state with DB (self-heals if billing callback missed)
-    const syncedTier = await syncSubscriptionToPlan(admin, session, db);
-    if (syncedTier) {
-      plan = { ...plan, tier: syncedTier };
-    } else if (shopRecord?.plan) {
-      plan = { ...plan, tier: shopRecord.plan };
-    }
+    // DB is the single source of truth for plan tier. Usage data still
+    // lives on the metafield plan object (tracked per 30-day window).
+    const canonicalPlan = await getShopPlan(session);
+    plan = { ...plan, tier: canonicalPlan.tier };
 
     // Idle cart pickup: On first load, evaluate any abandoned carts
     // that existed before the app was enabled. Fire-and-forget to avoid
@@ -502,78 +499,9 @@ export async function action({ request }) {
     const shopData = await shopResponse.json();
     const shopId = shopData.data.shop.id;
 
-    // Handle plan switching
-    if (actionType === "switchPlan") {
-      const newTier = formData.get("tier");
-      const currentPlan = shopData.data.shop?.plan?.value 
-        ? JSON.parse(shopData.data.shop.plan.value)
-        : null;
-
-      if (currentPlan) {
-        currentPlan.tier = newTier;
-        
-        // Ensure usage object exists when switching plans
-        if (!currentPlan.usage) {
-          const now = new Date();
-          const resetDate = new Date(now);
-          resetDate.setMonth(resetDate.getMonth() + 1);
-          
-          currentPlan.usage = {
-            impressionsThisMonth: 0,
-            resetDate: resetDate.toISOString()
-          };
-        }
-
-        // Also update settings to include plan tier
-        const settingsResponse = await admin.graphql(`
-          query {
-            shop {
-              settings: metafield(namespace: "exit_intent", key: "settings") {
-                value
-              }
-            }
-          }
-        `);
-        const settingsData = await settingsResponse.json();
-        const currentSettings = settingsData.data.shop?.settings?.value 
-          ? JSON.parse(settingsData.data.shop.settings.value)
-          : {};
-        
-        currentSettings.plan = newTier;
-
-        await admin.graphql(`
-          mutation UpdatePlanAndSettings($ownerId: ID!, $planValue: String!, $settingsValue: String!) {
-            metafieldsSet(metafields: [
-              {
-                ownerId: $ownerId
-                namespace: "exit_intent"
-                key: "plan"
-                value: $planValue
-                type: "json"
-              },
-              {
-                ownerId: $ownerId
-                namespace: "exit_intent"
-                key: "settings"
-                value: $settingsValue
-                type: "json"
-              }
-            ]) {
-              metafields { id }
-            }
-          }
-        `, {
-          variables: {
-            ownerId: shopId,
-            planValue: JSON.stringify(currentPlan),
-            settingsValue: JSON.stringify(currentSettings)
-          }
-        });
-
-        console.log(` Switched plan to: ${newTier}`);
-        return { success: true, planSwitched: true };
-      }
-    }
+    // Plan switching is handled by /app/dev-update-plan (dev switcher) and
+    // the billing callback (real customer upgrades). Dashboard no longer
+    // owns a switchPlan action — the DB is the single source of truth.
 
     // SEED: Populate dashboard with realistic test data for screenshots
     if (actionType === "seedAnalytics") {
@@ -916,16 +844,6 @@ export default function Dashboard() {
     );
   };
 
-  const handlePlanSwitch = (newTier) => {
-    fetcher.submit(
-      {
-        actionType: "switchPlan",
-        tier: newTier
-      },
-      { method: "post" }
-    );
-  };
-
   // Compute onboarding step completion
   const tier = plan?.tier || "starter";
   const completedSteps = {
@@ -1138,92 +1056,6 @@ export default function Dashboard() {
         </div>
         
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          {/* Dev Tools - Hidden for production/recording */}
-          {false && plan && (
-            <div style={{ display: "flex", gap: 12 }}>
-              {/* Plan Switcher */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-                <label style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
-                   Dev: Switch Plan
-                </label>
-                <select
-                  value={plan.tier}
-                  onChange={(e) => handlePlanSwitch(e.target.value)}
-                  style={{
-                    padding: "8px 12px",
-                    border: "2px solid #8B5CF6",
-                    borderRadius: 6,
-                    background: "white",
-                    color: "#8B5CF6",
-                    fontWeight: 600,
-                    fontSize: 14,
-                    cursor: "pointer"
-                  }}
-                >
-                  <option value="starter">Starter ($29/mo)</option>
-                  <option value="pro">Pro ($79/mo)</option>
-                  <option value="enterprise">Enterprise ($299/mo)</option>
-                </select>
-              </div>
-
-              {/* Seed Analytics Button */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-                <label style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
-                   Dev: Seed Data
-                </label>
-                <button
-                  onClick={() => {
-                    fetcher.submit(
-                      { actionType: "seedAnalytics" },
-                      { method: "post" }
-                    );
-                    setTimeout(() => window.location.reload(), 1000);
-                  }}
-                  style={{
-                    padding: "8px 12px",
-                    border: "2px solid #10b981",
-                    borderRadius: 6,
-                    background: "white",
-                    color: "#10b981",
-                    fontWeight: 600,
-                    fontSize: 14,
-                    cursor: "pointer"
-                  }}
-                >
-                  Seed Analytics
-                </button>
-              </div>
-
-              {/* Test Reset Button */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-                <label style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
-                   Dev: Test Reset
-                </label>
-                <button
-                  onClick={() => {
-                    fetcher.submit(
-                      { actionType: "testReset" },
-                      { method: "post" }
-                    );
-                    setTimeout(() => window.location.reload(), 500);
-                  }}
-                  style={{
-                    padding: "8px 12px",
-                    border: "2px solid #ef4444",
-                    borderRadius: 6,
-                    background: "white",
-                    color: "#ef4444",
-                    fontWeight: 600,
-                    fontSize: 14,
-                    cursor: "pointer"
-                  }}
-                >
-                  Force Reset
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Active/Inactive Toggle */}
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ 

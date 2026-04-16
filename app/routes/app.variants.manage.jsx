@@ -3,6 +3,7 @@ import { authenticate } from "../shopify.server";
 import { useEffect, useState } from "react";
 import AppLayout from "../components/AppLayout";
 import db from "../db.server";
+import { getShopPlan } from "../utils/plan.server";
 
 export async function action({ request }) {
   const { session } = await authenticate.admin(request);
@@ -95,12 +96,11 @@ export async function loader({ request }) {
     return { variants: [], shop: null, plan: null };
   }
 
-  // Map plan string to tier
-  const planTier = shop.plan === 'enterprise' ? 'enterprise' : shop.plan === 'pro' ? 'pro' : 'starter';
-  const plan = { tier: planTier };
+  // DB is the single source of truth for plan tier (see utils/plan.server.js).
+  const plan = await getShopPlan(session);
 
   // Enterprise-only page
-  if (planTier !== 'enterprise') {
+  if (plan.tier !== 'enterprise') {
     return redirect('/app/upgrade');
   }
 

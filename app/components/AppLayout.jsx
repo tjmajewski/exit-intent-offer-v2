@@ -4,10 +4,17 @@ import { useState, useEffect } from "react";
 function DevPlanSwitcher({ plan }) {
   const fetcher = useFetcher();
 
+  // Dev-only control. Vite inlines process.env.NODE_ENV at build time,
+  // so this branch is tree-shaken out of production bundles — customers
+  // will never see the switcher, they change plans via /app/upgrade.
+  if (process.env.NODE_ENV === 'production') {
+    return null;
+  }
+
   if (!plan) {
     return null;
   }
-  
+
   return (
     <div style={{
       position: "absolute",
@@ -251,7 +258,7 @@ export default function AppLayout({ children, plan }) {
         {plan && (
           <div style={{
             position: "absolute",
-            bottom: process.env.NODE_ENV === 'development' ? 180 : 24,
+            bottom: process.env.NODE_ENV !== 'production' ? 180 : 24,
             left: 24,
             right: 24,
             padding: 12,

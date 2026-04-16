@@ -3,6 +3,7 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { useState } from "react";
 import AppLayout from "../components/AppLayout";
+import { getShopPlan } from "../utils/plan.server";
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
@@ -62,9 +63,12 @@ export const loader = async ({ request }) => {
       }
     });
 
+    // DB is the single source of truth for plan tier (see utils/plan.server.js).
+    const canonicalPlan = await getShopPlan(session);
+
     return {
       conversions,
-      plan: shopRecord.plan,
+      plan: canonicalPlan.tier,
       range,
       shop,
       currencyCode

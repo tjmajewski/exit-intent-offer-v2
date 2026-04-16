@@ -2,7 +2,7 @@ import { useLoaderData, useActionData, Link, Form, useNavigation, useNavigate, u
 import { useState, useEffect } from "react";
 import { authenticate } from "../shopify.server";
 import { PLAN_FEATURES } from "../utils/featureGates";
-import { syncSubscriptionToPlan } from "../utils/billing.server";
+import { getShopPlan } from "../utils/plan.server";
 import AppLayout from "../components/AppLayout";
 import db from "../db.server";
 
@@ -22,27 +22,22 @@ export async function loader({ request }) {
     `);
 
     const data = await response.json();
-    let plan = data.data.shop?.plan?.value
+    const metafieldPlan = data.data.shop?.plan?.value
       ? JSON.parse(data.data.shop.plan.value)
-      : { tier: "starter" };
+      : {};
 
-    // Sync subscription state with DB (self-heals if billing callback missed)
-    const syncedTier = await syncSubscriptionToPlan(admin, session, db);
+    // DB is the single source of truth for plan tier (see utils/plan.server.js).
+    const canonicalPlan = await getShopPlan(session);
+    let plan = { ...metafieldPlan, tier: canonicalPlan.tier };
+
     let shopRecord = null;
-    if (syncedTier) {
-      plan = { ...plan, tier: syncedTier };
-    } else {
-      try {
-        shopRecord = await db.shop.findUnique({
-          where: { shopifyDomain: session.shop },
-          select: { plan: true, promoCode: true }
-        });
-        if (shopRecord?.plan) {
-          plan = { ...plan, tier: shopRecord.plan };
-        }
-      } catch (e) {
-        console.error("Error fetching shop plan from DB:", e);
-      }
+    try {
+      shopRecord = await db.shop.findUnique({
+        where: { shopifyDomain: session.shop },
+        select: { plan: true, promoCode: true }
+      });
+    } catch (e) {
+      console.error("Error fetching shop record:", e);
     }
 
     // Check for promo code: URL param takes priority, then DB

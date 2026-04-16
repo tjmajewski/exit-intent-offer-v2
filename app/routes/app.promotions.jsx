@@ -1,7 +1,7 @@
 import { useLoaderData, useFetcher } from "react-router";
 import { useState } from "react";
 import { authenticate } from "../shopify.server";
-import { syncSubscriptionToPlan } from "../utils/billing.server";
+import { getShopPlan } from "../utils/plan.server";
 import db from "../db.server";
 import AppLayout from "../components/AppLayout";
 
@@ -23,25 +23,18 @@ export async function loader({ request }) {
 
     const data = await response.json();
     const currencyCode = data.data.shop?.currencyCode || "USD";
-    let plan = data.data.shop?.plan?.value
-      ? JSON.parse(data.data.shop.plan.value)
-      : { tier: "starter" };
 
-    // Sync subscription state with DB (self-heals if billing callback missed)
-    const syncedTier = await syncSubscriptionToPlan(admin, session, db);
-    if (syncedTier) {
-      plan = { ...plan, tier: syncedTier };
-    }
+    // DB is the single source of truth for plan tier (see utils/plan.server.js).
+    const canonicalPlan = await getShopPlan(session);
+    const metafieldPlan = data.data.shop?.plan?.value
+      ? JSON.parse(data.data.shop.plan.value)
+      : {};
+    const plan = { ...metafieldPlan, tier: canonicalPlan.tier };
 
     const shopDomain = session.shop;
     const shopRecord = await db.shop.findUnique({
       where: { shopifyDomain: shopDomain }
     });
-
-    // Fallback to DB value if sync returned null
-    if (!syncedTier && shopRecord?.plan) {
-      plan = { ...plan, tier: shopRecord.plan };
-    }
 
     // Enterprise-only feature
     if (plan.tier !== 'enterprise') {
