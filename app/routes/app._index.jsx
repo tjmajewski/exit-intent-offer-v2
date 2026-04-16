@@ -1,7 +1,7 @@
 import { useLoaderData, Link, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import { useState } from "react";
-import { checkAndResetUsage } from "../utils/featureGates";
+import { checkAndResetUsage, PLAN_FEATURES } from "../utils/featureGates";
 import { syncSubscriptionToPlan } from "../utils/billing.server";
 import AppLayout from "../components/AppLayout";
 import OnboardingChecklist from "../components/OnboardingChecklist";
@@ -15,6 +15,7 @@ export async function loader({ request }) {
       query {
         shop {
           id
+          currencyCode
           settings: metafield(namespace: "exit_intent", key: "settings") {
             value
           }
@@ -35,6 +36,8 @@ export async function loader({ request }) {
     `);
 
     const data = await response.json();
+
+    const currencyCode = data.data.shop?.currencyCode || "USD";
 
     const settings = data.data.shop?.settings?.value
       ? JSON.parse(data.data.shop.settings.value)
@@ -172,6 +175,34 @@ export async function loader({ request }) {
       ? (revenue30d / impressions30d).toFixed(2)
       : 0;
 
+    // Calculate 7-day trend indicators (current 7 days vs previous 7 days)
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000);
+    const fourteenDaysAgo = new Date(now.getTime() - 14 * 86400000);
+
+    const last7Events = events.filter(e => new Date(e.timestamp) > sevenDaysAgo);
+    const prev7Events = events.filter(e => {
+      const d = new Date(e.timestamp);
+      return d > fourteenDaysAgo && d <= sevenDaysAgo;
+    });
+
+    const last7Revenue = last7Events.filter(e => e.type === 'conversion').reduce((s, e) => s + (e.revenue || 0), 0);
+    const prev7Revenue = prev7Events.filter(e => e.type === 'conversion').reduce((s, e) => s + (e.revenue || 0), 0);
+    const last7Conversions = last7Events.filter(e => e.type === 'conversion').length;
+    const prev7Conversions = prev7Events.filter(e => e.type === 'conversion').length;
+    const last7Impressions = last7Events.filter(e => e.type === 'impression').length;
+    const prev7Impressions = prev7Events.filter(e => e.type === 'impression').length;
+    const last7CVR = last7Impressions > 0 ? (last7Conversions / last7Impressions * 100) : 0;
+    const prev7CVR = prev7Impressions > 0 ? (prev7Conversions / prev7Impressions * 100) : 0;
+
+    const hasTrendData = prev7Events.length > 0;
+    const trends = {
+      hasTrendData,
+      revenueChange: hasTrendData && prev7Revenue > 0 ? ((last7Revenue - prev7Revenue) / prev7Revenue * 100) : null,
+      conversionsChange: hasTrendData && prev7Conversions > 0 ? ((last7Conversions - prev7Conversions) / prev7Conversions * 100) : null,
+      cvrChange: hasTrendData && prev7CVR > 0 ? (last7CVR - prev7CVR) : null,
+    };
+
     // Calculate lifetime metrics (for Pro+)
     const impressionsLifetime = analyticsRaw.impressions || 0;
     const clicksLifetime = analyticsRaw.clicks || 0;
@@ -190,11 +221,23 @@ export async function loader({ request }) {
       ? (revenueLifetime / impressionsLifetime).toFixed(2) 
       : 0;
 
-    // Get recent events for activity feed (Enterprise) - Only show impactful events
-    const recentEvents = last30DaysEvents
-      .filter(event => event.event === 'conversion' || event.event === 'click') // Only conversions and clicks
-      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-      .slice(0, 10); // Last 10 events
+    // Build daily revenue data for the last 7 days (revenue timeline)
+    const dailyRevenue = [];
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - i);
+      const dateKey = date.toISOString().split('T')[0];
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+      const dayEvents = events.filter(e => {
+        return e.type === 'conversion' && e.timestamp && e.timestamp.startsWith(dateKey);
+      });
+      dailyRevenue.push({
+        day: dayName,
+        date: dateKey,
+        revenue: dayEvents.reduce((s, e) => s + (e.revenue || 0), 0),
+        conversions: dayEvents.length
+      });
+    }
 
     const analytics = {
       // 30-day metrics (everyone)
@@ -217,8 +260,10 @@ export async function loader({ request }) {
         clicks: clicksLifetime,
         conversions: conversionsLifetime
       },
-      // Recent activity (Enterprise)
-      recentEvents: recentEvents
+      // 7-day trends (all tiers)
+      trends,
+      // Daily revenue for timeline (Pro+)
+      dailyRevenue
     };
 
     // PHASE 5: Check for active site-wide promotions (Pro tier upsell)
@@ -297,6 +342,93 @@ export async function loader({ request }) {
       }
     }
 
+    // AI Learning Progress: champion variant + stats (Pro/Enterprise with AI mode)
+    let aiProgress = null;
+    let holdoutLift = null;
+    const isAIMode = settings?.mode === 'ai' && (plan.tier === 'pro' || plan.tier === 'enterprise');
+
+    if (shopRecord && isAIMode) {
+      const [champion, variantCounts, maxGen] = await Promise.all([
+        db.variant.findFirst({
+          where: { shopId: shopRecord.id, isChampion: true },
+          select: { headline: true, cta: true, conversions: true, impressions: true, generation: true }
+        }),
+        db.variant.groupBy({
+          by: ['status'],
+          where: { shopId: shopRecord.id },
+          _count: true
+        }),
+        db.variant.aggregate({
+          where: { shopId: shopRecord.id },
+          _max: { generation: true },
+          _count: true
+        })
+      ]);
+
+      const statusCounts = {};
+      variantCounts.forEach(g => { statusCounts[g.status] = g._count; });
+
+      aiProgress = {
+        champion: champion ? {
+          headline: champion.headline,
+          cta: champion.cta,
+          cvr: champion.impressions > 0 ? (champion.conversions / champion.impressions * 100).toFixed(1) : '0.0',
+          generation: champion.generation
+        } : null,
+        totalVariants: maxGen._count || 0,
+        maxGeneration: maxGen._max?.generation || 0,
+        active: (statusCounts['alive'] || 0) + (statusCounts['champion'] || 0) + (statusCounts['protected'] || 0),
+        eliminated: (statusCounts['killed'] || 0) + (statusCounts['dead'] || 0)
+      };
+
+      // Holdout-based incremental lift calculation (uses index [shopId, wasShown, converted])
+      const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
+      const [treatmentTotal, treatmentConverted, holdoutTotal, holdoutConverted, treatmentRevenue, holdoutRevenue] = await Promise.all([
+        db.interventionOutcome.count({
+          where: { shopId: shopRecord.id, isHoldout: false, wasShown: true, timestamp: { gte: new Date(thirtyDaysAgoISO) } }
+        }),
+        db.interventionOutcome.count({
+          where: { shopId: shopRecord.id, isHoldout: false, wasShown: true, converted: true, timestamp: { gte: new Date(thirtyDaysAgoISO) } }
+        }),
+        db.interventionOutcome.count({
+          where: { shopId: shopRecord.id, isHoldout: true, timestamp: { gte: new Date(thirtyDaysAgoISO) } }
+        }),
+        db.interventionOutcome.count({
+          where: { shopId: shopRecord.id, isHoldout: true, converted: true, timestamp: { gte: new Date(thirtyDaysAgoISO) } }
+        }),
+        db.interventionOutcome.aggregate({
+          where: { shopId: shopRecord.id, isHoldout: false, wasShown: true, converted: true, timestamp: { gte: new Date(thirtyDaysAgoISO) } },
+          _sum: { revenue: true }
+        }),
+        db.interventionOutcome.aggregate({
+          where: { shopId: shopRecord.id, isHoldout: true, converted: true, timestamp: { gte: new Date(thirtyDaysAgoISO) } },
+          _sum: { revenue: true }
+        })
+      ]);
+
+      if (treatmentTotal > 0 && holdoutTotal >= 10) {
+        const treatmentCVR = treatmentConverted / treatmentTotal;
+        const holdoutCVR = holdoutConverted / holdoutTotal;
+        const liftPct = holdoutCVR > 0 ? ((treatmentCVR - holdoutCVR) / holdoutCVR * 100) : (treatmentCVR > 0 ? 100 : 0);
+        const treatmentRev = treatmentRevenue._sum?.revenue || 0;
+        const holdoutRev = holdoutRevenue._sum?.revenue || 0;
+        // Extrapolate holdout revenue to treatment group size for apples-to-apples
+        const baselineRevenue = holdoutTotal > 0 ? (holdoutRev / holdoutTotal) * treatmentTotal : 0;
+        const incrementalRevenue = Math.max(0, treatmentRev - baselineRevenue);
+
+        holdoutLift = {
+          treatmentCVR: (treatmentCVR * 100).toFixed(2),
+          holdoutCVR: (holdoutCVR * 100).toFixed(2),
+          liftPct: liftPct.toFixed(1),
+          incrementalRevenue: Math.round(incrementalRevenue),
+          grossRevenue: Math.round(treatmentRev),
+          treatmentTotal,
+          holdoutTotal,
+          hasEnoughData: holdoutTotal >= 20
+        };
+      }
+    }
+
     return {
       settings,
       status,
@@ -307,7 +439,11 @@ export async function loader({ request }) {
       modalLibrary,
       onboarding,
       populationSize: shopRecord?.populationSize || 0,
-      shopDomain: session.shop
+      shopDomain: session.shop,
+      aiProgress,
+      holdoutLift,
+      isAIMode,
+      currencyCode
     };
   } catch (error) {
     console.error("Error loading dashboard:", error);
@@ -333,9 +469,14 @@ export async function loader({ request }) {
           impressions: 0,
           clicks: 0,
           conversions: 0
-        }
+        },
+        trends: { hasTrendData: false, revenueChange: null, conversionsChange: null, cvrChange: null },
+        dailyRevenue: []
       },
-      populationSize: 0
+      populationSize: 0,
+      holdoutLift: null,
+      isAIMode: false,
+      currencyCode: "USD"
     };
   }
 }
@@ -742,9 +883,25 @@ function InfoTooltip({ content }) {
 
 
 export default function Dashboard() {
-  const { settings, status, plan, analytics, promoWarning, activePromotions, modalLibrary, onboarding, populationSize, shopDomain } = useLoaderData();
+  const { settings, status, plan, analytics, promoWarning, activePromotions, modalLibrary, onboarding, populationSize, shopDomain, aiProgress, holdoutLift, isAIMode, currencyCode } = useLoaderData();
   const fetcher = useFetcher();
   const [isEnabled, setIsEnabled] = useState(status.enabled);
+
+  // Locale-aware currency formatter — matches the conversions page for consistency
+  const formatCurrency = (() => {
+    try {
+      const locale = (typeof navigator !== "undefined" && navigator.language) || "en-US";
+      const fmt = new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency: currencyCode || "USD",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+      });
+      return (amount) => fmt.format(Number(amount) || 0);
+    } catch {
+      return (amount) => `${currencyCode || "USD"} ${(Number(amount) || 0).toFixed(2)}`;
+    }
+  })();
 
   const handleToggle = () => {
     const newStatus = !isEnabled;
@@ -810,58 +967,82 @@ export default function Dashboard() {
           background: "white",
           border: "2px solid #fbbf24",
           borderRadius: 12,
-          padding: 20,
-          marginBottom: 24,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center"
+          padding: 24,
+          marginBottom: 24
         }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
-                Promotional Intelligence
-              </h3>
-              <span style={{
-                padding: "3px 10px",
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
+                  Promotional Intelligence
+                </h3>
+                <span style={{
+                  padding: "3px 10px",
+                  background: "#fbbf24",
+                  color: "#78350f",
+                  borderRadius: 6,
+                  fontSize: 11,
+                  fontWeight: 700
+                }}>
+                  {activePromotions.count} ACTIVE
+                </span>
+              </div>
+
+              {/* Show actionable insight for paused promos */}
+              {(() => {
+                const pausedPromo = activePromotions.promotions.find(p => p.aiStrategy === 'pause');
+                if (pausedPromo) {
+                  return (
+                    <div style={{
+                      fontSize: 14,
+                      color: "#78350f",
+                      marginBottom: 12,
+                      lineHeight: 1.5,
+                      padding: "10px 14px",
+                      background: "#fef3c7",
+                      borderRadius: 8
+                    }}>
+                      AI paused exit offers during <strong>{pausedPromo.code}</strong> ({pausedPromo.type === 'percentage' ? `${pausedPromo.amount}%` : formatCurrency(pausedPromo.amount)} off) to protect your margins
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                {activePromotions.promotions.map((promo, idx) => (
+                  <div key={idx} style={{
+                    padding: "6px 12px",
+                    background: "#f9fafb",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 6,
+                    fontSize: 13,
+                    color: "#374151",
+                    fontWeight: 500
+                  }}>
+                    {promo.code} ({promo.type === 'percentage' ? `${promo.amount}%` : formatCurrency(promo.amount)}) → <span style={{ color: getStrategyColor(promo.aiStrategy), fontWeight: 600 }}>{getStrategyLabel(promo.aiStrategy)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <Link
+              to="/app/promotions"
+              style={{
+                padding: "12px 24px",
                 background: "#fbbf24",
                 color: "#78350f",
-                borderRadius: 6,
-                fontSize: 11,
-                fontWeight: 700
-              }}>
-                {activePromotions.count} ACTIVE
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              {activePromotions.promotions.map((promo, idx) => (
-                <div key={idx} style={{
-                  padding: "6px 12px",
-                  background: "#fef3c7",
-                  borderRadius: 6,
-                  fontSize: 13,
-                  color: "#78350f",
-                  fontWeight: 500
-                }}>
-                  {promo.code} ({promo.amount}{promo.type === 'percentage' ? '%' : '$'}) → <span style={{ color: getStrategyColor(promo.aiStrategy) }}>{getStrategyLabel(promo.aiStrategy)}</span>
-                </div>
-              ))}
-            </div>
+                textDecoration: "none",
+                borderRadius: 8,
+                fontWeight: 600,
+                fontSize: 14,
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+                marginLeft: 16
+              }}
+            >
+              Manage →
+            </Link>
           </div>
-          <Link
-            to="/app/promotions"
-            style={{
-              padding: "10px 20px",
-              background: "#fbbf24",
-              color: "#78350f",
-              textDecoration: "none",
-              borderRadius: 8,
-              fontWeight: 600,
-              fontSize: 14,
-              whiteSpace: "nowrap"
-            }}
-          >
-            Manage →
-          </Link>
         </div>
       )}
 
@@ -1200,98 +1381,223 @@ export default function Dashboard() {
       )}
 
       {/* Hero Revenue Card - Last 30 Days */}
-      <div style={{
-        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-        padding: 40,
-        borderRadius: 12,
-        color: "white",
-        marginBottom: 32,
-        boxShadow: "0 10px 30px rgba(102, 126, 234, 0.3)"
-      }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <div style={{ fontSize: 16, opacity: 0.9 }}>Your Performance (Last 30 Days)</div>
-          <button
-            onClick={() => window.location.reload()}
-            title="Refresh data"
-            style={{
-              background: "rgba(255,255,255,0.15)",
-              border: "1px solid rgba(255,255,255,0.3)",
-              borderRadius: 6,
-              padding: "6px 8px",
-              cursor: "pointer",
-              color: "white",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 12,
-              opacity: 0.85,
-              lineHeight: 1
-            }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="23 4 23 10 17 10"/>
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-            </svg>
-            Refresh
-          </button>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 24 }}>
-          <div>
-            <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>Revenue Saved</div>
-            <div style={{ fontSize: 32, fontWeight: "bold" }}>
-              ${analytics.last30Days.totalRevenue.toLocaleString()}
+      {(() => {
+        const planPrice = PLAN_FEATURES[plan?.tier || 'starter']?.price || 29;
+        const totalRevenue = analytics.last30Days.totalRevenue;
+        const avgOrder = analytics.last30Days.conversions > 0
+          ? (totalRevenue / analytics.last30Days.conversions).toFixed(2)
+          : '0.00';
+        const { trends } = analytics;
+
+        // AI mode: use incremental revenue for ROI; manual: use gross revenue
+        const headlineRevenue = (isAIMode && holdoutLift) ? holdoutLift.incrementalRevenue : totalRevenue;
+        const roiMultiplier = planPrice > 0 ? Math.floor(headlineRevenue / planPrice) : 0;
+
+        const TrendArrow = ({ value, suffix = "%" }) => {
+          if (!trends.hasTrendData || value === null || value === undefined) {
+            return <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>Collecting trend data...</div>;
+          }
+          const isUp = value > 0;
+          const isFlat = Math.abs(value) < 0.5;
+          if (isFlat) {
+            return <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>No change vs last week</div>;
+          }
+          return (
+            <div style={{ fontSize: 13, marginTop: 4, color: isUp ? "#86efac" : "#fca5a5" }}>
+              {isUp ? "\u25B2" : "\u25BC"} {isUp ? "+" : ""}{value.toFixed(1)}{suffix} vs last week
             </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>Orders Created</div>
-            <div style={{ fontSize: 32, fontWeight: "bold" }}>
-              {analytics.last30Days.conversions.toLocaleString()}
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>Times Shown</div>
-            <div style={{ fontSize: 32, fontWeight: "bold" }}>
-              {analytics.last30Days.impressions.toLocaleString()}
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>Success Rate</div>
-            <div style={{ fontSize: 32, fontWeight: "bold" }}>
-              {analytics.last30Days.conversionRate}%
-            </div>
-          </div>
-        </div>
-        
-        {/* Empty State Guidance */}
-        {analytics.last30Days.conversions === 0 && analytics.last30Days.impressions > 0 && (
+          );
+        };
+
+        return (
           <div style={{
-            marginTop: 24,
-            padding: 16,
-            background: "rgba(255, 255, 255, 0.15)",
-            borderRadius: 8,
-            fontSize: 14
+            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+            padding: 40,
+            borderRadius: 12,
+            color: "white",
+            marginBottom: 32,
+            boxShadow: "0 10px 30px rgba(102, 126, 234, 0.3)"
           }}>
-            Just getting started? These numbers will grow as customers see your modal and make purchases.
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
+              <div style={{ fontSize: 16, opacity: 0.9 }}>
+                Your Performance (Last 30 Days)
+                {isAIMode && (
+                  <span style={{
+                    marginLeft: 10,
+                    padding: "3px 8px",
+                    background: "rgba(255,255,255,0.2)",
+                    borderRadius: 4,
+                    fontSize: 11,
+                    fontWeight: 600
+                  }}>AI MODE</span>
+                )}
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                title="Refresh data"
+                style={{
+                  background: "rgba(255,255,255,0.15)",
+                  border: "1px solid rgba(255,255,255,0.3)",
+                  borderRadius: 6,
+                  padding: "6px 8px",
+                  cursor: "pointer",
+                  color: "white",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 12,
+                  opacity: 0.85,
+                  lineHeight: 1
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="23 4 23 10 17 10"/>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                Refresh
+              </button>
+            </div>
+
+            {/* Primary Revenue Display — mode-aware */}
+            <div style={{ marginBottom: 32 }}>
+              {isAIMode && holdoutLift ? (
+                <>
+                  {/* AI Mode: Show incremental revenue as primary, gross as secondary */}
+                  <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>
+                    Incremental Revenue (vs no modal)
+                  </div>
+                  <div style={{ fontSize: 48, fontWeight: "bold", lineHeight: 1.1 }}>
+                    {formatCurrency(holdoutLift.incrementalRevenue)}
+                  </div>
+                  <TrendArrow value={trends.revenueChange} />
+                  {holdoutLift.incrementalRevenue > 0 ? (
+                    <div style={{ fontSize: 16, marginTop: 8, opacity: 0.9 }}>
+                      That's <strong>{roiMultiplier}x</strong> your {formatCurrency(planPrice)}/mo plan cost
+                    </div>
+                  ) : null}
+                  <div style={{
+                    marginTop: 12,
+                    display: "flex",
+                    gap: 20,
+                    padding: 14,
+                    background: "rgba(255,255,255,0.12)",
+                    borderRadius: 8,
+                    fontSize: 14
+                  }}>
+                    <div>
+                      <div style={{ opacity: 0.7, marginBottom: 2 }}>Gross Revenue</div>
+                      <div style={{ fontWeight: 600, fontSize: 18 }}>{formatCurrency(holdoutLift.grossRevenue)}</div>
+                    </div>
+                    <div style={{ borderLeft: "1px solid rgba(255,255,255,0.2)", paddingLeft: 20 }}>
+                      <div style={{ opacity: 0.7, marginBottom: 2 }}>AI Conversion Lift</div>
+                      <div style={{ fontWeight: 600, fontSize: 18, color: parseFloat(holdoutLift.liftPct) > 0 ? "#86efac" : "#fca5a5" }}>
+                        {parseFloat(holdoutLift.liftPct) > 0 ? "+" : ""}{holdoutLift.liftPct}%
+                      </div>
+                    </div>
+                    <div style={{ borderLeft: "1px solid rgba(255,255,255,0.2)", paddingLeft: 20 }}>
+                      <div style={{ opacity: 0.7, marginBottom: 2 }}>Holdout Sample</div>
+                      <div style={{ fontWeight: 600, fontSize: 18 }}>{holdoutLift.holdoutTotal.toLocaleString()}</div>
+                    </div>
+                  </div>
+                  {!holdoutLift.hasEnoughData && (
+                    <div style={{
+                      marginTop: 8,
+                      padding: "8px 12px",
+                      background: "rgba(255,255,255,0.1)",
+                      borderRadius: 6,
+                      fontSize: 12,
+                      opacity: 0.8
+                    }}>
+                      Holdout sample is small ({holdoutLift.holdoutTotal} visitors). Lift estimate will stabilize as more data is collected.
+                    </div>
+                  )}
+                </>
+              ) : isAIMode && !holdoutLift ? (
+                <>
+                  {/* AI Mode but not enough holdout data yet — show gross with caveat */}
+                  <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>Revenue From Offer Interactions</div>
+                  <div style={{ fontSize: 48, fontWeight: "bold", lineHeight: 1.1 }}>
+                    {formatCurrency(totalRevenue)}
+                  </div>
+                  <TrendArrow value={trends.revenueChange} />
+                  <div style={{
+                    marginTop: 12,
+                    padding: 12,
+                    background: "rgba(255,255,255,0.15)",
+                    borderRadius: 8,
+                    fontSize: 14
+                  }}>
+                    Collecting holdout data to calculate true incremental lift. This usually takes a few hundred sessions.
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Manual Mode: honest language — this is revenue from customers who interacted with the modal */}
+                  <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>Revenue From Offer Interactions</div>
+                  <div style={{ fontSize: 48, fontWeight: "bold", lineHeight: 1.1 }}>
+                    {formatCurrency(totalRevenue)}
+                  </div>
+                  <TrendArrow value={trends.revenueChange} />
+                  {totalRevenue > 0 ? (
+                    <div style={{ fontSize: 16, marginTop: 8, opacity: 0.9 }}>
+                      That's <strong>{roiMultiplier}x</strong> your {formatCurrency(planPrice)}/mo plan cost
+                    </div>
+                  ) : analytics.last30Days.impressions > 0 ? (
+                    <div style={{
+                      marginTop: 12,
+                      padding: 12,
+                      background: "rgba(255, 255, 255, 0.15)",
+                      borderRadius: 8,
+                      fontSize: 14
+                    }}>
+                      Just getting started? These numbers will grow as customers see your modal and make purchases.
+                    </div>
+                  ) : (
+                    <div style={{
+                      marginTop: 12,
+                      padding: 12,
+                      background: "rgba(255, 255, 255, 0.15)",
+                      borderRadius: 8,
+                      fontSize: 14
+                    }}>
+                      Your modal is ready! Enable it using the toggle above to start recovering revenue.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Supporting Metrics */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
+              <div>
+                <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>Orders Created</div>
+                <div style={{ fontSize: 28, fontWeight: "bold" }}>
+                  {analytics.last30Days.conversions.toLocaleString()}
+                </div>
+                <TrendArrow value={trends.conversionsChange} />
+              </div>
+              <div>
+                <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>Success Rate</div>
+                <div style={{ fontSize: 28, fontWeight: "bold" }}>
+                  {analytics.last30Days.conversionRate}%
+                </div>
+                <TrendArrow value={trends.cvrChange} suffix=" pts" />
+              </div>
+              <div>
+                <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>Avg Order</div>
+                <div style={{ fontSize: 28, fontWeight: "bold" }}>
+                  ${avgOrder}
+                </div>
+              </div>
+            </div>
           </div>
-        )}
-        
-        {analytics.last30Days.impressions === 0 && (
-          <div style={{
-            marginTop: 24,
-            padding: 16,
-            background: "rgba(255, 255, 255, 0.15)",
-            borderRadius: 8,
-            fontSize: 14
-          }}>
-            Your modal is ready! Enable it using the toggle above to start recovering revenue.
-          </div>
-        )}
-      </div>
+        );
+      })()}
 
       {/* Second Row Metrics */}
-      <div style={{ 
-        display: "grid", 
-        gridTemplateColumns: "repeat(3, 1fr)", 
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(3, 1fr)",
         gap: 24,
         marginBottom: 32
       }}>
@@ -1301,9 +1607,9 @@ export default function Dashboard() {
           borderRadius: 8,
           border: "1px solid #e5e7eb"
         }}>
-          <div style={{ 
-            fontSize: 14, 
-            color: "#6b7280", 
+          <div style={{
+            fontSize: 14,
+            color: "#6b7280",
             marginBottom: 8
           }}>
             People Clicked
@@ -1319,9 +1625,9 @@ export default function Dashboard() {
           borderRadius: 8,
           border: "1px solid #e5e7eb"
         }}>
-          <div style={{ 
-            fontSize: 14, 
-            color: "#6b7280", 
+          <div style={{
+            fontSize: 14,
+            color: "#6b7280",
             marginBottom: 8
           }}>
             Click Rate
@@ -1337,26 +1643,127 @@ export default function Dashboard() {
           borderRadius: 8,
           border: "1px solid #e5e7eb"
         }}>
-          <div style={{ 
-            fontSize: 14, 
-            color: "#6b7280", 
+          <div style={{
+            fontSize: 14,
+            color: "#6b7280",
             marginBottom: 8
           }}>
-            Avg Order
+            Times Shown
           </div>
           <div style={{ fontSize: 32, fontWeight: "bold", color: "#111827" }}>
-            ${analytics.last30Days.conversions > 0 
-              ? (analytics.last30Days.totalRevenue / analytics.last30Days.conversions).toFixed(2)
-              : '0.00'}
+            {analytics.last30Days.impressions.toLocaleString()}
           </div>
         </div>
       </div>
 
-      {/* Removed: Old metrics grid replaced with new hero card layout */}
+      {/* Impact Card — mode-aware */}
+      {analytics.last30Days.conversions > 0 && (
+        <>
+          {isAIMode && holdoutLift ? (
+            <>
+              {/* AI Mode: Holdout-backed counterfactual */}
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                borderRadius: 12,
+                overflow: "hidden",
+                marginBottom: 8,
+                border: "1px solid #e5e7eb"
+              }}>
+                <div style={{
+                  padding: 28,
+                  background: "linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)",
+                  borderRight: "1px solid #e5e7eb"
+                }}>
+                  <div style={{ fontSize: 14, color: "#991b1b", marginBottom: 8, fontWeight: 500 }}>
+                    Without AI Optimization
+                  </div>
+                  <div style={{ fontSize: 28, fontWeight: "bold", color: "#dc2626" }}>
+                    {holdoutLift.holdoutCVR}%
+                  </div>
+                  <div style={{ fontSize: 14, color: "#991b1b", marginTop: 4 }}>
+                    baseline conversion rate (holdout group)
+                  </div>
+                </div>
+                <div style={{
+                  padding: 28,
+                  background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)"
+                }}>
+                  <div style={{ fontSize: 14, color: "#166534", marginBottom: 8, fontWeight: 500 }}>
+                    With AI Optimization
+                  </div>
+                  <div style={{ fontSize: 28, fontWeight: "bold", color: "#16a34a" }}>
+                    {holdoutLift.treatmentCVR}%
+                  </div>
+                  <div style={{ fontSize: 14, color: "#166534", marginTop: 4 }}>
+                    conversion rate ({holdoutLift.liftPct > 0 ? "+" : ""}{holdoutLift.liftPct}% lift)
+                  </div>
+                </div>
+              </div>
+              <div style={{
+                textAlign: "center",
+                fontSize: 14,
+                color: "#6b7280",
+                marginBottom: 32
+              }}>
+                Measured from {holdoutLift.holdoutTotal.toLocaleString()} holdout visitors vs {holdoutLift.treatmentTotal.toLocaleString()} who saw AI-optimized offers
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Manual Mode: Honest attribution — revenue from interactions, no causal claim */}
+              <div style={{
+                borderRadius: 12,
+                overflow: "hidden",
+                marginBottom: 8,
+                border: "1px solid #e5e7eb",
+                padding: 28,
+                background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)"
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, color: "#166534", marginBottom: 8, fontWeight: 500 }}>
+                      Customers Who Engaged With Your Offer
+                    </div>
+                    <div style={{ fontSize: 28, fontWeight: "bold", color: "#16a34a" }}>
+                      {analytics.last30Days.conversions.toLocaleString()} orders — {formatCurrency(analytics.last30Days.totalRevenue)}
+                    </div>
+                    <div style={{ fontSize: 14, color: "#166534", marginTop: 4 }}>
+                      from visitors who clicked your exit offer and completed a purchase
+                    </div>
+                  </div>
+                  {!isAIMode && plan && plan.tier !== 'starter' && (
+                    <div style={{
+                      padding: "12px 16px",
+                      background: "rgba(255,255,255,0.7)",
+                      borderRadius: 8,
+                      fontSize: 13,
+                      color: "#166534",
+                      maxWidth: 200,
+                      lineHeight: 1.5,
+                      textAlign: "center"
+                    }}>
+                      Enable <strong>AI mode</strong> to measure true incremental lift with a holdout group
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div style={{
+                textAlign: "center",
+                fontSize: 14,
+                color: "#6b7280",
+                marginBottom: 32
+              }}>
+                {analytics.last30Days.conversions.toLocaleString()} visitor{analytics.last30Days.conversions !== 1 ? 's' : ''} interacted with your offer and made a purchase this month
+              </div>
+            </>
+          )}
+        </>
+      )}
 
       {/* Removed: Lifetime Analytics now on Performance page */}
 
-{/* AI Performance Section - Pro/Enterprise with AI Mode */}
+{/* AI Learning Progress - Pro/Enterprise with AI Mode */}
       {plan && (plan.tier === 'pro' || plan.tier === 'enterprise') && settings && settings.mode === 'ai' && (
         <div style={{
           background: "white",
@@ -1365,9 +1772,9 @@ export default function Dashboard() {
           padding: 32,
           marginBottom: 32
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
             <div style={{ fontSize: 24, fontWeight: 600, color: "#1f2937" }}>
-              AI Performance
+              AI Learning Progress
             </div>
             <span style={{
               padding: "4px 12px",
@@ -1380,18 +1787,85 @@ export default function Dashboard() {
               AI Mode Active
             </span>
           </div>
-          
-          <div style={{ fontSize: 16, color: "#6b7280", marginBottom: 16, lineHeight: 1.6 }}>
-            {(() => {
-              const maxVariants = plan.tier === 'enterprise' ? 20 : 2;
-              const displayCount = Math.min(populationSize || 0, maxVariants);
-              if (displayCount === 0) {
-                return 'Configure AI variants in Settings to start testing';
-              }
-              return `Your AI is testing ${displayCount} different variant${displayCount > 1 ? 's' : ''} to find what works best`;
-            })()}
-          </div>
-          
+
+          {aiProgress ? (
+            <>
+              {/* Generation Progress */}
+              {aiProgress.maxGeneration > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 14, color: "#6b7280", marginBottom: 8 }}>
+                    Evolved through <strong style={{ color: "#1f2937" }}>{aiProgress.maxGeneration} generation{aiProgress.maxGeneration !== 1 ? 's' : ''}</strong>
+                  </div>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {Array.from({ length: Math.min(aiProgress.maxGeneration, 10) }).map((_, i) => (
+                      <div key={i} style={{
+                        width: 24,
+                        height: 8,
+                        borderRadius: 4,
+                        background: `hsl(${260 - i * 12}, 70%, ${55 + i * 3}%)`
+                      }} />
+                    ))}
+                    {aiProgress.maxGeneration > 10 && (
+                      <div style={{ fontSize: 12, color: "#6b7280", marginLeft: 4, alignSelf: "center" }}>
+                        +{aiProgress.maxGeneration - 10} more
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Champion Callout */}
+              {aiProgress.champion ? (
+                <div style={{
+                  padding: 16,
+                  background: "#f0fdf4",
+                  border: "1px solid #bbf7d0",
+                  borderRadius: 8,
+                  marginBottom: 20
+                }}>
+                  <div style={{ fontSize: 13, color: "#166534", fontWeight: 600, marginBottom: 6 }}>
+                    Current Champion
+                  </div>
+                  <div style={{ fontSize: 16, color: "#1f2937", fontWeight: 500, marginBottom: 4 }}>
+                    "{aiProgress.champion.headline}"
+                  </div>
+                  <div style={{ fontSize: 14, color: "#6b7280" }}>
+                    CTA: "{aiProgress.champion.cta}" — converting at <strong style={{ color: "#10b981" }}>{aiProgress.champion.cvr}%</strong>
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  padding: 16,
+                  background: "#f5f3ff",
+                  border: "1px solid #ddd6fe",
+                  borderRadius: 8,
+                  marginBottom: 20,
+                  fontSize: 14,
+                  color: "#6d28d9"
+                }}>
+                  Finding your champion... The AI is still testing variants to identify the best performer.
+                </div>
+              )}
+
+              {/* Stats Row */}
+              <div style={{ display: "flex", gap: 24, marginBottom: 20 }}>
+                <div style={{ fontSize: 14, color: "#6b7280" }}>
+                  <strong style={{ color: "#1f2937" }}>{aiProgress.totalVariants}</strong> tested
+                </div>
+                <div style={{ fontSize: 14, color: "#6b7280" }}>
+                  <strong style={{ color: "#10b981" }}>{aiProgress.active}</strong> active
+                </div>
+                <div style={{ fontSize: 14, color: "#6b7280" }}>
+                  <strong style={{ color: "#ef4444" }}>{aiProgress.eliminated}</strong> eliminated
+                </div>
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 16, color: "#6b7280", marginBottom: 20 }}>
+              Configure AI variants in Settings to start testing
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: 16 }}>
             <Link
               to="/app/analytics"
@@ -1437,22 +1911,81 @@ export default function Dashboard() {
     padding: 32,
     marginBottom: 32
   }}>
-    <div style={{ fontSize: 24, fontWeight: 600, marginBottom: 8, color: "#1f2937" }}>
-       Grow Sales with Pro
+    <div style={{ fontSize: 24, fontWeight: 600, marginBottom: 16, color: "#1f2937" }}>
+      AI Could Be Optimizing For You
     </div>
-    <div style={{ fontSize: 16, color: "#6b7280", marginBottom: 24, lineHeight: 1.6 }}>
-      Upgrade to get:
+
+    {/* Blurred variant samples */}
+    <div style={{ position: "relative", marginBottom: 24 }}>
+      <div style={{ filter: "blur(3px)", pointerEvents: "none", opacity: 0.6 }}>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {["Last Chance: 15% Discount", "Don't Leave Empty-Handed!", "Exclusive Offer Just For You"].map((text, i) => (
+            <div key={i} style={{
+              padding: "10px 16px",
+              background: "#f3f4f6",
+              borderRadius: 8,
+              fontSize: 14,
+              color: "#374151",
+              border: "1px solid #e5e7eb"
+            }}>
+              {text}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{
+        position: "absolute",
+        top: "50%",
+        left: "50%",
+        transform: "translate(-50%, -50%)",
+        background: "rgba(139, 92, 246, 0.95)",
+        color: "white",
+        padding: "8px 16px",
+        borderRadius: 6,
+        fontSize: 13,
+        fontWeight: 600,
+        whiteSpace: "nowrap"
+      }}>
+        Pro Feature
+      </div>
     </div>
-    <ul style={{ marginBottom: 24, color: "#374151", lineHeight: 1.8 }}>
-      <li>AI automatically tests different discounts and messages</li>
-      <li>10x more sessions (10,000/month vs 1,000)</li>
-      <li>Show modal when customers hesitate on cart page</li>
-      <li>Target specific cart amounts</li>
-      <li>Track performance over time (not just 30 days)</li>
-    </ul>
-    <div style={{ fontSize: 14, color: "#6b7280", marginBottom: 16 }}>
-      Most stores see 2-3x more conversions with AI optimization
+
+    {/* CVR comparison */}
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 16,
+      padding: 20,
+      background: "#f9fafb",
+      borderRadius: 8,
+      marginBottom: 24
+    }}>
+      <div>
+        <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>Your conversion rate</div>
+        <div style={{ fontSize: 24, fontWeight: 700, color: "#1f2937" }}>
+          {analytics.last30Days.conversionRate}%
+        </div>
+      </div>
+      <div>
+        <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>AI-optimized stores avg</div>
+        <div style={{ fontSize: 24, fontWeight: 700, color: "#10b981" }}>
+          3.8%
+        </div>
+      </div>
     </div>
+
+    {/* Personalized CTA */}
+    {analytics.last30Days.totalRevenue > 0 ? (
+      <div style={{ fontSize: 15, color: "#374151", marginBottom: 20, lineHeight: 1.6 }}>
+        You've recovered <strong>{formatCurrency(analytics.last30Days.totalRevenue)}</strong> so far.
+        AI optimization could help you recover an estimated <strong>{formatCurrency(Math.round(analytics.last30Days.totalRevenue * 2.5))}</strong>.
+      </div>
+    ) : (
+      <div style={{ fontSize: 15, color: "#374151", marginBottom: 20, lineHeight: 1.6 }}>
+        Pro stores recover 2-3x more revenue with AI automatically testing different headlines, offers, and CTAs for each visitor.
+      </div>
+    )}
+
     <Link
       to="/app/upgrade"
       style={{
@@ -1466,7 +1999,7 @@ export default function Dashboard() {
         fontSize: 16
       }}
     >
-      See Plans & Pricing →
+      Upgrade to Pro →
     </Link>
   </div>
 )}
@@ -1511,8 +2044,8 @@ export default function Dashboard() {
   </div>
 )}
 
-{/* Recent Activity Feed - Enterprise Only */}
-      {plan && plan.tier === 'enterprise' && analytics.recentEvents && analytics.recentEvents.length > 0 && (
+{/* Revenue Timeline - Last 7 Days */}
+      {analytics.dailyRevenue && analytics.dailyRevenue.length > 0 && (
         <div style={{
           background: "white",
           border: "1px solid #e5e7eb",
@@ -1520,69 +2053,71 @@ export default function Dashboard() {
           padding: 32,
           marginBottom: 32
         }}>
-          <div style={{ fontSize: 20, fontWeight: 600, color: "#1f2937", marginBottom: 16 }}>
-            Recent Activity
+          <div style={{ fontSize: 20, fontWeight: 600, color: "#1f2937", marginBottom: 20 }}>
+            Revenue Timeline (Last 7 Days)
           </div>
-          
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {analytics.recentEvents.slice(0, 5).map((event, index) => {
-              const timeAgo = (() => {
-                const now = new Date();
-                const eventTime = new Date(event.timestamp);
-                const diffMinutes = Math.floor((now - eventTime) / (1000 * 60));
-                
-                if (diffMinutes < 1) return 'Just now';
-                if (diffMinutes < 60) return `${diffMinutes} min ago`;
-                const diffHours = Math.floor(diffMinutes / 60);
-                if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-                const diffDays = Math.floor(diffHours / 24);
-                return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-              })();
-              
-              const eventIcon = event.type === 'conversion' ? '●' : event.type === 'click' ? '●' : '●';
-              const eventColor = event.type === 'conversion' ? '#10b981' : event.type === 'click' ? '#8B5CF6' : '#6b7280';
-              const eventText = event.type === 'conversion' 
-                ? `Conversion${event.revenue ? `: $${event.revenue.toFixed(2)} order` : ''}`
-                : event.type === 'click' 
-                  ? 'Click on primary CTA'
-                  : 'Impression shown';
-              
-              return (
-                <div 
-                  key={index}
-                  style={{
+
+          {(() => {
+            const daily = analytics.dailyRevenue;
+            const maxRevenue = Math.max(...daily.map(d => d.revenue), 1);
+            const isStarter = plan?.tier === 'starter';
+            const visibleDays = isStarter ? 3 : 7;
+
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {daily.map((day, i) => {
+                  const isBlurred = isStarter && i >= visibleDays;
+                  const barWidth = maxRevenue > 0 ? Math.max((day.revenue / maxRevenue) * 100, day.revenue > 0 ? 4 : 0) : 0;
+
+                  return (
+                    <div
+                      key={day.date}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        filter: isBlurred ? "blur(4px)" : "none",
+                        pointerEvents: isBlurred ? "none" : "auto"
+                      }}
+                    >
+                      <div style={{ width: 36, fontSize: 13, color: "#6b7280", fontWeight: 500, flexShrink: 0 }}>
+                        {day.day}
+                      </div>
+                      <div style={{ flex: 1, height: 24, background: "#f3f4f6", borderRadius: 4, overflow: "hidden" }}>
+                        <div style={{
+                          width: `${barWidth}%`,
+                          height: "100%",
+                          background: "linear-gradient(90deg, #667eea, #764ba2)",
+                          borderRadius: 4,
+                          transition: "width 0.3s"
+                        }} />
+                      </div>
+                      <div style={{ width: 80, textAlign: "right", fontSize: 14, fontWeight: 600, color: day.revenue > 0 ? "#1f2937" : "#9ca3af", flexShrink: 0 }}>
+                        {formatCurrency(day.revenue)}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {isStarter && (
+                  <div style={{
+                    textAlign: "center",
+                    marginTop: 12,
                     padding: 12,
-                    background: "#f9fafb",
-                    borderRadius: 6,
+                    background: "#f5f3ff",
+                    borderRadius: 8,
                     fontSize: 14,
-                    color: "#374151",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center"
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ color: eventColor, fontSize: 20 }}>●</span>
-                    <span>{eventText}</span>
+                    color: "#6d28d9"
+                  }}>
+                    Upgrade to Pro to see your full revenue timeline{" "}
+                    <Link to="/app/upgrade" style={{ color: "#8B5CF6", fontWeight: 600, textDecoration: "underline" }}>
+                      Upgrade →
+                    </Link>
                   </div>
-                  <div style={{ fontSize: 13, color: "#6b7280" }}>
-                    {timeAgo}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          
-          {analytics.recentEvents.length === 0 && (
-            <div style={{ 
-              padding: 24, 
-              textAlign: "center", 
-              color: "#6b7280",
-              fontSize: 14 
-            }}>
-              No recent activity yet. Activity will appear here as customers interact with your modal.
-            </div>
-          )}
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 

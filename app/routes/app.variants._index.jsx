@@ -451,6 +451,48 @@ export default function VariantsIndex() {
 
   const performance = calculatePerformance(filteredVariants);
 
+  const ComponentInsightsExplainer = () => {
+    const [expanded, setExpanded] = useState(false);
+    return (
+      <div style={{
+        background: '#f9fafb',
+        border: '1px solid #e5e7eb',
+        borderRadius: 8,
+        marginBottom: 20,
+        overflow: 'hidden'
+      }}>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            fontSize: 14,
+            fontWeight: 600,
+            color: '#374151'
+          }}
+        >
+          What this means
+          <span style={{ fontSize: 12, color: '#6b7280' }}>{expanded ? '\u25B2' : '\u25BC'}</span>
+        </button>
+        {expanded && (
+          <div style={{ padding: '0 16px 16px', fontSize: 14, color: '#6b7280', lineHeight: 1.6 }}>
+            The AI tests different combinations of headlines, subheadlines, and call-to-action buttons to find what converts best.
+            <strong style={{ color: '#374151' }}> Elite</strong>-tier components significantly outperform the average and get shown to more visitors.
+            <strong style={{ color: '#374151' }}> Strong</strong> performers are promising and still being tested.
+            <strong style={{ color: '#374151' }}> Average</strong> components show moderate results.
+            <strong style={{ color: '#374151' }}> Poor</strong>-tier components are being phased out and will be replaced by new mutations.
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const ComponentCard = ({ item, type }) => {
     const tier = getTierColor(item.revenue, avgRevenue);
     const vsAvg = avgRevenue > 0 ? ((item.revenue - avgRevenue) / avgRevenue * 100).toFixed(1) : 0;
@@ -729,6 +771,53 @@ export default function VariantsIndex() {
               <p style={{ color: '#666' }}>Variants will appear once you start getting traffic in AI mode.</p>
             </div>
           ) : (
+            <>
+            {/* What This Means Explainer */}
+            <ComponentInsightsExplainer />
+
+            {/* Per-Component Insights */}
+            {(() => {
+              const avgCVR = filteredVariants.length > 0
+                ? filteredVariants.reduce((s, v) => s + (v.impressions > 0 ? v.conversions / v.impressions * 100 : 0), 0) / filteredVariants.length
+                : 0;
+
+              const topHeadline = performance.headlines[0];
+              const topCta = performance.ctas[0];
+              const topSubhead = performance.subheads[0];
+
+              const insights = [];
+              if (topHeadline && topHeadline.cvr > avgCVR && avgCVR > 0) {
+                insights.push(`Your best headline "${topHeadline.text}" converts ${(topHeadline.cvr - avgCVR).toFixed(1)} pts better than average. The AI is using it more often.`);
+              }
+              if (topCta && topCta.impressions > 0) {
+                insights.push(`Visitors respond best to "${topCta.text}" — consider using similar language in your manual campaigns.`);
+              }
+              if (topSubhead && topSubhead.revenue > 0) {
+                insights.push(`"${topSubhead.text}" generates $${Math.round(topSubhead.revenue).toLocaleString()} in revenue impact.`);
+              }
+
+              if (insights.length === 0) return null;
+
+              return (
+                <div style={{
+                  background: '#f0f9ff',
+                  border: '1px solid #bae6fd',
+                  borderRadius: 12,
+                  padding: 20,
+                  marginBottom: 24
+                }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#0369a1', marginBottom: 8 }}>Key Insights</div>
+                  <ul style={{ margin: 0, paddingLeft: 20 }}>
+                    {insights.map((insight, i) => (
+                      <li key={i} style={{ fontSize: 14, color: '#0c4a6e', lineHeight: 1.6, marginBottom: 4 }}>
+                        {insight}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 24 }}>
               {/* Headlines Column */}
               <div>
@@ -769,6 +858,7 @@ export default function VariantsIndex() {
                 ))}
               </div>
             </div>
+            </>
           )}
         </div>
 

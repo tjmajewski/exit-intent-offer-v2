@@ -510,6 +510,11 @@ export default function Performance() {
 
    
   const modals = (modalLibrary.modals || []).slice().reverse();
+  const bestPerformerModalId = modals.reduce((bestId, m) => {
+    const bestModal = modals.find(mod => mod.modalId === bestId);
+    if (!bestModal) return m.stats.revenue > 0 ? m.modalId : bestId;
+    return m.stats.revenue > bestModal.stats.revenue ? m.modalId : bestId;
+  }, null);
   const totalModalsPages = Math.ceil(modals.length / ITEMS_PER_PAGE);
   const paginatedModals = modals.slice(
     (modalsPage - 1) * ITEMS_PER_PAGE,
@@ -664,6 +669,98 @@ export default function Performance() {
       {/* Tab Content - Your Modals */}
       {activeTab === 'modals' && (
         <>
+      {/* Insights Summary Cards */}
+      {(() => {
+        const allModals = (modalLibrary.modals || []).slice().reverse();
+        const modalsWithRevenue = allModals.filter(m => m.stats.revenue > 0);
+        const bestModal = modalsWithRevenue.length > 0
+          ? modalsWithRevenue.reduce((best, m) => m.stats.revenue > best.stats.revenue ? m : best)
+          : null;
+        const totalRecovered = allModals.reduce((sum, m) => sum + (m.stats.revenue || 0), 0);
+        const totalImpressions = allModals.reduce((sum, m) => sum + (m.stats.impressions || 0), 0);
+        const totalClicks = allModals.reduce((sum, m) => sum + (m.stats.clicks || 0), 0);
+        const totalConversions = allModals.reduce((sum, m) => sum + (m.stats.conversions || 0), 0);
+        const overallCVR = totalImpressions > 0 ? (totalConversions / totalImpressions * 100) : 0;
+
+        // Generate insight
+        let insight = null;
+        if (totalImpressions === 0) {
+          insight = "Your modals need traffic. Make sure the app is enabled and the theme extension is active.";
+        } else if (bestModal && modalsWithRevenue.length > 1) {
+          const secondBest = modalsWithRevenue.filter(m => m.modalId !== bestModal.modalId)
+            .reduce((best, m) => m.stats.revenue > best.stats.revenue ? m : best, { stats: { revenue: 0 } });
+          if (bestModal.stats.revenue > secondBest.stats.revenue * 3) {
+            insight = `${bestModal.modalName} is significantly outperforming others. Consider making it your default.`;
+          }
+        }
+        if (!insight && totalClicks > 0 && totalConversions === 0) {
+          insight = "Visitors are clicking but not buying. Try a stronger offer or ensure the discount auto-applies.";
+        }
+        if (!insight && overallCVR > 5) {
+          insight = "Strong conversion rate! Consider increasing your session limit to show your modal to more visitors.";
+        }
+        if (!insight && totalConversions > 0) {
+          insight = `Your modals are converting at ${overallCVR.toFixed(1)}% overall. Keep testing to improve.`;
+        }
+
+        if (allModals.length === 0) return null;
+
+        return (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
+            {/* Best Performer */}
+            <div style={{
+              background: "white",
+              border: "1px solid #e5e7eb",
+              borderRadius: 12,
+              padding: 20
+            }}>
+              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>Best Performer</div>
+              {bestModal ? (
+                <>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "#1f2937", marginBottom: 4 }}>
+                    {bestModal.modalName}
+                  </div>
+                  <div style={{ fontSize: 14, color: "#10b981", fontWeight: 600 }}>
+                    ${bestModal.stats.revenue.toLocaleString()} revenue
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: 14, color: "#9ca3af" }}>No conversions yet</div>
+              )}
+            </div>
+
+            {/* Total Recovered */}
+            <div style={{
+              background: "white",
+              border: "1px solid #e5e7eb",
+              borderRadius: 12,
+              padding: 20
+            }}>
+              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>Total Recovered</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: "#1f2937" }}>
+                ${totalRecovered.toLocaleString()}
+              </div>
+              <div style={{ fontSize: 14, color: "#6b7280" }}>
+                across {allModals.length} modal{allModals.length !== 1 ? 's' : ''}
+              </div>
+            </div>
+
+            {/* Quick Insight */}
+            <div style={{
+              background: "#f0f9ff",
+              border: "1px solid #bae6fd",
+              borderRadius: 12,
+              padding: 20
+            }}>
+              <div style={{ fontSize: 13, color: "#0369a1", marginBottom: 8, fontWeight: 600 }}>Quick Insight</div>
+              <div style={{ fontSize: 14, color: "#0c4a6e", lineHeight: 1.5 }}>
+                {insight || "Keep running your modals to collect more performance data."}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Modal Performance Table */}
       <div style={{
         background: "white",
@@ -679,6 +776,7 @@ export default function Performance() {
               <th style={{ padding: 16, textAlign: "left", fontWeight: 600 }}>Dates</th>
               <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Shown</th>
               <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Clicks</th>
+              <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>CVR</th>
               <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Orders</th>
               <th style={{ padding: 16, textAlign: "right", fontWeight: 600 }}>Revenue</th>
             </tr>
@@ -686,22 +784,43 @@ export default function Performance() {
           <tbody>
             {paginatedModals.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ padding: 32, textAlign: "center", color: "#6b7280" }}>
+                <td colSpan="8" style={{ padding: 32, textAlign: "center", color: "#6b7280" }}>
                   No modals created yet. Save your first modal in Settings to start tracking performance.
                 </td>
               </tr>
             ) : (
               paginatedModals.map((modal) => {
+                const isBest = modal.modalId === bestPerformerModalId;
+                const cvr = modal.stats.impressions > 0
+                  ? (modal.stats.conversions / modal.stats.impressions * 100).toFixed(1)
+                  : null;
+                const noData = modal.stats.impressions === 0;
+
                 return (
-                  <tr 
+                  <tr
                     key={modal.modalId}
-                    style={{ 
+                    style={{
                       borderBottom: "1px solid #e5e7eb",
-                      background: modal.active ? "#f0f9ff" : "white"
+                      background: modal.active ? "#f0f9ff" : "white",
+                      borderLeft: isBest ? "3px solid #10b981" : "3px solid transparent"
                     }}
                   >
                     <td style={{ padding: 16, fontWeight: 500 }}>
-                      {modal.modalName}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {modal.modalName}
+                        {isBest && (
+                          <span style={{
+                            padding: "2px 6px",
+                            background: "#dcfce7",
+                            color: "#166534",
+                            borderRadius: 4,
+                            fontSize: 11,
+                            fontWeight: 600
+                          }}>
+                            Best
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td style={{ padding: 16 }}>
                       {modal.active ? (
@@ -739,17 +858,20 @@ export default function Performance() {
                         </div>
                       )}
                     </td>
-                    <td style={{ padding: 16, textAlign: "right" }}>
-                      {modal.stats.impressions.toLocaleString()}
+                    <td style={{ padding: 16, textAlign: "right", color: noData ? "#9ca3af" : undefined }}>
+                      {noData ? "No data yet" : modal.stats.impressions.toLocaleString()}
                     </td>
-                    <td style={{ padding: 16, textAlign: "right" }}>
-                      {modal.stats.clicks.toLocaleString()}
+                    <td style={{ padding: 16, textAlign: "right", color: noData ? "#9ca3af" : undefined }}>
+                      {noData ? "-" : modal.stats.clicks.toLocaleString()}
                     </td>
-                    <td style={{ padding: 16, textAlign: "right" }}>
-                      {modal.stats.conversions.toLocaleString()}
+                    <td style={{ padding: 16, textAlign: "right", color: noData ? "#9ca3af" : undefined }}>
+                      {noData ? "-" : `${cvr}%`}
                     </td>
-                    <td style={{ padding: 16, textAlign: "right", fontWeight: 600, color: "#10b981" }}>
-                      ${modal.stats.revenue.toLocaleString()}
+                    <td style={{ padding: 16, textAlign: "right", color: noData ? "#9ca3af" : undefined }}>
+                      {noData ? "-" : modal.stats.conversions.toLocaleString()}
+                    </td>
+                    <td style={{ padding: 16, textAlign: "right", fontWeight: 600, color: noData ? "#9ca3af" : "#10b981" }}>
+                      {noData ? "-" : `$${modal.stats.revenue.toLocaleString()}`}
                     </td>
                   </tr>
                 );
