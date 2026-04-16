@@ -13,6 +13,7 @@ export async function loader({ request }) {
       query {
         shop {
           id
+          currencyCode
           plan: metafield(namespace: "exit_intent", key: "plan") {
             value
           }
@@ -21,6 +22,7 @@ export async function loader({ request }) {
     `);
 
     const data = await response.json();
+    const currencyCode = data.data.shop?.currencyCode || "USD";
     let plan = data.data.shop?.plan?.value
       ? JSON.parse(data.data.shop.plan.value)
       : { tier: "starter" };
@@ -49,6 +51,7 @@ export async function loader({ request }) {
         unseenCount: 0,
         newPromotions: [],
         plan,
+        currencyCode,
         impactMetrics: null
       };
     }
@@ -61,6 +64,7 @@ export async function loader({ request }) {
         newPromotions: [],
         intelligenceEnabled: true,
         plan,
+        currencyCode,
         impactMetrics: null
       };
     }
@@ -156,6 +160,7 @@ export async function loader({ request }) {
       })),
       intelligenceEnabled: shopRecord.promotionalIntelligenceEnabled ?? true,
       plan,
+      currencyCode,
       impactMetrics
     };
   } catch (error) {
@@ -166,6 +171,7 @@ export async function loader({ request }) {
       unseenCount: 0,
       newPromotions: [],
       plan: { tier: "starter" },
+      currencyCode: "USD",
       impactMetrics: null
     };
   }
@@ -274,10 +280,30 @@ function getClassificationLabel(classification) {
 }
 
 export default function PromotionsPage() {
-  const { hasAccess, promotions, unseenCount, newPromotions, intelligenceEnabled, plan, impactMetrics } = useLoaderData();
+  const { hasAccess, promotions, unseenCount, newPromotions, intelligenceEnabled, plan, currencyCode, impactMetrics } = useLoaderData();
   const fetcher = useFetcher();
   const [isIntelligenceEnabled, setIsIntelligenceEnabled] = useState(intelligenceEnabled);
   const [showAllPast, setShowAllPast] = useState(false);
+
+  // Format a promo discount amount with correct currency symbol placement.
+  // Percentage discounts always show as "10% off". Fixed-amount discounts use
+  // Intl.NumberFormat so the symbol is placed correctly for the shop's currency
+  // (e.g. "$10 off" for USD, "10 € off" for EUR).
+  const formatDiscount = (amount, type) => {
+    if (type === 'percentage') return `${amount}% off`;
+    try {
+      const locale = (typeof navigator !== "undefined" && navigator.language) || "en-US";
+      const formatted = new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency: currencyCode || "USD",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(Number(amount) || 0);
+      return `${formatted} off`;
+    } catch {
+      return `${currencyCode || "USD"} ${amount} off`;
+    }
+  };
 
   // Non-Enterprise users see upgrade page
   if (!hasAccess) {
@@ -419,7 +445,7 @@ export default function PromotionsPage() {
                   fontSize: 14,
                   fontWeight: 600
                 }}>
-                  {promo.code} ({promo.amount}{promo.type === 'percentage' ? '%' : '$'} off) → {getStrategyLabel(promo.aiStrategy || 'auto')}
+                  {promo.code} ({formatDiscount(promo.amount, promo.type)}) → {getStrategyLabel(promo.aiStrategy || 'auto')}
                 </div>
               ))}
             </div>
@@ -618,7 +644,7 @@ export default function PromotionsPage() {
                     {promo.code}
                   </div>
                   <div style={{ color: "#6b7280" }}>
-                    {promo.amount}{promo.type === 'percentage' ? '%' : '$'} off — {getClassificationLabel(promo.classification)} — {getStrategyLabel(promo.aiStrategy || 'auto')}
+                    {formatDiscount(promo.amount, promo.type)} — {getClassificationLabel(promo.classification)} — {getStrategyLabel(promo.aiStrategy || 'auto')}
                   </div>
                   <div style={{ color: "#9ca3af", fontSize: 13 }}>
                     {new Date(promo.detectedAt).toLocaleDateString()}
@@ -766,7 +792,7 @@ function PromotionCard({ promo, fetcher }) {
           fontSize: 14,
           fontWeight: 600
         }}>
-          {promo.amount}{promo.type === 'percentage' ? '%' : '$'} off
+          {formatDiscount(promo.amount, promo.type)}
         </span>
         <span style={{
           background: getStrategyColor(promo.aiStrategy || 'auto'),
@@ -844,7 +870,7 @@ function PromotionCard({ promo, fetcher }) {
               </div>
               <p style={{ margin: 0, lineHeight: 1.6 }}>
                 {promo.aiStrategy === 'pause'
-                  ? `High-volume discount (${promo.amount}${promo.type === 'percentage' ? '%' : '$'}). Exit offers paused to prevent double discounting.`
+                  ? `High-volume discount (${formatDiscount(promo.amount, promo.type)}). Exit offers paused to prevent double discounting.`
                   : promo.aiStrategy === 'decrease'
                   ? `Active promotion detected. Exit offer amounts reduced to preserve margins while still capturing exits.`
                   : promo.aiStrategy === 'ignore'
