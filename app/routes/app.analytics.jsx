@@ -121,44 +121,38 @@ export async function action({ request }) {
       if (newStatus === 'alive') {
         await db.variant.update({
           where: { id: variantId },
-          data: { 
-            status: 'alive',
-            isChampion: false
-          }
+          data: { status: 'alive' }
         });
         return { success: true, message: 'Variant set to Active' };
       }
-      
+
       if (newStatus === 'protected') {
         await db.variant.update({
           where: { id: variantId },
-          data: { 
-            status: 'protected',
-            isChampion: false
-          }
+          data: { status: 'protected' }
         });
         return { success: true, message: 'Variant protected from elimination' };
       }
-      
+
       if (newStatus === 'champion') {
-        // Mark this variant as champion and all others in same baseline as non-champion
+        // Demote any existing champion in the same baseline/segment back to alive,
+        // then mark the target variant as champion. Schema has no isChampion
+        // field — status === 'champion' is the single source of truth.
         await db.variant.updateMany({
-          where: { 
+          where: {
             shopId: variant.shopId,
             baseline: variant.baseline,
-            segment: variant.segment
+            segment: variant.segment,
+            status: 'champion'
           },
-          data: { isChampion: false }
+          data: { status: 'alive' }
         });
-        
+
         await db.variant.update({
           where: { id: variantId },
-          data: { 
-            status: 'champion',
-            isChampion: true
-          }
+          data: { status: 'champion' }
         });
-        
+
         return { success: true, message: 'Variant set as champion' };
       }
     }
@@ -1006,7 +1000,7 @@ export default function Performance() {
                         key={variant.id}
                         style={{ 
                           borderBottom: "1px solid #e5e7eb",
-                          background: variant.isChampion ? "#f0fdf4" : variant.status === 'protected' ? "#fef3c7" : "white"
+                          background: variant.status === 'champion' ? "#f0fdf4" : variant.status === 'protected' ? "#fef3c7" : "white"
                         }}
                       >
                         <td style={{ padding: 16 }}>
@@ -1016,7 +1010,7 @@ export default function Performance() {
                           <div style={{ fontSize: 12, color: "#6b7280" }}>
                             Gen {variant.generation} · {variant.baseline}
                           </div>
-                          {variant.isChampion && (
+                          {variant.status === 'champion' && (
                             <span style={{
                               display: 'inline-block',
                               marginTop: 4,
@@ -1090,7 +1084,7 @@ export default function Performance() {
                                 <input type="hidden" name="variantId" value={variant.id} />
                                 <select
                                   name="status"
-                                  defaultValue={variant.isChampion ? 'champion' : variant.status}
+                                  defaultValue={variant.status}
                                   onChange={(e) => e.target.form.requestSubmit()}
                                   style={{
                                     padding: "6px 12px",

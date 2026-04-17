@@ -10,6 +10,17 @@ import db from "../db.server";
 export async function loader({ request }) {
   const { admin, session } = await authenticate.admin(request);
 
+  // Load plan up-front so it survives any downstream error in this loader.
+  // If the rest of the dashboard query fails, we still pass a real plan to
+  // AppLayout so the sidebar plan badge + DEV switcher render correctly.
+  let earlyPlan = null;
+  try {
+    const canonical = await getShopPlan(session);
+    earlyPlan = { tier: canonical.tier, status: canonical.status || "active", billingCycle: canonical.billingCycle || "monthly" };
+  } catch (e) {
+    console.error("[Dashboard] getShopPlan failed:", e);
+  }
+
   try {
     const response = await admin.graphql(`
       query {
@@ -347,7 +358,7 @@ export async function loader({ request }) {
     if (shopRecord && isAIMode) {
       const [champion, variantCounts, maxGen] = await Promise.all([
         db.variant.findFirst({
-          where: { shopId: shopRecord.id, isChampion: true },
+          where: { shopId: shopRecord.id, status: "champion" },
           select: { headline: true, cta: true, conversions: true, impressions: true, generation: true }
         }),
         db.variant.groupBy({
@@ -444,10 +455,10 @@ export async function loader({ request }) {
     };
   } catch (error) {
     console.error("Error loading dashboard:", error);
-    return { 
-      settings: null, 
+    return {
+      settings: null,
       status: { enabled: false },
-      plan: null,
+      plan: earlyPlan,
       analytics: {
         last30Days: {
           totalRevenue: 0,
