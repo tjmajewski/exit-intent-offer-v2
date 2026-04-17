@@ -272,31 +272,31 @@ function getClassificationLabel(classification) {
   }
 }
 
+// Format a promo discount amount with correct currency symbol placement.
+// Percentage discounts always show as "10% off". Fixed-amount discounts use
+// Intl.NumberFormat so the symbol is placed correctly for the shop's currency
+// (e.g. "$10 off" for USD, "10 € off" for EUR).
+function formatDiscount(amount, type, currencyCode) {
+  if (type === 'percentage') return `${amount}% off`;
+  try {
+    const locale = (typeof navigator !== "undefined" && navigator.language) || "en-US";
+    const formatted = new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: currencyCode || "USD",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(Number(amount) || 0);
+    return `${formatted} off`;
+  } catch {
+    return `${currencyCode || "USD"} ${amount} off`;
+  }
+}
+
 export default function PromotionsPage() {
   const { hasAccess, promotions, unseenCount, newPromotions, intelligenceEnabled, plan, currencyCode, impactMetrics } = useLoaderData();
   const fetcher = useFetcher();
   const [isIntelligenceEnabled, setIsIntelligenceEnabled] = useState(intelligenceEnabled);
   const [showAllPast, setShowAllPast] = useState(false);
-
-  // Format a promo discount amount with correct currency symbol placement.
-  // Percentage discounts always show as "10% off". Fixed-amount discounts use
-  // Intl.NumberFormat so the symbol is placed correctly for the shop's currency
-  // (e.g. "$10 off" for USD, "10 € off" for EUR).
-  const formatDiscount = (amount, type) => {
-    if (type === 'percentage') return `${amount}% off`;
-    try {
-      const locale = (typeof navigator !== "undefined" && navigator.language) || "en-US";
-      const formatted = new Intl.NumberFormat(locale, {
-        style: "currency",
-        currency: currencyCode || "USD",
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      }).format(Number(amount) || 0);
-      return `${formatted} off`;
-    } catch {
-      return `${currencyCode || "USD"} ${amount} off`;
-    }
-  };
 
   // Non-Enterprise users see upgrade page
   if (!hasAccess) {
@@ -438,7 +438,7 @@ export default function PromotionsPage() {
                   fontSize: 14,
                   fontWeight: 600
                 }}>
-                  {promo.code} ({formatDiscount(promo.amount, promo.type)}) → {getStrategyLabel(promo.aiStrategy || 'auto')}
+                  {promo.code} ({formatDiscount(promo.amount, promo.type, currencyCode)}) → {getStrategyLabel(promo.aiStrategy || 'auto')}
                 </div>
               ))}
             </div>
@@ -605,6 +605,7 @@ export default function PromotionsPage() {
                 key={promo.id}
                 promo={promo}
                 fetcher={fetcher}
+                currencyCode={currencyCode}
               />
             ))
           )}
@@ -637,7 +638,7 @@ export default function PromotionsPage() {
                     {promo.code}
                   </div>
                   <div style={{ color: "#6b7280" }}>
-                    {formatDiscount(promo.amount, promo.type)} — {getClassificationLabel(promo.classification)} — {getStrategyLabel(promo.aiStrategy || 'auto')}
+                    {formatDiscount(promo.amount, promo.type, currencyCode)} — {getClassificationLabel(promo.classification)} — {getStrategyLabel(promo.aiStrategy || 'auto')}
                   </div>
                   <div style={{ color: "#9ca3af", fontSize: 13 }}>
                     {new Date(promo.detectedAt).toLocaleDateString()}
@@ -763,7 +764,7 @@ export default function PromotionsPage() {
   );
 }
 
-function PromotionCard({ promo, fetcher }) {
+function PromotionCard({ promo, fetcher, currencyCode }) {
   return (
     <div style={{
       padding: 24,
@@ -785,7 +786,7 @@ function PromotionCard({ promo, fetcher }) {
           fontSize: 14,
           fontWeight: 600
         }}>
-          {formatDiscount(promo.amount, promo.type)}
+          {formatDiscount(promo.amount, promo.type, currencyCode)}
         </span>
         <span style={{
           background: getStrategyColor(promo.aiStrategy || 'auto'),
@@ -863,7 +864,7 @@ function PromotionCard({ promo, fetcher }) {
               </div>
               <p style={{ margin: 0, lineHeight: 1.6 }}>
                 {promo.aiStrategy === 'pause'
-                  ? `High-volume discount (${formatDiscount(promo.amount, promo.type)}). Exit offers paused to prevent double discounting.`
+                  ? `High-volume discount (${formatDiscount(promo.amount, promo.type, currencyCode)}). Exit offers paused to prevent double discounting.`
                   : promo.aiStrategy === 'decrease'
                   ? `Active promotion detected. Exit offer amounts reduced to preserve margins while still capturing exits.`
                   : promo.aiStrategy === 'ignore'
