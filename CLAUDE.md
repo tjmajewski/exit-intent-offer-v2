@@ -8,12 +8,24 @@ Do NOT use git worktrees or isolated worktree sessions under ANY circumstances. 
 **Rules:**
 - Never pass `isolation: "worktree"` to the Agent tool.
 - Never use the `EnterWorktree` tool.
-- Only use `claude/dev` branch — never create `claude/<worktree-name>` branches.
+- Never create feature branches (no `claude/<name>` branches).
 - **AUTO-CLEANUP:** If you pull code and find `.claude/worktrees/` exists, immediately run `rm -rf .claude/worktrees && git worktree prune` before any other work.
 
-## Git Workflow
-- All work goes to the single `claude/dev` branch. Do not create new branches per session.
-- Never push directly to `main`.
+## Git Workflow — SOLO DEV, SINGLE BRANCH
+Project has one developer. Work directly on `main`. No feature branches, no PRs, no merges.
+
+**Every session:**
+1. Start: `git checkout main && git pull origin main`
+2. Make changes, commit directly to `main`
+3. End: `git push origin main`
+4. Tell user to `git pull` locally to test
+
+**Do NOT:**
+- Create `claude/dev` or any other branches
+- Open pull requests
+- Use `gh pr create`
+
+**Why:** Solo dev, no review needed. PRs caused `main` and `claude/dev` to drift, breaking local dev server because user ran stale code.
 
 ## Communication Style — EXTREME BREVITY
 Keep responses terse. "Caveman talk" style to minimize token usage:
