@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { MODAL_TEMPLATES } from "../../../utils/templates";
+import AISettingsTab from "./AISettingsTab";
 
-export default function QuickSetupTab({ 
-  settings, 
-  plan, 
+export default function QuickSetupTab({
+  settings,
+  plan,
   availableTemplates,
   canUseAIMode,
   optimizationMode,
@@ -23,7 +24,15 @@ export default function QuickSetupTab({
   setShowPreview,
   setActiveTab,
   canUseAllTriggers,
-  canUseCartValue
+  canUseCartValue,
+  aggressionLevel,
+  setAggressionLevel,
+  mutationRate,
+  setMutationRate,
+  crossoverRate,
+  setCrossoverRate,
+  selectionPressure,
+  setSelectionPressure
 }) {
   // State for discount code mode to show/hide input fields
   const [manualDiscountCodeMode, setManualDiscountCodeMode] = useState(
@@ -130,43 +139,23 @@ export default function QuickSetupTab({
         )}
       </div>
 
-      {/* AI Mode Active - Guide to AI Settings */}
+      {/* AI Mode Active - Inline AI Settings */}
       {optimizationMode === "ai" && (
-        <div style={{ 
-          background: "#f5f3ff", 
-          padding: 24, 
-          borderRadius: 8, 
-          border: "2px solid #8B5CF6",
-          marginBottom: 24
-        }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-            <div style={{ fontSize: 40 }}></div>
-            <div style={{ flex: 1 }}>
-              <h3 style={{ fontSize: 18, marginBottom: 8, color: "#8B5CF6", fontWeight: 600 }}>
-                AI Mode Enabled
-              </h3>
-              <p style={{ fontSize: 14, color: "#666", marginBottom: 16 }}>
-                The AI will automatically test and optimize your offers. Configure AI settings like optimization goal, discount aggression, and budget cap in the <strong>AI Settings</strong> tab.
-              </p>
-              <button
-                type="button"
-                onClick={() => setActiveTab('ai')}
-                style={{
-                  padding: "10px 20px",
-                  background: "#8B5CF6",
-                  color: "white",
-                  border: "none",
-                  borderRadius: 6,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: "pointer"
-                }}
-              >
-                Go to AI Settings →
-              </button>
-            </div>
-          </div>
-        </div>
+        <AISettingsTab
+          canUseAIMode={canUseAIMode}
+          optimizationMode={optimizationMode}
+          settings={settings}
+          aggressionLevel={aggressionLevel}
+          setAggressionLevel={setAggressionLevel}
+          setFormChanged={setFormChanged}
+          plan={plan}
+          mutationRate={mutationRate}
+          setMutationRate={setMutationRate}
+          crossoverRate={crossoverRate}
+          setCrossoverRate={setCrossoverRate}
+          selectionPressure={selectionPressure}
+          setSelectionPressure={setSelectionPressure}
+        />
       )}
 
       {/* Manual Mode - Show All Settings */}

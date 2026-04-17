@@ -11,7 +11,6 @@ import { getTriggerDisplay, getDiscountDisplay } from "../utils/settingsHelpers"
 import { getShopPlan } from "../utils/plan.server";
 import AppLayout from "../components/AppLayout";
 import QuickSetupTab from "../components/settings/tabs/QuickSetupTab";
-import AISettingsTab from "../components/settings/tabs/AISettingsTab";
 import AdvancedTab from "../components/settings/tabs/AdvancedTab";
 import BrandingTab from "../components/settings/tabs/BrandingTab";
 import SettingsPreview from "../components/settings/SettingsPreview";
@@ -696,38 +695,6 @@ export default function Settings() {
         </button>
         
         <button
-          onClick={() => setActiveTab('ai')}
-          style={{
-            padding: "12px 24px",
-            background: "transparent",
-            border: "none",
-            borderBottom: activeTab === 'ai' ? "3px solid #8B5CF6" : "3px solid transparent",
-            color: activeTab === 'ai' ? "#8B5CF6" : "#6b7280",
-            fontWeight: activeTab === 'ai' ? 600 : 400,
-            fontSize: 16,
-            cursor: "pointer",
-            marginBottom: -2,
-            display: "flex",
-            alignItems: "center",
-            gap: 8
-          }}
-        >
-          AI Settings
-          {plan && plan.tier === 'starter' && (
-            <span style={{
-              padding: "2px 6px",
-              background: "#8B5CF6",
-              color: "white",
-              borderRadius: 4,
-              fontSize: 11,
-              fontWeight: 600
-            }}>
-              PRO
-            </span>
-          )}
-        </button>
-
-        <button
           onClick={() => setActiveTab('advanced')}
           style={{
             padding: "12px 24px",
@@ -820,19 +787,8 @@ export default function Settings() {
           setActiveTab={setActiveTab}
           canUseAllTriggers={canUseAllTriggers}
           canUseCartValue={canUseCartValue}
-        />
-      )}
-
-{/* AI Settings Tab */}
-      {activeTab === 'ai' && (
-        <AISettingsTab
-          canUseAIMode={canUseAIMode}
-          optimizationMode={optimizationMode}
-          settings={settings}
           aggressionLevel={aggressionLevel}
           setAggressionLevel={setAggressionLevel}
-          setFormChanged={setFormChanged}
-          plan={plan}
           mutationRate={mutationRate}
           setMutationRate={setMutationRate}
           crossoverRate={crossoverRate}

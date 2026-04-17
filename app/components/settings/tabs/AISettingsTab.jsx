@@ -54,12 +54,12 @@ export default function AISettingsTab({
   const spPreviewText = (() => {
     if (spType === "reviews") {
       if (!spAvgRating) return null;
-      return `Rated ${spAvgRating.toFixed(1)}/5 by our customers`;
+      return `Rated ${spAvgRating.toFixed(1)}/5 — see why shoppers keep coming back`;
     }
     const rounded = formatRoundedCount(spCurrentValue);
     if (!rounded) return null;
-    if (spType === "customers") return `Join ${rounded} happy customers`;
-    return `Join ${rounded} orders placed`;
+    if (spType === "customers") return `${rounded} shoppers said yes — don't miss out`;
+    return `${rounded} orders shipped — yours could be next`;
   })();
 
   const formatRelativeTime = (iso) => {
@@ -511,9 +511,9 @@ export default function AISettingsTab({
                 cursor: plan?.tier === 'enterprise' ? "pointer" : "not-allowed"
               }}
             >
-              <option value="orders">Number of orders — “Join 5,000+ orders placed”</option>
-              <option value="customers">Number of customers — “Join 5,000+ happy customers”</option>
-              <option value="reviews" disabled>Average rating — “Rated 4.8/5 by our customers” (requires Judge.me / Yotpo — coming soon)</option>
+              <option value="orders">Number of orders — “5,000+ orders shipped — yours could be next”</option>
+              <option value="customers">Number of customers — “5,000+ shoppers said yes — don't miss out”</option>
+              <option value="reviews" disabled>Average rating — “Rated 4.8/5 — see why shoppers keep coming back” (requires Judge.me / Yotpo — coming soon)</option>
             </select>
           </div>
 
