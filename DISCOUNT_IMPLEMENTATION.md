@@ -495,7 +495,7 @@ When budget exhausted, AI returns no-discount modal.
 
 ### Budget Cap Test
 ```bash
-node test-budget-exhaustion.js
+node scripts/dev/test-budget-exhaustion.js
 ```
 Should show budget exhausted when limit reached.
 

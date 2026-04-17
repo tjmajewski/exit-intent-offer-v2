@@ -4,6 +4,7 @@ import db from "../db.server";
 import { useState } from "react";
 import AppLayout from "../components/AppLayout";
 import { getShopPlan } from "../utils/plan.server";
+import { createCurrencyFormatter } from "../utils/currency";
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
@@ -83,21 +84,11 @@ export default function Conversions() {
   const { conversions, plan, range, shop, currencyCode, dbError } = useLoaderData();
   const [selectedConversion, setSelectedConversion] = useState(null);
 
-  // Locale-aware currency formatter — falls back to browser locale so a
-  // German merchant viewing EUR sees "1.234,56 €" rather than "$1,234.56".
-  const currencyFormatter = (() => {
-    try {
-      const locale = (typeof navigator !== "undefined" && navigator.language) || "en-US";
-      return new Intl.NumberFormat(locale, {
-        style: "currency",
-        currency: currencyCode || "USD",
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      });
-    } catch {
-      return null;
-    }
-  })();
+  // Locale-aware currency formatter — conversions table shows cents
+  const formatCurrency = createCurrencyFormatter(currencyCode, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
   // Tier access control
   const canAccess = plan === "pro" || plan === "enterprise";
@@ -113,13 +104,6 @@ export default function Conversions() {
   const formatTime = (dateString) => {
     const date = new Date(dateString);
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  };
-
-  // Format currency using the shop's currency + browser locale.
-  const formatCurrency = (amount) => {
-    const num = Number(amount) || 0;
-    if (currencyFormatter) return currencyFormatter.format(num);
-    return `${(currencyCode || "USD")} ${num.toFixed(2)}`;
   };
 
   // Format customer contact — email shown as-is, phone numbers made readable

@@ -69,7 +69,7 @@ model UsageCharge {
   recoveredRevenue  Float    // Order total
   commissionRate    Float    // 0.05, 0.02, or 0.01
   chargeAmount      Float    // What we charged
-  currency          String   @default("USD")
+  currency          String   @default("USD")  // Populated from shop.currencyCode (commit a87a939, Apr 2026)
 
   // Status
   status            String   // pending, charged, failed, skipped

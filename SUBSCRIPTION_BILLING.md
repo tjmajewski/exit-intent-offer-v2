@@ -14,6 +14,10 @@
 | Pro | $79 | $67.15/mo | 10,000/month | AI mode, evolution system, A/B testing |
 | Enterprise | $199 | $169.15/mo | Unlimited | Advanced AI, promotions, variants, custom CSS |
 
+> Prices shown in USD. International merchants see amounts rendered in their
+> shop's currency (commit `a87a939`, Apr 2026). Shopify handles FX conversion
+> at charge time; the subscription plan itself is still denominated in USD.
+
 ---
 
 ## Data Stores

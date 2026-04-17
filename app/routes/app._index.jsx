@@ -3,6 +3,7 @@ import { authenticate } from "../shopify.server";
 import { useState } from "react";
 import { checkAndResetUsage, PLAN_FEATURES } from "../utils/featureGates";
 import { getShopPlan } from "../utils/plan.server";
+import { createCurrencyFormatter } from "../utils/currency";
 import AppLayout from "../components/AppLayout";
 import OnboardingChecklist from "../components/OnboardingChecklist";
 import db from "../db.server";
@@ -826,21 +827,11 @@ export default function Dashboard() {
   const fetcher = useFetcher();
   const [isEnabled, setIsEnabled] = useState(status.enabled);
 
-  // Locale-aware currency formatter — matches the conversions page for consistency
-  const formatCurrency = (() => {
-    try {
-      const locale = (typeof navigator !== "undefined" && navigator.language) || "en-US";
-      const fmt = new Intl.NumberFormat(locale, {
-        style: "currency",
-        currency: currencyCode || "USD",
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 2,
-      });
-      return (amount) => fmt.format(Number(amount) || 0);
-    } catch {
-      return (amount) => `${currencyCode || "USD"} ${(Number(amount) || 0).toFixed(2)}`;
-    }
-  })();
+  // Locale-aware currency formatter — dashboard hides cents by default
+  const formatCurrency = createCurrencyFormatter(currencyCode, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
 
   const handleToggle = () => {
     const newStatus = !isEnabled;

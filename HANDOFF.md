@@ -1,8 +1,12 @@
 # Claude Handoff — Exit Intent Offer v2
 
-**Branch:** `claude/fix-shopify-review-issues-bGFp2`
+**Branch:** `claude/fix-shopify-review-issues-bGFp2` *(historical — see note below)*
 **Repo:** `tjmajewski/exit-intent-offer-v2`
 **Session date:** 2026-03-03
+
+> **Workflow note (2026-04-17):** The project switched to a solo-dev, main-only
+> workflow (commit `0a08305`). Feature branches and PRs are no longer used.
+> See `CLAUDE.md` for current rules. This handoff is kept as a historical record.
 
 ---
 

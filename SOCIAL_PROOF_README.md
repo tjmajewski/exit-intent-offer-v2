@@ -39,7 +39,7 @@ Recommended services:
 
 Run the test suite:
 ```bash
-node test-social-proof.js
+node scripts/dev/test-social-proof.js
 ```
 
 ## Database Fields

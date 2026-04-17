@@ -614,7 +614,7 @@ export function setSocialProofCache(shopId, data) {
 
 ### Unit Tests
 
-**File:** `test-social-proof.js`
+**File:** `scripts/dev/test-social-proof.js`
 ```javascript
 import { testSocialProofFormatting } from './app/utils/social-proof.js';
 import { createRandomVariantWithSocialProof } from './app/utils/variant-engine.js';

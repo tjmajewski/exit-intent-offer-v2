@@ -1640,7 +1640,7 @@ testVariantCreation();
 
 ### Integration Tests
 ```javascript
-// test-social-proof.js
+// scripts/dev/test-social-proof.js
 import { testSocialProofFormatting } from './social-proof.js';
 import { createRandomVariantWithSocialProof } from './variant-engine.js';
 

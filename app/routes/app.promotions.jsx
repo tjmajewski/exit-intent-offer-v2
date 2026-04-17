@@ -4,6 +4,7 @@ import { authenticate } from "../shopify.server";
 import { getShopPlan } from "../utils/plan.server";
 import db from "../db.server";
 import AppLayout from "../components/AppLayout";
+import { formatDiscount } from "../utils/currency";
 
 export async function loader({ request }) {
   const { admin, session } = await authenticate.admin(request);
@@ -269,26 +270,6 @@ function getClassificationLabel(classification) {
     case 'targeted': return 'Targeted';
     case 'customer_service': return 'Customer Service';
     default: return 'Monitoring';
-  }
-}
-
-// Format a promo discount amount with correct currency symbol placement.
-// Percentage discounts always show as "10% off". Fixed-amount discounts use
-// Intl.NumberFormat so the symbol is placed correctly for the shop's currency
-// (e.g. "$10 off" for USD, "10 € off" for EUR).
-function formatDiscount(amount, type, currencyCode) {
-  if (type === 'percentage') return `${amount}% off`;
-  try {
-    const locale = (typeof navigator !== "undefined" && navigator.language) || "en-US";
-    const formatted = new Intl.NumberFormat(locale, {
-      style: "currency",
-      currency: currencyCode || "USD",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(Number(amount) || 0);
-    return `${formatted} off`;
-  } catch {
-    return `${currencyCode || "USD"} ${amount} off`;
   }
 }
 

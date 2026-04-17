@@ -22,7 +22,7 @@
     "graphql-codegen": "graphql-codegen",
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit",
-    "seed:screenshots": "node seed-screenshot-data.mjs"
+    "seed:screenshots": "node scripts/dev/seed-screenshot-data.mjs"
   },
   "type": "module",
   "engines": {

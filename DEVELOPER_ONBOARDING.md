@@ -536,7 +536,7 @@ npx prisma migrate dev   # Create migration
 
 # Testing
 npm run evolution        # Test evolution cycle
-node test-conversion.js  # Test conversion tracking
+node scripts/dev/test-conversion.js  # Test conversion tracking
 
 # Deployment
 npm run deploy           # Deploy to Shopify
@@ -583,7 +583,7 @@ After completing Day 1-3:
 - [ ] Read through all documentation files
 - [ ] Explore the codebase systematically
 - [ ] Make a small feature change
-- [ ] Review existing PRs to understand code patterns
+- [ ] Review recent commits on `main` to understand code patterns (solo-dev workflow — no PRs; see `CLAUDE.md`)
 - [ ] Set up local testing workflow
 - [ ] Understand deployment process
 
