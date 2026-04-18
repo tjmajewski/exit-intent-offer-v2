@@ -1420,7 +1420,14 @@
         });
         
         headline.textContent = headlineText;
-        body.textContent = subheadText;
+        // showSubhead gene: when false, hide subhead entirely (evolved concept — some templates perform better without it)
+        if (decision.variant.showSubhead === false) {
+          body.style.display = 'none';
+          body.textContent = '';
+        } else {
+          body.style.display = '';
+          body.textContent = subheadText;
+        }
         button.textContent = ctaText;
         
         this.settings.discountCode = decision.code;

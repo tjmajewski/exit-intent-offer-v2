@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Modal Design Mocks</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 40px 20px;
+  }
+  h1 { text-align: center; margin-bottom: 8px; font-size: 28px; }
+  .sub { text-align: center; color: #94a3b8; margin-bottom: 32px; font-size: 14px; }
+  .controls {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+  }
+  .controls button {
+    background: #1e293b;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    padding: 10px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .controls button.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+  }
+  .gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+    gap: 24px;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+  .card {
+    background: #1e293b;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #334155;
+  }
+  .card-header {
+    padding: 14px 18px;
+    background: #0f172a;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card-title { font-size: 14px; font-weight: 600; }
+  .card-num { font-size: 11px; color: #64748b; }
+  .stage {
+    position: relative;
+    height: 420px;
+    overflow: hidden;
+    background: #f1f5f9;
+  }
+  /* Mock storefront behind modal */
+  .storefront {
+    position: absolute;
+    inset: 0;
+    padding: 16px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  }
+  .store-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .store-logo {
+    width: 80px; height: 14px; background: #1e293b; border-radius: 2px;
+  }
+  .store-links {
+    display: flex; gap: 12px;
+  }
+  .store-link {
+    width: 40px; height: 8px; background: #cbd5e1; border-radius: 2px;
+  }
+  .product-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .product {
+    background: #e2e8f0;
+    aspect-ratio: 1;
+    border-radius: 4px;
+  }
+  /* Spotlight / backdrop */
+  .backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.6);
+    transition: opacity 0.2s;
+  }
+  .backdrop.off { opacity: 0; pointer-events: none; }
+
+  /* ===== Shared modal base ===== */
+  .modal {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    color: #1e293b;
+  }
+
+  /* ===== 1. Classic Card ===== */
+  .modal-1 {
+    width: 320px;
+    padding: 28px 24px;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  }
+  .modal-1 h2 { font-size: 22px; margin-bottom: 8px; }
+  .modal-1 p { font-size: 13px; color: #64748b; margin-bottom: 18px; }
+  .modal-1 button {
+    background: #3b82f6; color: white; border: none;
+    padding: 12px 28px; border-radius: 8px; font-weight: 600;
+    cursor: pointer; width: 100%;
+  }
+
+  /* ===== 2. Split Hero ===== */
+  .modal-2 {
+    width: 420px;
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  }
+  .modal-2-img {
+    width: 160px;
+    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-size: 36px; font-weight: 800;
+  }
+  .modal-2-body {
+    flex: 1; padding: 22px 20px;
+  }
+  .modal-2 h2 { font-size: 18px; margin-bottom: 6px; }
+  .modal-2 p { font-size: 12px; color: #64748b; margin-bottom: 14px; }
+  .modal-2 button {
+    background: #1e293b; color: white; border: none;
+    padding: 10px 18px; border-radius: 6px; font-weight: 600;
+    cursor: pointer; width: 100%; font-size: 13px;
+  }
+
+  /* ===== 3. Top Banner ===== */
+  .modal-3 {
+    top: 0;
+    left: 0;
+    right: 0;
+    transform: none;
+    width: 100%;
+    background: #1e293b;
+    color: white;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+  }
+  .modal-3 span { font-size: 13px; font-weight: 500; }
+  .modal-3 strong { color: #fbbf24; }
+  .modal-3 button {
+    background: #fbbf24; color: #1e293b; border: none;
+    padding: 6px 14px; border-radius: 4px; font-weight: 700;
+    cursor: pointer; font-size: 12px;
+  }
+
+  /* ===== 4. Bottom Sheet ===== */
+  .modal-4 {
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top: auto;
+    transform: none;
+    width: 100%;
+    background: white;
+    padding: 24px 20px 28px;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -10px 40px rgba(0,0,0,0.2);
+  }
+  .modal-4::before {
+    content: '';
+    display: block;
+    width: 40px; height: 4px;
+    background: #cbd5e1;
+    border-radius: 2px;
+    margin: 0 auto 16px;
+  }
+  .modal-4 h2 { font-size: 18px; margin-bottom: 6px; text-align: center; }
+  .modal-4 p { font-size: 13px; color: #64748b; margin-bottom: 14px; text-align: center; }
+  .modal-4 button {
+    background: #3b82f6; color: white; border: none;
+    padding: 14px; border-radius: 8px; font-weight: 600;
+    cursor: pointer; width: 100%;
+  }
+
+  /* ===== 5. Coupon Ticket ===== */
+  .modal-5 {
+    width: 340px;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .ticket {
+    background: #fef3c7;
+    border: 2px dashed #92400e;
+    border-radius: 8px;
+    padding: 24px;
+    text-align: center;
+    position: relative;
+  }
+  .ticket::before, .ticket::after {
+    content: '';
+    position: absolute;
+    width: 20px; height: 20px;
+    background: #f1f5f9;
+    border-radius: 50%;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .ticket::before { left: -10px; }
+  .ticket::after { right: -10px; }
+  .ticket .label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 2px;
+    color: #92400e; margin-bottom: 6px; font-weight: 700;
+  }
+  .ticket h2 { font-size: 36px; color: #78350f; margin-bottom: 4px; font-weight: 900; }
+  .ticket p { font-size: 12px; color: #78350f; margin-bottom: 14px; }
+  .ticket button {
+    background: #92400e; color: #fef3c7; border: none;
+    padding: 10px 20px; border-radius: 6px; font-weight: 700;
+    cursor: pointer; text-transform: uppercase; letter-spacing: 1px;
+    font-size: 11px;
+  }
+
+  /* ===== 6. Minimal Text ===== */
+  .modal-6 {
+    width: 500px;
+    background: transparent;
+    padding: 0;
+    text-align: center;
+    color: white;
+    box-shadow: none;
+  }
+  .modal-6 .eyebrow {
+    font-size: 11px; letter-spacing: 4px; text-transform: uppercase;
+    opacity: 0.7; margin-bottom: 12px;
+  }
+  .modal-6 h2 { font-size: 48px; font-weight: 300; line-height: 1.1; margin-bottom: 16px; letter-spacing: -1px; }
+  .modal-6 p { font-size: 14px; opacity: 0.8; margin-bottom: 24px; }
+  .modal-6 button {
+    background: transparent; color: white; border: 1px solid white;
+    padding: 14px 32px; font-weight: 500; cursor: pointer;
+    letter-spacing: 2px; text-transform: uppercase; font-size: 12px;
+  }
+
+  /* ===== 7. Scratch to Reveal ===== */
+  .modal-7 {
+    width: 320px;
+    padding: 28px 24px;
+    border-radius: 16px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    background: white;
+  }
+  .modal-7 h2 { font-size: 20px; margin-bottom: 8px; }
+  .modal-7 p { font-size: 12px; color: #64748b; margin-bottom: 16px; }
+  .scratch {
+    background: linear-gradient(135deg, #a3a3a3 0%, #737373 100%);
+    border-radius: 8px;
+    padding: 24px;
+    color: white;
+    margin-bottom: 16px;
+    cursor: pointer;
+    position: relative;
+    font-weight: 700;
+  }
+  .scratch-hint {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    opacity: 0.9; margin-bottom: 4px; font-weight: 500;
+  }
+  .scratch-val { font-size: 28px; font-weight: 900; }
+  .modal-7 button {
+    background: #10b981; color: white; border: none;
+    padding: 12px 28px; border-radius: 8px; font-weight: 600;
+    cursor: pointer; width: 100%;
+  }
+
+  /* ===== 8. Timer Front ===== */
+  .modal-8 {
+    width: 360px;
+    padding: 28px;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    background: white;
+    border-top: 4px solid #ef4444;
+  }
+  .timer-display {
+    display: flex; justify-content: center; gap: 8px;
+    margin-bottom: 16px;
+  }
+  .timer-unit {
+    background: #1e293b; color: white;
+    padding: 12px 10px; border-radius: 6px;
+    min-width: 50px;
+  }
+  .timer-num { font-size: 22px; font-weight: 800; display: block; }
+  .timer-label { font-size: 9px; text-transform: uppercase; opacity: 0.7; letter-spacing: 1px; }
+  .modal-8 h2 { font-size: 18px; margin-bottom: 6px; }
+  .modal-8 p { font-size: 12px; color: #64748b; margin-bottom: 14px; }
+  .modal-8 button {
+    background: #ef4444; color: white; border: none;
+    padding: 12px 24px; border-radius: 6px; font-weight: 700;
+    cursor: pointer; width: 100%;
+    text-transform: uppercase; letter-spacing: 1px; font-size: 12px;
+  }
+
+  /* ===== 9. Gift Box ===== */
+  .modal-9 {
+    width: 320px;
+    padding: 24px;
+    border-radius: 16px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    background: linear-gradient(180deg, #fdf2f8 0%, #ffffff 100%);
+  }
+  .gift {
+    font-size: 64px;
+    margin-bottom: 12px;
+    display: inline-block;
+    animation: wiggle 2s ease-in-out infinite;
+  }
+  @keyframes wiggle {
+    0%, 100% { transform: rotate(-3deg); }
+    50% { transform: rotate(3deg); }
+  }
+  .modal-9 h2 { font-size: 18px; margin-bottom: 6px; color: #be185d; }
+  .modal-9 p { font-size: 12px; color: #64748b; margin-bottom: 16px; }
+  .modal-9 button {
+    background: #ec4899; color: white; border: none;
+    padding: 12px 28px; border-radius: 999px; font-weight: 600;
+    cursor: pointer; width: 100%;
+  }
+
+  /* ===== 10. Testimonial Led ===== */
+  .modal-10 {
+    width: 360px;
+    padding: 0;
+    border-radius: 12px;
+    overflow: hidden;
+    background: white;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  }
+  .testimonial-top {
+    padding: 20px 20px 16px;
+    background: #f8fafc;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .avatar {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: linear-gradient(135deg, #f59e0b, #ef4444);
+    flex-shrink: 0;
+  }
+  .quote-block { flex: 1; }
+  .stars { color: #fbbf24; font-size: 12px; margin-bottom: 4px; }
+  .quote { font-size: 12px; color: #334155; font-style: italic; line-height: 1.4; margin-bottom: 4px; }
+  .quote-author { font-size: 10px; color: #64748b; font-weight: 600; }
+  .modal-10 .offer-body {
+    padding: 18px 20px 22px;
+    text-align: center;
+  }
+  .modal-10 h2 { font-size: 18px; margin-bottom: 6px; }
+  .modal-10 p { font-size: 12px; color: #64748b; margin-bottom: 14px; }
+  .modal-10 button {
+    background: #3b82f6; color: white; border: none;
+    padding: 12px; border-radius: 8px; font-weight: 600;
+    cursor: pointer; width: 100%;
+  }
+
+  .note {
+    max-width: 900px;
+    margin: 40px auto 0;
+    padding: 20px;
+    background: #1e293b;
+    border-left: 3px solid #3b82f6;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #cbd5e1;
+    line-height: 1.6;
+  }
+  .note strong { color: #e2e8f0; }
+</style>
+</head>
+<body>
+  <h1>Modal Design Mocks</h1>
+  <p class="sub">10 cohesive templates — click spotlight toggle to compare with/without dim backdrop</p>
+
+  <div class="controls">
+    <button id="spotlight-on" class="active">Spotlight ON</button>
+    <button id="spotlight-off">Spotlight OFF</button>
+  </div>
+
+  <div class="gallery">
+    <!-- 1 Classic Card -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">1. Classic Card</span><span class="card-num">centered, soft shadow</span></div>
+      <div class="stage">
+        <div class="storefront">
+          <div class="store-nav"><div class="store-logo"></div><div class="store-links"><div class="store-link"></div><div class="store-link"></div><div class="store-link"></div></div></div>
+          <div class="product-grid"><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div></div>
+        </div>
+        <div class="backdrop"></div>
+        <div class="modal modal-1">
+          <h2>Wait! Get 15% off</h2>
+          <p>Before you go — here's a thank-you from us.</p>
+          <button>Claim My Discount</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2 Split Hero -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">2. Split Hero</span><span class="card-num">image left, copy right</span></div>
+      <div class="stage">
+        <div class="storefront">
+          <div class="store-nav"><div class="store-logo"></div><div class="store-links"><div class="store-link"></div><div class="store-link"></div><div class="store-link"></div></div></div>
+          <div class="product-grid"><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div></div>
+        </div>
+        <div class="backdrop"></div>
+        <div class="modal modal-2">
+          <div class="modal-2-img">15%</div>
+          <div class="modal-2-body">
+            <h2>Your discount is ready</h2>
+            <p>Save on your order before checkout. Limited time only.</p>
+            <button>Apply Discount</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3 Top Banner -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">3. Top Banner</span><span class="card-num">slim, non-intrusive</span></div>
+      <div class="stage">
+        <div class="storefront">
+          <div class="store-nav"><div class="store-logo"></div><div class="store-links"><div class="store-link"></div><div class="store-link"></div><div class="store-link"></div></div></div>
+          <div class="product-grid"><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div></div>
+        </div>
+        <div class="backdrop"></div>
+        <div class="modal modal-3">
+          <span>Don't leave yet! Get <strong>15% off</strong> your order</span>
+          <button>Grab It</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 Bottom Sheet -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">4. Bottom Sheet</span><span class="card-num">mobile-first, slides up</span></div>
+      <div class="stage">
+        <div class="storefront">
+          <div class="store-nav"><div class="store-logo"></div><div class="store-links"><div class="store-link"></div><div class="store-link"></div><div class="store-link"></div></div></div>
+          <div class="product-grid"><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div></div>
+        </div>
+        <div class="backdrop"></div>
+        <div class="modal modal-4">
+          <h2>15% off for you</h2>
+          <p>Complete your order and save on everything in your cart.</p>
+          <button>Claim My Discount</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5 Coupon Ticket -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">5. Coupon Ticket</span><span class="card-num">gamified, perforated edges</span></div>
+      <div class="stage">
+        <div class="storefront">
+          <div class="store-nav"><div class="store-logo"></div><div class="store-links"><div class="store-link"></div><div class="store-link"></div><div class="store-link"></div></div></div>
+          <div class="product-grid"><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div></div>
+        </div>
+        <div class="backdrop"></div>
+        <div class="modal modal-5">
+          <div class="ticket">
+            <div class="label">Exclusive Coupon</div>
+            <h2>15% OFF</h2>
+            <p>Valid on your next order — today only</p>
+            <button>Apply Code</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6 Minimal Text -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">6. Minimal Text</span><span class="card-num">editorial, no container</span></div>
+      <div class="stage">
+        <div class="storefront">
+          <div class="store-nav"><div class="store-logo"></div><div class="store-links"><div class="store-link"></div><div class="store-link"></div><div class="store-link"></div></div></div>
+          <div class="product-grid"><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div></div>
+        </div>
+        <div class="backdrop"></div>
+        <div class="modal modal-6">
+          <div class="eyebrow">For You</div>
+          <h2>Save 15%<br>before you go.</h2>
+          <p>A small thank-you for visiting.</p>
+          <button>Redeem Now</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7 Scratch -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">7. Scratch to Reveal</span><span class="card-num">interactive, engagement</span></div>
+      <div class="stage">
+        <div class="storefront">
+          <div class="store-nav"><div class="store-logo"></div><div class="store-links"><div class="store-link"></div><div class="store-link"></div><div class="store-link"></div></div></div>
+          <div class="product-grid"><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div></div>
+        </div>
+        <div class="backdrop"></div>
+        <div class="modal modal-7">
+          <h2>Your mystery discount</h2>
+          <p>Scratch the card to reveal your offer</p>
+          <div class="scratch">
+            <div class="scratch-hint">Tap to reveal</div>
+            <div class="scratch-val">? ? ?</div>
+          </div>
+          <button>Unlock Reward</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 8 Timer Front -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">8. Timer-Front</span><span class="card-num">urgency-native</span></div>
+      <div class="stage">
+        <div class="storefront">
+          <div class="store-nav"><div class="store-logo"></div><div class="store-links"><div class="store-link"></div><div class="store-link"></div><div class="store-link"></div></div></div>
+          <div class="product-grid"><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div></div>
+        </div>
+        <div class="backdrop"></div>
+        <div class="modal modal-8">
+          <div class="timer-display">
+            <div class="timer-unit"><span class="timer-num">23</span><span class="timer-label">Hours</span></div>
+            <div class="timer-unit"><span class="timer-num">47</span><span class="timer-label">Min</span></div>
+            <div class="timer-unit"><span class="timer-num">12</span><span class="timer-label">Sec</span></div>
+          </div>
+          <h2>15% off expires soon</h2>
+          <p>Your exclusive discount is only valid during this window.</p>
+          <button>Claim Before It's Gone</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 9 Gift Box -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">9. Gift Box</span><span class="card-num">playful, unwrap metaphor</span></div>
+      <div class="stage">
+        <div class="storefront">
+          <div class="store-nav"><div class="store-logo"></div><div class="store-links"><div class="store-link"></div><div class="store-link"></div><div class="store-link"></div></div></div>
+          <div class="product-grid"><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div></div>
+        </div>
+        <div class="backdrop"></div>
+        <div class="modal modal-9">
+          <div class="gift">🎁</div>
+          <h2>A gift for you</h2>
+          <p>Click to unwrap your exclusive 15% off</p>
+          <button>Unwrap My Gift</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 10 Testimonial Led -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">10. Testimonial-Led</span><span class="card-num">social proof first</span></div>
+      <div class="stage">
+        <div class="storefront">
+          <div class="store-nav"><div class="store-logo"></div><div class="store-links"><div class="store-link"></div><div class="store-link"></div><div class="store-link"></div></div></div>
+          <div class="product-grid"><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div><div class="product"></div></div>
+        </div>
+        <div class="backdrop"></div>
+        <div class="modal modal-10">
+          <div class="testimonial-top">
+            <div class="avatar"></div>
+            <div class="quote-block">
+              <div class="stars">★★★★★</div>
+              <div class="quote">"Honestly the best purchase I've made all year. Wish I'd used the discount sooner!"</div>
+              <div class="quote-author">— Sarah M., Verified Buyer</div>
+            </div>
+          </div>
+          <div class="offer-body">
+            <h2>Get 15% off too</h2>
+            <p>Join thousands of happy customers.</p>
+            <button>Claim My Discount</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="note">
+    <strong>Notes for approval:</strong><br>
+    • All mocks use a neutral blue palette as placeholder — real versions will inherit each store's detected brand colors (Shopify theme settings → logo fallback).<br>
+    • Copy shown is example only — AI still evolves headline/subhead/CTA independently within each template.<br>
+    • Spotlight toggle shows how each looks with/without the greyed-out backdrop (binary gene).<br>
+    • Each template locks: color scheme + layout + button style + typography. Animations, urgency, and copy remain independently evolvable.<br>
+    • After approval, these will also be selectable in the manual modal builder (future work).
+  </div>
+
+<script>
+  const onBtn = document.getElementById('spotlight-on');
+  const offBtn = document.getElementById('spotlight-off');
+  const backdrops = document.querySelectorAll('.backdrop');
+
+  onBtn.addEventListener('click', () => {
+    backdrops.forEach(b => b.classList.remove('off'));
+    onBtn.classList.add('active');
+    offBtn.classList.remove('active');
+  });
+  offBtn.addEventListener('click', () => {
+    backdrops.forEach(b => b.classList.add('off'));
+    offBtn.classList.add('active');
+    onBtn.classList.remove('active');
+  });
+</script>
+</body>
+</html>

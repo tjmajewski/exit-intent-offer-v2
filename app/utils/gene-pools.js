@@ -50,6 +50,7 @@ export const genePools = {
 
     redirects: ['cart', 'checkout'],
     urgency: [true, false],
+    showSubhead: [true, false],  // Whether to render subhead text at all (true = show, false = headline+CTA only)
 
     // Trigger strategy: how to fire the modal
     // exit_intent = mouse leave (desktop) / back-button (mobile fallback)
@@ -95,6 +96,7 @@ export const genePools = {
 
     redirects: ['cart', 'checkout'],
     urgency: [false],  // No urgency without incentive
+    showSubhead: [true, false],
     triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
     idleSeconds: [15, 30, 45, 60]
   },
@@ -147,6 +149,7 @@ export const genePools = {
 
     redirects: ['cart', 'checkout'],
     urgency: [true, false],
+    showSubhead: [true, false],
     triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
     idleSeconds: [15, 30, 45, 60]
   },
@@ -187,6 +190,7 @@ export const genePools = {
 
     redirects: ['cart', 'checkout'],
     urgency: [false],  // No urgency without incentive
+    showSubhead: [true, false],
     triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
     idleSeconds: [15, 30, 45, 60]
   },
@@ -231,6 +235,7 @@ export const genePools = {
 
     redirects: ['cart', 'checkout'],
     urgency: [false],  // No urgency for reminders
+    showSubhead: [true, false],
     triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
     idleSeconds: [15, 30, 45, 60]
   }
@@ -246,6 +251,7 @@ export function getCombinationCount(baseline) {
     pool.ctas.length *
     pool.redirects.length *
     pool.urgency.length *
+    (pool.showSubhead?.length || 1) *
     pool.triggerTypes.length *
     pool.idleSeconds.length
   );

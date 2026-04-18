@@ -65,6 +65,7 @@ function createRandomVariant(baseline, segment = 'all', useSocialProof = false) 
     cta: pool.ctas[Math.floor(Math.random() * pool.ctas.length)],
     redirect: pool.redirects[Math.floor(Math.random() * pool.redirects.length)],
     urgency: urgencyValue,
+    showSubhead: pool.showSubhead[Math.floor(Math.random() * pool.showSubhead.length)],
     triggerType: pool.triggerTypes[Math.floor(Math.random() * pool.triggerTypes.length)],
     idleSeconds: pool.idleSeconds[Math.floor(Math.random() * pool.idleSeconds.length)],
     
@@ -169,6 +170,8 @@ function generateDiverseVariants(count, baseline, segment = 'all') {
       cta: pool.ctas[ctaIndex],
       redirect: pool.redirects[redirectIndex],
       urgency: urgencyValue,
+      // Alternate showSubhead to give the gene 50/50 coverage across the diverse population
+      showSubhead: i % 2 === 0,
       triggerType: pool.triggerTypes[triggerIndex],
       idleSeconds: pool.idleSeconds[idleIndex],
       
@@ -269,6 +272,8 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
             variant.triggerType = gene.geneValue;
           } else if (gene.geneType === 'idleSeconds') {
             variant.idleSeconds = parseInt(gene.geneValue);
+          } else if (gene.geneType === 'showSubhead') {
+            variant.showSubhead = gene.geneValue === 'true';
           }
         });
         
@@ -727,6 +732,7 @@ async function breedNewVariant(parents, baseline, segment = 'all', shopId = null
     cta: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.cta : parent2.cta) : parent1.cta,
     redirect: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.redirect : parent2.redirect) : parent1.redirect,
     urgency: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.urgency : parent2.urgency) : parent1.urgency,
+    showSubhead: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.showSubhead : parent2.showSubhead) : parent1.showSubhead,
     triggerType: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.triggerType : parent2.triggerType) : parent1.triggerType,
     idleSeconds: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.idleSeconds : parent2.idleSeconds) : parent1.idleSeconds
   };
@@ -741,6 +747,7 @@ async function breedNewVariant(parents, baseline, segment = 'all', shopId = null
     cta: 'ctas',
     redirect: 'redirects',
     urgency: 'urgency',
+    showSubhead: 'showSubhead',
     triggerType: 'triggerTypes',
     idleSeconds: 'idleSeconds'
   };

@@ -194,6 +194,7 @@ model Variant {
   cta               String
   redirect          String   // cart | checkout
   urgency           Boolean
+  showSubhead       Boolean  @default(true)          // If false, modal renders without subhead (evolved concept)
   triggerType       String   @default("exit_intent") // exit_intent | idle | exit_intent_or_idle
   idleSeconds       Int      @default(30)            // seconds before idle trigger fires
   
@@ -262,7 +263,7 @@ model MetaLearningGene {
   
   // Gene identity
   baseline          String
-  geneType          String   // offerAmount, headline, subhead, cta, redirect, urgency
+  geneType          String   // offerAmount, headline, subhead, cta, redirect, urgency, showSubhead, triggerType, idleSeconds
   geneValue         String   // The actual gene
   
   // Aggregated performance (across ALL stores)

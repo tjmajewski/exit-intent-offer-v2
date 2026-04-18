@@ -405,6 +405,7 @@ export async function action({ request }) {
       cta: selectedVariant.cta,
       redirect: selectedVariant.redirect,
       urgency: selectedVariant.urgency,
+      showSubhead: selectedVariant.showSubhead ?? true,
       triggerType: selectedVariant.triggerType || 'exit_intent',
       idleSeconds: selectedVariant.idleSeconds || 30,
       variantId: selectedVariant.id,
@@ -468,7 +469,8 @@ export async function action({ request }) {
             subhead: decision.subhead,
             cta: decision.cta,
             redirect: decision.redirect,
-            urgency: decision.urgency
+            urgency: decision.urgency,
+            showSubhead: decision.showSubhead
           },
           triggerType: decision.triggerType,
           idleSeconds: decision.idleSeconds,
@@ -564,7 +566,8 @@ export async function action({ request }) {
       subhead: decision.subhead,
       cta: decision.cta,
       redirect: decision.redirect,
-      urgency: decision.urgency
+      urgency: decision.urgency,
+      showSubhead: decision.showSubhead
     };
     response.decision.triggerType = decision.triggerType;
     response.decision.idleSeconds = decision.idleSeconds;
