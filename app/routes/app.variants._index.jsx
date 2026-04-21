@@ -343,6 +343,77 @@ export async function loader({ request }) {
   // Observed pageType values (for filter dropdown — only show what we have data for)
   const observedPageTypes = [...new Set(filteredImpressions.map(i => i.pageType).filter(Boolean))].sort();
 
+  // ----- Phase 2F: network benchmark (read precomputed meta-learning insights) -----
+  // The nightly aggregator writes archetype_performance insights per segment.
+  // We merge those into a single network-wide archetype ranking so merchants
+  // can see "Your Threshold Discount converts at 5.2%; network average is 4.6%".
+  // Only surfaced when the shop is contributing to meta-learning.
+  let networkArchetypeRankings = [];
+  let networkSampleSize = 0;
+  let networkStoreCount = 0;
+  let networkDataAgeDays = null;
+  const benchmarkEnabled = shop.contributeToMetaLearning === true;
+
+  if (benchmarkEnabled) {
+    const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const insights = await db.metaLearningInsights.findMany({
+      where: {
+        insightType: { in: ['archetype_performance', 'archetype_performance_by_key', 'archetype_performance_by_vertical'] },
+        lastUpdated: { gte: twoWeeksAgo }
+      },
+      orderBy: { lastUpdated: 'desc' }
+    });
+
+    // Merge: sum impressions & weighted CVR/CTR/RPI per archetype across all insights.
+    // Track distinct stores per archetype by taking the max `storeCount` observed in
+    // any insight for that archetype (store sets are not individually identifiable).
+    const agg = new Map();
+    let latestUpdate = null;
+    for (const row of insights) {
+      if (!latestUpdate || row.lastUpdated > latestUpdate) latestUpdate = row.lastUpdated;
+      let payload;
+      try { payload = JSON.parse(row.data); } catch { continue; }
+      const rankings = Array.isArray(payload?.rankings) ? payload.rankings : [];
+      for (const r of rankings) {
+        if (!r.archetype || !Number.isFinite(r.impressions)) continue;
+        if (!agg.has(r.archetype)) {
+          agg.set(r.archetype, {
+            archetype: r.archetype,
+            impressions: 0,
+            weightedCvr: 0,
+            weightedCtr: 0,
+            weightedRpi: 0,
+            maxStoreCount: 0
+          });
+        }
+        const a = agg.get(r.archetype);
+        a.impressions += r.impressions;
+        a.weightedCvr += (r.conversionRate || 0) * r.impressions;
+        a.weightedCtr += (r.clickRate || 0) * r.impressions;
+        a.weightedRpi += (r.revenuePerImpression || 0) * r.impressions;
+        a.maxStoreCount = Math.max(a.maxStoreCount, r.storeCount || 0);
+      }
+    }
+
+    networkArchetypeRankings = Array.from(agg.values())
+      .filter(a => a.impressions > 0)
+      .map(a => ({
+        archetype: a.archetype,
+        impressions: a.impressions,
+        cvr: (a.weightedCvr / a.impressions) * 100,   // meta-learning CVR is a ratio — convert to %
+        ctr: (a.weightedCtr / a.impressions) * 100,
+        rpi: a.weightedRpi / a.impressions,
+        storeCount: a.maxStoreCount
+      }))
+      .sort((x, y) => y.cvr - x.cvr);
+
+    networkSampleSize = networkArchetypeRankings.reduce((s, r) => s + r.impressions, 0);
+    networkStoreCount = networkArchetypeRankings.reduce((m, r) => Math.max(m, r.storeCount), 0);
+    networkDataAgeDays = latestUpdate
+      ? Math.max(0, Math.round((Date.now() - latestUpdate.getTime()) / (24 * 60 * 60 * 1000)))
+      : null;
+  }
+
   // Total variants is all-time count
   const totalVariants = variants.length;
 
@@ -378,6 +449,13 @@ export async function loader({ request }) {
     avgArchetypeCvr,
     bestSegment,
     observedPageTypes,
+    benchmark: {
+      enabled: benchmarkEnabled,
+      networkArchetypeRankings,
+      networkSampleSize,
+      networkStoreCount,
+      networkDataAgeDays
+    },
     filters: {
       promo: promoFilter,
       segment: segmentFilter,
@@ -399,6 +477,7 @@ export async function loader({ request }) {
       avgArchetypeCvr: 0,
       bestSegment: null,
       observedPageTypes: [],
+      benchmark: { enabled: false, networkArchetypeRankings: [], networkSampleSize: 0, networkStoreCount: 0, networkDataAgeDays: null },
       filters: { promo: 'all', segment: 'all', window: '30d', archetype: 'all', pageType: 'all', promoInCart: 'all', tab: 'archetypes' },
       dbError: true
     };
@@ -410,7 +489,8 @@ export default function VariantsIndex() {
   const {
     hasAccess, shop, plan, variants, totalVariants, aliveCount, deadCount,
     generationStats, componentStats, dbError,
-    archetypeRankings = [], avgArchetypeCvr = 0, bestSegment = null, observedPageTypes = []
+    archetypeRankings = [], avgArchetypeCvr = 0, bestSegment = null, observedPageTypes = [],
+    benchmark = { enabled: false, networkArchetypeRankings: [], networkSampleSize: 0, networkStoreCount: 0, networkDataAgeDays: null }
   } = data;
   const fetcher = useFetcher();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -448,6 +528,7 @@ export default function VariantsIndex() {
   const displayAvgCvr = displayData.avgArchetypeCvr ?? avgArchetypeCvr;
   const displayBestSegment = displayData.bestSegment || bestSegment;
   const displayPageTypes = displayData.observedPageTypes || observedPageTypes;
+  const displayBenchmark = displayData.benchmark || benchmark;
 
   // Non-Enterprise users see upgrade page
   if (hasAccess === false) {
@@ -1023,6 +1104,22 @@ export default function VariantsIndex() {
           >
             Component Analysis
           </button>
+          <button
+            onClick={() => setParam('tab', 'network')}
+            style={{
+              padding: '12px 24px',
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              fontWeight: tab === 'network' ? 600 : 400,
+              fontSize: 14,
+              color: tab === 'network' ? '#008060' : '#666',
+              borderBottom: `2px solid ${tab === 'network' ? '#008060' : 'transparent'}`,
+              marginBottom: -2
+            }}
+          >
+            Network Benchmark
+          </button>
           <Link
             to="/app/variants/manage"
             style={{
@@ -1143,6 +1240,154 @@ export default function VariantsIndex() {
                       </div>
                     );
                   })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Network Benchmark Tab — Phase 2F */}
+        {tab === 'network' && (
+          <div style={{ paddingTop: 24 }}>
+            {!displayBenchmark.enabled ? (
+              <div style={{
+                background: 'white',
+                border: '2px dashed #d4d4d8',
+                borderRadius: 12,
+                padding: 48,
+                textAlign: 'center',
+                maxWidth: 720,
+                margin: '0 auto'
+              }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#111', marginBottom: 8 }}>
+                  Benchmarking is off for this store
+                </div>
+                <div style={{ fontSize: 14, color: '#6b7280', marginBottom: 20, lineHeight: 1.6 }}>
+                  To see how your archetypes compare to the network, opt into meta-learning.
+                  We share <strong>aggregated ratios only</strong> (CVR, CTR, RPI) and anonymized sample sizes — never
+                  your copy, revenue dollars, product names, or customer data.
+                </div>
+                <Link
+                  to="/app/settings"
+                  style={{
+                    display: 'inline-block',
+                    background: '#008060',
+                    color: 'white',
+                    padding: '10px 20px',
+                    borderRadius: 8,
+                    textDecoration: 'none',
+                    fontWeight: 600,
+                    fontSize: 14
+                  }}
+                >
+                  Opt in from Settings →
+                </Link>
+              </div>
+            ) : displayBenchmark.networkArchetypeRankings.length === 0 ? (
+              <div style={{
+                background: 'white',
+                border: '1px solid #e5e7eb',
+                borderRadius: 12,
+                padding: 48,
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#111', marginBottom: 8 }}>
+                  No network data yet
+                </div>
+                <div style={{ fontSize: 14, color: '#6b7280' }}>
+                  The nightly aggregator needs ≥3 consenting stores per archetype before publishing benchmarks.
+                  Check back tomorrow.
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{
+                  background: '#f0fdf4',
+                  border: '1px solid #bbf7d0',
+                  borderRadius: 12,
+                  padding: 16,
+                  marginBottom: 24,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 12
+                }}>
+                  <div style={{ fontSize: 13, color: '#166534' }}>
+                    Network data from <strong>{displayBenchmark.networkStoreCount}+ stores</strong> ·
+                    <strong> {displayBenchmark.networkSampleSize.toLocaleString()} impressions</strong> ·
+                    updated {displayBenchmark.networkDataAgeDays === 0 ? 'today' : `${displayBenchmark.networkDataAgeDays}d ago`}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#166534' }}>
+                    Ratios only — no PII, copy, or revenue $ is shared.
+                  </div>
+                </div>
+
+                <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                    <thead style={{ background: '#f9fafb' }}>
+                      <tr>
+                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 600, color: '#374151', borderBottom: '1px solid #e5e7eb' }}>Archetype</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, color: '#374151', borderBottom: '1px solid #e5e7eb' }}>Your CVR</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, color: '#374151', borderBottom: '1px solid #e5e7eb' }}>Network CVR</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, color: '#374151', borderBottom: '1px solid #e5e7eb' }}>Delta</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, color: '#374151', borderBottom: '1px solid #e5e7eb' }}>Your Imp</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'center', fontWeight: 600, color: '#374151', borderBottom: '1px solid #e5e7eb' }}>Verdict</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayBenchmark.networkArchetypeRankings.map((net, i) => {
+                        const own = displayArchetypes.find(a => a.archetype === net.archetype);
+                        const delta = own ? own.cvr - net.cvr : null;
+                        let verdict, verdictColor;
+                        if (!own || own.impressions < 20) {
+                          verdict = 'Not enough data';
+                          verdictColor = '#9ca3af';
+                        } else if (delta >= 1.0) {
+                          verdict = 'Outperforming';
+                          verdictColor = '#16a34a';
+                        } else if (delta >= -0.5) {
+                          verdict = 'On par';
+                          verdictColor = '#6b7280';
+                        } else {
+                          verdict = 'Underperforming';
+                          verdictColor = '#dc2626';
+                        }
+                        return (
+                          <tr key={net.archetype} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                            <td style={{ padding: '14px 16px', fontWeight: 600, color: '#111' }}>
+                              {formatArchetypeName(net.archetype)}
+                              {i === 0 && (
+                                <span style={{ marginLeft: 8, background: '#dcfce7', color: '#15803d', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>
+                                  NETWORK LEADER
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'right', color: '#111' }}>
+                              {own ? `${own.cvr.toFixed(1)}%` : <span style={{ color: '#9ca3af' }}>—</span>}
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'right', color: '#111' }}>
+                              {net.cvr.toFixed(1)}%
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, color: delta === null ? '#9ca3af' : delta >= 0 ? '#16a34a' : '#dc2626' }}>
+                              {delta === null ? '—' : `${delta >= 0 ? '+' : ''}${delta.toFixed(1)} pts`}
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'right', color: '#6b7280' }}>
+                              {own ? own.impressions.toLocaleString() : '0'}
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                              <span style={{ color: verdictColor, fontSize: 12, fontWeight: 600 }}>{verdict}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ marginTop: 16, fontSize: 12, color: '#6b7280', lineHeight: 1.6 }}>
+                  Network CVR is the impression-weighted conversion rate across all contributing stores for each archetype,
+                  aggregated from precomputed meta-learning insights (last 14 days). Verdicts use a ±1 pt tolerance against network average.
                 </div>
               </>
             )}
