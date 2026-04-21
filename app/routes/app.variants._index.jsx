@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import AppLayout from "../components/AppLayout";
 import db from "../db.server";
 import { getShopPlan } from "../utils/plan.server";
+import { parseSegmentKey } from "../utils/segment-key";
 
 // Presentation helpers (shared across stat cards + archetype tab)
 function cap(s) {
@@ -343,6 +344,85 @@ export async function loader({ request }) {
   // Observed pageType values (for filter dropdown — only show what we have data for)
   const observedPageTypes = [...new Set(filteredImpressions.map(i => i.pageType).filter(Boolean))].sort();
 
+  // ----- Phase 2H: archetype × segmentKey heatmap -----
+  // For the Segments tab. Rows = top N segmentKeys (by impressions), columns =
+  // archetypes from archetypeRankings (already filtered ≥10 imps). Each cell
+  // holds {impressions, conversions, cvr} so the UI can color by CVR and
+  // annotate with sample size. Cells with fewer than HEATMAP_MIN_CELL_IMPS
+  // impressions are kept but flagged as low-confidence so the UI can dim them.
+  const HEATMAP_MIN_CELL_IMPS = 5;
+  const HEATMAP_MIN_SEGMENT_IMPS = 20;
+  const HEATMAP_MAX_SEGMENTS = 15;
+
+  const heatmapArchetypes = archetypeRankings.map(r => r.archetype);
+  const cellMap = new Map(); // `${segmentKey}::${archetype}` → { impressions, conversions }
+  const segmentTotals = new Map(); // segmentKey → { impressions, conversions }
+
+  for (const imp of filteredImpressions) {
+    if (!imp.segmentKey || !imp.archetype) continue;
+    if (!heatmapArchetypes.includes(imp.archetype)) continue;
+    const cellKey = `${imp.segmentKey}::${imp.archetype}`;
+    if (!cellMap.has(cellKey)) cellMap.set(cellKey, { impressions: 0, conversions: 0 });
+    const cell = cellMap.get(cellKey);
+    cell.impressions += 1;
+    if (imp.converted) cell.conversions += 1;
+
+    if (!segmentTotals.has(imp.segmentKey)) segmentTotals.set(imp.segmentKey, { impressions: 0, conversions: 0 });
+    const seg = segmentTotals.get(imp.segmentKey);
+    seg.impressions += 1;
+    if (imp.converted) seg.conversions += 1;
+  }
+
+  const heatmapSegments = Array.from(segmentTotals.entries())
+    .filter(([, t]) => t.impressions >= HEATMAP_MIN_SEGMENT_IMPS)
+    .map(([key, t]) => ({
+      key,
+      impressions: t.impressions,
+      conversions: t.conversions,
+      cvr: t.impressions > 0 ? (t.conversions / t.impressions) * 100 : 0
+    }))
+    .sort((a, b) => b.impressions - a.impressions)
+    .slice(0, HEATMAP_MAX_SEGMENTS);
+
+  const heatmapCells = {};
+  for (const seg of heatmapSegments) {
+    heatmapCells[seg.key] = {};
+    for (const arch of heatmapArchetypes) {
+      const c = cellMap.get(`${seg.key}::${arch}`);
+      if (!c) {
+        heatmapCells[seg.key][arch] = null;
+        continue;
+      }
+      heatmapCells[seg.key][arch] = {
+        impressions: c.impressions,
+        conversions: c.conversions,
+        cvr: c.impressions > 0 ? (c.conversions / c.impressions) * 100 : 0,
+        lowConfidence: c.impressions < HEATMAP_MIN_CELL_IMPS
+      };
+    }
+  }
+
+  // Per-segment winning archetype (highest CVR cell with ≥ HEATMAP_MIN_CELL_IMPS).
+  // Used by the UI to outline the AI-promoted cell on each row.
+  const heatmapWinners = {};
+  for (const seg of heatmapSegments) {
+    let best = null;
+    for (const arch of heatmapArchetypes) {
+      const c = heatmapCells[seg.key][arch];
+      if (!c || c.lowConfidence) continue;
+      if (!best || c.cvr > best.cvr) best = { archetype: arch, cvr: c.cvr };
+    }
+    heatmapWinners[seg.key] = best ? best.archetype : null;
+  }
+
+  const heatmap = {
+    archetypes: heatmapArchetypes,
+    segments: heatmapSegments,
+    cells: heatmapCells,
+    winners: heatmapWinners,
+    minCellImps: HEATMAP_MIN_CELL_IMPS
+  };
+
   // ----- Phase 2G: filter-narrowed signal (drives the "Promoted" badge) -----
   // The runtime priors fire when an incoming impression has a specific segmentKey.
   // On the dashboard, if the user has filtered down to a specific segment, the
@@ -485,6 +565,7 @@ export async function loader({ request }) {
       networkStoreCount,
       networkDataAgeDays
     },
+    heatmap,
     filters: {
       promo: promoFilter,
       segment: segmentFilter,
@@ -510,6 +591,7 @@ export async function loader({ request }) {
       filterDescription: null,
       hasMeaningfulSpread: false,
       benchmark: { enabled: false, networkArchetypeRankings: [], networkSampleSize: 0, networkStoreCount: 0, networkDataAgeDays: null },
+      heatmap: { archetypes: [], segments: [], cells: {}, winners: {}, minCellImps: 5 },
       filters: { promo: 'all', segment: 'all', window: '30d', archetype: 'all', pageType: 'all', promoInCart: 'all', tab: 'archetypes' },
       dbError: true
     };
@@ -523,7 +605,8 @@ export default function VariantsIndex() {
     generationStats, componentStats, dbError,
     archetypeRankings = [], avgArchetypeCvr = 0, bestSegment = null, observedPageTypes = [],
     filtersAreNarrowed = false, filterDescription = null, hasMeaningfulSpread = false,
-    benchmark = { enabled: false, networkArchetypeRankings: [], networkSampleSize: 0, networkStoreCount: 0, networkDataAgeDays: null }
+    benchmark = { enabled: false, networkArchetypeRankings: [], networkSampleSize: 0, networkStoreCount: 0, networkDataAgeDays: null },
+    heatmap = { archetypes: [], segments: [], cells: {}, winners: {}, minCellImps: 5 }
   } = data;
   const fetcher = useFetcher();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -562,6 +645,7 @@ export default function VariantsIndex() {
   const displayBestSegment = displayData.bestSegment || bestSegment;
   const displayPageTypes = displayData.observedPageTypes || observedPageTypes;
   const displayBenchmark = displayData.benchmark || benchmark;
+  const displayHeatmap = displayData.heatmap || heatmap;
   const displayFiltersNarrowed = displayData.filtersAreNarrowed ?? filtersAreNarrowed;
   const displayFilterDescription = displayData.filterDescription ?? filterDescription;
   const displayHasSpread = displayData.hasMeaningfulSpread ?? hasMeaningfulSpread;
@@ -1162,6 +1246,22 @@ export default function VariantsIndex() {
           >
             Network Benchmark
           </button>
+          <button
+            onClick={() => setParam('tab', 'segments')}
+            style={{
+              padding: '12px 24px',
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              fontWeight: tab === 'segments' ? 600 : 400,
+              fontSize: 14,
+              color: tab === 'segments' ? '#008060' : '#666',
+              borderBottom: `2px solid ${tab === 'segments' ? '#008060' : 'transparent'}`,
+              marginBottom: -2
+            }}
+          >
+            Segments
+          </button>
           <Link
             to="/app/variants/manage"
             style={{
@@ -1488,6 +1588,49 @@ export default function VariantsIndex() {
           </div>
         )}
 
+        {/* Segments Tab — Phase 2H: archetype × segmentKey heatmap */}
+        {tab === 'segments' && (
+          <div style={{ paddingTop: 24 }}>
+            {displayHeatmap.segments.length === 0 || displayHeatmap.archetypes.length === 0 ? (
+              <div style={{ background: 'white', padding: 60, borderRadius: 12, border: '1px solid #e5e7eb', textAlign: 'center' }}>
+                <h3 style={{ fontSize: 20, marginBottom: 8 }}>Not enough segment data yet</h3>
+                <p style={{ color: '#666', maxWidth: 520, margin: '0 auto', lineHeight: 1.6 }}>
+                  We need at least 20 impressions per segment and 10 per archetype before drawing the heatmap.
+                  Try widening the time window, or wait until more traffic accrues.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div style={{
+                  background: '#eef2ff',
+                  border: '1px solid #c7d2fe',
+                  borderRadius: 12,
+                  padding: 20,
+                  marginBottom: 24
+                }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#3730a3', marginBottom: 6 }}>
+                    Where each archetype wins
+                  </div>
+                  <div style={{ fontSize: 13, color: '#3730a3', lineHeight: 1.6 }}>
+                    Rows are visitor segments (device · traffic · account · page · promo-in-cart · frequency).
+                    Columns are archetypes. Each cell shows the conversion rate of that archetype for that segment.
+                    Greener = higher CVR, redder = lower. The outlined cell on each row is the archetype the AI
+                    promotes for that segment at runtime.
+                  </div>
+                </div>
+
+                <HeatmapTable heatmap={displayHeatmap} avgCvr={displayAvgCvr} formatArchetypeName={formatArchetypeName} />
+
+                <div style={{ marginTop: 16, fontSize: 12, color: '#6b7280', lineHeight: 1.6 }}>
+                  Cells with fewer than {displayHeatmap.minCellImps} impressions are dimmed (low confidence).
+                  Empty cells (—) had no impressions of that archetype in this segment for the selected window.
+                  Top {displayHeatmap.segments.length} segments shown by impression volume.
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Component Analysis Content */}
         {tab === 'components' && (
         <div style={{ paddingTop: 24 }}>
@@ -1695,5 +1838,171 @@ export default function VariantsIndex() {
         )}
       </div>
     </AppLayout>
+  );
+}
+
+// ----- Phase 2H: heatmap subcomponent -----
+// Pure presentation. Receives the precomputed heatmap object from the loader.
+// Color uses a divergent scale around the per-row median to make hot/cold
+// archetypes pop within each segment, instead of all cells looking similar
+// when archetype CVRs are globally close together.
+
+function cvrCellColor(cvr, rowMedian) {
+  // Divergent palette: green above row median, red below. Strength scales
+  // with absolute distance from median, capped so extreme outliers don't
+  // dominate visually.
+  const delta = cvr - rowMedian;
+  const intensity = Math.min(1, Math.abs(delta) / 2.0); // 2pt = full saturation
+  if (delta >= 0) {
+    // Green tint
+    const a = 0.10 + intensity * 0.55;
+    return `rgba(34, 197, 94, ${a.toFixed(2)})`;
+  }
+  // Red tint
+  const a = 0.10 + intensity * 0.45;
+  return `rgba(239, 68, 68, ${a.toFixed(2)})`;
+}
+
+function formatSegmentLabel(segmentKey) {
+  const parsed = parseSegmentKey(segmentKey);
+  if (!parsed) return segmentKey; // legacy / malformed key — show raw
+  const parts = [];
+  if (parsed.deviceType) parts.push(parsed.deviceType);
+  if (parsed.trafficSource) parts.push(parsed.trafficSource);
+  if (parsed.accountStatus) parts.push(parsed.accountStatus);
+  if (parsed.pageType) parts.push(parsed.pageType);
+  if (parsed.promoInCart) parts.push('promo-in-cart');
+  if (parsed.frequencyBucket) parts.push(parsed.frequencyBucket);
+  return parts.join(' · ');
+}
+
+function HeatmapTable({ heatmap, avgCvr, formatArchetypeName }) {
+  const { archetypes, segments, cells, winners } = heatmap;
+
+  return (
+    <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <thead style={{ background: '#f9fafb' }}>
+          <tr>
+            <th style={{
+              padding: '12px 16px',
+              textAlign: 'left',
+              fontWeight: 600,
+              color: '#374151',
+              borderBottom: '1px solid #e5e7eb',
+              position: 'sticky',
+              left: 0,
+              background: '#f9fafb',
+              minWidth: 260
+            }}>
+              Segment
+            </th>
+            <th style={{
+              padding: '12px 12px',
+              textAlign: 'right',
+              fontWeight: 600,
+              color: '#374151',
+              borderBottom: '1px solid #e5e7eb',
+              minWidth: 80
+            }}>
+              Imp
+            </th>
+            {archetypes.map(arch => (
+              <th key={arch} style={{
+                padding: '12px 12px',
+                textAlign: 'center',
+                fontWeight: 600,
+                color: '#374151',
+                borderBottom: '1px solid #e5e7eb',
+                minWidth: 110,
+                fontSize: 12
+              }}>
+                {formatArchetypeName(arch)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {segments.map(seg => {
+            // Compute per-row median for divergent coloring
+            const rowCvrs = archetypes
+              .map(a => cells[seg.key]?.[a])
+              .filter(c => c && !c.lowConfidence)
+              .map(c => c.cvr);
+            const rowMedian = rowCvrs.length > 0
+              ? rowCvrs.slice().sort((a, b) => a - b)[Math.floor(rowCvrs.length / 2)]
+              : avgCvr;
+            const winnerArch = winners[seg.key];
+
+            return (
+              <tr key={seg.key} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                <td style={{
+                  padding: '12px 16px',
+                  color: '#111',
+                  position: 'sticky',
+                  left: 0,
+                  background: 'white',
+                  borderRight: '1px solid #f3f4f6'
+                }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.3 }}>
+                    {formatSegmentLabel(seg.key)}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                    overall {seg.cvr.toFixed(1)}% CVR
+                  </div>
+                </td>
+                <td style={{
+                  padding: '12px 12px',
+                  textAlign: 'right',
+                  color: '#6b7280',
+                  fontVariantNumeric: 'tabular-nums'
+                }}>
+                  {seg.impressions.toLocaleString()}
+                </td>
+                {archetypes.map(arch => {
+                  const cell = cells[seg.key]?.[arch];
+                  if (!cell) {
+                    return (
+                      <td key={arch} style={{
+                        padding: '12px 12px',
+                        textAlign: 'center',
+                        color: '#d1d5db',
+                        fontSize: 13
+                      }}>
+                        —
+                      </td>
+                    );
+                  }
+                  const isWinner = winnerArch === arch;
+                  const bg = cell.lowConfidence ? 'transparent' : cvrCellColor(cell.cvr, rowMedian);
+                  return (
+                    <td key={arch} style={{
+                      padding: 4,
+                      textAlign: 'center'
+                    }}>
+                      <div style={{
+                        background: bg,
+                        border: isWinner ? '2px solid #f59e0b' : '1px solid transparent',
+                        borderRadius: 6,
+                        padding: '8px 6px',
+                        opacity: cell.lowConfidence ? 0.45 : 1,
+                        fontVariantNumeric: 'tabular-nums'
+                      }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: '#111' }}>
+                          {cell.cvr.toFixed(1)}%
+                        </div>
+                        <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>
+                          {cell.impressions.toLocaleString()} imp
+                        </div>
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
