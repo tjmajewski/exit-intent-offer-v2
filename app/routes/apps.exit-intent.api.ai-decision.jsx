@@ -392,7 +392,14 @@ export async function action({ request }) {
       promoInCart: resolvedPromoInCart,
       visitFrequency: signals.visitFrequency
     });
-    const isEnterpriseForPriors = (shopRecord.plan || 'pro') === 'enterprise';
+    // Phase 2E: archetype priors active for both Pro and Enterprise.
+    // Pro (2 variants) behaves as segment-based routing — when the two
+    // variants happen to represent different archetypes, priors bias toward
+    // whichever wins this segmentKey (or falls back to meta-learning). When
+    // both variants share an archetype, priors are a no-op and Thompson
+    // Sampling runs uniformly.
+    const planTierForPriors = shopRecord.plan || 'pro';
+    const prioriEnabled = planTierForPriors === 'enterprise' || planTierForPriors === 'pro';
     const selectedVariant = await selectVariantForImpression(
       shopRecord.id,
       baseline,
@@ -401,10 +408,10 @@ export async function action({ request }) {
       {
         segmentKey,
         storeVertical: shopRecord.storeVertical || null,
-        enableArchetypePriors: isEnterpriseForPriors
+        enableArchetypePriors: prioriEnabled
       }
     );
-    console.log(`[Variant Selection] Selected ${selectedVariant.variantId} (Gen ${selectedVariant.generation}, trigger: ${triggerReason}, segmentKey: ${segmentKey}, priors: ${isEnterpriseForPriors ? 'on' : 'off'})`);
+    console.log(`[Variant Selection] Selected ${selectedVariant.variantId} (Gen ${selectedVariant.generation}, trigger: ${triggerReason}, segmentKey: ${segmentKey}, priors: ${prioriEnabled ? planTierForPriors : 'off'})`);
 
     // Step 4: Build decision from variant genes
     // Cap the offer amount based on aggression level.

@@ -1068,6 +1068,9 @@ export default function VariantsIndex() {
                     {plan?.tier === 'enterprise' && (
                       <> For Enterprise, the AI biases variant selection toward archetypes that win the current visitor's segment — so logged-in shoppers on mobile may see a different archetype than first-time desktop visitors.</>
                     )}
+                    {plan?.tier === 'pro' && (
+                      <> Pro runs two variants at a time. When they represent different archetypes, the AI routes visitors by segment — each persona × scenario sees whichever archetype wins for them. When both Pro variants share an archetype, routing is a no-op and standard A/B testing resumes.</>
+                    )}
                   </div>
                 </div>
 
