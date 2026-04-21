@@ -377,10 +377,34 @@ export async function action({ request }) {
     }
 
     // Step 3: Use Thompson Sampling to select variant
-    // Pass triggerReason so Thompson Sampling can use trigger-specific conversion stats
+    // Pass triggerReason so Thompson Sampling can use trigger-specific conversion stats.
+    // Phase 2C: compose segmentKey up-front and enable archetype priors for
+    // Enterprise plans so per-segment archetype winners are actually promoted
+    // at runtime (not just visible on the dashboard).
     const triggerReason = preScore?.triggerReason || 'general';
-    const selectedVariant = await selectVariantForImpression(shopRecord.id, baseline, segment, triggerReason);
-    console.log(`[Variant Selection] Selected ${selectedVariant.variantId} (Gen ${selectedVariant.generation}, trigger: ${triggerReason})`);
+    const resolvedPageType = signals.pageType || signals.exitPage || null;
+    const resolvedPromoInCart = signals.promoInCart === true;
+    const segmentKey = composeSegmentKey({
+      deviceType: signals.deviceType,
+      trafficSource: signals.trafficSource,
+      accountStatus: signals.accountStatus,
+      pageType: resolvedPageType,
+      promoInCart: resolvedPromoInCart,
+      visitFrequency: signals.visitFrequency
+    });
+    const isEnterpriseForPriors = (shopRecord.plan || 'pro') === 'enterprise';
+    const selectedVariant = await selectVariantForImpression(
+      shopRecord.id,
+      baseline,
+      segment,
+      triggerReason,
+      {
+        segmentKey,
+        storeVertical: shopRecord.storeVertical || null,
+        enableArchetypePriors: isEnterpriseForPriors
+      }
+    );
+    console.log(`[Variant Selection] Selected ${selectedVariant.variantId} (Gen ${selectedVariant.generation}, trigger: ${triggerReason}, segmentKey: ${segmentKey}, priors: ${isEnterpriseForPriors ? 'on' : 'off'})`);
 
     // Step 4: Build decision from variant genes
     // Cap the offer amount based on aggression level.
@@ -459,17 +483,6 @@ export async function action({ request }) {
     // Phase 2A: also persist scenario signals (pageType, promoInCart) and the
     // resolved archetype so cross-store meta-learning can aggregate on these
     // dimensions without joining back through Variant -> baseline -> gene-pools.
-    const resolvedPageType = signals.pageType || signals.exitPage || null;
-    const resolvedPromoInCart = signals.promoInCart === true;
-    const segmentKey = composeSegmentKey({
-      deviceType: signals.deviceType,
-      trafficSource: signals.trafficSource,
-      accountStatus: signals.accountStatus,
-      pageType: resolvedPageType,
-      promoInCart: resolvedPromoInCart,
-      visitFrequency: signals.visitFrequency
-    });
-
     const impressionRecord = await recordImpression(selectedVariant.id, shopRecord.id, {
       segment: segment,
       deviceType: signals.deviceType || 'unknown',

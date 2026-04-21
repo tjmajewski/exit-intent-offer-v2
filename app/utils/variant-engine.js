@@ -1,10 +1,11 @@
 // Variant Engine: Core evolution system for creating, managing, and evolving variants
 
-import { genePools, getRandomGene, getAllBaselines } from './gene-pools.js';
+import { genePools, getRandomGene, getAllBaselines, getArchetype } from './gene-pools.js';
 import { generateVisualGenes } from './visual-gene-pools.js';
 import { validateVariantCopy } from './brand-safety.js';
 import { hasSocialProof, replaceSocialProofPlaceholders } from './social-proof.js';
 import { getSocialProofFromCache, setSocialProofCache } from './social-proof-cache.js';
+import { computeArchetypePriors, getArchetypeMultiplier } from './archetype-priors.js';
 
 // Helper to get db instance (dynamic import for React Router 7 compatibility)
 let dbInstance = null;
@@ -383,7 +384,8 @@ function betaSample(alpha, beta) {
  */
 const MIN_TRIGGER_IMPRESSIONS = 20;
 
-export async function selectVariantForImpression(shopId, baseline, segment = 'all', triggerReason = null) {
+export async function selectVariantForImpression(shopId, baseline, segment = 'all', triggerReason = null, opts = {}) {
+  const { segmentKey = null, storeVertical = null, enableArchetypePriors = false } = opts;
   // Get all live variants
   const liveVariants = await getLiveVariants(shopId, baseline, segment);
 
@@ -463,6 +465,30 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
     return champion;
   }
 
+  // Phase 2C: segment-aware archetype priors. When enabled (Enterprise),
+  // look up the archetype leaderboard for this segmentKey and compute a
+  // per-archetype multiplier. Tilts sampling toward archetypes that win
+  // this persona × scenario without disabling exploration.
+  let archetypePriors = null;
+  let priorsSource = 'none';
+  if (enableArchetypePriors && (segmentKey || storeVertical)) {
+    try {
+      const db = await getDb();
+      const { priors, source } = await computeArchetypePriors(db, shopId, {
+        segmentKey,
+        segment,
+        storeVertical
+      });
+      if (priors.size > 0) {
+        archetypePriors = priors;
+        priorsSource = source;
+        console.log(` [Priors] Archetype biasing active (source=${source}, archetypes=${priors.size})`);
+      }
+    } catch (err) {
+      console.error(' [Priors] Failed to compute archetype priors:', err.message);
+    }
+  }
+
   // Thompson Sampling: Sample from beta distribution for each variant.
   // When trigger-specific stats are available and a variant has enough
   // trigger-specific impressions, use those stats instead of overall stats.
@@ -484,7 +510,14 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
     const beta_param = (impressions - conversions) + 1;
 
     // Sample from beta(alpha, beta)
-    const sample = betaSample(alpha, beta_param);
+    let sample = betaSample(alpha, beta_param);
+
+    // Apply archetype prior multiplier if active. Variants whose archetype
+    // wins this segment get a boost; losers get a (small) penalty.
+    if (archetypePriors) {
+      const archetypeName = getArchetype(variant.baseline)?.archetypeName;
+      sample *= getArchetypeMultiplier(archetypePriors, archetypeName);
+    }
 
     return {
       variant: variant,
@@ -496,7 +529,8 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
   samples.sort((a, b) => b.sample - a.sample);
 
   const winner = samples[0].variant;
-  console.log(` Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)}${triggerStats ? `, trigger: ${triggerReason}` : ''})`);
+  const winnerArchetype = getArchetype(winner.baseline)?.archetypeName || 'none';
+  console.log(` Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)}${triggerStats ? `, trigger: ${triggerReason}` : ''}${archetypePriors ? `, priors=${priorsSource}, archetype=${winnerArchetype}` : ''})`);
 
   return winner;
 }
