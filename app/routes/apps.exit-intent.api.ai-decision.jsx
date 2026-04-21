@@ -454,13 +454,22 @@ export async function action({ request }) {
     
     console.log('[Variant Engine] Decision:', decision);
     
-    // Step 5: Record impression (for evolution tracking)
+    // Step 5: Record impression (for evolution tracking + meta-learning).
+    // Phase 2A: also persist scenario signals (pageType, promoInCart) and the
+    // resolved archetype so cross-store meta-learning can aggregate on these
+    // dimensions without joining back through Variant -> baseline -> gene-pools.
     const impressionRecord = await recordImpression(selectedVariant.id, shopRecord.id, {
       segment: segment,
       deviceType: signals.deviceType || 'unknown',
       trafficSource: signals.trafficSource || 'unknown',
+      accountStatus: signals.accountStatus || null,
+      visitFrequency: signals.visitFrequency ?? null,
       cartValue: signals.cartValue,
-      triggerReason
+      triggerReason,
+      pageType: signals.pageType || signals.exitPage || null,
+      promoInCart: signals.promoInCart === true,
+      archetype: archetypeName
+      // segmentKey populated in Phase 2B via segment-key.js
     });
 
     // Update analytics metafield for dashboard metrics (fire-and-forget to avoid blocking)

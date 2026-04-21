@@ -530,8 +530,15 @@ export async function recordImpression(variantId, shopId, context = {}) {
       deviceType: context.deviceType || null,
       trafficSource: context.trafficSource || null,
       cartValue: context.cartValue || null,
+      accountStatus: context.accountStatus || null,
+      visitFrequency: context.visitFrequency ?? null,
       triggerReason: context.triggerReason || null,
       duringPromo: activePromo ? true : false,
+      // Phase 2A scenario signals — caller passes these for richer meta-learning
+      pageType: context.pageType || null,
+      promoInCart: context.promoInCart ?? false,
+      archetype: context.archetype || null,
+      segmentKey: context.segmentKey || null,
       clicked: false,
       converted: false
     }

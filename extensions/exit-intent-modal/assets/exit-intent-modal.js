@@ -169,6 +169,16 @@
       const cart = await fetch('/cart.js').then(r => r.json());
       const cartValue = cart.total_price / 100;
       const itemCount = cart.item_count;
+
+      // 2b. Promo already applied in cart? Either a cart-level discount code
+      //     or any item-level discount allocation counts as "promoInCart". Used
+      //     by meta-learning to distinguish shoppers who already have an offer
+      //     vs those who don't — the two segments respond very differently.
+      const cartLevelPromo = Array.isArray(cart.discount_codes) && cart.discount_codes.length > 0;
+      const itemLevelPromo = Array.isArray(cart.items) && cart.items.some(
+        (item) => Array.isArray(item.discounts) && item.discounts.length > 0
+      );
+      const promoInCart = cartLevelPromo || itemLevelPromo;
       
       // 3. Device type
       const deviceType = /mobile/i.test(navigator.userAgent) ? 'mobile' : 'desktop';
@@ -234,7 +244,10 @@
         exitPage,
         cartAgeMinutes,
         // Time-based signal
-        localHour
+        localHour,
+        // Phase 2A scenario signals
+        pageType: exitPage, // broader page categorization, shared with exitPage
+        promoInCart
       };
     }
     
@@ -318,6 +331,10 @@
       if (path.includes('/cart')) return 'cart';
       if (path.includes('/products/')) return 'product';
       if (path.includes('/collections/')) return 'collection';
+      if (path.includes('/search')) return 'search';
+      if (path.includes('/blogs/') || path.includes('/blog')) return 'blog';
+      if (path.includes('/account')) return 'account';
+      if (path === '/' || path === '/index' || path === '') return 'home';
 
       return 'other';
     }

@@ -32,222 +32,234 @@ model Session {
 }
 
 model Shop {
-  id                String   @id @default(uuid())
-  shopifyDomain     String   @unique
-  mode              String   @default("manual")
-  plan              String   @default("starter")
-  subscriptionId    String?  // Shopify subscription ID for usage billing
-  promoCode         String?  // Promo code used (e.g. "EARLYACCESS")
-  promoAppliedAt    DateTime?
-  aiGoal            String   @default("revenue")
-  aggression        Int      @default(5)
-  budgetEnabled     Boolean  @default(false)
-  budgetAmount      Float    @default(500)
-  budgetPeriod      String   @default("month")
-  budgetStartDate   DateTime @default(now())
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                   String    @id @default(uuid())
+  shopifyDomain        String    @unique
+  mode                 String    @default("manual")
+  plan                 String    @default("starter")
+  subscriptionId       String? // Shopify subscription ID for usage billing
+  promoCode            String? // Promo code used (e.g. "EARLYACCESS")
+  promoAppliedAt       DateTime?
+  aiGoal               String    @default("revenue")
+  aggression           Int       @default(5)
+  budgetEnabled        Boolean   @default(false)
+  budgetAmount         Float     @default(500)
+  budgetPeriod         String    @default("month")
+  budgetStartDate      DateTime  @default(now())
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
   // Social Proof Fields
-  customerCount         Int?
-  orderCount            Int?
-  avgRating             Float?
-  reviewCount           Int?
-  socialProofEnabled    Boolean   @default(true)
-  socialProofType       String    @default("orders")
-  socialProofMinimum    Int       @default(100)
-  socialProofUpdatedAt  DateTime?
-  
+  customerCount        Int?
+  orderCount           Int?
+  avgRating            Float?
+  reviewCount          Int?
+  socialProofEnabled   Boolean   @default(true)
+  socialProofType      String    @default("orders")
+  socialProofMinimum   Int       @default(100)
+  socialProofUpdatedAt DateTime?
+
   // Copy Optimization
-  copyVariants      String?  @default("{\"variants\":[],\"segmentBestVariants\":{}}")
+  copyVariants      String?   @default("{\"variants\":[],\"segmentBestVariants\":{}}")
   lastVariantUpdate DateTime? @default(now())
-  
+
   // Meta-Learning
   contributeToMetaLearning Boolean @default(true)
-  
+  // Self-reported store vertical for cross-store clustering — meta-learning groups
+  // similar stores so fashion learns from fashion, electronics from electronics, etc.
+  // Nullable: null = include in all-verticals pool. Values: fashion | electronics |
+  // beauty | home | food | health | other (free-form; clients normalize to lowercase).
+  storeVertical            String?
+
   // Evolution System
   lastEvolutionCycle DateTime?
-  
+
   // Evolution Controls (Enterprise)
-  mutationRate       Int      @default(15)
-  crossoverRate      Int      @default(70)
-  selectionPressure  Int      @default(5)
-  populationSize     Int      @default(10)
-  
+  mutationRate      Int @default(15)
+  crossoverRate     Int @default(70)
+  selectionPressure Int @default(5)
+  populationSize    Int @default(10)
+
   // Brand Customization (Enterprise)
-  brandPrimaryColor   String?  @default("#000000")
-  brandSecondaryColor String?  @default("#ffffff")
-  brandAccentColor    String?  @default("#f59e0b")
-  brandFont           String?  @default("system")
+  brandPrimaryColor   String? @default("#000000")
+  brandSecondaryColor String? @default("#ffffff")
+  brandAccentColor    String? @default("#f59e0b")
+  brandFont           String? @default("system")
   brandLogoUrl        String?
-  customCSS           String?  // For advanced customization
+  customCSS           String? // For advanced customization
 
   // Promotional Intelligence (Enterprise)
   promotionalIntelligenceEnabled Boolean @default(true)
-  
+
   // Trigger Settings
-  exitIntentEnabled   Boolean  @default(true)
-  timeDelayEnabled    Boolean  @default(false)
-  timeDelaySeconds    Int      @default(30)
-  cartValueEnabled    Boolean  @default(false)
-  cartValueMin        Float    @default(0)
-  cartValueMax        Float    @default(999999)
+  exitIntentEnabled Boolean @default(true)
+  timeDelayEnabled  Boolean @default(false)
+  timeDelaySeconds  Int     @default(30)
+  cartValueEnabled  Boolean @default(false)
+  cartValueMin      Float   @default(0)
+  cartValueMax      Float   @default(999999)
 
   // Modal Content
-  modalHeadline       String?  @default("Wait! Don't leave yet 🎁")
-  modalBody           String?  @default("Complete your purchase now and get an exclusive discount!")
-  ctaButton           String?  @default("Complete My Order")
-  redirectDestination String?  @default("checkout")
+  modalHeadline       String? @default("Wait! Don't leave yet 🎁")
+  modalBody           String? @default("Complete your purchase now and get an exclusive discount!")
+  ctaButton           String? @default("Complete My Order")
+  redirectDestination String? @default("checkout")
 
-  discountCode        String?
-  discountEnabled     Boolean  @default(false)
-  offerType           String?  @default("percentage")
+  discountCode    String?
+  discountEnabled Boolean @default(false)
+  offerType       String? @default("percentage")
 
   // Manual Mode Discount Settings (Independent)
-  manualDiscountCodeMode    String   @default("unique") // "unique" or "generic"
-  manualGenericDiscountCode String?  // The generic code for manual mode
-  manualDiscountCodePrefix  String?  @default("EXIT") // Prefix for unique codes in manual mode
+  manualDiscountCodeMode    String  @default("unique") // "unique" or "generic"
+  manualGenericDiscountCode String? // The generic code for manual mode
+  manualDiscountCodePrefix  String? @default("EXIT") // Prefix for unique codes in manual mode
 
   // AI Mode Discount Settings (Independent)
-  aiDiscountCodeMode    String   @default("unique") // "unique" or "generic"
-  aiGenericDiscountCode String?  // The generic code for AI mode
-  aiDiscountCodePrefix  String?  @default("EXIT") // Prefix for unique codes in AI mode
+  aiDiscountCodeMode    String  @default("unique") // "unique" or "generic"
+  aiGenericDiscountCode String? // The generic code for AI mode
+  aiDiscountCodePrefix  String? @default("EXIT") // Prefix for unique codes in AI mode
 
   // DEPRECATED: Old shared fields (kept for backwards compatibility, can be removed after migration)
-  discountCodeMode    String?  @default("unique")
+  discountCodeMode    String? @default("unique")
   genericDiscountCode String?
   discountCodePrefix  String?
 
   // Adaptive Threshold System
   lastThresholdUpdate DateTime?
 
-  discountOffers    DiscountOffer[]
-  aiDecisions       AIDecision[]
-  promotions        Promotion[]
-  variants          Variant[]       @relation("ShopVariants")
-  seasonalPatterns  SeasonalPattern[] @relation("ShopSeasonalPatterns")
-  brandSafetyRule   BrandSafetyRule? @relation("ShopBrandSafetyRules")
+  discountOffers         DiscountOffer[]
+  aiDecisions            AIDecision[]
+  promotions             Promotion[]
+  variants               Variant[]               @relation("ShopVariants")
+  seasonalPatterns       SeasonalPattern[]       @relation("ShopSeasonalPatterns")
+  brandSafetyRule        BrandSafetyRule?        @relation("ShopBrandSafetyRules")
   interventionThresholds InterventionThreshold[] @relation("ShopInterventionThresholds")
   interventionOutcomes   InterventionOutcome[]   @relation("ShopInterventionOutcomes")
 }
 
 model DiscountOffer {
-  id              String    @id @default(uuid())
-  shopId          String
-  shop            Shop      @relation(fields: [shopId], references: [id])
-  discountCode    String
-  offerType       String
-  amount          Float
-  cartValue       Float?
-  mode            String    @default("unique") // "unique" or "generic"
-  expiresAt       DateTime? // Nullable for generic codes (no expiry)
-  redeemed        Boolean   @default(false)
-  redeemedAt      DateTime?
-  createdAt       DateTime  @default(now())
+  id           String    @id @default(uuid())
+  shopId       String
+  shop         Shop      @relation(fields: [shopId], references: [id])
+  discountCode String
+  offerType    String
+  amount       Float
+  cartValue    Float?
+  mode         String    @default("unique") // "unique" or "generic"
+  expiresAt    DateTime? // Nullable for generic codes (no expiry)
+  redeemed     Boolean   @default(false)
+  redeemedAt   DateTime?
+  createdAt    DateTime  @default(now())
 
   @@index([shopId, expiresAt])
   @@index([shopId, redeemed])
 }
 
 model AIDecision {
-  id          String   @id @default(uuid())
-  shopId      String
-  shop        Shop     @relation(fields: [shopId], references: [id])
-  signals     String
-  decision    String
-  offerId     String?
-  createdAt   DateTime @default(now())
-  
+  id        String   @id @default(uuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id])
+  signals   String
+  decision  String
+  offerId   String?
+  createdAt DateTime @default(now())
+
   @@index([shopId, createdAt])
 }
 
 model MetaLearningInsights {
   id              String   @id @default(uuid())
-  insightType     String   // "signal_correlation" | "copy_pattern" | "benchmark"
-  segment         String   // "mobile_paid", "desktop_organic", etc.
-  data            String   // JSON blob of aggregated insights
-  sampleSize      Int      // Number of data points used
-  confidenceLevel Float    // Statistical confidence (0-1)
+  insightType     String // "signal_correlation" | "copy_pattern" | "benchmark"
+  segment         String // "mobile_paid", "desktop_organic", etc.
+  data            String // JSON blob of aggregated insights
+  sampleSize      Int // Number of data points used
+  confidenceLevel Float // Statistical confidence (0-1)
   lastUpdated     DateTime @default(now())
   version         Int      @default(1)
-  
+
   @@index([segment, insightType])
   @@index([lastUpdated])
 }
 
 model Variant {
-  id                String   @id @default(uuid())
-  shopId            String
-  shop              Shop     @relation(fields: [shopId], references: [id], name: "ShopVariants")
-  
+  id     String @id @default(uuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], name: "ShopVariants")
+
   // Identity
-  variantId         String   @unique
-  baseline          String   // revenue_with_discount, conversion_with_discount, etc
-  segment           String   @default("all") // mobile, desktop, mobile_paid, etc
-  status            String   @default("alive") // alive, dying, dead, champion
-  generation        Int      @default(0)
-  parents           String?  // JSON array ['VAR_ABC', 'VAR_DEF']
-  
+  variantId  String  @unique
+  baseline   String // revenue_with_discount, conversion_with_discount, etc
+  segment    String  @default("all") // mobile, desktop, mobile_paid, etc
+  status     String  @default("alive") // alive, dying, dead, champion
+  generation Int     @default(0)
+  parents    String? // JSON array ['VAR_ABC', 'VAR_DEF']
+
   // Genes (the DNA)
-  offerAmount       Int
-  headline          String
-  subhead           String
-  cta               String
-  redirect          String   // cart | checkout
-  urgency           Boolean
-  showSubhead       Boolean  @default(true)          // If false, modal renders without subhead (evolved concept)
-  triggerType       String   @default("exit_intent") // exit_intent | idle | exit_intent_or_idle
-  idleSeconds       Int      @default(30)            // seconds before idle trigger fires
-  
+  offerAmount Int
+  headline    String
+  subhead     String
+  cta         String
+  redirect    String // cart | checkout
+  urgency     Boolean
+  showSubhead Boolean @default(true) // If false, modal renders without subhead (evolved concept)
+  triggerType String  @default("exit_intent") // exit_intent | idle | exit_intent_or_idle
+  idleSeconds Int     @default(30) // seconds before idle trigger fires
+
   // Visual Genes (Design DNA)
-  colorScheme       String   @default("classic")
-  layout            String   @default("centered")
-  buttonStyle       String   @default("solid")
-  animation         String   @default("fade")
-  typography        String   @default("modern")
-  
+  colorScheme String @default("classic")
+  layout      String @default("centered")
+  buttonStyle String @default("solid")
+  animation   String @default("fade")
+  typography  String @default("modern")
+
   // Performance
-  impressions       Int      @default(0)
-  clicks            Int      @default(0)
-  conversions       Int      @default(0)
-  revenue           Float    @default(0)
-  profitPerImpression Float  @default(0)
-  
+  impressions         Int   @default(0)
+  clicks              Int   @default(0)
+  conversions         Int   @default(0)
+  revenue             Float @default(0)
+  profitPerImpression Float @default(0)
+
   // Lifecycle
-  birthDate         DateTime @default(now())
-  deathDate         DateTime?
-  championDate      DateTime?
-  
+  birthDate    DateTime  @default(now())
+  deathDate    DateTime?
+  championDate DateTime?
+
   // Relations
   impressionRecords VariantImpression[]
-  
+
   @@index([shopId, status])
   @@index([shopId, baseline, segment])
   @@index([status, profitPerImpression])
 }
 
 model VariantImpression {
-  id                String   @id @default(uuid())
-  variantId         String
-  variant           Variant  @relation(fields: [variantId], references: [id])
-  shopId            String
+  id        String  @id @default(uuid())
+  variantId String
+  variant   Variant @relation(fields: [variantId], references: [id])
+  shopId    String
 
   // Outcome
-  clicked           Boolean  @default(false)
-  converted         Boolean  @default(false)
-  revenue           Float?
-  discountAmount    Float?
-  profit            Float?   // revenue - discountAmount
+  clicked        Boolean @default(false)
+  converted      Boolean @default(false)
+  revenue        Float?
+  discountAmount Float?
+  profit         Float? // revenue - discountAmount
 
   // Context
-  segment           String   @default("all")
-  deviceType        String?  // desktop, mobile, tablet
-  trafficSource     String?  // paid, organic, social, direct, email
-  cartValue         Float?
-  accountStatus     String?  // guest, logged_in
-  visitFrequency    Int?     // 1 = first-time, 2+ = returning
-  triggerReason     String?  // failedCoupon, checkoutExit, cartHesitation, staleCart, general
-  duringPromo       Boolean  @default(false)
-  timestamp         DateTime @default(now())
+  segment        String  @default("all")
+  deviceType     String? // desktop, mobile, tablet
+  trafficSource  String? // paid, organic, social, direct, email
+  cartValue      Float?
+  accountStatus  String? // guest, logged_in
+  visitFrequency Int? // 1 = first-time, 2+ = returning
+  triggerReason  String? // failedCoupon, checkoutExit, cartHesitation, staleCart, general
+  duringPromo    Boolean @default(false)
+
+  // Phase 2A scenario signals — enable richer "who + where + what offer" aggregation
+  pageType    String? // home | product | collection | cart | checkout | search | blog | account | other
+  promoInCart Boolean @default(false) // cart has applied discount code or item-level discount
+  archetype   String? // denormalized archetype name (THRESHOLD_DISCOUNT, SOFT_UPSELL, etc.) — fast aggregator queries
+  segmentKey  String? // composite segment key (see app/utils/segment-key.js) — richer than the legacy segment field
+
+  timestamp DateTime @default(now())
 
   @@index([variantId, converted])
   @@index([shopId, duringPromo])
@@ -256,96 +268,99 @@ model VariantImpression {
   @@index([shopId, deviceType])
   @@index([shopId, accountStatus])
   @@index([shopId, triggerReason])
+  @@index([archetype, timestamp])
+  @@index([segmentKey, timestamp])
+  @@index([shopId, pageType])
 }
 
 model MetaLearningGene {
-  id                String   @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // Gene identity
-  baseline          String
-  geneType          String   // offerAmount, headline, subhead, cta, redirect, urgency, showSubhead, triggerType, idleSeconds
-  geneValue         String   // The actual gene
-  
+  baseline  String
+  geneType  String // offerAmount, headline, subhead, cta, redirect, urgency, showSubhead, triggerType, idleSeconds
+  geneValue String // The actual gene
+
   // Aggregated performance (across ALL stores)
-  totalImpressions  Int      @default(0)
-  totalConversions  Int      @default(0)
-  totalRevenue      Float    @default(0)
-  avgCVR            Float    @default(0)
+  totalImpressions       Int   @default(0)
+  totalConversions       Int   @default(0)
+  totalRevenue           Float @default(0)
+  avgCVR                 Float @default(0)
   avgProfitPerImpression Float @default(0)
-  confidenceLevel   Float    @default(0) // 0-1 (0.95 = 95% confidence)
-  
+  confidenceLevel        Float @default(0) // 0-1 (0.95 = 95% confidence)
+
   // Segmentation
-  industry          String?  // fashion, sports, home, etc
-  avgOrderValue     String?  // low (<$50), medium ($50-150), high (>$150)
-  deviceType        String?  // mobile, desktop, all
-  
+  industry      String? // fashion, sports, home, etc
+  avgOrderValue String? // low (<$50), medium ($50-150), high (>$150)
+  deviceType    String? // mobile, desktop, all
+
   // Metadata
-  sampleSize        Int      @default(0) // Number of stores this gene appeared in
-  lastUpdated       DateTime @updatedAt
-  
+  sampleSize  Int      @default(0) // Number of stores this gene appeared in
+  lastUpdated DateTime @updatedAt
+
   @@index([baseline, avgProfitPerImpression])
   @@index([baseline, geneType, confidenceLevel])
 }
 
 model SeasonalPattern {
-  id                String   @id @default(uuid())
-  shopId            String
-  shop              Shop     @relation(fields: [shopId], references: [id], name: "ShopSeasonalPatterns")
-  
+  id     String @id @default(uuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], name: "ShopSeasonalPatterns")
+
   // Season identification
-  season            String   // blackFriday, holidaySeason, backToSchool, etc
-  startDate         DateTime
-  endDate           DateTime
-  
+  season    String // blackFriday, holidaySeason, backToSchool, etc
+  startDate DateTime
+  endDate   DateTime
+
   // Performance during this season (historical)
-  avgCVR            Float    @default(0)
-  avgAOV            Float    @default(0)
+  avgCVR                 Float @default(0)
+  avgAOV                 Float @default(0)
   avgProfitPerImpression Float @default(0)
-  trafficMultiplier Float    @default(1) // e.g., 2.3x normal traffic
-  
+  trafficMultiplier      Float @default(1) // e.g., 2.3x normal traffic
+
   // Recommended genes for this season
   recommendedOfferAmounts String  @default("[]") // JSON array [20, 25, 30]
   recommendedUrgency      Boolean @default(true)
   recommendedHeadlines    String  @default("[]") // JSON array of headline templates
-  
+
   @@index([shopId, season])
 }
 
 model BrandSafetyRule {
-  id                String   @id @default(uuid())
-  shopId            String
-  shop              Shop     @relation(fields: [shopId], references: [id], name: "ShopBrandSafetyRules")
-  
+  id     String @id @default(uuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], name: "ShopBrandSafetyRules")
+
   // Rules (Enterprise only)
-  prohibitedWords   String   @default("[]") // JSON array ["cheap", "discount"]
-  requiredPhrases   String   @default("[]") // JSON array ["premium quality"]
-  maxDiscountPercent Int     @default(100) // e.g., 25
-  tone              String   @default("casual") // luxury, casual, urgent, professional
-  
-  enabled           Boolean  @default(true)
-  
+  prohibitedWords    String @default("[]") // JSON array ["cheap", "discount"]
+  requiredPhrases    String @default("[]") // JSON array ["premium quality"]
+  maxDiscountPercent Int    @default(100) // e.g., 25
+  tone               String @default("casual") // luxury, casual, urgent, professional
+
+  enabled Boolean @default(true)
+
   @@unique([shopId])
 }
 
 model Promotion {
-  id                String    @id @default(uuid())
-  shopId            String
-  shop              Shop      @relation(fields: [shopId], references: [id])
-  code              String
-  amount            Float
-  type              String    // "percentage" | "fixed_amount"
-  detectedVia       String    // "webhook" | "usage_spike" | "manual"
-  status            String    @default("monitoring") // "monitoring" | "active" | "ended"
-  validFrom         DateTime?
-  validUntil        DateTime?
-  usageStats        String    @default("{\"total\":0,\"last24h\":0}") // JSON
-  classification    String?   // "site_wide" | "targeted" | "customer_service"
-  aiStrategy        String?   // "pause" | "decrease" | "continue" | "ignore"
-  aiStrategyReason  String?
-  merchantOverride  String?
-  seenByMerchant    Boolean   @default(false)
-  detectedAt        DateTime  @default(now())
-  createdAt         DateTime  @default(now())
+  id               String    @id @default(uuid())
+  shopId           String
+  shop             Shop      @relation(fields: [shopId], references: [id])
+  code             String
+  amount           Float
+  type             String // "percentage" | "fixed_amount"
+  detectedVia      String // "webhook" | "usage_spike" | "manual"
+  status           String    @default("monitoring") // "monitoring" | "active" | "ended"
+  validFrom        DateTime?
+  validUntil       DateTime?
+  usageStats       String    @default("{\"total\":0,\"last24h\":0}") // JSON
+  classification   String? // "site_wide" | "targeted" | "customer_service"
+  aiStrategy       String? // "pause" | "decrease" | "continue" | "ignore"
+  aiStrategyReason String?
+  merchantOverride String?
+  seenByMerchant   Boolean   @default(false)
+  detectedAt       DateTime  @default(now())
+  createdAt        DateTime  @default(now())
 
   @@index([shopId, status])
   @@index([shopId, code])
@@ -354,68 +369,68 @@ model Promotion {
 }
 
 model Conversion {
-  id                String   @id @default(uuid())
-  shopId            String
+  id     String @id @default(uuid())
+  shopId String
 
   // Order details
-  orderId           String   // Shopify order ID
-  orderNumber       String   // Human-readable (#1234)
-  orderValue        Float
-  customerEmail     String?
-  orderedAt         DateTime
+  orderId       String // Shopify order ID
+  orderNumber   String // Human-readable (#1234)
+  orderValue    Float
+  customerEmail String?
+  orderedAt     DateTime
 
   // Modal context
-  modalId           String
-  modalName         String?
-  variantId         String?  // For AI mode
+  modalId   String
+  modalName String?
+  variantId String? // For AI mode
 
   // Discount tracking
-  modalHadDiscount  Boolean  @default(false)
-  discountCode      String?
-  discountRedeemed  Boolean  @default(false)
-  discountAmount    Float?
+  modalHadDiscount Boolean @default(false)
+  discountCode     String?
+  discountRedeemed Boolean @default(false)
+  discountAmount   Float?
 
   // Modal snapshot (Enterprise only)
-  modalSnapshot     String?  // JSON of modal config when shown
+  modalSnapshot String? // JSON of modal config when shown
 
   // Metadata
-  createdAt         DateTime @default(now())
+  createdAt DateTime @default(now())
 
+  @@unique([shopId, orderId])
   @@index([shopId])
   @@index([orderedAt])
-  @@unique([shopId, orderId])
 }
 
 // Starter Tier Learning: Track manual settings + signals for AI training
 // Even though Starter users can't enable AI, their data helps train it
 model StarterImpression {
-  id                String   @id @default(uuid())
-  shopId            String
+  id     String @id @default(uuid())
+  shopId String
 
   // Manual settings used (the "genes" we're learning from)
-  headline          String
-  body              String
-  cta               String
-  discountType      String   // percentage, fixed, threshold
-  discountAmount    Float
+  headline            String
+  body                String
+  cta                 String
+  discountType        String // percentage, fixed, threshold
+  discountAmount      Float
   redirectDestination String
 
   // Customer signals at time of impression
-  signals           String   // JSON blob of all collected signals
+  signals String // JSON blob of all collected signals
 
   // Outcome
-  clicked           Boolean  @default(false)
-  converted         Boolean  @default(false)
-  revenue           Float?
+  clicked   Boolean @default(false)
+  converted Boolean @default(false)
+  revenue   Float?
 
   // Context (denormalized from signals for easier querying)
-  deviceType        String?
-  trafficSource     String?
-  cartValue         Float?
-  visitFrequency    Int?
+  deviceType     String?
+  trafficSource  String?
+  cartValue      Float?
+  visitFrequency Int?
 
   // Metadata
-  timestamp         DateTime @default(now())
+  timestamp DateTime @default(now())
 
   @@index([shopId, timestamp])
   @@index([clicked, converted])
@@ -425,31 +440,31 @@ model StarterImpression {
 
 // Usage-based billing charges (commission on recovered revenue)
 model UsageCharge {
-  id                String   @id @default(uuid())
-  shopId            String
+  id     String @id @default(uuid())
+  shopId String
 
   // Order/Conversion Reference
-  orderId           String   @unique // Shopify order ID - also serves as idempotency key
-  orderNumber       String?
+  orderId     String  @unique // Shopify order ID - also serves as idempotency key
+  orderNumber String?
 
   // Revenue & Commission
-  recoveredRevenue  Float    // The order total that was recovered
-  commissionRate    Float    // 0.05, 0.02, or 0.01 (5%, 2%, 1%)
-  chargeAmount      Float    // recoveredRevenue * commissionRate
-  currency          String   @default("USD")
+  recoveredRevenue Float // The order total that was recovered
+  commissionRate   Float // 0.05, 0.02, or 0.01 (5%, 2%, 1%)
+  chargeAmount     Float // recoveredRevenue * commissionRate
+  currency         String @default("USD")
 
   // Billing Status
-  status            String   @default("pending") // pending, charged, failed, skipped
-  shopifyChargeId   String?  // ID returned from Shopify UsageCharge API
-  errorMessage      String?  // If failed, why
+  status          String  @default("pending") // pending, charged, failed, skipped
+  shopifyChargeId String? // ID returned from Shopify UsageCharge API
+  errorMessage    String? // If failed, why
 
   // Plan Context
-  planTier          String   // starter, pro, enterprise
+  planTier String // starter, pro, enterprise
 
   // Timestamps
-  conversionAt      DateTime // When the conversion happened
-  chargedAt         DateTime? // When we successfully charged
-  createdAt         DateTime @default(now())
+  conversionAt DateTime // When the conversion happened
+  chargedAt    DateTime? // When we successfully charged
+  createdAt    DateTime  @default(now())
 
   @@index([shopId, status])
   @@index([shopId, createdAt])
@@ -461,34 +476,34 @@ model UsageCharge {
 // This is the per-shop feedback loop that makes show/no-show decisions smarter.
 
 model InterventionOutcome {
-  id              String   @id @default(uuid())
-  shopId          String
-  shop            Shop     @relation(fields: [shopId], references: [id], name: "ShopInterventionOutcomes")
+  id     String @id @default(uuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], name: "ShopInterventionOutcomes")
 
   // What happened
-  wasShown        Boolean              // true = modal shown, false = no_intervention
-  isHoldout       Boolean  @default(false) // true = 5% holdout group (excluded from learning)
-  converted       Boolean  @default(false)
-  revenue         Float?
-  discountAmount  Float?
-  profit          Float?               // revenue - discountAmount (null if not converted)
+  wasShown       Boolean // true = modal shown, false = no_intervention
+  isHoldout      Boolean @default(false) // true = 5% holdout group (excluded from learning)
+  converted      Boolean @default(false)
+  revenue        Float?
+  discountAmount Float?
+  profit         Float? // revenue - discountAmount (null if not converted)
 
   // Signals at decision time (denormalized for fast aggregation)
-  propensityScore Int?                 // 0-100 (Enterprise), null for Pro
-  intentScore     Int?                 // Pro AI score, null for Enterprise
+  propensityScore Int? // 0-100 (Enterprise), null for Pro
+  intentScore     Int? // Pro AI score, null for Enterprise
   cartValue       Float?
   deviceType      String?
   trafficSource   String?
-  segment         String   @default("all") // mobile, desktop, all
+  segment         String  @default("all") // mobile, desktop, all
 
   // Bucketing (which threshold bucket this fell into)
-  scoreBucket     String               // "0-10", "10-20", ..., "90-100"
+  scoreBucket String // "0-10", "10-20", ..., "90-100"
 
   // Linking
-  aiDecisionId    String?              // Links to AIDecision record
-  impressionId    String?              // Links to VariantImpression (if shown)
+  aiDecisionId String? // Links to AIDecision record
+  impressionId String? // Links to VariantImpression (if shown)
 
-  timestamp       DateTime @default(now())
+  timestamp DateTime @default(now())
 
   @@index([shopId, scoreBucket, wasShown])
   @@index([shopId, timestamp])
@@ -496,31 +511,31 @@ model InterventionOutcome {
 }
 
 model InterventionThreshold {
-  id              String   @id @default(uuid())
-  shopId          String
-  shop            Shop     @relation(fields: [shopId], references: [id], name: "ShopInterventionThresholds")
+  id     String @id @default(uuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], name: "ShopInterventionThresholds")
 
   // Thompson Sampling state per score bucket
-  scoreBucket     String               // "0-10", "10-20", ..., "90-100"
-  segment         String   @default("all")
+  scoreBucket String // "0-10", "10-20", ..., "90-100"
+  segment     String @default("all")
 
   // "Show" arm stats
-  showImpressions   Int    @default(0)
-  showConversions   Int    @default(0)
-  showRevenue       Float  @default(0)
-  showProfit        Float  @default(0)  // revenue - discount cost
+  showImpressions Int   @default(0)
+  showConversions Int   @default(0)
+  showRevenue     Float @default(0)
+  showProfit      Float @default(0) // revenue - discount cost
 
   // "Don't show" arm stats
-  skipImpressions   Int    @default(0)
-  skipConversions   Int    @default(0)
-  skipRevenue       Float  @default(0)  // natural conversions (full margin)
-  skipProfit        Float  @default(0)  // = skipRevenue (no discount cost)
+  skipImpressions Int   @default(0)
+  skipConversions Int   @default(0)
+  skipRevenue     Float @default(0) // natural conversions (full margin)
+  skipProfit      Float @default(0) // = skipRevenue (no discount cost)
 
   // Derived decision
-  shouldShow        Boolean @default(true) // Current recommendation
-  confidence        Float   @default(0.5)  // How confident (0-1)
+  shouldShow Boolean @default(true) // Current recommendation
+  confidence Float   @default(0.5) // How confident (0-1)
 
-  lastUpdated       DateTime @updatedAt
+  lastUpdated DateTime @updatedAt
 
   @@unique([shopId, scoreBucket, segment])
   @@index([shopId, segment])
