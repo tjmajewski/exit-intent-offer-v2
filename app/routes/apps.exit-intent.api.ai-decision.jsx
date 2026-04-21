@@ -3,6 +3,7 @@ import { authenticate } from "../shopify.server";
 import { createPercentageDiscount, createFixedDiscount, createThresholdDiscount } from "../utils/discount-codes";
 import { getMetaInsight, shouldUseMetaLearning } from "../utils/meta-learning.js";
 import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
+import { composeSegmentKey } from "../utils/segment-key.js";
 
 export async function action({ request }) {
   const { default: db } = await import("../db.server.js");
@@ -458,6 +459,17 @@ export async function action({ request }) {
     // Phase 2A: also persist scenario signals (pageType, promoInCart) and the
     // resolved archetype so cross-store meta-learning can aggregate on these
     // dimensions without joining back through Variant -> baseline -> gene-pools.
+    const resolvedPageType = signals.pageType || signals.exitPage || null;
+    const resolvedPromoInCart = signals.promoInCart === true;
+    const segmentKey = composeSegmentKey({
+      deviceType: signals.deviceType,
+      trafficSource: signals.trafficSource,
+      accountStatus: signals.accountStatus,
+      pageType: resolvedPageType,
+      promoInCart: resolvedPromoInCart,
+      visitFrequency: signals.visitFrequency
+    });
+
     const impressionRecord = await recordImpression(selectedVariant.id, shopRecord.id, {
       segment: segment,
       deviceType: signals.deviceType || 'unknown',
@@ -466,10 +478,10 @@ export async function action({ request }) {
       visitFrequency: signals.visitFrequency ?? null,
       cartValue: signals.cartValue,
       triggerReason,
-      pageType: signals.pageType || signals.exitPage || null,
-      promoInCart: signals.promoInCart === true,
-      archetype: archetypeName
-      // segmentKey populated in Phase 2B via segment-key.js
+      pageType: resolvedPageType,
+      promoInCart: resolvedPromoInCart,
+      archetype: archetypeName,
+      segmentKey
     });
 
     // Update analytics metafield for dashboard metrics (fire-and-forget to avoid blocking)

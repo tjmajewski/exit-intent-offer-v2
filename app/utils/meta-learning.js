@@ -231,20 +231,25 @@ export async function aggregateCopyPatterns(prisma, segment) {
  * Returns a per-archetype leaderboard ranked by conversion rate.
  *
  * @param {object} prisma
- * @param {string} segment  e.g. 'mobile_paid', 'desktop_organic'
+ * @param {string|null} segment  e.g. 'mobile_paid' — pass null to aggregate across
+ *                               the legacy segment dimension (use segmentKey instead)
  * @param {object} opts
  *   daysBack                window of impressions to consider (default 30)
  *   minStores               min consenting stores in the data (default 3)
  *   minArchetypeImpressions per-archetype impression floor (default 100)
- *   storeVertical           (future) filter to stores sharing a vertical/category
- *                           — placeholder for Phase 2; no-op today
+ *   segmentKey              composite segment key filter (Phase 2B). When set,
+ *                           filters impressions to that exact composite key and
+ *                           the legacy `segment` filter is ignored.
+ *   storeVertical           filter to stores sharing a self-reported vertical.
+ *                           null = include all consenting stores.
  */
 export async function aggregateArchetypePerformance(prisma, segment, opts = {}) {
   const {
     daysBack = 30,
     minStores = 3,
     minArchetypeImpressions = 100,
-    storeVertical = null  // Phase 2 hook — schema doesn't carry this yet
+    segmentKey = null,
+    storeVertical = null
   } = opts;
   const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
 
@@ -252,13 +257,11 @@ export async function aggregateArchetypePerformance(prisma, segment, opts = {}) 
   const { genePools } = await import('./gene-pools.js');
 
   // Step 1: get variants from consenting stores. Build variantId → { shopId, archetype }.
+  const shopFilter = { contributeToMetaLearning: true };
+  if (storeVertical) shopFilter.storeVertical = storeVertical;
+
   const variants = await prisma.variant.findMany({
-    where: {
-      shop: {
-        contributeToMetaLearning: true
-        // storeVertical filter goes here in Phase 2
-      }
-    },
+    where: { shop: shopFilter },
     select: { id: true, shopId: true, baseline: true }
   });
   if (variants.length === 0) {
@@ -277,13 +280,20 @@ export async function aggregateArchetypePerformance(prisma, segment, opts = {}) 
     return null;
   }
 
-  // Step 2: pull impressions for those variants in the segment/window
+  // Step 2: pull impressions for those variants in the segment/window.
+  // When segmentKey is provided (Phase 2B), filter on the composite key and
+  // ignore the coarse legacy `segment` field. Otherwise fall back to segment.
+  const impressionWhere = {
+    variantId: { in: Array.from(variantInfo.keys()) },
+    timestamp: { gte: since }
+  };
+  if (segmentKey) {
+    impressionWhere.segmentKey = segmentKey;
+  } else if (segment) {
+    impressionWhere.segment = segment;
+  }
   const impressions = await prisma.variantImpression.findMany({
-    where: {
-      variantId: { in: Array.from(variantInfo.keys()) },
-      segment,
-      timestamp: { gte: since }
-    },
+    where: impressionWhere,
     select: { variantId: true, clicked: true, converted: true, revenue: true }
   });
 
@@ -327,17 +337,22 @@ export async function aggregateArchetypePerformance(prisma, segment, opts = {}) 
     });
   }
 
+  const label = segmentKey ? `segmentKey=${segmentKey}` : `segment=${segment}`;
+  const verticalLabel = storeVertical ? ` vertical=${storeVertical}` : '';
+
   if (rankings.length === 0 || allStores.size < minStores) {
-    console.log(`[Meta-Learning] Archetype aggregation ${segment}: insufficient data (${rankings.length} archetypes, ${allStores.size} stores, ${totalImpressions} impressions)`);
+    console.log(`[Meta-Learning] Archetype aggregation ${label}${verticalLabel}: insufficient data (${rankings.length} archetypes, ${allStores.size} stores, ${totalImpressions} impressions)`);
     return null;
   }
 
   rankings.sort((a, b) => b.conversionRate - a.conversionRate);
 
-  console.log(`[Meta-Learning] Archetype aggregation ${segment}: ${rankings.length} archetypes, ${allStores.size} stores, ${totalImpressions} impressions — winner=${rankings[0].archetype} cvr=${(rankings[0].conversionRate * 100).toFixed(2)}%`);
+  console.log(`[Meta-Learning] Archetype aggregation ${label}${verticalLabel}: ${rankings.length} archetypes, ${allStores.size} stores, ${totalImpressions} impressions — winner=${rankings[0].archetype} cvr=${(rankings[0].conversionRate * 100).toFixed(2)}%`);
 
   return {
     segment,
+    segmentKey,
+    storeVertical,
     rankings,                                         // sorted, highest CVR first
     winner: rankings[0].archetype,                    // convenience
     sampleSize: totalImpressions,
@@ -357,6 +372,22 @@ export async function aggregateArchetypePerformance(prisma, segment, opts = {}) 
  */
 export async function getArchetypeLeaderboard(prisma, segment) {
   return getMetaInsight(prisma, segment, 'archetype_performance');
+}
+
+/**
+ * Read the latest archetype-performance insight for a composite segmentKey
+ * (Phase 2B). Applies the same staleness/confidence rules as getMetaInsight.
+ */
+export async function getArchetypeLeaderboardByKey(prisma, segmentKey) {
+  return getMetaInsight(prisma, segmentKey, 'archetype_performance_by_key');
+}
+
+/**
+ * Read the latest archetype-performance insight for a (vertical, segment)
+ * pair. Key is stored as `${vertical}::${segment}`.
+ */
+export async function getArchetypeLeaderboardByVertical(prisma, vertical, segment) {
+  return getMetaInsight(prisma, `${vertical}::${segment}`, 'archetype_performance_by_vertical');
 }
 
 /**
