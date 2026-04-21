@@ -209,6 +209,156 @@ export async function aggregateCopyPatterns(prisma, segment) {
   };
 }
 
+// =============================================================================
+// ARCHETYPE PERFORMANCE AGGREGATION
+// Aggregates per-archetype CVR/CTR/RPI across consenting stores, per segment.
+// Answers: "For this kind of customer in this kind of scenario, which modal
+// archetype converts best?" — drives cold-start biasing and admin leaderboards.
+//
+// LEGAL / PRIVACY BOUNDARIES (shared cross-store):
+//   SAFE TO SHARE: aggregated ratios (CVR, CTR, RPI), sample sizes, store
+//     counts, archetype names (our taxonomy, not merchant content).
+//   NEVER SHARED: specific copy strings, raw revenue $ per shop, product
+//     names, customer PII, discount codes. All aggregation is over ratios or
+//     counts; $ amounts are only persisted as per-impression ratios.
+//
+// All aggregation is gated by `shop.contributeToMetaLearning = true` (consent)
+// and min 3 stores + minArchetypeImpressions per archetype before returning.
+// =============================================================================
+
+/**
+ * Aggregate archetype-level performance across consenting stores for a segment.
+ * Returns a per-archetype leaderboard ranked by conversion rate.
+ *
+ * @param {object} prisma
+ * @param {string} segment  e.g. 'mobile_paid', 'desktop_organic'
+ * @param {object} opts
+ *   daysBack                window of impressions to consider (default 30)
+ *   minStores               min consenting stores in the data (default 3)
+ *   minArchetypeImpressions per-archetype impression floor (default 100)
+ *   storeVertical           (future) filter to stores sharing a vertical/category
+ *                           — placeholder for Phase 2; no-op today
+ */
+export async function aggregateArchetypePerformance(prisma, segment, opts = {}) {
+  const {
+    daysBack = 30,
+    minStores = 3,
+    minArchetypeImpressions = 100,
+    storeVertical = null  // Phase 2 hook — schema doesn't carry this yet
+  } = opts;
+  const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+
+  // Lazy import so this module stays schema-agnostic at load time
+  const { genePools } = await import('./gene-pools.js');
+
+  // Step 1: get variants from consenting stores. Build variantId → { shopId, archetype }.
+  const variants = await prisma.variant.findMany({
+    where: {
+      shop: {
+        contributeToMetaLearning: true
+        // storeVertical filter goes here in Phase 2
+      }
+    },
+    select: { id: true, shopId: true, baseline: true }
+  });
+  if (variants.length === 0) {
+    console.log(`[Meta-Learning] Archetype aggregation ${segment}: no consenting variants`);
+    return null;
+  }
+
+  const variantInfo = new Map();
+  for (const v of variants) {
+    const archetype = genePools[v.baseline]?.archetypeName;
+    if (!archetype) continue; // unknown/legacy baseline — skip
+    variantInfo.set(v.id, { shopId: v.shopId, archetype });
+  }
+  if (variantInfo.size === 0) {
+    console.log(`[Meta-Learning] Archetype aggregation ${segment}: no variants map to current archetypes`);
+    return null;
+  }
+
+  // Step 2: pull impressions for those variants in the segment/window
+  const impressions = await prisma.variantImpression.findMany({
+    where: {
+      variantId: { in: Array.from(variantInfo.keys()) },
+      segment,
+      timestamp: { gte: since }
+    },
+    select: { variantId: true, clicked: true, converted: true, revenue: true }
+  });
+
+  // Step 3: bucket by archetype, track distinct stores per archetype
+  const buckets = new Map();
+  const storesPerArchetype = new Map();
+  for (const imp of impressions) {
+    const info = variantInfo.get(imp.variantId);
+    if (!info) continue;
+    const key = info.archetype;
+    if (!buckets.has(key)) {
+      buckets.set(key, { impressions: 0, clicks: 0, conversions: 0, revenue: 0 });
+      storesPerArchetype.set(key, new Set());
+    }
+    const b = buckets.get(key);
+    b.impressions += 1;
+    if (imp.clicked) b.clicks += 1;
+    if (imp.converted) {
+      b.conversions += 1;
+      b.revenue += imp.revenue || 0;
+    }
+    storesPerArchetype.get(key).add(info.shopId);
+  }
+
+  // Step 4: compute metrics; filter to archetypes with enough data
+  const rankings = [];
+  let totalImpressions = 0;
+  const allStores = new Set();
+  for (const [archetype, b] of buckets) {
+    const storeCount = storesPerArchetype.get(archetype).size;
+    if (b.impressions < minArchetypeImpressions || storeCount < minStores) continue;
+    for (const s of storesPerArchetype.get(archetype)) allStores.add(s);
+    totalImpressions += b.impressions;
+    rankings.push({
+      archetype,
+      conversionRate: b.conversions / b.impressions,
+      clickRate: b.clicks / b.impressions,
+      revenuePerImpression: b.revenue / b.impressions, // ratio only, not absolute $ per store
+      impressions: b.impressions,
+      storeCount
+    });
+  }
+
+  if (rankings.length === 0 || allStores.size < minStores) {
+    console.log(`[Meta-Learning] Archetype aggregation ${segment}: insufficient data (${rankings.length} archetypes, ${allStores.size} stores, ${totalImpressions} impressions)`);
+    return null;
+  }
+
+  rankings.sort((a, b) => b.conversionRate - a.conversionRate);
+
+  console.log(`[Meta-Learning] Archetype aggregation ${segment}: ${rankings.length} archetypes, ${allStores.size} stores, ${totalImpressions} impressions — winner=${rankings[0].archetype} cvr=${(rankings[0].conversionRate * 100).toFixed(2)}%`);
+
+  return {
+    segment,
+    rankings,                                         // sorted, highest CVR first
+    winner: rankings[0].archetype,                    // convenience
+    sampleSize: totalImpressions,
+    storeCount: allStores.size,
+    windowDays: daysBack,
+    confidenceLevel: calculateConfidence(totalImpressions)
+  };
+}
+
+/**
+ * Read the latest archetype-performance insight for a segment.
+ * Returns null if none exists, is stale, or is low-confidence (same rules as
+ * `getMetaInsight` — 7-day max age, ≥0.8 confidence).
+ *
+ * Consumers (e.g. cold-start decision biasing in Phase 2) should treat a null
+ * return as "no signal yet — fall back to uniform-random archetype selection."
+ */
+export async function getArchetypeLeaderboard(prisma, segment) {
+  return getMetaInsight(prisma, segment, 'archetype_performance');
+}
+
 /**
  * Calculate statistical confidence based on sample size
  */

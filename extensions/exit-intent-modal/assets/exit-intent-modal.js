@@ -1321,6 +1321,9 @@
         if (result.decision) {
           const dec = result.decision;
           console.log('%c Offer Type:', 'color: #10b981; font-weight: bold', dec.type?.toUpperCase() || 'UNKNOWN');
+          if (dec.archetype) {
+            console.log('%c Archetype:', 'color: #a855f7; font-weight: bold', dec.archetype);
+          }
 
           if (dec.type === 'percentage') {
             console.log('%c Discount:', 'color: #f59e0b; font-weight: bold', `${dec.amount}% OFF`);

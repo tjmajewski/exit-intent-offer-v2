@@ -3,6 +3,7 @@ import { authenticate } from "../shopify.server";
 import {
   aggregateSignalCorrelations,
   aggregateCopyPatterns,
+  aggregateArchetypePerformance,
   saveMetaInsight
 } from "../utils/meta-learning.js";
 
@@ -48,6 +49,21 @@ export async function action({ request }) {
           copyData,
           Math.min(copyData.emojiSampleSize, copyData.urgencySampleSize),
           copyData.confidenceLevel
+        );
+        insightsCreated++;
+      }
+
+      // Aggregate archetype performance — which archetype converts best
+      // for this segment across consenting stores. Drives cold-start biasing.
+      const archetypeData = await aggregateArchetypePerformance(db, segment);
+      if (archetypeData) {
+        await saveMetaInsight(
+          db,
+          'archetype_performance',
+          segment,
+          archetypeData,
+          archetypeData.sampleSize,
+          archetypeData.confidenceLevel
         );
         insightsCreated++;
       }

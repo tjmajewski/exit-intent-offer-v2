@@ -404,8 +404,14 @@ export async function action({ request }) {
     // can't render without them.
     const {
       isValidSubhead, isValidHeadline, isValidCta,
-      pickFallbackHeadline, pickFallbackCta, hasBannedClaim
+      pickFallbackHeadline, pickFallbackCta, hasBannedClaim,
+      getArchetype
     } = await import('../utils/gene-pools.js');
+
+    // Resolve archetype name for this baseline — surfaced in decision payload
+    // so the modal JS log, admin dashboards, and meta-learning aggregators all
+    // agree on what kind of modal was shown.
+    const archetypeName = getArchetype(baseline)?.archetypeName || null;
 
     let effectiveHeadline = selectedVariant.headline;
     if (!isValidHeadline(baseline, effectiveHeadline) || hasBannedClaim(baseline, effectiveHeadline)) {
@@ -442,6 +448,7 @@ export async function action({ request }) {
       variantId: selectedVariant.id,
       variantPublicId: selectedVariant.variantId,
       baseline: baseline,
+      archetype: archetypeName,
       confidence: selectedVariant.impressions > 100 ? 0.8 : 0.5
     };
     
@@ -495,6 +502,7 @@ export async function action({ request }) {
           amount: 0,
           code: null,
           baseline: decision.baseline,
+          archetype: decision.archetype,
           variant: {
             headline: decision.headline,
             subhead: decision.subhead,
@@ -587,7 +595,8 @@ export async function action({ request }) {
         code: discountResult.code,
         confidence: decision.confidence,
         expiresAt: discountResult.expiresAt,
-        baseline: decision.baseline // Include baseline for tracking
+        baseline: decision.baseline, // Include baseline for tracking
+        archetype: decision.archetype // Archetype name (e.g. THRESHOLD_DISCOUNT)
       }
     };
     
