@@ -5,6 +5,21 @@ import AppLayout from "../components/AppLayout";
 import db from "../db.server";
 import { getShopPlan } from "../utils/plan.server";
 
+// Presentation helpers (shared across stat cards + archetype tab)
+function cap(s) {
+  if (!s || typeof s !== 'string') return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+function formatArchetypeName(raw) {
+  if (!raw) return '';
+  // Archetype names like "THRESHOLD_DISCOUNT" → "Threshold Discount"
+  return raw
+    .toLowerCase()
+    .split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 export async function loader({ request }) {
   const { session } = await authenticate.admin(request);
 
@@ -13,6 +28,12 @@ export async function loader({ request }) {
   const url = new URL(request.url);
   const promoFilter = url.searchParams.get('promo') || 'all';
   const segmentFilter = url.searchParams.get('segment') || 'all';
+  // Phase 2D filters
+  const windowFilter = url.searchParams.get('window') || '30d';          // 7d | 30d | 90d
+  const archetypeFilter = url.searchParams.get('archetype') || 'all';
+  const pageTypeFilter = url.searchParams.get('pageType') || 'all';
+  const promoInCartFilter = url.searchParams.get('promoInCart') || 'all'; // all | yes | no
+  const tab = url.searchParams.get('tab') || 'archetypes';                // archetypes | components
 
   // Get shop from database
   const shop = await db.shop.findUnique({
@@ -54,7 +75,29 @@ export async function loader({ request }) {
   // Build where clause for filtered impressions
   const whereClause = { shopId: shop.id };
 
-  // Apply promo context filter
+  // Phase 2D: time window filter (default 30d)
+  const windowDays = windowFilter === '7d' ? 7 : windowFilter === '90d' ? 90 : 30;
+  const windowStart = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+  whereClause.timestamp = { gte: windowStart };
+
+  // Phase 2D: archetype filter
+  if (archetypeFilter !== 'all') {
+    whereClause.archetype = archetypeFilter;
+  }
+
+  // Phase 2D: pageType filter
+  if (pageTypeFilter !== 'all') {
+    whereClause.pageType = pageTypeFilter;
+  }
+
+  // Phase 2D: promoInCart filter (customer has a discount code in cart right now)
+  if (promoInCartFilter === 'yes') {
+    whereClause.promoInCart = true;
+  } else if (promoInCartFilter === 'no') {
+    whereClause.promoInCart = false;
+  }
+
+  // Apply promo context filter (store-wide promotion running)
   if (promoFilter === 'no-promo') {
     whereClause.duringPromo = false;
   } else if (promoFilter === 'during-promo') {
@@ -241,6 +284,65 @@ export async function loader({ request }) {
   const subheadsWithTiers = addPerformanceTier(subheadStats, avgSubheadRevenue).slice(0, 10);
   const ctasWithTiers = addPerformanceTier(ctaStats, avgCtaRevenue).slice(0, 10);
 
+  // ----- Phase 2D: archetype rankings (own-shop, current filter window) -----
+  const archetypeBuckets = {};
+  for (const imp of filteredImpressions) {
+    const key = imp.archetype || 'UNCLASSIFIED';
+    if (!archetypeBuckets[key]) {
+      archetypeBuckets[key] = { impressions: 0, clicks: 0, conversions: 0, revenue: 0 };
+    }
+    const b = archetypeBuckets[key];
+    b.impressions += 1;
+    if (imp.clicked) b.clicks += 1;
+    if (imp.converted) {
+      b.conversions += 1;
+      b.revenue += imp.revenue || 0;
+    }
+  }
+  const archetypeRankings = Object.entries(archetypeBuckets)
+    .map(([archetype, b]) => ({
+      archetype,
+      impressions: b.impressions,
+      clicks: b.clicks,
+      conversions: b.conversions,
+      revenue: b.revenue,
+      cvr: b.impressions > 0 ? (b.conversions / b.impressions) * 100 : 0,
+      ctr: b.impressions > 0 ? (b.clicks / b.impressions) * 100 : 0,
+      rpi: b.impressions > 0 ? b.revenue / b.impressions : 0
+    }))
+    .filter(r => r.archetype !== 'UNCLASSIFIED' && r.impressions >= 10) // avoid noise
+    .sort((a, b) => b.cvr - a.cvr);
+
+  // Average CVR across archetypes (for "vs avg" comparisons)
+  const avgArchetypeCvr = archetypeRankings.length > 0
+    ? archetypeRankings.reduce((s, r) => s + r.cvr, 0) / archetypeRankings.length
+    : 0;
+
+  // ----- Phase 2D: top segmentKey performers (for "Best Segment" card) -----
+  const segmentKeyBuckets = {};
+  for (const imp of filteredImpressions) {
+    if (!imp.segmentKey) continue;
+    if (!segmentKeyBuckets[imp.segmentKey]) {
+      segmentKeyBuckets[imp.segmentKey] = { impressions: 0, conversions: 0 };
+    }
+    segmentKeyBuckets[imp.segmentKey].impressions += 1;
+    if (imp.converted) segmentKeyBuckets[imp.segmentKey].conversions += 1;
+  }
+  const segmentKeyRankings = Object.entries(segmentKeyBuckets)
+    .map(([segmentKey, b]) => ({
+      segmentKey,
+      impressions: b.impressions,
+      conversions: b.conversions,
+      cvr: b.impressions > 0 ? (b.conversions / b.impressions) * 100 : 0
+    }))
+    .filter(r => r.impressions >= 20) // need meaningful sample
+    .sort((a, b) => b.cvr - a.cvr);
+
+  const bestSegment = segmentKeyRankings[0] || null;
+
+  // Observed pageType values (for filter dropdown — only show what we have data for)
+  const observedPageTypes = [...new Set(filteredImpressions.map(i => i.pageType).filter(Boolean))].sort();
+
   // Total variants is all-time count
   const totalVariants = variants.length;
 
@@ -272,9 +374,18 @@ export async function loader({ request }) {
       subheads: subheadsWithTiers,
       ctas: ctasWithTiers
     },
+    archetypeRankings,
+    avgArchetypeCvr,
+    bestSegment,
+    observedPageTypes,
     filters: {
       promo: promoFilter,
-      segment: segmentFilter
+      segment: segmentFilter,
+      window: windowFilter,
+      archetype: archetypeFilter,
+      pageType: pageTypeFilter,
+      promoInCart: promoInCartFilter,
+      tab
     }
   };
   } catch (error) {
@@ -284,7 +395,11 @@ export async function loader({ request }) {
       aliveCount: 0, deadCount: 0,
       generationStats: { max: 0 },
       componentStats: { headlines: [], subheads: [], ctas: [] },
-      filters: { promo: 'all', segment: 'all' },
+      archetypeRankings: [],
+      avgArchetypeCvr: 0,
+      bestSegment: null,
+      observedPageTypes: [],
+      filters: { promo: 'all', segment: 'all', window: '30d', archetype: 'all', pageType: 'all', promoInCart: 'all', tab: 'archetypes' },
       dbError: true
     };
   }
@@ -292,28 +407,47 @@ export async function loader({ request }) {
 
 export default function VariantsIndex() {
   const data = useLoaderData();
-  const { hasAccess, shop, plan, variants, totalVariants, aliveCount, deadCount, generationStats, componentStats, dbError } = data;
+  const {
+    hasAccess, shop, plan, variants, totalVariants, aliveCount, deadCount,
+    generationStats, componentStats, dbError,
+    archetypeRankings = [], avgArchetypeCvr = 0, bestSegment = null, observedPageTypes = []
+  } = data;
   const fetcher = useFetcher();
   const [searchParams, setSearchParams] = useSearchParams();
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [selectedVariant, setSelectedVariant] = useState(null);
 
   const promoMode = searchParams.get('promo') || 'all';
+  const windowMode = searchParams.get('window') || '30d';
+  const archetypeFilter = searchParams.get('archetype') || 'all';
+  const pageTypeFilter = searchParams.get('pageType') || 'all';
+  const promoInCartFilter = searchParams.get('promoInCart') || 'all';
+  const tab = searchParams.get('tab') || 'archetypes';
 
-  // Auto-refresh every 30 seconds
+  // Helper: update a single URL param (preserves others)
+  const setParam = (key, value) => {
+    const np = new URLSearchParams(searchParams);
+    if (value === null || value === undefined || value === 'all') np.delete(key);
+    else np.set(key, value);
+    setSearchParams(np);
+  };
+
+  // Auto-refresh every 30 seconds — preserve all current filters
   useEffect(() => {
     if (!autoRefresh) return;
-
     const interval = setInterval(() => {
-      fetcher.load(`/app/variants?promo=${promoMode}`);
+      fetcher.load(`/app/variants?${searchParams.toString()}`);
     }, 30000);
-
     return () => clearInterval(interval);
-  }, [autoRefresh, fetcher, promoMode]);
+  }, [autoRefresh, fetcher, searchParams]);
 
   // Use fetcher data if available, otherwise use initial data
   const displayData = fetcher.data || data;
   const displayVariants = displayData.variants || variants;
+  const displayArchetypes = displayData.archetypeRankings || archetypeRankings;
+  const displayAvgCvr = displayData.avgArchetypeCvr ?? avgArchetypeCvr;
+  const displayBestSegment = displayData.bestSegment || bestSegment;
+  const displayPageTypes = displayData.observedPageTypes || observedPageTypes;
 
   // Non-Enterprise users see upgrade page
   if (hasAccess === false) {
@@ -573,14 +707,37 @@ export default function VariantsIndex() {
     );
   };
 
+  // Derived stat values for new top cards
+  const winningArchetype = displayArchetypes[0] || null;
+  const winningArchetypeVsAvg = winningArchetype && displayAvgCvr > 0
+    ? ((winningArchetype.cvr - displayAvgCvr) / displayAvgCvr) * 100
+    : 0;
+
+  // Parse a composite segmentKey into a human label
+  const prettySegmentKey = (key) => {
+    if (!key) return 'Not enough data';
+    const parts = {};
+    for (const tok of key.split('|')) {
+      const [k, v] = tok.split(':');
+      parts[k] = v;
+    }
+    const d = parts.d || '?';
+    const t = parts.t || '?';
+    const a = parts.a || '?';
+    const p = parts.p || '?';
+    const pr = parts.pr === 'yes' ? 'Promo in cart' : 'No promo';
+    const f = parts.f || '?';
+    return `${cap(d)} · ${cap(t)} · ${cap(a)} · ${cap(p)} · ${pr} · ${cap(f)}`;
+  };
+
   return (
     <AppLayout plan={plan}>
       <div style={{ padding: 40 }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
           <div>
-            <h1 style={{ fontSize: 32, marginBottom: 8 }}>Variant Performance</h1>
-            <p style={{ color: '#666', marginBottom: 0 }}>Analyze top performing copy across your exit offers</p>
+            <h1 style={{ fontSize: 32, marginBottom: 8 }}>Performance Intelligence</h1>
+            <p style={{ color: '#666', marginBottom: 0 }}>Which archetypes win for which customers — and why the AI is promoting them</p>
           </div>
 
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -594,27 +751,127 @@ export default function VariantsIndex() {
           </label>
         </div>
 
-        {/* Stats Row */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 20, marginBottom: 32 }}>
+        {/* Stats Row — Phase 2D: Winning Archetype + Best Segment + Active + Gen */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.6fr 1fr 1fr', gap: 20, marginBottom: 32 }}>
           <div style={{ background: 'white', padding: 20, borderRadius: 8, border: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>Total Variants</div>
-            <div style={{ fontSize: 28, fontWeight: 700 }}>{totalVariants}</div>
+            <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>Winning Archetype</div>
+            {winningArchetype ? (
+              <>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#111' }}>
+                  {formatArchetypeName(winningArchetype.archetype)}
+                </div>
+                <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>
+                  {winningArchetype.cvr.toFixed(1)}% CVR
+                  {displayAvgCvr > 0 && (
+                    <span style={{ marginLeft: 8, color: winningArchetypeVsAvg >= 0 ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
+                      {winningArchetypeVsAvg >= 0 ? '+' : ''}{winningArchetypeVsAvg.toFixed(0)}% vs avg
+                    </span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 14, color: '#9ca3af', marginTop: 6 }}>Not enough data yet</div>
+            )}
           </div>
           <div style={{ background: 'white', padding: 20, borderRadius: 8, border: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>Active</div>
+            <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>Best Segment</div>
+            {displayBestSegment ? (
+              <>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#111', lineHeight: 1.4 }}>
+                  {prettySegmentKey(displayBestSegment.segmentKey)}
+                </div>
+                <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>
+                  {displayBestSegment.cvr.toFixed(1)}% CVR · {displayBestSegment.impressions} imp
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 14, color: '#9ca3af', marginTop: 6 }}>Need 20+ imps in a segment</div>
+            )}
+          </div>
+          <div style={{ background: 'white', padding: 20, borderRadius: 8, border: '1px solid #e5e7eb' }}>
+            <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>Active Variants</div>
             <div style={{ fontSize: 28, fontWeight: 700, color: '#008060' }}>{aliveCount}</div>
-          </div>
-          <div style={{ background: 'white', padding: 20, borderRadius: 8, border: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>Eliminated</div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#bf0711' }}>{deadCount}</div>
+            <div style={{ fontSize: 11, color: '#9ca3af' }}>{deadCount} eliminated</div>
           </div>
           <div style={{ background: 'white', padding: 20, borderRadius: 8, border: '1px solid #e5e7eb' }}>
             <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>Max Generation</div>
             <div style={{ fontSize: 28, fontWeight: 700, color: '#7c3aed' }}>Gen {generationStats.max}</div>
+            <div style={{ fontSize: 11, color: '#9ca3af' }}>{totalVariants} all-time</div>
           </div>
         </div>
 
-        {/* Filters Row */}
+        {/* Filters Row — Phase 2D: time window + composite facets */}
+        <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Time Window */}
+          <div style={{ display: 'flex', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
+            {['7d', '30d', '90d'].map(w => (
+              <button
+                key={w}
+                onClick={() => setParam('window', w === '30d' ? null : w)}
+                style={{
+                  padding: '8px 16px',
+                  border: 'none',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: 13,
+                  background: windowMode === w ? '#111' : 'transparent',
+                  color: windowMode === w ? '#fff' : '#666'
+                }}
+              >
+                {w === '7d' ? '7 days' : w === '30d' ? '30 days' : '90 days'}
+              </button>
+            ))}
+          </div>
+
+          {/* Archetype filter */}
+          <select
+            value={archetypeFilter}
+            onChange={(e) => setParam('archetype', e.target.value)}
+            style={{
+              padding: '10px 16px', borderRadius: 8, border: '1px solid #e5e7eb',
+              fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'white'
+            }}
+          >
+            <option value="all">All Archetypes</option>
+            {displayArchetypes.map(r => (
+              <option key={r.archetype} value={r.archetype}>{formatArchetypeName(r.archetype)}</option>
+            ))}
+          </select>
+
+          {/* Page Type filter — only show if we have observed data */}
+          {displayPageTypes.length > 0 && (
+            <select
+              value={pageTypeFilter}
+              onChange={(e) => setParam('pageType', e.target.value)}
+              style={{
+                padding: '10px 16px', borderRadius: 8, border: '1px solid #e5e7eb',
+                fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'white'
+              }}
+            >
+              <option value="all">All Pages</option>
+              {displayPageTypes.map(p => (
+                <option key={p} value={p}>{cap(p)}</option>
+              ))}
+            </select>
+          )}
+
+          {/* Promo-in-cart filter */}
+          <select
+            value={promoInCartFilter}
+            onChange={(e) => setParam('promoInCart', e.target.value)}
+            style={{
+              padding: '10px 16px', borderRadius: 8, border: '1px solid #e5e7eb',
+              fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'white'
+            }}
+          >
+            <option value="all">Promo in cart: any</option>
+            <option value="yes">Promo in cart: yes</option>
+            <option value="no">Promo in cart: no</option>
+          </select>
+        </div>
+
+        {/* Legacy promo + segment filters (kept for backwards compat) */}
         <div style={{ display: 'flex', gap: 12, marginBottom: 32, alignItems: 'center' }}>
           {/* Promo Toggle */}
           <div style={{ display: 'flex', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
@@ -727,27 +984,45 @@ export default function VariantsIndex() {
           </div>
         </div>
 
-        {/* Sub-navigation */}
+        {/* Sub-navigation — Phase 2D: Archetypes | Components | Manage */}
         <div style={{
           display: 'flex',
           gap: 16,
           marginBottom: 24,
           borderBottom: '2px solid #e5e7eb'
         }}>
-          <Link
-            to="/app/variants"
+          <button
+            onClick={() => setParam('tab', null)}
             style={{
               padding: '12px 24px',
-              textDecoration: 'none',
-              fontWeight: 600,
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              fontWeight: tab === 'archetypes' ? 600 : 400,
               fontSize: 14,
-              color: '#008060',
-              borderBottom: '2px solid #008060',
+              color: tab === 'archetypes' ? '#008060' : '#666',
+              borderBottom: `2px solid ${tab === 'archetypes' ? '#008060' : 'transparent'}`,
+              marginBottom: -2
+            }}
+          >
+            Archetypes
+          </button>
+          <button
+            onClick={() => setParam('tab', 'components')}
+            style={{
+              padding: '12px 24px',
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              fontWeight: tab === 'components' ? 600 : 400,
+              fontSize: 14,
+              color: tab === 'components' ? '#008060' : '#666',
+              borderBottom: `2px solid ${tab === 'components' ? '#008060' : 'transparent'}`,
               marginBottom: -2
             }}
           >
             Component Analysis
-          </Link>
+          </button>
           <Link
             to="/app/variants/manage"
             style={{
@@ -764,7 +1039,115 @@ export default function VariantsIndex() {
           </Link>
         </div>
 
+        {/* Archetypes Tab (default) — Phase 2D */}
+        {tab === 'archetypes' && (
+          <div style={{ paddingTop: 24 }}>
+            {displayArchetypes.length === 0 ? (
+              <div style={{ background: 'white', padding: 60, borderRadius: 12, border: '1px solid #e5e7eb', textAlign: 'center' }}>
+                <h3 style={{ fontSize: 20, marginBottom: 8 }}>No archetype data yet</h3>
+                <p style={{ color: '#666' }}>
+                  Archetypes need at least 10 impressions each before they show up here.
+                  Try widening the time window or removing filters.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div style={{
+                  background: '#eef2ff',
+                  border: '1px solid #c7d2fe',
+                  borderRadius: 12,
+                  padding: 20,
+                  marginBottom: 24
+                }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#3730a3', marginBottom: 6 }}>
+                    How archetypes work
+                  </div>
+                  <div style={{ fontSize: 13, color: '#3730a3', lineHeight: 1.6 }}>
+                    Each baseline offer maps to an <strong>archetype</strong> — a coherent modal pattern
+                    (e.g. "Threshold Discount" pairs a spend-threshold headline with product recommendations and a "Shop Now" CTA).
+                    {plan?.tier === 'enterprise' && (
+                      <> For Enterprise, the AI biases variant selection toward archetypes that win the current visitor's segment — so logged-in shoppers on mobile may see a different archetype than first-time desktop visitors.</>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 20 }}>
+                  {displayArchetypes.map((r, i) => {
+                    const vsAvg = displayAvgCvr > 0 ? ((r.cvr - displayAvgCvr) / displayAvgCvr) * 100 : 0;
+                    const isWinner = i === 0;
+                    const borderColor = isWinner ? '#16a34a' : '#e5e7eb';
+                    return (
+                      <div
+                        key={r.archetype}
+                        onClick={() => setParam('archetype', archetypeFilter === r.archetype ? null : r.archetype)}
+                        style={{
+                          background: 'white',
+                          border: `2px solid ${archetypeFilter === r.archetype ? '#008060' : borderColor}`,
+                          borderRadius: 12,
+                          padding: 20,
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                              Rank #{i + 1}
+                              {isWinner && (
+                                <span style={{ marginLeft: 8, background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: 4, fontSize: 10 }}>
+                                  WINNER
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: '#111', marginTop: 4 }}>
+                              {formatArchetypeName(r.archetype)}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: '#111' }}>{r.cvr.toFixed(1)}%</div>
+                            <div style={{ fontSize: 11, color: '#6b7280' }}>CVR</div>
+                          </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, paddingTop: 12, borderTop: '1px solid #f3f4f6' }}>
+                          <div>
+                            <div style={{ fontSize: 10, color: '#6b7280', textTransform: 'uppercase' }}>CTR</div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{r.ctr.toFixed(1)}%</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, color: '#6b7280', textTransform: 'uppercase' }}>RPI</div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>${r.rpi.toFixed(2)}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, color: '#6b7280', textTransform: 'uppercase' }}>Imp</div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{r.impressions.toLocaleString()}</div>
+                          </div>
+                        </div>
+                        {displayAvgCvr > 0 && (
+                          <div style={{
+                            marginTop: 12,
+                            fontSize: 12,
+                            color: vsAvg >= 0 ? '#16a34a' : '#dc2626',
+                            fontWeight: 600
+                          }}>
+                            {vsAvg >= 0 ? '+' : ''}{vsAvg.toFixed(0)}% vs archetype average
+                          </div>
+                        )}
+                        <div style={{ marginTop: 12, fontSize: 11, color: '#6b7280' }}>
+                          {archetypeFilter === r.archetype
+                            ? 'Filtering components to this archetype. Click to clear.'
+                            : 'Click to filter the Components tab to this archetype.'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Component Analysis Content */}
+        {tab === 'components' && (
         <div style={{ paddingTop: 24 }}>
           {filteredVariants.length === 0 ? (
             <div style={{ background: 'white', padding: 60, borderRadius: 12, border: '1px solid #e5e7eb', textAlign: 'center' }}>
@@ -862,6 +1245,7 @@ export default function VariantsIndex() {
             </>
           )}
         </div>
+        )}
 
         {/* Modal for Variant Details */}
         {selectedVariant && (
