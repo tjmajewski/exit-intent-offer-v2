@@ -343,6 +343,32 @@ export async function loader({ request }) {
   // Observed pageType values (for filter dropdown — only show what we have data for)
   const observedPageTypes = [...new Set(filteredImpressions.map(i => i.pageType).filter(Boolean))].sort();
 
+  // ----- Phase 2G: filter-narrowed signal (drives the "Promoted" badge) -----
+  // The runtime priors fire when an incoming impression has a specific segmentKey.
+  // On the dashboard, if the user has filtered down to a specific segment, the
+  // archetype rankings on screen are an accurate proxy for what the AI would
+  // promote at runtime for visitors matching that filter.
+  const filtersAreNarrowed =
+    segmentFilter !== 'all' ||
+    pageTypeFilter !== 'all' ||
+    promoInCartFilter !== 'all' ||
+    promoFilter !== 'all';
+
+  const filterDescriptionParts = [];
+  if (segmentFilter !== 'all') filterDescriptionParts.push(segmentFilter.replace('-', ' '));
+  if (pageTypeFilter !== 'all') filterDescriptionParts.push(`${pageTypeFilter} page`);
+  if (promoInCartFilter === 'yes') filterDescriptionParts.push('promo in cart');
+  else if (promoInCartFilter === 'no') filterDescriptionParts.push('no promo in cart');
+  if (promoFilter === 'during-promo') filterDescriptionParts.push('store-wide promo active');
+  else if (promoFilter === 'no-promo') filterDescriptionParts.push('no store-wide promo');
+  const filterDescription = filterDescriptionParts.join(' · ') || null;
+
+  // Only meaningfully "promoted" when there's spread across archetypes.
+  const topCvr = archetypeRankings[0]?.cvr ?? 0;
+  const bottomCvr = archetypeRankings[archetypeRankings.length - 1]?.cvr ?? 0;
+  const archetypeSpreadPts = topCvr - bottomCvr;
+  const hasMeaningfulSpread = archetypeRankings.length >= 2 && archetypeSpreadPts >= 0.5;
+
   // ----- Phase 2F: network benchmark (read precomputed meta-learning insights) -----
   // The nightly aggregator writes archetype_performance insights per segment.
   // We merge those into a single network-wide archetype ranking so merchants
@@ -449,6 +475,9 @@ export async function loader({ request }) {
     avgArchetypeCvr,
     bestSegment,
     observedPageTypes,
+    filtersAreNarrowed,
+    filterDescription,
+    hasMeaningfulSpread,
     benchmark: {
       enabled: benchmarkEnabled,
       networkArchetypeRankings,
@@ -477,6 +506,9 @@ export async function loader({ request }) {
       avgArchetypeCvr: 0,
       bestSegment: null,
       observedPageTypes: [],
+      filtersAreNarrowed: false,
+      filterDescription: null,
+      hasMeaningfulSpread: false,
       benchmark: { enabled: false, networkArchetypeRankings: [], networkSampleSize: 0, networkStoreCount: 0, networkDataAgeDays: null },
       filters: { promo: 'all', segment: 'all', window: '30d', archetype: 'all', pageType: 'all', promoInCart: 'all', tab: 'archetypes' },
       dbError: true
@@ -490,6 +522,7 @@ export default function VariantsIndex() {
     hasAccess, shop, plan, variants, totalVariants, aliveCount, deadCount,
     generationStats, componentStats, dbError,
     archetypeRankings = [], avgArchetypeCvr = 0, bestSegment = null, observedPageTypes = [],
+    filtersAreNarrowed = false, filterDescription = null, hasMeaningfulSpread = false,
     benchmark = { enabled: false, networkArchetypeRankings: [], networkSampleSize: 0, networkStoreCount: 0, networkDataAgeDays: null }
   } = data;
   const fetcher = useFetcher();
@@ -529,6 +562,15 @@ export default function VariantsIndex() {
   const displayBestSegment = displayData.bestSegment || bestSegment;
   const displayPageTypes = displayData.observedPageTypes || observedPageTypes;
   const displayBenchmark = displayData.benchmark || benchmark;
+  const displayFiltersNarrowed = displayData.filtersAreNarrowed ?? filtersAreNarrowed;
+  const displayFilterDescription = displayData.filterDescription ?? filterDescription;
+  const displayHasSpread = displayData.hasMeaningfulSpread ?? hasMeaningfulSpread;
+
+  // Priors are active for Pro and Enterprise (Phase 2E). Show the "Promoted"
+  // badge only when these are true AND filters narrow to a specific segment
+  // AND there's meaningful CVR spread worth biasing on.
+  const priorsActiveTier = plan?.tier === 'pro' || plan?.tier === 'enterprise';
+  const showPromotedBadge = priorsActiveTier && displayFiltersNarrowed && displayHasSpread;
 
   // Non-Enterprise users see upgrade page
   if (hasAccess === false) {
@@ -1171,11 +1213,54 @@ export default function VariantsIndex() {
                   </div>
                 </div>
 
+                {/* Phase 2G: banner announcing segment-scoped promotion */}
+                {showPromotedBadge && displayArchetypes.length > 0 && (
+                  <div style={{
+                    background: 'linear-gradient(90deg, #fef3c7 0%, #fef9c3 100%)',
+                    border: '1px solid #fbbf24',
+                    borderRadius: 12,
+                    padding: 16,
+                    marginBottom: 20,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12
+                  }}>
+                    <div style={{
+                      background: '#f59e0b',
+                      color: 'white',
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 700,
+                      fontSize: 16,
+                      flexShrink: 0
+                    }}>
+                      ★
+                    </div>
+                    <div style={{ flex: 1, fontSize: 13, color: '#78350f', lineHeight: 1.5 }}>
+                      <div style={{ fontWeight: 600, marginBottom: 2 }}>
+                        AI is promoting <strong>{formatArchetypeName(displayArchetypes[0].archetype)}</strong> for
+                        {displayFilterDescription ? <> {displayFilterDescription}</> : ' this segment'}
+                      </div>
+                      <div>
+                        When visitors match this filter, selection is biased 1.30× toward rank #1 and 0.85× toward rank #{displayArchetypes.length}.
+                        Exploration is preserved — Thompson Sampling still runs.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 20 }}>
                   {displayArchetypes.map((r, i) => {
                     const vsAvg = displayAvgCvr > 0 ? ((r.cvr - displayAvgCvr) / displayAvgCvr) * 100 : 0;
                     const isWinner = i === 0;
-                    const borderColor = isWinner ? '#16a34a' : '#e5e7eb';
+                    const isLoser = displayArchetypes.length >= 2 && i === displayArchetypes.length - 1;
+                    const isPromoted = showPromotedBadge && isWinner;
+                    const isDemoted = showPromotedBadge && isLoser && !isWinner;
+                    const borderColor = isPromoted ? '#f59e0b' : isWinner ? '#16a34a' : '#e5e7eb';
                     return (
                       <div
                         key={r.archetype}
@@ -1193,9 +1278,18 @@ export default function VariantsIndex() {
                           <div>
                             <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', letterSpacing: 0.5, textTransform: 'uppercase' }}>
                               Rank #{i + 1}
-                              {isWinner && (
+                              {isPromoted ? (
+                                <span style={{ marginLeft: 8, background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>
+                                  ★ PROMOTED
+                                </span>
+                              ) : isWinner && (
                                 <span style={{ marginLeft: 8, background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: 4, fontSize: 10 }}>
                                   WINNER
+                                </span>
+                              )}
+                              {isDemoted && (
+                                <span style={{ marginLeft: 8, background: '#fee2e2', color: '#991b1b', padding: '2px 8px', borderRadius: 4, fontSize: 10 }}>
+                                  ↓ DEMOTED
                                 </span>
                               )}
                             </div>
