@@ -21,28 +21,76 @@ function formatArchetypeName(raw) {
     .join(' ');
 }
 
-// Small "?" icon with a native browser tooltip. Lightweight — no portal/popper.
+// "?" icon with a custom hover tooltip. Native `title` attributes are
+// unreliable inside Shopify's embedded app iframe, so we use a controlled
+// React tooltip positioned above the icon.
 function InfoIcon({ tip }) {
+  const [show, setShow] = useState(false);
   return (
     <span
-      title={tip}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+      onFocus={() => setShow(true)}
+      onBlur={() => setShow(false)}
+      tabIndex={0}
       style={{
+        position: 'relative',
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: 14,
-        height: 14,
+        width: 16,
+        height: 16,
         borderRadius: '50%',
         background: '#e5e7eb',
         color: '#6b7280',
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: 700,
         marginLeft: 6,
         cursor: 'help',
-        verticalAlign: 'middle'
+        verticalAlign: 'middle',
+        outline: 'none'
       }}
     >
       ?
+      {show && (
+        <span
+          role="tooltip"
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 8px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: '#111827',
+            color: 'white',
+            padding: '8px 12px',
+            borderRadius: 6,
+            fontSize: 12,
+            fontWeight: 400,
+            lineHeight: 1.5,
+            width: 280,
+            textAlign: 'left',
+            whiteSpace: 'normal',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            zIndex: 1000,
+            pointerEvents: 'none'
+          }}
+        >
+          {tip}
+          <span
+            style={{
+              position: 'absolute',
+              top: '100%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: 0,
+              height: 0,
+              borderLeft: '5px solid transparent',
+              borderRight: '5px solid transparent',
+              borderTop: '5px solid #111827'
+            }}
+          />
+        </span>
+      )}
     </span>
   );
 }
