@@ -1,9 +1,48 @@
 // Gene Pools: Component library for evolutionary variants
-// Each baseline has its own gene pool with ~432 possible combinations
+// Each baseline has its own gene pool with ~432 possible combinations.
+//
+// ARCHETYPE MODEL (introduced alongside brand-safety guard):
+// Each baseline is also an "archetype" — a declarative description of what the
+// modal template can render and what copy is coherent with it. Archetype metadata
+// lives on each pool entry:
+//   archetypeName          — stable identifier (e.g. 'THRESHOLD_DISCOUNT')
+//   archetypeDescription   — human explanation of the modal's intent
+//   slots                  — ordered list of what the renderer can draw
+//                            (e.g. ['headline','subhead','cta','discount_code'])
+//   requiredSlots          — slots that MUST render for the archetype to be valid
+//   requires               — preconditions for firing this archetype at all
+//                            (e.g. { discountCode: true, cartItemsMin: 1 })
+//   copyBannedPatterns     — regex list — copy matching any of these should never
+//                            be in this archetype (belt-and-suspenders for pool edits)
+//
+// Adding a new modal type (e.g. cross-sell with product grid) = adding a new
+// archetype with its own slots list. The renderer reads slots from the decision
+// payload and draws only what's declared. No in-pool copy can promise slots the
+// archetype doesn't have.
+
+// Shared banned patterns — copy that promises features no current archetype delivers.
+// Applied to every existing archetype because none of them render products,
+// recommendations, or have standing free-shipping/returns guarantees.
+const UNIVERSAL_BANNED_PATTERNS = [
+  /customers.+(bought|added|viewed|liked)/i,    // implies product cross-sell grid
+  /(also|people).+(bought|added|viewed|liked)/i,
+  /see.+what.+(pairs|goes|matches)/i,           // implies product showcase
+  /browse.+(favorites|recommendations|picks)/i, // implies product list
+  /free\s+shipping/i,                           // merchant may not offer it
+  /easy\s+returns/i,                            // merchant may not offer it
+  /money.?back.+guarantee/i                     // merchant may not offer it
+];
 
 export const genePools = {
   // REVENUE + DISCOUNT: Threshold offers to increase cart value (e.g., "Spend $X more, save $Y")
   revenue_with_discount: {
+    archetypeName: 'THRESHOLD_DISCOUNT',
+    archetypeDescription: 'AOV lift via "spend $X more, save $Y" threshold offer',
+    slots: ['headline', 'subhead', 'cta', 'discount_code'],
+    requiredSlots: ['headline', 'cta', 'discount_code'],
+    requires: { cartValue: 'gt0', discountCode: true, thresholdComputable: true },
+    copyBannedPatterns: UNIVERSAL_BANNED_PATTERNS,
+
     offerAmounts: [10, 15, 20, 25],  // $ off for thresholds
 
     headlines: [
@@ -61,37 +100,48 @@ export const genePools = {
   },
 
   // REVENUE + NO DISCOUNT: Upsell without discount (high-propensity customers)
+  // NOTE: This archetype's modal has NO product grid / recommendation surface.
+  // Copy MUST NOT promise product browsing, pairing, or cross-sell ("customers also
+  // bought", "see what pairs", "browse favorites") — the modal cannot deliver on that
+  // promise and will read as dishonest. When a cross-sell template with a product grid
+  // ships, introduce a separate CROSS_SELL archetype for that copy.
   revenue_no_discount: {
+    archetypeName: 'SOFT_UPSELL',
+    archetypeDescription: 'Gentle nudge to finish checkout without offering a discount',
+    slots: ['headline', 'subhead', 'cta'],
+    requiredSlots: ['headline', 'cta'],
+    requires: { cartItemsMin: 1 },
+    copyBannedPatterns: UNIVERSAL_BANNED_PATTERNS,
+
     offerAmounts: [0],  // No discount, no incentive
 
     headlines: [
       'Great picks — make it the perfect order',
-      'Customers who bought these also added...',
-      'Your order is almost complete'
+      'Your order is almost complete',
+      'Ready when you are'
     ],
 
     headlinesWithSocialProof: [
       '{{social_proof_count}} customers completed their orders today',
-      'Join {{social_proof_count}} shoppers who found the perfect combo',
-      '{{rating}}-star favorites picked just for you'
+      '{{rating}}-star favorites are in your cart'
     ],
 
     subheads: [
-      'You\'ve got great taste — see what goes with it',
       'Make the most of your order before you go',
-      'Browse a few more favorites before checkout'
+      'Your cart is saved — finish whenever you\'re ready',
+      'A few taps and it\'s on the way'
     ],
 
     subheadsWithSocialProof: [
-      '{{social_proof_count}} customers added more items to their order',
+      '{{social_proof_count}} orders completed today',
       '{{social_proof_count}} happy customers can\'t be wrong',
       '{{rating}}-star quality across the board'
     ],
 
     ctas: [
-      'Continue Shopping',
       'Complete My Order',
-      'See What Pairs Well'
+      'Return to Checkout',
+      'Finish My Order'
     ],
 
     redirects: ['cart', 'checkout'],
@@ -103,6 +153,13 @@ export const genePools = {
 
   // CONVERSION + DISCOUNT: % off to prevent cart abandonment
   conversion_with_discount: {
+    archetypeName: 'PERCENT_DISCOUNT',
+    archetypeDescription: 'Convert hesitant cart via % off discount code',
+    slots: ['headline', 'subhead', 'cta', 'discount_code'],
+    requiredSlots: ['headline', 'cta', 'discount_code'],
+    requires: { cartItemsMin: 1, discountCode: true },
+    copyBannedPatterns: UNIVERSAL_BANNED_PATTERNS,
+
     offerAmounts: [10, 15, 20, 25],  // % off
 
     headlines: [
@@ -156,6 +213,13 @@ export const genePools = {
 
   // CONVERSION + NO DISCOUNT: Convert without discount (social proof / trust focus)
   conversion_no_discount: {
+    archetypeName: 'TRUST_REMINDER',
+    archetypeDescription: 'Trust/social-proof nudge with no discount',
+    slots: ['headline', 'subhead', 'cta'],
+    requiredSlots: ['headline', 'cta'],
+    requires: { cartItemsMin: 1 },
+    copyBannedPatterns: UNIVERSAL_BANNED_PATTERNS,
+
     offerAmounts: [0],  // No discount, social proof only
 
     headlines: [
@@ -198,6 +262,13 @@ export const genePools = {
   // PURE REMINDER: No offers, no discounts, no incentives
   // Used when AI decides customer doesn't need any offer (aggression=0 or offerAmount=0)
   pure_reminder: {
+    archetypeName: 'PURE_REMINDER',
+    archetypeDescription: 'Bare save-the-cart reminder, no offer of any kind',
+    slots: ['headline', 'subhead', 'cta'],
+    requiredSlots: ['headline', 'cta'],
+    requires: {},
+    copyBannedPatterns: UNIVERSAL_BANNED_PATTERNS,
+
     offerAmounts: [0],  // No offer at all
 
     headlines: [
@@ -240,6 +311,88 @@ export const genePools = {
     idleSeconds: [15, 30, 45, 60]
   }
 };
+
+// Runtime brand-safety guards against legacy/off-pool DB rows.
+// When a gene pool entry is removed (e.g. because the copy promised something the
+// modal can't deliver), existing Variant rows in the DB still carry the old text.
+// These helpers let the API layer detect and neutralize those before they render.
+
+// Normalize {{placeholders}} and whitespace so interpolated strings match templates
+const normalizeGene = (s) => s.replace(/\{\{[^}]+\}\}/g, '').replace(/\s+/g, ' ').trim();
+
+function collectPoolStrings(baseline, keys) {
+  const pool = genePools[baseline];
+  if (!pool) return [];
+  return keys.flatMap((k) => pool[k] || []);
+}
+
+export function isValidSubhead(baseline, text) {
+  if (!text) return true; // empty/null is safe — renderer will hide it
+  const all = collectPoolStrings(baseline, ['subheads', 'subheadsWithSocialProof', 'subheadsWithUrgency']);
+  const target = normalizeGene(text);
+  return all.some((t) => normalizeGene(t) === target);
+}
+
+export function isValidHeadline(baseline, text) {
+  if (!text) return false; // headline is required — blank is not safe
+  const all = collectPoolStrings(baseline, ['headlines', 'headlinesWithSocialProof', 'headlinesWithUrgency']);
+  const target = normalizeGene(text);
+  return all.some((t) => normalizeGene(t) === target);
+}
+
+export function isValidCta(baseline, text) {
+  if (!text) return false; // CTA is required
+  const all = collectPoolStrings(baseline, ['ctas']);
+  const target = normalizeGene(text);
+  return all.some((t) => normalizeGene(t) === target);
+}
+
+// Pick a safe in-pool fallback when a variant carries off-pool copy.
+// Used to rescue the render; evolution metrics for that variant will be slightly
+// noisy until a cleanup job retires off-pool rows, but nothing dishonest ships.
+export function pickFallbackHeadline(baseline) {
+  const all = collectPoolStrings(baseline, ['headlines']);
+  return all[0] || null;
+}
+
+export function pickFallbackCta(baseline) {
+  const all = collectPoolStrings(baseline, ['ctas']);
+  return all[0] || null;
+}
+
+// Does this text trip any banned-pattern regex for the archetype?
+// Belt-and-suspenders check: even if a string is in-pool, if it matches a banned
+// pattern the pool has drifted and the copy should be treated as unsafe.
+// (Today the pools are clean, so this never fires — it exists to catch future edits
+// that accidentally reintroduce forbidden claims.)
+export function hasBannedClaim(baseline, text) {
+  if (!text) return false;
+  const pool = genePools[baseline];
+  const patterns = pool?.copyBannedPatterns || [];
+  return patterns.some((re) => re.test(text));
+}
+
+// ── Archetype accessors ──────────────────────────────────────────────────────
+// `archetypes` is the archetype-name-keyed view of the gene pools. Use this when
+// you want to look up a modal type by its stable identifier (e.g. 'THRESHOLD_DISCOUNT')
+// rather than by baseline key. Both views share the same underlying objects.
+export const archetypes = Object.fromEntries(
+  Object.entries(genePools)
+    .filter(([, pool]) => pool.archetypeName)
+    .map(([baseline, pool]) => [pool.archetypeName, { baseline, ...pool }])
+);
+
+export function getArchetype(baseline) {
+  return genePools[baseline] || null;
+}
+
+export function getArchetypeByName(name) {
+  return archetypes[name] || null;
+}
+
+export function getArchetypeSlots(baseline) {
+  return genePools[baseline]?.slots || ['headline', 'subhead', 'cta'];
+}
 
 // Helper: Get total possible combinations for a baseline
 export function getCombinationCount(baseline) {

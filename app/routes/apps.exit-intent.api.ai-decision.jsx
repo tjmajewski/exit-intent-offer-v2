@@ -396,16 +396,47 @@ export async function action({ request }) {
       }
     }
 
+    // Brand-safety guards: protect against stale DB variants carrying copy that's
+    // no longer in the current gene pool, OR copy that matches the archetype's
+    // banned-pattern list (e.g. headlines promising product browsing the modal
+    // can't deliver, or "free shipping" claims the merchant hasn't authorized).
+    // Subhead is hidden; headline/CTA fall back to in-pool copy since the modal
+    // can't render without them.
+    const {
+      isValidSubhead, isValidHeadline, isValidCta,
+      pickFallbackHeadline, pickFallbackCta, hasBannedClaim
+    } = await import('../utils/gene-pools.js');
+
+    let effectiveHeadline = selectedVariant.headline;
+    if (!isValidHeadline(baseline, effectiveHeadline) || hasBannedClaim(baseline, effectiveHeadline)) {
+      const fallback = pickFallbackHeadline(baseline);
+      console.warn(`[Brand Safety] Unsafe headline on variant ${selectedVariant.id} — swapping to fallback. was="${effectiveHeadline}" now="${fallback}"`);
+      effectiveHeadline = fallback;
+    }
+
+    let effectiveCta = selectedVariant.cta;
+    if (!isValidCta(baseline, effectiveCta) || hasBannedClaim(baseline, effectiveCta)) {
+      const fallback = pickFallbackCta(baseline);
+      console.warn(`[Brand Safety] Unsafe CTA on variant ${selectedVariant.id} — swapping to fallback. was="${effectiveCta}" now="${fallback}"`);
+      effectiveCta = fallback;
+    }
+
+    let effectiveShowSubhead = selectedVariant.showSubhead ?? true;
+    if (effectiveShowSubhead && (!isValidSubhead(baseline, selectedVariant.subhead) || hasBannedClaim(baseline, selectedVariant.subhead))) {
+      console.warn(`[Brand Safety] Unsafe subhead on variant ${selectedVariant.id} — hiding. subhead="${selectedVariant.subhead}"`);
+      effectiveShowSubhead = false;
+    }
+
     const decision = {
       type: baseline.includes('revenue') ? 'threshold' : 'percentage',
       amount: cappedOfferAmount,
       threshold: baseline.includes('revenue') ? Math.round(signals.cartValue * 1.3) : null,
-      headline: selectedVariant.headline,
+      headline: effectiveHeadline,
       subhead: selectedVariant.subhead,
-      cta: selectedVariant.cta,
+      cta: effectiveCta,
       redirect: selectedVariant.redirect,
       urgency: selectedVariant.urgency,
-      showSubhead: selectedVariant.showSubhead ?? true,
+      showSubhead: effectiveShowSubhead,
       triggerType: selectedVariant.triggerType || 'exit_intent',
       idleSeconds: selectedVariant.idleSeconds || 30,
       variantId: selectedVariant.id,
