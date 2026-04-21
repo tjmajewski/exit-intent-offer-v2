@@ -1,5 +1,5 @@
 # Pro vs Enterprise - Feature Comparison
-**Last Updated:** April 6, 2026
+**Last Updated:** April 21, 2026
 
 ---
 
@@ -15,6 +15,7 @@
 | **Social Proof** | ✅ | ✅ |
 | **Revenue/Conversion Modes** | ✅ | ✅ |
 | **Network Meta-Learning** | ✅ | ✅ |
+| **Archetype Priors (segment-aware bias)** | ✅ Limited (2 variants) | ✅ Full per-segment routing |
 | **Adaptive Intervention Thresholds** | ✅ | ✅ |
 | **5% Holdout / Incrementality** | ✅ | ✅ |
 | **Manual Variant Controls** | ❌ | ✅ |
@@ -51,6 +52,11 @@
 - Faster initial performance
 - Contribute to network (opt-out available)
 
+✅ **Archetype Priors — Limited**
+- AI selection is biased toward archetypes that win for the visitor's segment
+- With 2 variants, this is meaningful only when they represent *different* archetypes (e.g. one Threshold Discount + one Soft Upsell): the AI routes ~70/30 by segment instead of pure A/B
+- When both variants share an archetype, the prior map is empty and standard A/B testing resumes
+
 ✅ **Adaptive Intervention Thresholds**
 - Per-store learning of whether to show or skip the modal
 - Thompson Sampling per propensity score bucket
@@ -85,6 +91,7 @@
 - **Promo detection only** - Shows warning but doesn't auto-adjust strategy
 - **Single evolution pool** - Mobile and desktop variants evolve together
 - **No brand safety** - AI can create any copy from gene pools
+- **Archetype routing is binary** - With only 2 active variants, the AI can route between *at most* two archetypes. Enterprise stores running 10–20 variants get genuine per-segment routing across many archetypes simultaneously.
 
 ---
 
@@ -222,47 +229,41 @@
 - No automatic strategy changes
 - No notification system or dashboard widget
 
-### 6. Variant Performance Analysis
+### 6. Performance Intelligence Dashboard (formerly "Variants")
 
-**Component-Based View:**
+The page lives at `/app/variants` and is structured as **three tabs** plus a "Manage Variants" link.
+
+**Top stat cards:**
+- **Winning Archetype** — top-ranked archetype by CVR for the current filter window, with a tooltip explaining what an archetype is
+- **Best Segment** — composite segment with the highest CVR (≥20 imps), formatted as e.g. "mobile · paid · guest · product · first"
+- **Active Variants** / **Max Generation**
+
+**Filter row** (URL-driven so filters survive auto-refresh):
+- Time window: 7 days / 30 days / 90 days
+- Archetype dropdown (only archetypes with ≥10 imps shown)
+- Page Type dropdown (only pages with observed data)
+- Modal-offer dropdown: All modals / Modals with a promo / Modals without a promo
+- Customer segment dropdown (device, account, visitor type, cart value, traffic source)
+
+**Tab 1 — Archetypes** (default):
+- Ranked card grid showing each archetype's CVR, CTR, and RPI
+- Top card gets a green WINNER badge globally
+- When the user narrows by segment AND there's ≥0.5pt CVR spread, the top card flips to an amber **★ PROMOTED** badge and the bottom card gets a red ↓ DEMOTED badge
+- Banner above the grid explains: "AI is promoting {archetype} for {filterDescription}. Selection is biased 1.30× toward rank #1 and 0.85× toward rank #N. Exploration is preserved — Thompson Sampling still runs."
+
+**Tab 2 — Component Analysis** (existing):
 - Side-by-side columns showing top Headlines, Subheads, and CTAs
 - Performance tier indicators (Elite/Strong/Average/Poor) based on revenue
-- Color-coded borders (Green/Blue/Gray/Red) for quick assessment
-- Shows up to 10 top performers per component
-
-**Performance Metrics per Component:**
-- Conversion rate percentage
-- Total impressions count
-- Revenue impact in dollars
-- Performance vs average (as percentage)
-- Number of variants using that component
-
-**Interactive Features:**
 - Click any component to view full variant details in modal
-- Hover effects for better UX
-- Auto-refresh every 30 seconds (optional)
 
-**Filtering Options:**
-- **Promo Context Toggle**: Filter by "No Promo" vs "During Promotions"
-  - Shows how variants perform in different promotional contexts
-  - Recalculates all metrics based on filtered impressions
-  - Helps identify which copy works best during sales
+**Tab 3 — Segments**:
+- Heatmap matrix: top 15 segments (rows) × ranked archetypes (columns)
+- Each cell shows CVR % and impression count for that archetype × segment combo
+- Divergent green/red coloring around per-row median CVR
+- Amber outline on the AI-promoted archetype for each row
+- Cells with <5 impressions are dimmed (low confidence)
 
-- **Customer Segment Filter** (Dropdown):
-  - All Customers (default)
-  - **Device Type**: Desktop, Mobile, Tablet
-  - **Account Status**: Logged In, Guest
-  - **Visitor Type**: First-Time Visitors, Returning Visitors
-  - **Cart Value**: High Value ($100+), Low Value (<$50)
-  - **Traffic Source**: Paid Traffic, Organic Traffic
-  - Recalculates all metrics based on selected segment
-  - Combine with promo filter for deeper insights
-
-**Statistics Dashboard:**
-- Total variants count
-- Active variants count
-- Eliminated variants count
-- Max generation reached
+**Auto-refresh:** every 30 seconds (toggle), preserves all current filters via URL params.
 
 **Value Insights:**
 - Visual indicators show which copy drives the most revenue

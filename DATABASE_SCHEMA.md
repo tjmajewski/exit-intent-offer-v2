@@ -270,41 +270,63 @@ profitPerImpression = (revenue - discountAmount) / impressions
 
 ### VariantImpression
 
-**Purpose:** Tracks individual customer exposures to specific variants.
+**Purpose:** Tracks individual customer exposures to specific variants. Carries denormalized signals (`archetype`, `segmentKey`, `pageType`) so the meta-learning aggregator and the Performance Intelligence dashboard can run fast aggregations without joins or recomputation.
 
 ```prisma
 model VariantImpression {
   id           String    @id @default(uuid())
   variantId    String
   variant      Variant   @relation(fields: [variantId], references: [id])
+  shopId       String
 
   // Customer Context
-  segment          String    // Same as variant.segment
-  deviceType       String    // "mobile", "tablet", "desktop"
-  trafficSource    String    // "direct", "organic", "paid", "social"
-  cartValue        Float     @default(0)
+  segment          String    // legacy coarse key (e.g. "mobile_paid")
+  deviceType       String?   // mobile, desktop, tablet
+  trafficSource    String?   // paid, organic, social, direct, referral, email
+  cartValue        Float?
+  accountStatus    String?   // guest, logged_in
+  visitFrequency   Int?      // 1 = first-time, 2+ = returning
+  triggerReason    String?   // failedCoupon, checkoutExit, cartHesitation, staleCart, general
+  duringPromo      Boolean   @default(false)
+
+  // Phase 2A scenario signals
+  pageType    String?  // home | product | collection | cart | checkout | search | blog | account | other
+  promoInCart Boolean  @default(false) // cart has applied discount code or item-level discount
+  archetype   String?  // denormalized archetype name (THRESHOLD_DISCOUNT, SOFT_UPSELL, etc.)
+  segmentKey  String?  // composite key (see app/utils/segment-key.js) — richer than `segment`
 
   // Interaction
   clicked          Boolean   @default(false)
   converted        Boolean   @default(false)
 
   // Conversion Details (if converted)
-  orderNumber      String?
-  revenue          Float     @default(0)
-  discountAmount   Float     @default(0)
-  profit           Float     @default(0)
+  revenue          Float?
+  discountAmount   Float?
+  profit           Float?    // revenue - discountAmount
 
-  // Timestamps
-  shownAt          DateTime  @default(now())
-  clickedAt        DateTime?
-  convertedAt      DateTime?
+  timestamp        DateTime  @default(now())
 
-  @@index([variantId])
-  @@index([converted])
+  @@index([variantId, converted])
+  @@index([shopId, duringPromo])
+  @@index([shopId, timestamp])
+  @@index([segment, timestamp])
+  @@index([shopId, deviceType])
+  @@index([shopId, accountStatus])
+  @@index([shopId, triggerReason])
+  @@index([archetype, timestamp])
+  @@index([segmentKey, timestamp])
+  @@index([shopId, pageType])
 }
 ```
 
-**Usage:** Evolution system queries this to calculate variant performance.
+**Usage:**
+- Evolution system queries this to calculate variant fitness
+- Variants page → Archetypes tab aggregates by `archetype`
+- Variants page → Segments tab pivots `segmentKey` × `archetype`
+- `archetype-priors.js` queries by `(shopId, segmentKey, archetype)` to bias Thompson Sampling
+- Nightly meta-learning aggregator scans by `(archetype, timestamp)` and `(segmentKey, timestamp)`
+
+**Composite `segmentKey` format:** `d:{device}|t:{traffic}|a:{account}|p:{pageType}|pr:{promoInCart}|f:{frequency}` — see [`app/utils/segment-key.js`](../app/utils/segment-key.js).
 
 ---
 

@@ -21,19 +21,45 @@ function formatArchetypeName(raw) {
     .join(' ');
 }
 
+// Small "?" icon with a native browser tooltip. Lightweight — no portal/popper.
+function InfoIcon({ tip }) {
+  return (
+    <span
+      title={tip}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 14,
+        height: 14,
+        borderRadius: '50%',
+        background: '#e5e7eb',
+        color: '#6b7280',
+        fontSize: 10,
+        fontWeight: 700,
+        marginLeft: 6,
+        cursor: 'help',
+        verticalAlign: 'middle'
+      }}
+    >
+      ?
+    </span>
+  );
+}
+
 export async function loader({ request }) {
   const { session } = await authenticate.admin(request);
 
   try {
   // Get filters from URL
   const url = new URL(request.url);
-  const promoFilter = url.searchParams.get('promo') || 'all';
   const segmentFilter = url.searchParams.get('segment') || 'all';
   // Phase 2D filters
   const windowFilter = url.searchParams.get('window') || '30d';          // 7d | 30d | 90d
   const archetypeFilter = url.searchParams.get('archetype') || 'all';
   const pageTypeFilter = url.searchParams.get('pageType') || 'all';
-  const promoInCartFilter = url.searchParams.get('promoInCart') || 'all'; // all | yes | no
+  // Single "what does the modal offer" filter (replaces legacy promo + promoInCart)
+  const offerFilter = url.searchParams.get('offer') || 'all';            // all | with-promo | no-promo
   const tab = url.searchParams.get('tab') || 'archetypes';                // archetypes | components
 
   // Get shop from database
@@ -61,7 +87,7 @@ export async function loader({ request }) {
       deadCount: 0,
       generationStats: { max: 0 },
       componentStats: { headlines: [], subheads: [], ctas: [] },
-      filters: { promo: 'all', segment: 'all' }
+      filters: { offer: 'all', segment: 'all' }
     };
   }
 
@@ -91,18 +117,14 @@ export async function loader({ request }) {
     whereClause.pageType = pageTypeFilter;
   }
 
-  // Phase 2D: promoInCart filter (customer has a discount code in cart right now)
-  if (promoInCartFilter === 'yes') {
-    whereClause.promoInCart = true;
-  } else if (promoInCartFilter === 'no') {
-    whereClause.promoInCart = false;
-  }
-
-  // Apply promo context filter (store-wide promotion running)
-  if (promoFilter === 'no-promo') {
-    whereClause.duringPromo = false;
-  } else if (promoFilter === 'during-promo') {
-    whereClause.duringPromo = true;
+  // Modal-offer filter (does the modal itself offer a promo?). The variant's
+  // offerAmount column stores the discount value (0 = no discount). We filter
+  // through the variant relation so impressions only include rows whose
+  // associated variant matches.
+  if (offerFilter === 'with-promo') {
+    whereClause.variant = { offerAmount: { gt: 0 } };
+  } else if (offerFilter === 'no-promo') {
+    whereClause.variant = { offerAmount: { equals: 0 } };
   }
 
   // Apply segment filter
@@ -431,16 +453,13 @@ export async function loader({ request }) {
   const filtersAreNarrowed =
     segmentFilter !== 'all' ||
     pageTypeFilter !== 'all' ||
-    promoInCartFilter !== 'all' ||
-    promoFilter !== 'all';
+    offerFilter !== 'all';
 
   const filterDescriptionParts = [];
   if (segmentFilter !== 'all') filterDescriptionParts.push(segmentFilter.replace('-', ' '));
   if (pageTypeFilter !== 'all') filterDescriptionParts.push(`${pageTypeFilter} page`);
-  if (promoInCartFilter === 'yes') filterDescriptionParts.push('promo in cart');
-  else if (promoInCartFilter === 'no') filterDescriptionParts.push('no promo in cart');
-  if (promoFilter === 'during-promo') filterDescriptionParts.push('store-wide promo active');
-  else if (promoFilter === 'no-promo') filterDescriptionParts.push('no store-wide promo');
+  if (offerFilter === 'with-promo') filterDescriptionParts.push('modals offering a promo');
+  else if (offerFilter === 'no-promo') filterDescriptionParts.push('modals without a promo');
   const filterDescription = filterDescriptionParts.join(' · ') || null;
 
   // Only meaningfully "promoted" when there's spread across archetypes.
@@ -449,76 +468,11 @@ export async function loader({ request }) {
   const archetypeSpreadPts = topCvr - bottomCvr;
   const hasMeaningfulSpread = archetypeRankings.length >= 2 && archetypeSpreadPts >= 0.5;
 
-  // ----- Phase 2F: network benchmark (read precomputed meta-learning insights) -----
-  // The nightly aggregator writes archetype_performance insights per segment.
-  // We merge those into a single network-wide archetype ranking so merchants
-  // can see "Your Threshold Discount converts at 5.2%; network average is 4.6%".
-  // Only surfaced when the shop is contributing to meta-learning.
-  let networkArchetypeRankings = [];
-  let networkSampleSize = 0;
-  let networkStoreCount = 0;
-  let networkDataAgeDays = null;
-  const benchmarkEnabled = shop.contributeToMetaLearning === true;
-
-  if (benchmarkEnabled) {
-    const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-    const insights = await db.metaLearningInsights.findMany({
-      where: {
-        insightType: { in: ['archetype_performance', 'archetype_performance_by_key', 'archetype_performance_by_vertical'] },
-        lastUpdated: { gte: twoWeeksAgo }
-      },
-      orderBy: { lastUpdated: 'desc' }
-    });
-
-    // Merge: sum impressions & weighted CVR/CTR/RPI per archetype across all insights.
-    // Track distinct stores per archetype by taking the max `storeCount` observed in
-    // any insight for that archetype (store sets are not individually identifiable).
-    const agg = new Map();
-    let latestUpdate = null;
-    for (const row of insights) {
-      if (!latestUpdate || row.lastUpdated > latestUpdate) latestUpdate = row.lastUpdated;
-      let payload;
-      try { payload = JSON.parse(row.data); } catch { continue; }
-      const rankings = Array.isArray(payload?.rankings) ? payload.rankings : [];
-      for (const r of rankings) {
-        if (!r.archetype || !Number.isFinite(r.impressions)) continue;
-        if (!agg.has(r.archetype)) {
-          agg.set(r.archetype, {
-            archetype: r.archetype,
-            impressions: 0,
-            weightedCvr: 0,
-            weightedCtr: 0,
-            weightedRpi: 0,
-            maxStoreCount: 0
-          });
-        }
-        const a = agg.get(r.archetype);
-        a.impressions += r.impressions;
-        a.weightedCvr += (r.conversionRate || 0) * r.impressions;
-        a.weightedCtr += (r.clickRate || 0) * r.impressions;
-        a.weightedRpi += (r.revenuePerImpression || 0) * r.impressions;
-        a.maxStoreCount = Math.max(a.maxStoreCount, r.storeCount || 0);
-      }
-    }
-
-    networkArchetypeRankings = Array.from(agg.values())
-      .filter(a => a.impressions > 0)
-      .map(a => ({
-        archetype: a.archetype,
-        impressions: a.impressions,
-        cvr: (a.weightedCvr / a.impressions) * 100,   // meta-learning CVR is a ratio — convert to %
-        ctr: (a.weightedCtr / a.impressions) * 100,
-        rpi: a.weightedRpi / a.impressions,
-        storeCount: a.maxStoreCount
-      }))
-      .sort((x, y) => y.cvr - x.cvr);
-
-    networkSampleSize = networkArchetypeRankings.reduce((s, r) => s + r.impressions, 0);
-    networkStoreCount = networkArchetypeRankings.reduce((m, r) => Math.max(m, r.storeCount), 0);
-    networkDataAgeDays = latestUpdate
-      ? Math.max(0, Math.round((Date.now() - latestUpdate.getTime()) / (24 * 60 * 60 * 1000)))
-      : null;
-  }
+  // Network benchmark loader removed — moved to dev-only roadmap. Meta-learning
+  // insights are still written nightly (see app/utils/meta-learning.js) and
+  // consumed at runtime by archetype priors. The merchant-facing comparison UI
+  // was removed because cross-store benchmarking is more useful as an internal
+  // diagnostic dashboard than as a customer feature.
 
   // Total variants is all-time count
   const totalVariants = variants.length;
@@ -558,21 +512,13 @@ export async function loader({ request }) {
     filtersAreNarrowed,
     filterDescription,
     hasMeaningfulSpread,
-    benchmark: {
-      enabled: benchmarkEnabled,
-      networkArchetypeRankings,
-      networkSampleSize,
-      networkStoreCount,
-      networkDataAgeDays
-    },
     heatmap,
     filters: {
-      promo: promoFilter,
+      offer: offerFilter,
       segment: segmentFilter,
       window: windowFilter,
       archetype: archetypeFilter,
       pageType: pageTypeFilter,
-      promoInCart: promoInCartFilter,
       tab
     }
   };
@@ -590,9 +536,8 @@ export async function loader({ request }) {
       filtersAreNarrowed: false,
       filterDescription: null,
       hasMeaningfulSpread: false,
-      benchmark: { enabled: false, networkArchetypeRankings: [], networkSampleSize: 0, networkStoreCount: 0, networkDataAgeDays: null },
       heatmap: { archetypes: [], segments: [], cells: {}, winners: {}, minCellImps: 5 },
-      filters: { promo: 'all', segment: 'all', window: '30d', archetype: 'all', pageType: 'all', promoInCart: 'all', tab: 'archetypes' },
+      filters: { offer: 'all', segment: 'all', window: '30d', archetype: 'all', pageType: 'all', tab: 'archetypes' },
       dbError: true
     };
   }
@@ -605,7 +550,6 @@ export default function VariantsIndex() {
     generationStats, componentStats, dbError,
     archetypeRankings = [], avgArchetypeCvr = 0, bestSegment = null, observedPageTypes = [],
     filtersAreNarrowed = false, filterDescription = null, hasMeaningfulSpread = false,
-    benchmark = { enabled: false, networkArchetypeRankings: [], networkSampleSize: 0, networkStoreCount: 0, networkDataAgeDays: null },
     heatmap = { archetypes: [], segments: [], cells: {}, winners: {}, minCellImps: 5 }
   } = data;
   const fetcher = useFetcher();
@@ -613,11 +557,10 @@ export default function VariantsIndex() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [selectedVariant, setSelectedVariant] = useState(null);
 
-  const promoMode = searchParams.get('promo') || 'all';
+  const offerFilter = searchParams.get('offer') || 'all';
   const windowMode = searchParams.get('window') || '30d';
   const archetypeFilter = searchParams.get('archetype') || 'all';
   const pageTypeFilter = searchParams.get('pageType') || 'all';
-  const promoInCartFilter = searchParams.get('promoInCart') || 'all';
   const tab = searchParams.get('tab') || 'archetypes';
 
   // Helper: update a single URL param (preserves others)
@@ -644,7 +587,6 @@ export default function VariantsIndex() {
   const displayAvgCvr = displayData.avgArchetypeCvr ?? avgArchetypeCvr;
   const displayBestSegment = displayData.bestSegment || bestSegment;
   const displayPageTypes = displayData.observedPageTypes || observedPageTypes;
-  const displayBenchmark = displayData.benchmark || benchmark;
   const displayHeatmap = displayData.heatmap || heatmap;
   const displayFiltersNarrowed = displayData.filtersAreNarrowed ?? filtersAreNarrowed;
   const displayFilterDescription = displayData.filterDescription ?? filterDescription;
@@ -961,7 +903,10 @@ export default function VariantsIndex() {
         {/* Stats Row — Phase 2D: Winning Archetype + Best Segment + Active + Gen */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.6fr 1fr 1fr', gap: 20, marginBottom: 32 }}>
           <div style={{ background: 'white', padding: 20, borderRadius: 8, border: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>Winning Archetype</div>
+            <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
+              Winning Archetype
+              <InfoIcon tip="The modal pattern (e.g. Threshold Discount, Free Shipping) with the highest conversion rate in the selected window. An archetype is a coherent combination of headline style, offer type, and CTA — your AI builds variants from these patterns and learns which ones work best." />
+            </div>
             {winningArchetype ? (
               <>
                 <div style={{ fontSize: 20, fontWeight: 700, color: '#111' }}>
@@ -981,7 +926,10 @@ export default function VariantsIndex() {
             )}
           </div>
           <div style={{ background: 'white', padding: 20, borderRadius: 8, border: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>Best Segment</div>
+            <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
+              Best Segment
+              <InfoIcon tip="The visitor segment (combination of device, traffic source, account status, page, and visit frequency) that is converting at the highest rate. Your AI uses these patterns to decide which modal to show different shoppers in real time." />
+            </div>
             {displayBestSegment ? (
               <>
                 <div style={{ fontSize: 13, fontWeight: 600, color: '#111', lineHeight: 1.4 }}>
@@ -1063,103 +1011,27 @@ export default function VariantsIndex() {
             </select>
           )}
 
-          {/* Promo-in-cart filter */}
+          {/* Modal-offer filter (replaces legacy promo + promoInCart) */}
           <select
-            value={promoInCartFilter}
-            onChange={(e) => setParam('promoInCart', e.target.value)}
+            value={offerFilter}
+            onChange={(e) => setParam('offer', e.target.value)}
             style={{
               padding: '10px 16px', borderRadius: 8, border: '1px solid #e5e7eb',
               fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'white'
             }}
           >
-            <option value="all">Promo in cart: any</option>
-            <option value="yes">Promo in cart: yes</option>
-            <option value="no">Promo in cart: no</option>
+            <option value="all">All modals</option>
+            <option value="with-promo">Modals with a promo</option>
+            <option value="no-promo">Modals without a promo</option>
           </select>
-        </div>
 
-        {/* Legacy promo + segment filters (kept for backwards compat) */}
-        <div style={{ display: 'flex', gap: 12, marginBottom: 32, alignItems: 'center' }}>
-          {/* Promo Toggle */}
-          <div style={{ display: 'flex', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
-            <button
-              onClick={() => {
-                const newParams = new URLSearchParams(searchParams);
-                newParams.set('promo', 'all');
-                setSearchParams(newParams);
-              }}
-              style={{
-                padding: '8px 20px',
-                border: 'none',
-                borderRadius: 6,
-                cursor: 'pointer',
-                fontWeight: 600,
-                fontSize: 14,
-                background: promoMode === 'all' ? '#111' : 'transparent',
-                color: promoMode === 'all' ? '#fff' : '#666',
-                transition: 'all 0.2s'
-              }}
-            >
-              All
-            </button>
-            <button
-              onClick={() => {
-                const newParams = new URLSearchParams(searchParams);
-                newParams.set('promo', 'no-promo');
-                setSearchParams(newParams);
-              }}
-              style={{
-                padding: '8px 20px',
-                border: 'none',
-                borderRadius: 6,
-                cursor: 'pointer',
-                fontWeight: 600,
-                fontSize: 14,
-                background: promoMode === 'no-promo' ? '#111' : 'transparent',
-                color: promoMode === 'no-promo' ? '#fff' : '#666',
-                transition: 'all 0.2s'
-              }}
-            >
-              No Promo
-            </button>
-            <button
-              onClick={() => {
-                const newParams = new URLSearchParams(searchParams);
-                newParams.set('promo', 'during-promo');
-                setSearchParams(newParams);
-              }}
-              style={{
-                padding: '8px 20px',
-                border: 'none',
-                borderRadius: 6,
-                cursor: 'pointer',
-                fontWeight: 600,
-                fontSize: 14,
-                background: promoMode === 'during-promo' ? '#111' : 'transparent',
-                color: promoMode === 'during-promo' ? '#fff' : '#666',
-                transition: 'all 0.2s'
-              }}
-            >
-              During Promo
-            </button>
-          </div>
-
-          {/* Segment Filter */}
+          {/* Segment / Customer filter */}
           <select
             value={searchParams.get('segment') || 'all'}
-            onChange={(e) => {
-              const newParams = new URLSearchParams(searchParams);
-              newParams.set('segment', e.target.value);
-              setSearchParams(newParams);
-            }}
+            onChange={(e) => setParam('segment', e.target.value)}
             style={{
-              padding: '10px 16px',
-              borderRadius: 8,
-              border: '1px solid #e5e7eb',
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: 'pointer',
-              background: 'white'
+              padding: '10px 16px', borderRadius: 8, border: '1px solid #e5e7eb',
+              fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'white'
             }}
           >
             <option value="all">All Customers</option>
@@ -1229,22 +1101,6 @@ export default function VariantsIndex() {
             }}
           >
             Component Analysis
-          </button>
-          <button
-            onClick={() => setParam('tab', 'network')}
-            style={{
-              padding: '12px 24px',
-              border: 'none',
-              background: 'transparent',
-              cursor: 'pointer',
-              fontWeight: tab === 'network' ? 600 : 400,
-              fontSize: 14,
-              color: tab === 'network' ? '#008060' : '#666',
-              borderBottom: `2px solid ${tab === 'network' ? '#008060' : 'transparent'}`,
-              marginBottom: -2
-            }}
-          >
-            Network Benchmark
           </button>
           <button
             onClick={() => setParam('tab', 'segments')}
@@ -1440,153 +1296,7 @@ export default function VariantsIndex() {
           </div>
         )}
 
-        {/* Network Benchmark Tab — Phase 2F */}
-        {tab === 'network' && (
-          <div style={{ paddingTop: 24 }}>
-            {!displayBenchmark.enabled ? (
-              <div style={{
-                background: 'white',
-                border: '2px dashed #d4d4d8',
-                borderRadius: 12,
-                padding: 48,
-                textAlign: 'center',
-                maxWidth: 720,
-                margin: '0 auto'
-              }}>
-                <div style={{ fontSize: 20, fontWeight: 700, color: '#111', marginBottom: 8 }}>
-                  Benchmarking is off for this store
-                </div>
-                <div style={{ fontSize: 14, color: '#6b7280', marginBottom: 20, lineHeight: 1.6 }}>
-                  To see how your archetypes compare to the network, opt into meta-learning.
-                  We share <strong>aggregated ratios only</strong> (CVR, CTR, RPI) and anonymized sample sizes — never
-                  your copy, revenue dollars, product names, or customer data.
-                </div>
-                <Link
-                  to="/app/settings"
-                  style={{
-                    display: 'inline-block',
-                    background: '#008060',
-                    color: 'white',
-                    padding: '10px 20px',
-                    borderRadius: 8,
-                    textDecoration: 'none',
-                    fontWeight: 600,
-                    fontSize: 14
-                  }}
-                >
-                  Opt in from Settings →
-                </Link>
-              </div>
-            ) : displayBenchmark.networkArchetypeRankings.length === 0 ? (
-              <div style={{
-                background: 'white',
-                border: '1px solid #e5e7eb',
-                borderRadius: 12,
-                padding: 48,
-                textAlign: 'center'
-              }}>
-                <div style={{ fontSize: 18, fontWeight: 700, color: '#111', marginBottom: 8 }}>
-                  No network data yet
-                </div>
-                <div style={{ fontSize: 14, color: '#6b7280' }}>
-                  The nightly aggregator needs ≥3 consenting stores per archetype before publishing benchmarks.
-                  Check back tomorrow.
-                </div>
-              </div>
-            ) : (
-              <>
-                <div style={{
-                  background: '#f0fdf4',
-                  border: '1px solid #bbf7d0',
-                  borderRadius: 12,
-                  padding: 16,
-                  marginBottom: 24,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: 12
-                }}>
-                  <div style={{ fontSize: 13, color: '#166534' }}>
-                    Network data from <strong>{displayBenchmark.networkStoreCount}+ stores</strong> ·
-                    <strong> {displayBenchmark.networkSampleSize.toLocaleString()} impressions</strong> ·
-                    updated {displayBenchmark.networkDataAgeDays === 0 ? 'today' : `${displayBenchmark.networkDataAgeDays}d ago`}
-                  </div>
-                  <div style={{ fontSize: 12, color: '#166534' }}>
-                    Ratios only — no PII, copy, or revenue $ is shared.
-                  </div>
-                </div>
-
-                <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-                    <thead style={{ background: '#f9fafb' }}>
-                      <tr>
-                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 600, color: '#374151', borderBottom: '1px solid #e5e7eb' }}>Archetype</th>
-                        <th style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, color: '#374151', borderBottom: '1px solid #e5e7eb' }}>Your CVR</th>
-                        <th style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, color: '#374151', borderBottom: '1px solid #e5e7eb' }}>Network CVR</th>
-                        <th style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, color: '#374151', borderBottom: '1px solid #e5e7eb' }}>Delta</th>
-                        <th style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, color: '#374151', borderBottom: '1px solid #e5e7eb' }}>Your Imp</th>
-                        <th style={{ padding: '14px 16px', textAlign: 'center', fontWeight: 600, color: '#374151', borderBottom: '1px solid #e5e7eb' }}>Verdict</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displayBenchmark.networkArchetypeRankings.map((net, i) => {
-                        const own = displayArchetypes.find(a => a.archetype === net.archetype);
-                        const delta = own ? own.cvr - net.cvr : null;
-                        let verdict, verdictColor;
-                        if (!own || own.impressions < 20) {
-                          verdict = 'Not enough data';
-                          verdictColor = '#9ca3af';
-                        } else if (delta >= 1.0) {
-                          verdict = 'Outperforming';
-                          verdictColor = '#16a34a';
-                        } else if (delta >= -0.5) {
-                          verdict = 'On par';
-                          verdictColor = '#6b7280';
-                        } else {
-                          verdict = 'Underperforming';
-                          verdictColor = '#dc2626';
-                        }
-                        return (
-                          <tr key={net.archetype} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                            <td style={{ padding: '14px 16px', fontWeight: 600, color: '#111' }}>
-                              {formatArchetypeName(net.archetype)}
-                              {i === 0 && (
-                                <span style={{ marginLeft: 8, background: '#dcfce7', color: '#15803d', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>
-                                  NETWORK LEADER
-                                </span>
-                              )}
-                            </td>
-                            <td style={{ padding: '14px 16px', textAlign: 'right', color: '#111' }}>
-                              {own ? `${own.cvr.toFixed(1)}%` : <span style={{ color: '#9ca3af' }}>—</span>}
-                            </td>
-                            <td style={{ padding: '14px 16px', textAlign: 'right', color: '#111' }}>
-                              {net.cvr.toFixed(1)}%
-                            </td>
-                            <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, color: delta === null ? '#9ca3af' : delta >= 0 ? '#16a34a' : '#dc2626' }}>
-                              {delta === null ? '—' : `${delta >= 0 ? '+' : ''}${delta.toFixed(1)} pts`}
-                            </td>
-                            <td style={{ padding: '14px 16px', textAlign: 'right', color: '#6b7280' }}>
-                              {own ? own.impressions.toLocaleString() : '0'}
-                            </td>
-                            <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                              <span style={{ color: verdictColor, fontSize: 12, fontWeight: 600 }}>{verdict}</span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div style={{ marginTop: 16, fontSize: 12, color: '#6b7280', lineHeight: 1.6 }}>
-                  Network CVR is the impression-weighted conversion rate across all contributing stores for each archetype,
-                  aggregated from precomputed meta-learning insights (last 14 days). Verdicts use a ±1 pt tolerance against network average.
-                </div>
-              </>
-            )}
-          </div>
-        )}
+        {/* Network Benchmark tab removed — moved to dev-only roadmap (see ROADMAP.md "Dev-only network benchmark"). */}
 
         {/* Segments Tab — Phase 2H: archetype × segmentKey heatmap */}
         {tab === 'segments' && (

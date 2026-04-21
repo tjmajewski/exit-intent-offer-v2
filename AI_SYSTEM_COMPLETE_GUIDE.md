@@ -1,6 +1,6 @@
 # Repsarq AI System - Complete Guide
-**Last Updated:** April 6, 2026
-**Version:** 2.3 (adaptive intervention thresholds, continuous propensity scoring)
+**Last Updated:** April 21, 2026
+**Version:** 2.4 (archetype meta-layer + segment-aware Thompson Sampling)
 
 ---
 
@@ -20,6 +20,8 @@ Repsarq uses a **genetic algorithm** + **Bayesian statistics** to automatically 
 **Key Concepts:**
 - **Variants** = Individual modal versions (organisms)
 - **Genes** = Components (headline, CTA, offer, etc.)
+- **Archetypes** = Coherent modal patterns (e.g. "Threshold Discount", "Soft Upsell") — the meta-layer above genes that the AI uses for cross-segment learning. See "Archetype meta-layer" below.
+- **Segment keys** = Composite tokens describing each visitor (device · traffic · account · page · promo-in-cart · frequency) — used for per-segment performance tracking and runtime variant biasing.
 - **Generations** = Evolution cycles
 - **Fitness** = Profit per impression
 - **Selection** = Best survive, poor die
@@ -257,6 +259,79 @@ if (funnelGoal === 'revenue') {
 - Champion exists → 70% traffic to Champion
 - Remaining 30% → Thompson Sampling among others
 - Balance: Exploit winner (70%) + Explore alternatives (30%)
+
+### Segment-Aware Bias (Archetype Priors)
+
+Thompson Sampling is now visitor-aware: at decision time, the engine looks up which **archetypes** (modal patterns) historically win for the current visitor's segment, and tilts the beta sample.
+
+**Multiplier shape (linear by archetype CVR rank):**
+- Rank #1 archetype → sample × **1.30**
+- Rank #N archetype → sample × **0.85**
+- Interior ranks linearly interpolated
+
+**Cascade for the prior source** (most-specific wins):
+1. Own-shop impressions for this exact `segmentKey`, last 30 days, ≥50 imps
+2. Network meta-learning insight keyed by `segmentKey`
+3. Network meta-learning insight keyed by (vertical, legacy segment)
+4. None — fall back to uniform Thompson Sampling
+
+**Conservative on purpose.** A 1.30× nudge can be overcome by a strong beta sample, so exploration is preserved. The engine never *forces* an archetype — it just biases the dice.
+
+**Tier behavior:**
+- **Enterprise** (10–20 variants): genuine per-segment routing — different archetypes win for different shopper personas.
+- **Pro** (2 variants): when the two variants represent different archetypes, the bias routes ~70/30 by segment. When they share an archetype, the prior map is empty and standard A/B testing resumes.
+
+See [`app/utils/archetype-priors.js`](app/utils/archetype-priors.js).
+
+---
+
+## Archetype Meta-Layer
+
+### What is an archetype?
+
+An archetype is a **coherent modal pattern** that combines a headline style, an offer type, and a CTA into one recognizable persuasion strategy. Examples:
+
+| Archetype | Headline style | Offer | CTA |
+|-----------|----------------|-------|-----|
+| `THRESHOLD_DISCOUNT` | "Spend $X more, save Y%" | Tiered discount | "Add to qualify" |
+| `SOFT_UPSELL` | Recommendation-based | None or small | "See picks" |
+| `FREE_SHIPPING_INCENTIVE` | "You're $X away from free shipping" | Free shipping | "Add more" |
+| `URGENCY_PUSH` | Countdown-driven | Time-bound discount | "Claim now" |
+| `LOYALTY_NUDGE` | Customer-status copy | Loyalty perk | "Use my reward" |
+
+Archetype is **denormalized onto every `VariantImpression`** for fast aggregator queries (no joins to figure out which baseline a variant came from).
+
+### Why archetypes (not just genes)?
+
+Genes (raw headline/CTA/offer text) are the AI's atoms — but the patterns *between* genes are where merchant insight lives. Telling a merchant "your top headline is X" is less actionable than "your customers respond to upsells, not discounts."
+
+Archetypes also enable cross-store learning that doesn't leak copy: the meta-learning aggregator can publish "stores in this vertical win with FREE_SHIPPING_INCENTIVE for first-time mobile guests" without exposing any specific headline text or revenue figure.
+
+### Brand-safety guard
+
+Each archetype has a tone profile. The selector validates that the chosen variant's copy is consistent with its archetype's tone — preventing drift where, e.g., a `SOFT_UPSELL` variant accidentally evolves into hard-discount language. See `app/utils/brand-safety.js`.
+
+---
+
+## Composite Segment Keys
+
+The legacy `segment` field on `VariantImpression` is a coarse `{device}_{traffic}` string (e.g. `mobile_paid`). Rich meta-learning needed finer partitioning, so each impression now also carries a **composite `segmentKey`**:
+
+```
+d:{device}|t:{traffic}|a:{account}|p:{pageType}|pr:{promoInCart}|f:{frequency}
+```
+
+Example: `d:mobile|t:paid|a:guest|p:product|pr:no|f:first`
+
+**Dimensions** (closed vocabularies for stability):
+- `d` device — mobile / desktop / tablet / unknown
+- `t` traffic — paid / organic / social / direct / referral / email / unknown
+- `a` account — guest / returning / loyal / unknown
+- `p` pageType — home / product / collection / cart / checkout / search / blog / account / other / unknown
+- `pr` promoInCart — yes / no
+- `f` frequency — first / occasional / frequent / unknown
+
+This is the unit of aggregation used by archetype priors and by the Variants → Segments heatmap. See [`app/utils/segment-key.js`](app/utils/segment-key.js).
 
 ---
 

@@ -277,12 +277,15 @@ seedInitialPopulation(shopId, baseline, segment)
 getLiveVariants(shopId, baseline, segment)
 → Array of variants with status 'alive' or 'champion'
 
-// Thompson Sampling selection (trigger-aware)
-selectVariantForImpression(shopId, baseline, segment, triggerReason?)
+// Thompson Sampling selection (trigger- and segment-aware)
+selectVariantForImpression(shopId, baseline, segment, triggerReason?, opts?)
+//   opts = { segmentKey, storeVertical, enableArchetypePriors }
 → Variant (Champion gets 70%, others use Thompson Sampling)
 // When triggerReason is provided and ≥20 trigger-specific impressions exist,
 // Thompson Sampling uses trigger-specific conversion rates instead of overall stats.
-// This lets different copy win for different trigger reasons (e.g., failedCoupon vs general).
+// When enableArchetypePriors is true, the beta sample is multiplied by an
+// archetype-specific bias (1.30× best → 0.85× worst) sourced from
+// computeArchetypePriors(). See "archetype-priors.js" below.
 
 // Record events
 recordImpression(variantId, shopId, context) // context includes triggerReason
@@ -633,6 +636,79 @@ recalculateThresholds(db, shopId) → number of updated thresholds
 4. Update `shop.lastThresholdUpdate`
 
 Trigger threshold (50) is lower than variant evolution (100) because each outcome is binary show/skip — we need data in both arms to learn.
+
+---
+
+### 9. `archetype-priors.js`
+
+**Purpose:** Compute per-archetype multipliers used to bias Thompson Sampling at runtime, so the same engine can prefer different archetypes for different visitor segments.
+
+**Key Functions:**
+```javascript
+// Compute archetype → multiplier map for the current decision.
+computeArchetypePriors(prisma, shopId, ctx)
+//   ctx = { segmentKey, segment, storeVertical }
+→ { priors: Map<archetype, number>, source }
+//   source ∈ 'own_shop' | 'meta_by_key' | 'meta_by_vertical' | 'none'
+
+// Look up an archetype's multiplier (missing archetype → neutral 1.0)
+getArchetypeMultiplier(priors, archetype)
+→ number
+```
+
+**Cascade source priority** (most-specific wins):
+1. **`own_shop`** — own-shop `VariantImpression` rows for this exact `segmentKey`, last 30 days, ≥50 total impressions, ≥10 per archetype
+2. **`meta_by_key`** — network meta-learning insight keyed by this `segmentKey`
+3. **`meta_by_vertical`** — network meta-learning insight keyed by `(vertical, legacy segment)`
+4. **`none`** — uniform Thompson Sampling
+
+**Multiplier shape:** linear interpolation from `MAX_BOOST = 1.30` (rank-1 archetype by CVR) down to `MIN_BOOST = 0.85` (rank-N). One-archetype maps return `1.30` for that archetype only.
+
+**Why these constants?** Conservative on purpose. A 1.30× nudge can be overcome by a strong beta sample, so exploration is preserved — the engine never *forces* an archetype.
+
+---
+
+### 10. `segment-key.js`
+
+**Purpose:** Build and parse stable composite segment keys for the meta-learning aggregator and the Variants → Segments heatmap.
+
+**Format:**
+```
+d:{device}|t:{traffic}|a:{account}|p:{pageType}|pr:{promoInCart}|f:{frequency}
+```
+
+**Key Functions:**
+```javascript
+// Compose from raw signals (missing → "unknown" / promoInCart "no")
+composeSegmentKey({ deviceType, trafficSource, accountStatus,
+                    pageType, promoInCart, visitFrequency })
+→ "d:mobile|t:paid|a:guest|p:product|pr:no|f:first"
+
+// Parse back into dimensions (returns null for legacy "mobile_paid" etc.)
+parseSegmentKey(key)
+→ { deviceType, trafficSource, accountStatus, pageType, promoInCart, frequencyBucket }
+```
+
+`visitFrequency` is bucketed: 1 → `first`, 2–5 → `occasional`, 6+ → `frequent`.
+
+**Storage:** denormalized onto `VariantImpression.segmentKey` (indexed) so aggregator queries are O(index scan) instead of recomputing the key every time.
+
+---
+
+### 11. `meta-learning.js` (Network Aggregator)
+
+**Purpose:** Nightly cross-store aggregation that publishes archetype performance benchmarks consumed at runtime by `archetype-priors.js`.
+
+**Insight types written:**
+- `archetype_performance` — global ranking (back-compat)
+- `archetype_performance_by_key` — keyed by composite `segmentKey`
+- `archetype_performance_by_vertical` — keyed by `(vertical, legacy segment)`
+
+**Privacy guarantees:**
+- Only ratios (CVR, CTR, RPI) and impression counts are shared
+- No raw copy, revenue dollars, product names, customer data, or per-shop breakdown
+- Stores must opt-in via `shop.contributeToMetaLearning = true`
+- Insight rows require ≥3 contributing stores per archetype before publishing
 
 ---
 

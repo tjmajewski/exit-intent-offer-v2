@@ -1,5 +1,62 @@
 # @shopify/shopify-app-template-react-router
 
+## Repsarq AI - April 21, 2026 (Archetype System — Phases 2A–2H)
+
+### Added
+- **Archetype meta-layer** for variants. Every baseline maps to an archetype
+  (e.g. `THRESHOLD_DISCOUNT`, `SOFT_UPSELL`, `FREE_SHIPPING_INCENTIVE`) — a
+  coherent modal pattern combining headline style, offer type, and CTA. The AI
+  now learns which *patterns* win for which segments, not just which raw copy
+  variants win.
+- **Composite segment keys**. New `segmentKey` field on `VariantImpression`
+  combines device · traffic · account · pageType · promoInCart · visit-frequency
+  into one stable token (e.g. `d:mobile|t:paid|a:guest|p:product|pr:no|f:first`).
+  See [`app/utils/segment-key.js`](app/utils/segment-key.js).
+- **Archetype priors at runtime** (`app/utils/archetype-priors.js`). Thompson
+  Sampling is now biased per visitor: when an incoming impression matches a
+  segment with proven winners, the engine multiplies the beta sample by
+  1.30× for the rank-1 archetype and 0.85× for the rank-N archetype. Cascade
+  fallback: own-shop → meta-by-segmentKey → meta-by-vertical → uniform.
+  Active for both Pro (2 variants) and Enterprise (many variants).
+- **Per-vertical meta-learning aggregation**. Nightly aggregator now writes
+  `archetype_performance_by_key` and `archetype_performance_by_vertical`
+  insights so brand-new stores can inherit benchmark biases by vertical.
+- **Brand-safety guard for archetype metadata** so modal copy chosen by the
+  selector cannot drift outside its archetype's intended tone.
+- **Variants page rebuilt as Performance Intelligence dashboard:**
+  - "Winning Archetype" + "Best Segment" stat cards (with explanatory tooltips)
+  - "Archetypes" tab — ranked archetype cards with WINNER/PROMOTED/DEMOTED badges
+  - "Component Analysis" tab — existing component breakdown
+  - "Segments" tab — archetype × segmentKey heatmap with divergent CVR coloring
+    and amber outline on the per-segment winning archetype
+  - URL-driven filter state (time window, archetype, page type, modal-offer)
+  - Filter banner explains which archetype the AI is promoting and why
+
+### Changed
+- **Filter consolidation on Variants page.** The legacy "All / No Promo /
+  During Promo" tabs and the "Promo in cart" dropdown were replaced by a
+  single "Modal offers a promo?" filter that queries `variant.offerAmount > 0`.
+  Cleaner mental model: filter by what the modal *does*, not by ambient state.
+- Pro-tier variant selection now uses archetype priors when its 2 variants
+  represent different archetypes. Same-archetype Pro setups are a no-op
+  (standard A/B testing resumes).
+
+### Removed
+- **Network Benchmark tab** (Phase 2F) on the merchant Variants page. Cross-store
+  benchmarking is more useful as an internal diagnostic dashboard than as a
+  customer feature — moved to the dev-only roadmap. The underlying meta-learning
+  insights are still written nightly and consumed by archetype priors at runtime.
+
+### Database
+- `VariantImpression.archetype` (String, indexed) — denormalized archetype name
+- `VariantImpression.segmentKey` (String, indexed) — composite key
+- `VariantImpression.pageType` (String, indexed)
+- `VariantImpression.promoInCart` (Boolean)
+- New `MetaLearningInsights` types: `archetype_performance`,
+  `archetype_performance_by_key`, `archetype_performance_by_vertical`
+
+---
+
 ## Repsarq AI - January 19, 2026
 
 ### Added

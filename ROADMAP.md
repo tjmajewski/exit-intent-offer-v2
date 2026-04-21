@@ -367,6 +367,36 @@ Ideas worth validating but not yet committed. Revisit after Tiers 1-3 ship.
 
 ---
 
+## Internal / Dev-Only Backlog
+
+These tools are for me (the dev), not merchants. Build a separate `/admin/dev`
+area gated to my Shopify domain.
+
+### Dev-only network benchmark dashboard
+
+Originally built as a customer-facing "Network Benchmark" tab on the Variants
+page (Phase 2F, Apr 2026), then removed because cross-store comparison is
+more useful as an internal diagnostic than a merchant feature. The backing
+data still exists — `MetaLearningInsights` rows of types
+`archetype_performance`, `archetype_performance_by_key`, and
+`archetype_performance_by_vertical` are written nightly.
+
+**Scope when rebuilt:**
+- Per-archetype CVR/CTR/RPI across all consenting stores
+- Per-vertical breakdown (apparel, beauty, food, etc.)
+- Outlier detection: stores >2σ below network average for their vertical
+  → flag for outreach / debugging
+- Drill-down per shop: which archetypes are underperforming and by how much
+- Time-series: track network averages week-over-week to spot regressions
+- Reuse the loader code that was removed in commit `5de0973..` (search git
+  history for "Phase 2F" to recover the aggregation logic)
+
+**Why this matters:** lets me proactively identify struggling stores and
+investigate root causes (bad gene pool, segment routing failure, broken
+trigger detection, etc.) before the merchant churns.
+
+---
+
 ## Cross-Cutting Requirements
 
 ### Generic vs. Unique Promo Codes (Applies Everywhere)
