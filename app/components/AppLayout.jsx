@@ -149,7 +149,7 @@ export default function AppLayout({ children, plan }) {
     },
     {
       path: "/app/variants",
-      label: "Performance",
+      label: "Intelligence",
       icon: "variants",
       badge: plan?.tier !== "enterprise" ? "ENTERPRISE" : null
     },
