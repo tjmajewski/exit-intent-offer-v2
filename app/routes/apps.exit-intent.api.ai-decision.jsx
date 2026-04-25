@@ -1,6 +1,6 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { createPercentageDiscount, createFixedDiscount, createThresholdDiscount } from "../utils/discount-codes";
+import { createPercentageDiscount, createFixedDiscount, createThresholdDiscount, getDiscountCodeDetails } from "../utils/discount-codes";
 import { getMetaInsight, shouldUseMetaLearning } from "../utils/meta-learning.js";
 import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
 import { composeSegmentKey } from "../utils/segment-key.js";
@@ -569,8 +569,60 @@ export async function action({ request }) {
     if (aiDiscountCodeMode === 'generic' && aiGenericDiscountCode) {
       console.log(`[AI Mode] Using generic discount code: ${aiGenericDiscountCode}`);
 
-      // For generic codes, we don't create a new Shopify discount (it already exists)
-      // Just return the code with no expiry
+      // For generic codes, the merchant's code already exists in Shopify with
+      // its own fixed discount value. The AI/variant engine, however, picked
+      // decision.amount independently from the gene pool — so the modal could
+      // promise "Save 25%" when the code only gives 10% (false advertising).
+      //
+      // Guard: look up the code's real value and reconcile.
+      //   - Same type + different amount → sync the amount. Variant copy stays
+      //     valid because the {{amount}} placeholder will now interpolate
+      //     against the real number. (Most common drift case.)
+      //   - Type mismatch (e.g. variant is PERCENT_DISCOUNT but code is fixed-$)
+      //     → variant copy has hard-coded "%" / currency formatting that can't
+      //     be safely repurposed. Replace headline/subhead/cta with neutral
+      //     no-amount-bearing copy so the customer still sees the modal +
+      //     gets the code, but never sees a number that disagrees with reality.
+      //   - Code missing / unsupported shape (free shipping, BXGY) → same
+      //     neutral-copy fallback.
+      const realDetails = await getDiscountCodeDetails(admin, aiGenericDiscountCode);
+
+      if (realDetails && realDetails.type === decision.type) {
+        if (realDetails.amount !== decision.amount) {
+          console.warn(
+            `[AI Mode] Generic code amount drift on "${aiGenericDiscountCode}" — ` +
+            `aligning copy. was: ${decision.amount}, now: ${realDetails.amount}`
+          );
+          decision.amount    = realDetails.amount;
+          decision.threshold = realDetails.threshold;
+          offerAmount        = realDetails.amount;
+        }
+      } else {
+        // Cannot safely show amount-bearing copy. Strip placeholders.
+        console.error(
+          `[AI Mode] Generic code "${aiGenericDiscountCode}" mismatch — ` +
+          `decision wanted ${decision.type}/${decision.amount}, ` +
+          `code is ${realDetails ? `${realDetails.type}/${realDetails.amount}` : 'not found / unsupported'}. ` +
+          `Falling back to neutral copy.`
+        );
+        // Neutral copy: no {{amount}}, no %/$ claims. Code is still delivered
+        // to the customer at checkout via decision.code — they just won't see
+        // a specific promise about its value.
+        decision.headline    = 'You left something in your cart';
+        decision.subhead     = 'Your discount is waiting at checkout';
+        decision.cta         = 'Complete My Order';
+        decision.showSubhead = true;
+        // Switch to no-discount type so the client renderer skips its
+        // threshold-ENFORCE / percentage / fixed branches that build copy
+        // out of decision.amount (would render "$0 off" otherwise).
+        // The code still flows through decision.code → settings.discountCode
+        // → sessionStorage → /discount/<code>?redirect=/checkout.
+        decision.type        = 'no-discount';
+        decision.amount      = 0;
+        decision.threshold   = null;
+        offerAmount          = 0;
+      }
+
       discountResult = {
         code: aiGenericDiscountCode,
         expiresAt: null // Generic codes don't expire

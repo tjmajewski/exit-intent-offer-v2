@@ -40,6 +40,40 @@
     }
   }
 
+  // Detect when a subhead is essentially the same message as the headline.
+  // Headlines and subheads are selected independently from the gene pool, so
+  // pairings like "247 customers completed their orders today" / "247 orders
+  // completed today" can occur. We suppress the subhead in that case rather
+  // than ship redundant copy.
+  //
+  // Heuristic: normalize (strip punctuation, lowercase, collapse spaces).
+  // Match if (a) one string contains the other and the shorter is ≥60% the
+  // length of the longer, OR (b) ≥70% of the longer-than-2-char tokens
+  // overlap. Tuned against the known dup pairs in the existing gene pools.
+  function isRedundantCopy(headline, subhead) {
+    if (!headline || !subhead) return false;
+    const norm = (s) => s
+      .replace(/\{\{[^}]+\}\}/g, '')
+      .replace(/[^\w\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+    const h = norm(headline);
+    const s = norm(subhead);
+    if (!h || !s) return false;
+    if (h === s) return true;
+    const longer  = h.length >= s.length ? h : s;
+    const shorter = h.length <  s.length ? h : s;
+    if (longer.includes(shorter)) {
+      return shorter.length / longer.length >= 0.6;
+    }
+    const ht = new Set(h.split(' ').filter(w => w.length > 2));
+    const st = new Set(s.split(' ').filter(w => w.length > 2));
+    if (ht.size === 0 || st.size === 0) return false;
+    const inter = [...ht].filter(w => st.has(w)).length;
+    return (inter / Math.min(ht.size, st.size)) >= 0.7;
+  }
+
   // Fetch custom CSS from shop settings
   async function fetchCustomCSS(shopDomain) {
     try {
@@ -1441,9 +1475,17 @@
         
         headline.textContent = headlineText;
         // showSubhead gene: when false, hide subhead entirely (evolved concept — some templates perform better without it)
-        if (decision.variant.showSubhead === false) {
+        // Also auto-hide when subhead is essentially a duplicate of the headline.
+        // Independent gene selection can pair, e.g. social-proof headline
+        // "247 customers completed their orders today" with social-proof subhead
+        // "247 orders completed today" — same message, would read as awkward repetition.
+        const subheadDuplicatesHeadline = isRedundantCopy(headlineText, subheadText);
+        if (decision.variant.showSubhead === false || subheadDuplicatesHeadline) {
           body.style.display = 'none';
           body.textContent = '';
+          if (subheadDuplicatesHeadline) {
+            console.log('[Modal] Subhead suppressed — too similar to headline');
+          }
         } else {
           body.style.display = '';
           body.textContent = subheadText;

@@ -60,7 +60,7 @@ export const genePools = {
     subheads: [
       'Add a little more and save on your entire order',
       'This offer is only available right now',
-      'Your cart qualifies — don\'t let this deal slip away'
+      'A few more items and your savings unlock'
     ],
 
     subheadsWithSocialProof: [

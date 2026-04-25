@@ -141,6 +141,91 @@ export async function createGenericDiscountCode(admin, code, type, amount) {
 }
 
 /**
+ * Look up the actual discount value of an existing code in Shopify.
+ *
+ * Used in generic-code mode: the merchant types in a code they already
+ * created (e.g. "WELCOME10"). The AI evolves an offer amount independently
+ * (e.g. 25%), so without this lookup the modal could promise "Save 25%"
+ * while the code only gives 10% — a false-advertising bug for the customer.
+ *
+ * Returns: { type: 'percentage'|'fixed'|'threshold', amount: number, threshold: number|null }
+ *   - percentage: amount is whole number (e.g. 10 = 10% off)
+ *   - fixed:      amount is dollars off
+ *   - threshold:  amount is dollars off, threshold is the spend requirement
+ *   Returns null if the code is missing, free shipping, BXGY, or otherwise
+ *   not representable as a single discount value (caller should fall back).
+ *
+ * Cached per code for 5 min — merchant's generic code rarely changes between
+ * decisions, no point hammering Shopify on every modal show.
+ */
+const _genericCodeCache = new Map(); // code -> { value, expiresAt }
+const GENERIC_CODE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export async function getDiscountCodeDetails(admin, code) {
+  if (!code) return null;
+  const now = Date.now();
+  const cached = _genericCodeCache.get(code);
+  if (cached && cached.expiresAt > now) return cached.value;
+
+  const query = `
+    query DiscountByCode($code: String!) {
+      codeDiscountNodeByCode(code: $code) {
+        codeDiscount {
+          __typename
+          ... on DiscountCodeBasic {
+            customerGets {
+              value {
+                __typename
+                ... on DiscountPercentage { percentage }
+                ... on DiscountAmount {
+                  amount { amount }
+                }
+              }
+            }
+            minimumRequirement {
+              __typename
+              ... on DiscountMinimumSubtotal {
+                greaterThanOrEqualToSubtotal { amount }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  let value = null;
+  try {
+    const response = await admin.graphql(query, { variables: { code } });
+    const result = await response.json();
+    const cd = result?.data?.codeDiscountNodeByCode?.codeDiscount;
+
+    if (cd && cd.__typename === 'DiscountCodeBasic') {
+      const v = cd.customerGets?.value;
+      const min = cd.minimumRequirement;
+      if (v?.__typename === 'DiscountPercentage' && typeof v.percentage === 'number') {
+        // Shopify stores percentage as 0-1 fraction
+        value = { type: 'percentage', amount: Math.round(v.percentage * 100), threshold: null };
+      } else if (v?.__typename === 'DiscountAmount' && v.amount?.amount) {
+        const amt = Math.round(parseFloat(v.amount.amount));
+        if (min?.__typename === 'DiscountMinimumSubtotal' && min.greaterThanOrEqualToSubtotal?.amount) {
+          value = { type: 'threshold', amount: amt, threshold: Math.round(parseFloat(min.greaterThanOrEqualToSubtotal.amount)) };
+        } else {
+          value = { type: 'fixed', amount: amt, threshold: null };
+        }
+      }
+      // Other shapes (free shipping, BXGY) → value stays null, caller falls back
+    }
+  } catch (e) {
+    console.error('[Discount Lookup] Failed to read code details:', e);
+    return null;
+  }
+
+  _genericCodeCache.set(code, { value, expiresAt: now + GENERIC_CODE_CACHE_TTL_MS });
+  return value;
+}
+
+/**
  * Check if a discount code already exists in Shopify
  */
 async function checkDiscountCodeExists(admin, code) {
