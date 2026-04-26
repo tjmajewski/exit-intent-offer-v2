@@ -34,9 +34,9 @@ export async function loader() {
   // 2. Cron freshness — only meaningful if there's recent traffic
   const trafficSince = new Date(Date.now() - TRAFFIC_LOOKBACK_MS);
   const recentImpression = await db.variantImpression.findFirst({
-    where: { createdAt: { gte: trafficSince } },
-    orderBy: { createdAt: "desc" },
-    select: { createdAt: true },
+    where: { timestamp: { gte: trafficSince } },
+    orderBy: { timestamp: "desc" },
+    select: { timestamp: true },
   });
 
   if (!recentImpression) {
@@ -57,7 +57,7 @@ export async function loader() {
     if (ageMs > FRESHNESS_MAX_AGE_MS) {
       checks.cronFreshness = `stale (${Math.round(ageMs / 60000)}m old)`;
       const error = new Error(
-        `[health] Evolution cron stalled — newest Variant.birthDate is ${Math.round(ageMs / 60000)}m old (max ${FRESHNESS_MAX_AGE_MS / 60000}m). Traffic exists (impression at ${recentImpression.createdAt.toISOString()}).`
+        `[health] Evolution cron stalled — newest Variant.birthDate is ${Math.round(ageMs / 60000)}m old (max ${FRESHNESS_MAX_AGE_MS / 60000}m). Traffic exists (impression at ${recentImpression.timestamp.toISOString()}).`
       );
       console.error(error);
       throw error;

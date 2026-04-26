@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Archetype QA — Resparq</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8fafc; color: #1f2937; }
+  button { font-family: inherit; cursor: pointer; }
+
+  /* Tags */
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; letter-spacing: .04em; text-transform: uppercase; }
+  .tag-standard  { background: #dbeafe; color: #1d4ed8; }
+  .tag-social    { background: #d1fae5; color: #065f46; }
+  .tag-urgency   { background: #fef3c7; color: #92400e; }
+
+  /* Layout */
+  #app { max-width: 1440px; margin: 0 auto; padding: 24px 28px; }
+
+  /* Header */
+  .page-header { margin-bottom: 24px; }
+  .page-header h1 { font-size: 22px; font-weight: 700; color: #111827; }
+  .page-header p  { font-size: 14px; color: #6b7280; margin-top: 4px; }
+
+  /* Archetype tabs */
+  #archetype-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+  .arch-tab { padding: 8px 16px; border-radius: 8px; border: 2px solid #e5e7eb; background: #fff; color: #374151; font-size: 13px; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; transition: border-color .15s; }
+  .arch-tab .sub { font-size: 11px; font-weight: 400; color: #9ca3af; }
+  .arch-tab.active { border-color: #8B5CF6; background: #f5f3ff; color: #7c3aed; font-weight: 700; }
+  .arch-tab.active .sub { color: #8B5CF6; }
+
+  /* Meta strip */
+  #meta-strip { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 20px; margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 24px; font-size: 13px; align-items: center; }
+  #meta-strip .label { color: #9ca3af; font-weight: 500; }
+
+  /* View toggle */
+  #view-toggle { display: flex; gap: 8px; margin-bottom: 24px; }
+  .view-btn { padding: 6px 16px; border-radius: 6px; border: 1.5px solid #e5e7eb; background: #fff; color: #374151; font-weight: 600; font-size: 13px; }
+  .view-btn.active { border-color: #8B5CF6; background: #7c3aed; color: #fff; }
+
+  /* Preview layout */
+  #preview-layout { display: grid; grid-template-columns: 280px 1fr 260px; gap: 24px; align-items: start; }
+
+  /* Panels */
+  .panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 20px; }
+  .panel-title { font-size: 11px; font-weight: 700; color: #111827; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 14px; }
+
+  /* Stepper */
+  .stepper { margin-bottom: 16px; }
+  .stepper-label { font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  .stepper-label .count { font-weight: 400; color: #9ca3af; }
+  .stepper-row { display: flex; gap: 6px; align-items: stretch; }
+  .stepper-arrow { padding: 6px 10px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 16px; line-height: 1; }
+  .stepper-text { flex: 1; padding: 8px 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px; color: #374151; line-height: 1.5; min-height: 36px; display: flex; align-items: center; }
+
+  /* Show-subhead toggle */
+  .toggle-row { display: flex; gap: 6px; }
+  .toggle-btn { flex: 1; padding: 6px 0; border-radius: 6px; border: 1.5px solid #e5e7eb; background: #fff; color: #6b7280; font-size: 13px; font-weight: 400; }
+  .toggle-btn.active { border-color: #8B5CF6; background: #f5f3ff; color: #7c3aed; font-weight: 600; }
+
+  /* Visual pickers */
+  .visual-picker { margin-bottom: 12px; }
+  .visual-picker-label { font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .visual-picker-options { display: flex; flex-wrap: wrap; gap: 6px; }
+  .vis-opt { padding: 4px 10px; font-size: 12px; border-radius: 6px; border: 1.5px solid #e5e7eb; background: #fff; color: #374151; font-weight: 400; }
+  .vis-opt.active { border-color: #8B5CF6; background: #f5f3ff; color: #7c3aed; font-weight: 600; }
+
+  /* Divider */
+  .divider { height: 1px; background: #f3f4f6; margin: 18px 0; }
+
+  /* Modal canvas */
+  #modal-canvas { background: #f1f5f9; border-radius: 12px; padding: 24px; display: flex; align-items: center; justify-content: center; min-height: 380px; }
+
+  /* Preview label bar */
+  #preview-bar { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 18px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin-bottom: 12px; }
+  #preview-bar .arch-label { font-weight: 600; color: #374151; }
+  #preview-bar .idx-label  { color: #9ca3af; }
+
+  /* Code dump */
+  #code-dump { background: #1e293b; border-radius: 10px; padding: 16px 20px; font-size: 12px; font-family: "SFMono-Regular", Consolas, monospace; color: #94a3b8; line-height: 1.8; margin-top: 12px; }
+  #code-dump .key  { color: #64748b; }
+  #code-dump .str  { color: #e2e8f0; }
+  #code-dump .num  { color: #f59e0b; }
+  #code-dump .bool { color: #818cf8; }
+  #code-dump .vis  { color: #34d399; }
+
+  /* Slots list */
+  .slot-item { padding: 6px 10px; border-radius: 6px; border: 1px solid #e5e7eb; font-size: 13px; color: #6b7280; display: flex; justify-content: space-between; margin-bottom: 6px; }
+  .slot-item.required { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; font-weight: 600; }
+  .slot-item .req-badge { font-size: 11px; color: #93c5fd; }
+
+  /* Headline quick-nav */
+  #hl-nav { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+  .hl-nav-btn { padding: 6px 8px; text-align: left; background: transparent; border: 1px solid transparent; border-radius: 5px; font-size: 12px; color: #374151; line-height: 1.4; }
+  .hl-nav-btn.active { background: #f5f3ff; border-color: #c4b5fd; color: #7c3aed; }
+
+  /* Grid view */
+  #grid-view { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px; }
+  .copy-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; align-items: start; }
+  .copy-grid h4 { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 10px; }
+  .copy-item { padding: 8px 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px; color: #1f2937; margin-bottom: 6px; }
+  .copy-item-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .copy-item-num { font-size: 11px; color: #9ca3af; }
+  .cta-item { padding: 8px 12px; background: #f5f3ff; border: 1px solid #ede9fe; border-radius: 6px; font-size: 13px; font-weight: 600; color: #7c3aed; margin-bottom: 6px; }
+  .offer-chip { display: inline-block; padding: 4px 14px; background: #fef3c7; border: 1px solid #fde68a; border-radius: 20px; font-size: 13px; font-weight: 600; color: #92400e; margin: 0 4px 4px 0; }
+
+  /* Trigger info */
+  .trigger-row { font-size: 13px; color: #6b7280; line-height: 1.9; }
+  .trigger-row span.k { color: #374151; font-weight: 500; }
+
+  /* Modal styles injected dynamically */
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="page-header">
+    <h1>Archetype QA</h1>
+    <p>Browse all archetypes, copy pools, and modal render combos</p>
+  </div>
+
+  <div id="archetype-tabs"></div>
+  <div id="meta-strip"></div>
+
+  <div id="view-toggle">
+    <button class="view-btn active" data-view="preview">Live Preview</button>
+    <button class="view-btn" data-view="grid">Copy Grid</button>
+  </div>
+
+  <!-- Preview view -->
+  <div id="preview-view">
+    <div id="preview-layout">
+      <!-- Left controls -->
+      <div class="panel" id="controls-panel">
+        <div class="panel-title">Copy Controls</div>
+        <div id="copy-controls"></div>
+        <div class="divider"></div>
+        <div class="panel-title">Visual Genes</div>
+        <div id="visual-controls"></div>
+      </div>
+
+      <!-- Center preview -->
+      <div>
+        <div id="preview-bar">
+          <span class="arch-label" id="preview-arch-label"></span>
+          <span class="idx-label" id="preview-idx-label"></span>
+        </div>
+        <div id="modal-canvas"></div>
+        <div id="code-dump"></div>
+      </div>
+
+      <!-- Right info -->
+      <div id="right-panel" style="display:flex;flex-direction:column;gap:16px;"></div>
+    </div>
+  </div>
+
+  <!-- Grid view -->
+  <div id="grid-view" style="display:none;">
+    <div id="copy-grid-content"></div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// DATA
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SAMPLE = {
+  threshold_remaining: '$12.50',
+  social_proof_count: '247',
+  rating: '4.8',
+  percent_to_goal: '75',
+};
+
+// Format the {{amount}} placeholder based on archetype:
+// - PERCENT_DISCOUNT  → "15%"
+// - THRESHOLD_DISCOUNT → "$15"
+// - others (no offer) → fallback
+function formatAmount(baseline, offerAmount) {
+  if (!offerAmount || offerAmount <= 0) return '';
+  const pool = GENE_POOLS[baseline];
+  const isPercent = pool?.archetypeName === 'PERCENT_DISCOUNT';
+  return isPercent ? `${offerAmount}%` : `$${offerAmount}`;
+}
+
+// Baseline + offerAmount-aware interpolation. The ONLY caller in the modal
+// preview that needs accuracy is the live render — copy steppers also use
+// this so the displayed copy matches what would actually render.
+function interp(text, baseline, offerAmount) {
+  if (!text) return '';
+  const baseUsed = baseline || state.baseline;
+  const amt = offerAmount != null
+    ? formatAmount(baseUsed, offerAmount)
+    : formatAmount(baseUsed, getCopyOptions(baseUsed).offerAmounts[state.offerIdx] || 0);
+  const samples = { ...SAMPLE, amount: amt };
+  return text.replace(/\{\{(\w+)\}\}/g, (_, k) => samples[k] || `[${k}]`);
+}
+
+// Normalize copy for similarity comparison: strip {{placeholders}},
+// punctuation, collapse whitespace, lowercase. Used to detect when a
+// headline + subhead are essentially the same message — in which case
+// the subhead should be hidden so the modal doesn't echo itself.
+function normalizeForCompare(s) {
+  return (s || '')
+    .replace(/\{\{[^}]+\}\}/g, '')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+// Are two copy strings effectively the same message?
+// Heuristic: after normalization, one contains the other AND the shorter
+// is at least 60% of the longer (catches cases where subhead is just a
+// reword of the headline with the same key info).
+function isRedundantSubhead(headline, subhead) {
+  const h = normalizeForCompare(headline);
+  const s = normalizeForCompare(subhead);
+  if (!h || !s) return false;
+  if (h === s) return true;
+  const longer  = h.length >= s.length ? h : s;
+  const shorter = h.length <  s.length ? h : s;
+  if (!longer.includes(shorter)) {
+    // Also catch high token overlap (e.g. "247 customers completed their
+    // orders today" vs "247 orders completed today")
+    const ht = new Set(h.split(' ').filter(w => w.length > 2));
+    const st = new Set(s.split(' ').filter(w => w.length > 2));
+    if (ht.size === 0 || st.size === 0) return false;
+    const inter = [...ht].filter(w => st.has(w)).length;
+    const overlap = inter / Math.min(ht.size, st.size);
+    return overlap >= 0.7;
+  }
+  return shorter.length / longer.length >= 0.6;
+}
+
+const GENE_POOLS = {
+  revenue_with_discount: {
+    archetypeName: 'THRESHOLD_DISCOUNT',
+    archetypeDescription: 'AOV lift via "spend $X more, save $Y" threshold offer',
+    slots: ['headline','subhead','cta','discount_code'],
+    requiredSlots: ['headline','cta','discount_code'],
+    requires: { cartValue: 'gt0', discountCode: true, thresholdComputable: true },
+    offerAmounts: [10, 15, 20, 25],
+    headlines: ["You're just {{threshold_remaining}} away from {{amount}} off","Spend {{threshold_remaining}} more, save {{amount}} instantly","So close! {{percent_to_goal}}% to unlocking {{amount}} off"],
+    headlinesWithSocialProof: ["{{social_proof_count}} shoppers unlocked this deal today","This discount helped {{social_proof_count}} customers save","{{rating}}-star favorites — add {{threshold_remaining}} to save"],
+    headlinesWithUrgency: ["Save {{amount}} — this offer expires in 24 hours","{{amount}} off is yours, but not for long","Unlock {{amount}} off before this deal disappears"],
+    subheads: ["Add a little more and save on your entire order","This offer is only available right now","A few more items and your savings unlock"],
+    subheadsWithSocialProof: ["{{social_proof_count}} orders saved with this offer today","{{social_proof_count}} shoppers grabbed this deal — your turn","{{rating}}-star rated products at a price you'll love"],
+    subheadsWithUrgency: ["This exclusive offer expires soon — act now","Your personal discount code is only valid for 24 hours","Once the timer runs out, this deal is gone"],
+    ctas: ['Unlock My Savings','Add Items & Save','Get {{amount}} Off'],
+    redirects: ['cart','checkout'],
+    urgency: [true, false],
+    showSubhead: [true, false],
+    triggerTypes: ['exit_intent','idle','exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60],
+  },
+  revenue_no_discount: {
+    archetypeName: 'SOFT_UPSELL',
+    archetypeDescription: 'Gentle nudge to finish checkout without offering a discount',
+    slots: ['headline','subhead','cta'],
+    requiredSlots: ['headline','cta'],
+    requires: { cartItemsMin: 1 },
+    offerAmounts: [0],
+    headlines: ["Great picks — make it the perfect order","Your order is almost complete","Ready when you are"],
+    headlinesWithSocialProof: ["{{social_proof_count}} customers completed their orders today","{{rating}}-star favorites are in your cart"],
+    headlinesWithUrgency: [],
+    subheads: ["Make the most of your order before you go","Your cart is saved — finish whenever you're ready","A few taps and it's on the way"],
+    subheadsWithSocialProof: ["{{social_proof_count}} orders completed today","{{social_proof_count}} happy customers can't be wrong","{{rating}}-star quality across the board"],
+    subheadsWithUrgency: [],
+    ctas: ['Complete My Order','Return to Checkout','Finish My Order'],
+    redirects: ['cart','checkout'],
+    urgency: [false],
+    showSubhead: [true, false],
+    triggerTypes: ['exit_intent','idle','exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60],
+  },
+  conversion_with_discount: {
+    archetypeName: 'PERCENT_DISCOUNT',
+    archetypeDescription: 'Convert hesitant cart via % off discount code',
+    slots: ['headline','subhead','cta','discount_code'],
+    requiredSlots: ['headline','cta','discount_code'],
+    requires: { cartItemsMin: 1, discountCode: true },
+    offerAmounts: [10, 15, 20, 25],
+    headlines: ["Hold on — take {{amount}}% off your order","Your {{amount}}% discount is waiting","Before you go — save {{amount}}% right now"],
+    headlinesWithSocialProof: ["{{social_proof_count}} shoppers claimed this {{amount}}% off today","Join {{social_proof_count}} customers saving {{amount}}%","{{rating}}-star products, now {{amount}}% off for you"],
+    headlinesWithUrgency: ["Your {{amount}}% discount expires in 24 hours","Act fast — {{amount}}% off won't last forever","Exclusive {{amount}}% off, just for you — limited time"],
+    subheads: ["Use it now — this offer expires soon","Apply at checkout in one click","This exclusive offer won't be here tomorrow"],
+    subheadsWithSocialProof: ["{{social_proof_count}} orders placed with this discount today","{{social_proof_count}} customers saved — don't miss your turn","{{rating}}-star products at {{amount}}% off? Easy decision"],
+    subheadsWithUrgency: ["This unique code was created just for you and expires soon","Your personal discount code is only valid for 24 hours","Grab this deal before your exclusive offer expires"],
+    ctas: ['Claim {{amount}}% Off','Apply My Discount','Save {{amount}}% Now'],
+    redirects: ['cart','checkout'],
+    urgency: [true, false],
+    showSubhead: [true, false],
+    triggerTypes: ['exit_intent','idle','exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60],
+  },
+  conversion_no_discount: {
+    archetypeName: 'TRUST_REMINDER',
+    archetypeDescription: 'Trust/social-proof nudge with no discount',
+    slots: ['headline','subhead','cta'],
+    requiredSlots: ['headline','cta'],
+    requires: { cartItemsMin: 1 },
+    offerAmounts: [0],
+    headlines: ["You left something great in your cart","Your order is just one click away","Still thinking it over?"],
+    headlinesWithSocialProof: ["{{social_proof_count}} customers bought this — and loved it","{{rating}} stars from verified buyers","Join {{social_proof_count}} happy customers today"],
+    headlinesWithUrgency: [],
+    subheads: ["Your cart is saved and ready for you","Checkout takes less than 60 seconds","Your items are selling fast — grab yours"],
+    subheadsWithSocialProof: ["{{social_proof_count}} five-star reviews and counting","{{social_proof_count}} happy orders this week — yours is next","{{rating}} stars — see why customers keep coming back"],
+    subheadsWithUrgency: [],
+    ctas: ['Complete My Order','Return to Checkout','Yes, I Want This'],
+    redirects: ['cart','checkout'],
+    urgency: [false],
+    showSubhead: [true, false],
+    triggerTypes: ['exit_intent','idle','exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60],
+  },
+  pure_reminder: {
+    archetypeName: 'PURE_REMINDER',
+    archetypeDescription: 'Bare save-the-cart reminder, no offer of any kind',
+    slots: ['headline','subhead','cta'],
+    requiredSlots: ['headline','cta'],
+    requires: {},
+    offerAmounts: [0],
+    headlines: ["You left something behind","Still interested? Your cart is saved","Your picks are going fast","Don't let your cart expire"],
+    headlinesWithSocialProof: ["{{social_proof_count}} customers checked out today","{{social_proof_count}} shoppers are browsing this right now","{{rating}}-star products — still in your cart"],
+    headlinesWithUrgency: [],
+    subheads: ["Stock levels change — grab yours before it's gone","Your cart is saved, but not reserved forever","Come back and finish what you started","One click and it's yours"],
+    subheadsWithSocialProof: ["{{social_proof_count}} orders placed this week","{{social_proof_count}} customers grabbed theirs — will you?","{{rating}}-star quality — still in your cart"],
+    subheadsWithUrgency: [],
+    ctas: ['Back to My Cart','Finish Checkout','Complete My Order','View My Cart'],
+    redirects: ['cart','checkout'],
+    urgency: [false],
+    showSubhead: [true, false],
+    triggerTypes: ['exit_intent','idle','exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60],
+  },
+};
+
+const VISUAL = {
+  colorSchemes: [
+    { id: 'classic',  primary: '#000000', secondary: '#ffffff', accent: '#f59e0b', background: '#ffffff' },
+    { id: 'modern',   primary: '#1e293b', secondary: '#f1f5f9', accent: '#3b82f6', background: '#f8fafc' },
+    { id: 'vibrant',  primary: '#7c3aed', secondary: '#fef3c7', accent: '#f59e0b', background: '#faf5ff' },
+    { id: 'luxury',   primary: '#78350f', secondary: '#fef3c7', accent: '#d97706', background: '#fffbeb' },
+    { id: 'minimal',  primary: '#18181b', secondary: '#fafafa', accent: '#71717a', background: '#ffffff' },
+  ],
+  layouts: [
+    { id: 'centered', modalWidth: '500px', padding: '40px', alignment: 'center' },
+    { id: 'wide',     modalWidth: '600px', padding: '40px 60px', alignment: 'left' },
+    { id: 'compact',  modalWidth: '400px', padding: '28px', alignment: 'center' },
+    { id: 'split',    modalWidth: '580px', padding: '40px', alignment: 'left' },
+  ],
+  buttonStyles: [
+    { id: 'solid',   borderRadius: '4px',  fontWeight: 'bold', padding: '15px 40px' },
+    { id: 'rounded', borderRadius: '24px', fontWeight: '600',  padding: '14px 36px' },
+    { id: 'sharp',   borderRadius: '0px',  fontWeight: 'bold', padding: '16px 48px' },
+    { id: 'pill',    borderRadius: '50px', fontWeight: '600',  padding: '12px 32px' },
+  ],
+  typography: [
+    { id: 'modern',  headlineFont: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', headlineSize: '28px', bodyFont: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', bodySize: '16px' },
+    { id: 'elegant', headlineFont: 'Georgia, "Times New Roman", serif', headlineSize: '32px', bodyFont: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', bodySize: '15px' },
+    { id: 'bold',    headlineFont: '"Arial Black", "Arial Bold", sans-serif', headlineSize: '30px', bodyFont: 'Arial, sans-serif', bodySize: '16px' },
+  ],
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────────────────
+
+const state = {
+  baseline: 'revenue_with_discount',
+  view: 'preview',
+  hlIdx: 0,
+  shIdx: 0,
+  ctaIdx: 0,
+  offerIdx: 0,
+  showSubhead: true,
+  colorScheme: 'modern',
+  layout: 'centered',
+  buttonStyle: 'rounded',
+  typography: 'modern',
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+function getCopyOptions(baseline) {
+  const p = GENE_POOLS[baseline];
+  return {
+    headlines: [
+      ...(p.headlines || []).map(t => ({ text: t, tag: 'standard' })),
+      ...(p.headlinesWithSocialProof || []).map(t => ({ text: t, tag: 'social_proof' })),
+      ...(p.headlinesWithUrgency || []).map(t => ({ text: t, tag: 'urgency' })),
+    ],
+    subheads: [
+      ...(p.subheads || []).map(t => ({ text: t, tag: 'standard' })),
+      ...(p.subheadsWithSocialProof || []).map(t => ({ text: t, tag: 'social_proof' })),
+      ...(p.subheadsWithUrgency || []).map(t => ({ text: t, tag: 'urgency' })),
+    ],
+    ctas: (p.ctas || []).map(t => ({ text: t })),
+    offerAmounts: p.offerAmounts || [0],
+  };
+}
+
+function formatName(s) {
+  return s.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+function tagHTML(type) {
+  const map = { standard: ['tag-standard','Standard'], social_proof: ['tag-social','Social Proof'], urgency: ['tag-urgency','Urgency'] };
+  const [cls, label] = map[type] || ['', type];
+  return `<span class="tag ${cls}">${label}</span>`;
+}
+
+function find(arr, id) { return arr.find(x => x.id === id) || arr[0]; }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODAL RENDERER
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderModal() {
+  const pool = GENE_POOLS[state.baseline];
+  const opts = getCopyOptions(state.baseline);
+  const hasDiscount = pool.slots.includes('discount_code');
+
+  const headline   = opts.headlines[state.hlIdx]?.text  || '';
+  const subhead    = opts.subheads[state.shIdx]?.text   || '';
+  const cta        = opts.ctas[state.ctaIdx]?.text      || '';
+  const offerAmount = opts.offerAmounts[state.offerIdx] || 0;
+
+  const cs = find(VISUAL.colorSchemes, state.colorScheme);
+  const ly = find(VISUAL.layouts,      state.layout);
+  const bs = find(VISUAL.buttonStyles, state.buttonStyle);
+  const ty = find(VISUAL.typography,   state.typography);
+
+  const textAlign = ly.alignment === 'center' ? 'center' : 'left';
+  const isPercent  = pool.archetypeName === 'PERCENT_DISCOUNT';
+
+  let html = `
+    <div style="
+      background:${cs.background};
+      border-radius:16px;
+      padding:${ly.padding};
+      width:${ly.modalWidth};
+      max-width:100%;
+      box-shadow:0 12px 40px rgba(0,0,0,.18);
+      border:1px solid ${cs.primary}22;
+      position:relative;
+      text-align:${textAlign};
+    ">
+      <button disabled style="
+        position:absolute;top:12px;right:12px;
+        background:#f3f4f6;border:none;
+        width:28px;height:28px;border-radius:6px;
+        opacity:.4;font-size:18px;
+        display:flex;align-items:center;justify-content:center;
+      ">×</button>`;
+
+  if (hasDiscount && offerAmount > 0) {
+    const badge = isPercent ? `${offerAmount}% OFF` : `$${offerAmount} OFF`;
+    html += `<div style="
+      display:inline-block;
+      background:${cs.accent};color:#fff;
+      padding:4px 14px;border-radius:20px;
+      font-size:13px;font-weight:700;
+      margin-bottom:14px;letter-spacing:.03em;
+    ">${badge}</div>`;
+  }
+
+  html += `<h2 style="
+    margin:0 0 14px 0;
+    font-size:${ty.headlineSize};
+    font-weight:700;color:${cs.primary};
+    font-family:${ty.headlineFont};
+    line-height:1.3;padding-right:36px;
+  ">${interp(headline, state.baseline, offerAmount) || '<em style="opacity:.4">No headline</em>'}</h2>`;
+
+  // Auto-suppress subhead when it's a near-duplicate of the headline.
+  // (See isRedundantSubhead — catches "247 customers completed their orders
+  // today" / "247 orders completed today" and similar.)
+  const subheadIsRedundant = isRedundantSubhead(
+    interp(headline, state.baseline, offerAmount),
+    interp(subhead,  state.baseline, offerAmount)
+  );
+  const renderSubhead = state.showSubhead && subhead && !subheadIsRedundant;
+
+  if (renderSubhead) {
+    html += `<p style="
+      margin:0 0 24px 0;
+      font-size:${ty.bodySize};
+      color:${cs.primary}aa;
+      font-family:${ty.bodyFont};
+      line-height:1.6;
+    ">${interp(subhead, state.baseline, offerAmount)}</p>`;
+  }
+
+  html += `<button disabled style="
+    background:${cs.accent};color:#fff;border:none;
+    padding:${bs.padding};font-size:16px;
+    font-weight:${bs.fontWeight};
+    border-radius:${bs.borderRadius};
+    width:100%;font-family:${ty.bodyFont};
+    margin-top:${!renderSubhead ? '8px' : '0'};
+  ">${interp(cta, state.baseline, offerAmount) || 'CTA'}</button>`;
+
+  if (hasDiscount) {
+    // Code matches the active offer amount so QA can spot mismatched copy
+    // (e.g. headline "save $15" with code SAVE10 — would never ship together).
+    const code = offerAmount > 0 ? `SAVE${offerAmount}` : 'SAVEXX';
+    html += `<div style="
+      margin-top:14px;padding:10px 16px;
+      background:${cs.secondary}88;
+      border:1.5px dashed ${cs.accent};
+      border-radius:8px;font-size:13px;
+      color:${cs.primary};text-align:center;
+      font-family:${ty.bodyFont};letter-spacing:.05em;
+    ">Code: <strong>${code}</strong></div>`;
+  }
+
+  // Stash redundancy flag so renderCodeDump / preview bar can show a warning
+  state._subheadRedundant = subheadIsRedundant && state.showSubhead && !!subhead;
+
+  html += `<div style="margin-top:14px;text-align:right;font-size:11px;color:#9ca3af;">
+    Powered by <span style="font-weight:600;color:#8B5CF6;">Resparq</span>
+  </div></div>`;
+
+  document.getElementById('modal-canvas').innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CODE DUMP
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderCodeDump() {
+  const opts = getCopyOptions(state.baseline);
+  const headline    = opts.headlines[state.hlIdx]?.text    || '';
+  const subhead     = opts.subheads[state.shIdx]?.text     || '';
+  const cta         = opts.ctas[state.ctaIdx]?.text        || '';
+  const offerAmount = opts.offerAmounts[state.offerIdx]    || 0;
+
+  const rows = [
+    ['headline',    `"${headline}"`,    'str'],
+    state.showSubhead ? ['subhead', `"${subhead}"`, 'str'] : null,
+    ['cta',         `"${cta}"`,         'str'],
+    offerAmount > 0 ? ['offerAmount', offerAmount, 'num'] : null,
+    ['showSubhead', String(state.showSubhead), 'bool'],
+    ['colorScheme', `"${state.colorScheme}"`,  'vis'],
+    ['layout',      `"${state.layout}"`,       'vis'],
+    ['buttonStyle', `"${state.buttonStyle}"`,  'vis'],
+    ['typography',  `"${state.typography}"`,   'vis'],
+  ].filter(Boolean);
+
+  let html = rows.map(([k, v, cls]) =>
+    `<div><span class="key">${k}: </span><span class="${cls}">${v}</span></div>`
+  ).join('');
+
+  // Warn when subhead was suppressed because it duplicated the headline
+  if (state._subheadRedundant) {
+    html += `<div style="margin-top:8px;padding:8px 10px;background:#7c2d12;color:#fed7aa;border-radius:6px;">
+      ⚠ subhead suppressed — too similar to headline
+    </div>`;
+  }
+
+  document.getElementById('code-dump').innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTROLS
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderCopyControls() {
+  const opts = getCopyOptions(state.baseline);
+  let html = '';
+
+  function stepperHTML(id, label, items, idx) {
+    const item = items[idx];
+    const tagBadge = item?.tag ? tagHTML(item.tag) : '';
+    return `
+      <div class="stepper">
+        <div class="stepper-label">
+          ${label} <span class="count">(${idx+1}/${items.length})</span>
+          ${tagBadge}
+        </div>
+        <div class="stepper-row">
+          <button class="stepper-arrow" onclick="step('${id}',-1)">‹</button>
+          <div class="stepper-text">${interp(item?.text || '', state.baseline)}</div>
+          <button class="stepper-arrow" onclick="step('${id}',1)">›</button>
+        </div>
+      </div>`;
+  }
+
+  html += stepperHTML('hl',  'Headline', opts.headlines,    state.hlIdx);
+  html += stepperHTML('sh',  'Subhead',  opts.subheads,     state.shIdx);
+  html += stepperHTML('cta', 'CTA',      opts.ctas,         state.ctaIdx);
+  if (opts.offerAmounts.length > 1) {
+    const pool = GENE_POOLS[state.baseline];
+    const isPercent = pool.archetypeName === 'PERCENT_DISCOUNT';
+    const offerItems = opts.offerAmounts.map(a => ({ text: isPercent ? `${a}%` : `$${a}` }));
+    html += stepperHTML('offer', 'Offer Amount', offerItems, state.offerIdx);
+  }
+
+  // Show subhead toggle
+  html += `
+    <div class="stepper">
+      <div class="stepper-label">Show Subhead</div>
+      <div class="toggle-row">
+        <button class="toggle-btn ${state.showSubhead ? 'active' : ''}" onclick="setShowSubhead(true)">Yes</button>
+        <button class="toggle-btn ${!state.showSubhead ? 'active' : ''}" onclick="setShowSubhead(false)">No</button>
+      </div>
+    </div>`;
+
+  document.getElementById('copy-controls').innerHTML = html;
+}
+
+function renderVisualControls() {
+  function pickerHTML(label, key, options) {
+    const btns = options.map(o => `
+      <button class="vis-opt ${state[key] === o.id ? 'active' : ''}" onclick="setVisual('${key}','${o.id}')">${o.id}</button>
+    `).join('');
+    return `<div class="visual-picker">
+      <div class="visual-picker-label">${label}</div>
+      <div class="visual-picker-options">${btns}</div>
+    </div>`;
+  }
+  document.getElementById('visual-controls').innerHTML =
+    pickerHTML('Color Scheme', 'colorScheme', VISUAL.colorSchemes) +
+    pickerHTML('Layout',       'layout',      VISUAL.layouts) +
+    pickerHTML('Button Style', 'buttonStyle', VISUAL.buttonStyles) +
+    pickerHTML('Typography',   'typography',  VISUAL.typography);
+}
+
+function renderRightPanel() {
+  const pool = GENE_POOLS[state.baseline];
+  const opts = getCopyOptions(state.baseline);
+
+  // Slots
+  let slotsHTML = pool.slots.map(s => {
+    const req = pool.requiredSlots.includes(s);
+    return `<div class="slot-item ${req ? 'required' : ''}">
+      <span>${s}</span>
+      ${req ? '<span class="req-badge">required</span>' : ''}
+    </div>`;
+  }).join('');
+
+  // Trigger info
+  const requiresStr = Object.entries(pool.requires).map(([k,v]) => `${k}: ${v}`).join(', ') || 'none';
+
+  // HL quick-nav
+  const hlNav = opts.headlines.map((h, i) => `
+    <button class="hl-nav-btn ${state.hlIdx === i ? 'active' : ''}" onclick="jumpHL(${i})">
+      ${tagHTML(h.tag)} ${interp(h.text, state.baseline)}
+    </button>`).join('');
+
+  document.getElementById('right-panel').innerHTML = `
+    <div class="panel">
+      <div class="panel-title">Slots</div>
+      ${slotsHTML}
+    </div>
+    <div class="panel">
+      <div class="panel-title">Trigger Genes</div>
+      <div class="trigger-row">
+        <div><span class="k">Types:</span> ${pool.triggerTypes.join(', ')}</div>
+        <div><span class="k">Idle secs:</span> ${pool.idleSeconds.join(', ')}</div>
+        <div><span class="k">Redirects:</span> ${pool.redirects.join(', ')}</div>
+        <div><span class="k">Urgency:</span> ${pool.urgency.map(String).join(', ')}</div>
+        <div><span class="k">Requires:</span> ${requiresStr}</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Copy Types</div>
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;color:#6b7280;">
+        <div style="display:flex;align-items:center;gap:8px;">${tagHTML('standard')} Neutral, no social signals</div>
+        <div style="display:flex;align-items:center;gap:8px;">${tagHTML('social_proof')} Uses social count / rating</div>
+        <div style="display:flex;align-items:center;gap:8px;">${tagHTML('urgency')} 24h expiry language</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">All Headlines</div>
+      <div id="hl-nav">${hlNav}</div>
+    </div>`;
+}
+
+function renderPreviewBar() {
+  const pool = GENE_POOLS[state.baseline];
+  const opts = getCopyOptions(state.baseline);
+  document.getElementById('preview-arch-label').textContent =
+    `${pool.archetypeName} — ${formatName(state.colorScheme)} / ${formatName(state.layout)}`;
+  document.getElementById('preview-idx-label').textContent =
+    `HL ${state.hlIdx+1}/${opts.headlines.length} · SH ${state.shIdx+1}/${opts.subheads.length} · CTA ${state.ctaIdx+1}/${opts.ctas.length}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ARCHETYPE TABS + META STRIP
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderArchetypeTabs() {
+  const html = Object.entries(GENE_POOLS).map(([b, p]) => `
+    <button class="arch-tab ${b === state.baseline ? 'active' : ''}" onclick="switchBaseline('${b}')">
+      <span>${p.archetypeName}</span>
+      <span class="sub">${b}</span>
+    </button>`).join('');
+  document.getElementById('archetype-tabs').innerHTML = html;
+}
+
+function renderMetaStrip() {
+  const pool = GENE_POOLS[state.baseline];
+  const opts = getCopyOptions(state.baseline);
+  const req = Object.entries(pool.requires).map(([k,v]) => `${k}: ${v}`).join(', ') || 'none';
+
+  document.getElementById('meta-strip').innerHTML = `
+    <div><span class="label">Description: </span>${pool.archetypeDescription}</div>
+    <div><span class="label">Requires: </span>${req}</div>
+    <div><span class="label">Headlines: </span>${opts.headlines.length}</div>
+    <div><span class="label">Subheads: </span>${opts.subheads.length}</div>
+    <div><span class="label">CTAs: </span>${opts.ctas.length}</div>
+    <div><span class="label">Offer amounts: </span>${opts.offerAmounts.join(', ') || 'none'}</div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GRID VIEW
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderGridView() {
+  const pool = GENE_POOLS[state.baseline];
+  const opts = getCopyOptions(state.baseline);
+  const isPercent = pool.archetypeName === 'PERCENT_DISCOUNT';
+  const isThreshold = pool.archetypeName === 'THRESHOLD_DISCOUNT';
+
+  const hlHTML = opts.headlines.map((h, i) => `
+    <div class="copy-item">
+      <div class="copy-item-meta">${tagHTML(h.tag)}<span class="copy-item-num">#${i+1}</span></div>
+      ${interp(h.text, state.baseline)}
+    </div>`).join('');
+
+  const shHTML = opts.subheads.map((s, i) => `
+    <div class="copy-item">
+      <div class="copy-item-meta">${tagHTML(s.tag)}<span class="copy-item-num">#${i+1}</span></div>
+      ${interp(s.text, state.baseline)}
+    </div>`).join('');
+
+  const ctaHTML = opts.ctas.map(c => `<div class="cta-item">${interp(c.text, state.baseline)}</div>`).join('');
+
+  const offerHTML = opts.offerAmounts.filter(a => a > 0).map(a =>
+    `<span class="offer-chip">${isPercent ? a+'%' : '$'+a}</span>`
+  ).join('') || '<span style="color:#9ca3af;font-size:13px;">No discount</span>';
+
+  const slotsHTML = pool.slots.map(s => {
+    const req = pool.requiredSlots.includes(s);
+    return `<div class="slot-item ${req ? 'required' : ''}" style="margin-bottom:6px;">
+      <span>${s}</span>${req ? '<span class="req-badge">required</span>' : ''}
+    </div>`;
+  }).join('');
+
+  document.getElementById('copy-grid-content').innerHTML = `
+    <div class="copy-grid">
+      <div>
+        <h4>Headlines (${opts.headlines.length})</h4>
+        ${hlHTML}
+      </div>
+      <div>
+        <h4>Subheads (${opts.subheads.length})</h4>
+        ${shHTML}
+      </div>
+      <div>
+        <h4>CTAs (${opts.ctas.length})</h4>
+        ${ctaHTML}
+        <h4 style="margin-top:16px;margin-bottom:10px;">Offer Amounts</h4>
+        ${offerHTML}
+        <h4 style="margin-top:16px;margin-bottom:10px;">Slots</h4>
+        ${slotsHTML}
+        <div style="font-size:11px;color:#9ca3af;margin-top:4px;">* required slot</div>
+      </div>
+    </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RENDER ALL
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderAll() {
+  renderArchetypeTabs();
+  renderMetaStrip();
+  if (state.view === 'preview') {
+    document.getElementById('preview-view').style.display = '';
+    document.getElementById('grid-view').style.display = 'none';
+    renderCopyControls();
+    renderVisualControls();
+    renderModal();
+    renderCodeDump();
+    renderRightPanel();
+    renderPreviewBar();
+  } else {
+    document.getElementById('preview-view').style.display = 'none';
+    document.getElementById('grid-view').style.display = '';
+    renderGridView();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ACTIONS (called from HTML onclick)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function switchBaseline(b) {
+  state.baseline = b;
+  state.hlIdx = 0; state.shIdx = 0; state.ctaIdx = 0; state.offerIdx = 0;
+  renderAll();
+}
+
+function step(id, dir) {
+  const opts = getCopyOptions(state.baseline);
+  const map = { hl: ['hlIdx', opts.headlines.length], sh: ['shIdx', opts.subheads.length], cta: ['ctaIdx', opts.ctas.length], offer: ['offerIdx', opts.offerAmounts.length] };
+  const [key, len] = map[id];
+  state[key] = (state[key] + dir + len) % len;
+  renderAll();
+}
+
+function jumpHL(i) {
+  state.hlIdx = i;
+  renderAll();
+}
+
+function setShowSubhead(v) {
+  state.showSubhead = v;
+  renderAll();
+}
+
+function setVisual(key, val) {
+  state[key] = val;
+  renderAll();
+}
+
+// View toggle
+document.querySelectorAll('.view-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.view = btn.dataset.view;
+    document.querySelectorAll('.view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === state.view));
+    renderAll();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────────────────────────────────────
+
+renderAll();
+</script>
+</body>
+</html>
