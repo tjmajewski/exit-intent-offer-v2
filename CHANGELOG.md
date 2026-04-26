@@ -1,10 +1,10 @@
 # @shopify/shopify-app-template-react-router
 
-## Repsarq AI - April 21, 2026 (Archetype System — Phases 2A–2H)
+## Resparq AI - April 21, 2026 (Archetype System — Phases 2A–2H)
 
 ### Added
 - **Archetype meta-layer** for variants. Every baseline maps to an archetype
-  (e.g. `THRESHOLD_DISCOUNT`, `SOFT_UPSELL`, `FREE_SHIPPING_INCENTIVE`) — a
+  (e.g. `THRESHOLD_DISCOUNT`, `SOFT_UPSELL`, `PERCENT_DISCOUNT`) — a
   coherent modal pattern combining headline style, offer type, and CTA. The AI
   now learns which *patterns* win for which segments, not just which raw copy
   variants win.
@@ -57,7 +57,7 @@
 
 ---
 
-## Repsarq AI - January 19, 2026
+## Resparq AI - January 19, 2026
 
 ### Added
 - **Promotional Intelligence Enhancements**:
@@ -108,7 +108,7 @@
 - Updated AI_SYSTEM_COMPLETE_GUIDE.md with Enterprise features documentation
 - Updated all documentation dates to January 19, 2026
 
-## Repsarq AI - January 19, 2026 (Evening Update - Segment Tracking)
+## Resparq AI - January 19, 2026 (Evening Update - Segment Tracking)
 
 ### Added
 - **Complete Segment Tracking Implementation**:

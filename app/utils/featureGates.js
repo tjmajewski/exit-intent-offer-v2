@@ -28,7 +28,7 @@ export const PLAN_FEATURES = {
     revenueTracking: true,
     perModalAnalytics: false,
     impressionLimit: 10000,
-    templates: ["discount", "free-shipping", "urgency", "welcome", "reminder"]
+    templates: ["discount", "urgency", "welcome", "reminder"]
   },
   enterprise: {
     name: "Enterprise",
@@ -43,7 +43,7 @@ export const PLAN_FEATURES = {
     revenueTracking: true,
     perModalAnalytics: true,
     impressionLimit: null,
-    templates: ["discount", "free-shipping", "urgency", "welcome", "reminder", "custom"]
+    templates: ["discount", "urgency", "welcome", "reminder", "custom"]
   }
 };
 

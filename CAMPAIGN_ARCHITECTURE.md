@@ -5,7 +5,7 @@
 Traditional A/B testing tools let you test anything against anything, leading to meaningless comparisons:
 - Exit intent modal vs 30-second delay modal (different audiences)
 - Cart page modal vs product page modal (different contexts)
-- 10% off vs free shipping on different triggers (incomparable)
+- 10% off vs $10 off on different triggers (incomparable)
 
 **Result:** Merchants get confused data and can't make informed decisions.
 
@@ -146,7 +146,7 @@ An **A/B Test** = Multiple variants within a single campaign that share identica
 
 ### What Can Be Tested
 ✅ **Offer amount:** 10% vs 15% vs 20% off
-✅ **Offer type:** Discount vs free shipping vs gift
+✅ **Offer type:** Percentage vs fixed amount discount
 ✅ **Copy:** Headlines, descriptions, urgency language
 ✅ **CTA text:** "Claim Discount" vs "Get My Code" vs "Save Now"
 ✅ **Design:** Button colors, modal styles, layouts

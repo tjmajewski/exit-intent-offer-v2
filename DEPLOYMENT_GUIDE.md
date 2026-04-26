@@ -1,6 +1,6 @@
-# Repsarq Deployment Guide - Fly.io
+# Resparq Deployment Guide - Fly.io
 
-This document covers the complete deployment process for Repsarq on Fly.io with PostgreSQL. Use this as a reference for troubleshooting or future deployments.
+This document covers the complete deployment process for Resparq on Fly.io with PostgreSQL. Use this as a reference for troubleshooting or future deployments.
 
 ## Table of Contents
 
@@ -246,7 +246,7 @@ flyctl secrets set \
   SHOPIFY_API_KEY="your_api_key" \
   SHOPIFY_API_SECRET="your_api_secret" \
   SHOPIFY_APP_URL="https://resparq.fly.dev" \
-  SCOPES="write_products,write_discounts,read_orders,write_gift_cards" \
+  SCOPES="write_products,write_discounts,read_orders" \
   CRON_SECRET="your_cron_secret" \
   -a resparq
 
@@ -279,7 +279,19 @@ flyctl logs -a resparq
 
 # Test HTTP response
 curl -I https://resparq.fly.dev/
+
+# Health check (DB + cron freshness — 200 ok, 500 if cron stalled w/ traffic)
+curl https://resparq.fly.dev/api/health
 ```
+
+### Scheduled Crons (Fly Machines)
+
+Recurring AI jobs run as scheduled Fly machines, not via external cron.
+See [DATABASE_MAINTENANCE.md](DATABASE_MAINTENANCE.md#automated-cleanup--cron-schedule)
+for the full schedule and the `flyctl m run` registration commands.
+
+`/api/health` is monitored by Fly's `[[http_service.checks]]` (every 5 min).
+On failure, Sentry captures the thrown error and Fly auto-restarts the machine.
 
 ---
 
@@ -308,7 +320,7 @@ Set the following URLs in **Configuration**:
 
 Ensure scopes match what's set in Fly.io secrets:
 ```
-write_discounts,write_gift_cards,read_orders,write_products
+write_discounts,read_orders,write_products
 ```
 
 ---

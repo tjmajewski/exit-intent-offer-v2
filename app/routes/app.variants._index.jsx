@@ -953,7 +953,7 @@ export default function VariantsIndex() {
           <div style={{ background: 'white', padding: 20, borderRadius: 8, border: '1px solid #e5e7eb' }}>
             <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
               Winning Archetype
-              <InfoIcon tip="The modal pattern (e.g. Threshold Discount, Free Shipping) with the highest conversion rate in the selected window. An archetype is a coherent combination of headline style, offer type, and CTA — your AI builds variants from these patterns and learns which ones work best." />
+              <InfoIcon tip="The modal pattern (e.g. Threshold Discount, Soft Upsell) with the highest conversion rate in the selected window. An archetype is a coherent combination of headline style, offer type, and CTA — your AI builds variants from these patterns and learns which ones work best." />
             </div>
             {winningArchetype ? (
               <>

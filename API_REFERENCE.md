@@ -1,6 +1,6 @@
-# API Reference - Repsarq
+# API Reference - Resparq
 
-Complete reference for all API endpoints, webhooks, and integration points in the Repsarq exit intent application.
+Complete reference for all API endpoints, webhooks, and integration points in the Resparq exit intent application.
 
 ---
 

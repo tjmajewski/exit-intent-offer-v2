@@ -2067,39 +2067,6 @@
         return;
       }
 
-      // Handle gift card offer - add product to cart
-      if (offerType === 'giftcard') {
-        try {
-          console.log('Adding gift card voucher to cart...');
-          await fetch('/cart/add.js', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              items: [{
-                id: 7790476951630,
-                quantity: 1
-              }]
-            })
-          });
-          console.log('Gift card voucher added to cart');
-        } catch (error) {
-          console.error('Error adding gift card to cart:', error);
-        }
-
-        // Stamp exit intent on cart so webhook can attribute conversion
-        try {
-          await fetch('/cart/update.js', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}) } })
-          });
-        } catch (e) { /* non-fatal */ }
-
-        // Redirect to cart or checkout
-        window.location.href = destination === 'cart' ? '/cart' : '/checkout';
-        return;
-      }
-
       // Handle discount codes (percentage or fixed)
       let redirectUrl;
 

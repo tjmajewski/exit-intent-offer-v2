@@ -1,4 +1,4 @@
-# Repsarq AI - Technical Architecture
+# Resparq AI - Technical Architecture
 **Last Updated:** April 6, 2026
 **Audience:** Developers
 
@@ -25,7 +25,7 @@
 
 ### Goal: Show Modal Only When Necessary
 
-The Repsarq AI is designed with a single guiding principle: **only show a discount modal when it's necessary to get the conversion**.
+The Resparq AI is designed with a single guiding principle: **only show a discount modal when it's necessary to get the conversion**.
 
 This means:
 - High-intent customers who would buy anyway → No modal or minimal offer

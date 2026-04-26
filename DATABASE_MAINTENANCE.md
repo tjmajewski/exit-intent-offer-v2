@@ -111,39 +111,45 @@ Returns:
 
 **NOT deleted:** Shops, Variants, Conversions (revenue data is preserved)
 
-## Automated Cleanup
+## Automated Cleanup & Cron Schedule
 
-### Option 1: Fly.io Scheduled Machine
+All recurring jobs run as Fly **scheduled machines** (no external cron service).
+They share the deployed app image and exit on completion.
 
-Add a scheduled machine to run cleanup daily:
+| Script | Schedule | Purpose |
+|--------|----------|---------|
+| `node app/cron/evolution-cycle.js` | hourly | Variant evolution cycle (Pro/Ent AI shops) |
+| `node app/cron/threshold-learning-cycle.js` | hourly | Per-shop intervention threshold recalc |
+| `node app/cron/aggregate-gene-performance.js` | daily | Cross-store gene/archetype aggregation |
+| `node app/cron/track-seasonal-patterns.js` | weekly | Seasonal performance snapshot |
 
-```toml
-# fly.toml
-[processes]
-  app = ""
-  cleanup = "curl -X POST http://localhost:3000/api/cleanup-old-data"
+Cleanup of expired discount offers and old impression/decision rows is handled
+by the same `aggregate-gene-performance` daily run plus `/api/cleanup-old-data`
+(callable on demand via `fly ssh console -C "curl -X POST http://localhost:3000/api/cleanup-old-data"`).
 
-[[machines]]
-  schedule = "0 3 * * *"  # Daily at 3am UTC
-  process_group = "cleanup"
-```
-
-### Option 2: External Cron Service
-
-Use a free cron service like [cron-job.org](https://cron-job.org):
-
-- **URL:** `https://your-app.fly.dev/api/cleanup-old-data`
-- **Method:** POST
-- **Schedule:** Daily at 3am
-
-### Option 3: Fly.io CLI
-
-Add to your deployment script:
+### How they were registered
 
 ```bash
-# Run cleanup after deploy
-fly ssh console -C "curl -X POST http://localhost:3000/api/cleanup-old-data"
+# Run once per cron, after a successful deploy. Re-run to re-register if the image changes.
+flyctl m run -a resparq --schedule hourly  registry.fly.io/resparq:latest node app/cron/evolution-cycle.js
+flyctl m run -a resparq --schedule hourly  registry.fly.io/resparq:latest node app/cron/threshold-learning-cycle.js
+flyctl m run -a resparq --schedule daily   registry.fly.io/resparq:latest node app/cron/aggregate-gene-performance.js
+flyctl m run -a resparq --schedule weekly  registry.fly.io/resparq:latest node app/cron/track-seasonal-patterns.js
 ```
+
+Confirm with `flyctl m list -a resparq` — scheduled machines show their schedule.
+
+### Health monitoring
+
+`/api/health` is pinged every 5 minutes by Fly's `[[http_service.checks]]`.
+The endpoint throws (→ Sentry email + Fly machine restart + 500) when:
+- DB is unreachable, or
+- The newest `Variant.birthDate` across AI-mode shops is >2h old **while** real
+  traffic exists (a `VariantImpression` in the last 24h). This is the tripwire
+  for "evolution cron silently stopped firing."
+
+If there's no recent traffic the freshness check is skipped (no false positives
+on a quiet store).
 
 ## Monitoring on Fly.io
 

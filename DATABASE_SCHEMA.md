@@ -1,12 +1,12 @@
-# Database Schema - Repsarq
+# Database Schema - Resparq
 
-Complete documentation of all database models, relationships, and data flows in the Repsarq application.
+Complete documentation of all database models, relationships, and data flows in the Resparq application.
 
 ---
 
 ## Overview
 
-Repsarq uses **Prisma ORM** with **SQLite** (development) and **PostgreSQL** (production). All models are defined in `prisma/schema.prisma`.
+Resparq uses **Prisma ORM** with **SQLite** (development) and **PostgreSQL** (production). All models are defined in `prisma/schema.prisma`.
 
 ### Core Models
 

@@ -28,7 +28,7 @@ app/
 - Optimization mode selector (Manual vs AI)
 - Template selection grid
 - Modal content editor (headline, body, CTA)
-- Discount offer section (percentage, fixed, gift card)
+- Discount offer section (percentage, fixed)
 - Trigger conditions (exit intent, timer, cart value)
 - Preview button integration
 
@@ -74,7 +74,6 @@ app/
 **Functions:**
 - `createDiscountCode(admin, percentage)` - Creates percentage discounts
 - `createFixedAmountDiscountCode(admin, amount)` - Creates fixed amount discounts
-- `createGiftCard(admin, amount)` - Creates gift cards
 
 **Key Fix:** Now properly verifies exact code match before assuming code exists
 
@@ -103,7 +102,7 @@ import QuickSetupTab from "../components/settings/tabs/QuickSetupTab";
 import AISettingsTab from "../components/settings/tabs/AISettingsTab";
 import AdvancedTab from "../components/settings/tabs/AdvancedTab";
 import BrandingTab from "../components/settings/tabs/BrandingTab";
-import { createDiscountCode, createFixedAmountDiscountCode, createGiftCard } from "../utils/discounts";
+import { createDiscountCode, createFixedAmountDiscountCode } from "../utils/discounts";
 import { getTriggerDisplay, getDiscountDisplay } from "../utils/settingsHelpers";
 
 export default function Settings() {

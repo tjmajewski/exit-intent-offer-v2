@@ -14,6 +14,14 @@ primary_region = 'iad'
   min_machines_running = 1
   processes = ['app']
 
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "5m"
+    method = "GET"
+    timeout = "10s"
+    path = "/api/health"
+    protocol = "http"
+
 [[vm]]
   memory = '1gb'
   cpu_kind = 'shared'

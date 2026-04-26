@@ -1,5 +1,5 @@
-# Repsarq Feature Roadmap
-**Updated: April 6, 2026**
+# Resparq Feature Roadmap
+**Updated: April 25, 2026**
 **App:** Exit Intent Modal with AI-Powered Cart Recovery
 
 ---
@@ -55,36 +55,7 @@ Display cart product thumbnails in the modal so the customer sees *their* items.
 
 ---
 
-### 1.3 Free Shipping Threshold Bar
-**Impact:** High — free shipping is the #1 reason customers increase cart value
-**Effort:** Medium (4-6 days)
-**Tier:** Pro+
-
-A progress bar showing how close the customer is to free shipping, displayed in the modal.
-
-**Core scope:**
-- Merchant configures free shipping threshold (or auto-detect from Shopify shipping rules)
-- Dynamic progress bar: "You're $12.50 away from FREE shipping!"
-- When threshold met: celebratory state ("You qualify for FREE shipping!")
-- Pairs with discount offer or stands alone
-- Works with multi-currency if applicable
-
-**Analytics surface:**
-- AOV lift when shipping bar is present
-- Threshold completion rate (what % of customers actually hit the threshold)
-- Revenue from upsell vs. discount cost
-- Optimal threshold discovery
-
-**Variant genes:**
-- Messaging tone ("Almost there!" vs. "Add $X more for free shipping")
-- Bar visual style (gradient, segmented, minimal)
-- Position in modal (top, middle, bottom)
-- Whether to show exact dollar amount or percentage
-- Paired offer strategy (discount + shipping bar vs. shipping bar alone)
-
----
-
-### 1.4 Promo Code Automation by Offer Type
+### 1.3 Promo Code Automation by Offer Type — PARTIALLY SHIPPED
 **Impact:** High — removes manual work and prevents promo conflicts
 **Effort:** Small (2-3 days)
 **Tier:** Pro+
@@ -92,15 +63,13 @@ A progress bar showing how close the customer is to free shipping, displayed in 
 Automatically generate and manage the right type of Shopify discount code based on the offer being made.
 
 **Core scope:**
-- Percentage off → auto-creates percentage price rule
-- Fixed amount off → auto-creates fixed amount price rule
-- Free shipping → auto-creates free shipping discount
-- Gift with purchase → auto-creates BXGY or automatic discount
-- **Two code modes:**
-  - **Generic code** (e.g. "SAVE10") — merchant-defined, stays active indefinitely, reusable by anyone. No expiration messaging.
-  - **Unique code** (e.g. "EXIT-A7k9x") — auto-generated per customer, expires in 24 hours and is set to disabled in Shopify. Modal displays "Code expires in 24 hours" to create urgency and prevent code sharing.
-- Code rotation: auto-expire and regenerate codes on schedule
-- Conflict detection: warn if another active discount would stack or override
+- ~~Percentage off → auto-creates percentage price rule~~ SHIPPED ([`createPercentageDiscount`](app/utils/discount-codes.js:249))
+- ~~Fixed amount off → auto-creates fixed amount price rule~~ SHIPPED ([`createFixedDiscount`](app/utils/discount-codes.js:318))
+- **Two code modes:** SHIPPED
+  - ~~**Generic code** (e.g. "SAVE10") — merchant-defined, stays active indefinitely, reusable by anyone. No expiration messaging.~~ SHIPPED ([`createGenericDiscountCode`](app/utils/discount-codes.js:65))
+  - ~~**Unique code** (e.g. "EXIT-A7k9x") — auto-generated per customer, expires in 24 hours and is set to disabled in Shopify. Modal displays "Code expires in 24 hours" to create urgency and prevent code sharing.~~ SHIPPED (24h `endsAt` set on every unique code)
+- Code rotation: auto-expire and regenerate codes on schedule — partial (24h auto-expire is set, no scheduled regeneration cron)
+- Conflict detection: warn if another active discount would stack or override — **NOT SHIPPED**
 
 **Analytics surface:**
 - Redemption rate by discount type
@@ -109,7 +78,7 @@ Automatically generate and manage the right type of Shopify discount code based 
 - Stacking/conflict incident log
 
 **Variant genes:**
-- Offer type (percentage, fixed, shipping, gift)
+- Offer type (percentage, fixed)
 - Offer amount within type
 - Code format (branded prefix vs. random)
 - Expiration window
@@ -132,7 +101,7 @@ Replace the current "Preview Modal" button with a persistent side-by-side layout
 - Preview updates instantly as merchant changes any setting
 - Shows actual modal with current brand colors, fonts, copy
 - Device toggle: preview as desktop or mobile
-- Preview includes all active features (timer, images, shipping bar if enabled)
+- Preview includes all active features (timer, images)
 - Does NOT count as an impression
 
 **Implementation notes:**
@@ -187,14 +156,13 @@ Go beyond the current triggers with audience-level targeting.
 
 ---
 
-### 2.4 Incrementality Dashboard
+### ~~2.4 Incrementality Dashboard~~ SHIPPED
 **Impact:** High — proves ROI to merchants, reduces churn ("this app made you $X")
-**Effort:** Medium (3-5 days for backend + dashboard integration)
 **Tier:** All tiers
 
-Show merchants the causal revenue lift from Repsarq using the 5% holdout group.
+Show merchants the causal revenue lift from Resparq using the 5% holdout group.
 
-**Core scope (backend — SHIPPED):**
+**Backend — SHIPPED:**
 - 5% holdout group randomly assigned at add-to-cart time (before hard overrides)
 - Holdout customers never see a modal, period — unbiased measurement
 - Cart attribute stamping (`exit_intent_holdout`) for webhook conversion tracking
@@ -202,14 +170,14 @@ Show merchants the causal revenue lift from Repsarq using the 5% holdout group.
 - Holdout excluded from Thompson Sampling learning loop (measurement-only)
 - Unique decision ID matching for accurate conversion attribution at any volume
 
-**Core scope (dashboard — TODO):**
-- **Incremental conversion rate**: treatment group CVR minus holdout CVR
-- **Incremental revenue**: (incremental CVR × total eligible sessions × AOV)
-- **Statistical confidence**: Bayesian comparison of treatment vs holdout
-- **ROI**: incremental revenue minus total discounts given minus subscription cost
-- "Gathering data" state until confidence crosses threshold (~500-1000 holdout conversions)
-- Time-series chart showing incremental lift over time
-- Integrate with existing analytics dashboard layout
+**Dashboard — SHIPPED** ([`app/routes/app._index.jsx:393-1543`](app/routes/app._index.jsx:393)):
+- ~~Incremental conversion rate~~ — treatment vs holdout CVR comparison cards
+- ~~Incremental revenue~~ — surfaced as primary headline metric in AI mode (extrapolated holdout revenue → treatment-group size for apples-to-apples)
+- ~~"Gathering data" state~~ — shown until ≥10 holdout impressions; small-sample warning until ≥20
+- ~~Lift % vs baseline~~ — color-coded green/red based on direction
+- Statistical confidence (Bayesian) — basic version present; full posterior visualization still TODO
+- Time-series chart of incremental lift over time — TODO
+- ROI math (incremental revenue − discounts − subscription cost) — TODO
 
 **Key design decisions:**
 - Holdout coin flip happens BEFORE hard overrides to avoid systematic bias
@@ -265,7 +233,7 @@ Detect other popups, modals, and overlays running on the store and react intelli
 **Core scope:**
 - DOM scanning for known popup app signatures (Klaviyo, Privy, OptiMonk, Justuno, etc.)
 - Detection of generic overlay/modal patterns (z-index stacking, fixed positioning)
-- Behavior: delay Repsarq modal if another popup is active, queue instead of overlap
+- Behavior: delay Resparq modal if another popup is active, queue instead of overlap
 - Settings: merchant can set priority rules ("always show after Klaviyo", "never show if Privy is active")
 - Alert in admin: "We detected [App X] running popups — here's how we're handling it"
 
@@ -277,7 +245,7 @@ Detect other popups, modals, and overlays running on the store and react intelli
 ---
 
 ### 3.3 Full-Funnel Orchestrator
-**Impact:** High — moves Repsarq from "exit popup" to "conversion platform"
+**Impact:** High — moves Resparq from "exit popup" to "conversion platform"
 **Effort:** Large (2-4 weeks)
 **Tier:** Enterprise
 
@@ -328,7 +296,7 @@ If a customer dismisses the exit intent modal, show a persistent but non-intrusi
 
 ## Priority Tier 4: Platform & Ecosystem
 
-These features make Repsarq a platform, not just an app.
+These features make Resparq a platform, not just an app.
 
 ### 4.1 Developer Onboarding & Documentation
 **Impact:** Medium — enables integrations and reduces support burden
@@ -400,7 +368,7 @@ trigger detection, etc.) before the merchant churns.
 ## Cross-Cutting Requirements
 
 ### Generic vs. Unique Promo Codes (Applies Everywhere)
-Merchants choose between two code modes. This choice affects behavior across all features that generate or display a promo code (modal, cart CTA, shipping bar, full-funnel touchpoints, etc.).
+Merchants choose between two code modes. This choice affects behavior across all features that generate or display a promo code (modal, cart CTA, full-funnel touchpoints, etc.).
 
 **Generic codes** (e.g. "SAVE10"):
 - Merchant creates and manages the code themselves
@@ -435,12 +403,12 @@ Merchants choose between two code modes. This choice affects behavior across all
 
 | Quarter | Focus | Key Deliverables |
 |---------|-------|-----------------|
-| **Q2 2026** | Revenue drivers | ~~Countdown timer~~, product images, shipping bar, promo automation, live preview |
+| **Q2 2026** | Revenue drivers | ~~Countdown timer~~, ~~promo automation (percentage + fixed)~~, ~~incrementality dashboard~~, product images, live preview |
 | **Q3 2026** | Intelligence | Enhanced AI, 3rd party awareness, advanced targeting, support mirror view |
 | **Q4 2026** | Platform | Full-funnel orchestrator, cart CTA, developer docs, API/webhooks |
 | **Q1 2027** | Expansion | Tier 5 exploration based on merchant feedback and data |
 
 ---
 
-**Last Updated:** April 6, 2026
+**Last Updated:** April 25, 2026
 **Status:** Post-launch — feature expansion phase

@@ -1,4 +1,4 @@
-# Repsarq AI System - Complete Guide
+# Resparq AI System - Complete Guide
 **Last Updated:** April 21, 2026
 **Version:** 2.4 (archetype meta-layer + segment-aware Thompson Sampling)
 
@@ -15,7 +15,7 @@
 
 ## System Overview
 
-Repsarq uses a **genetic algorithm** + **Bayesian statistics** to automatically optimize exit-intent modals.
+Resparq uses a **genetic algorithm** + **Bayesian statistics** to automatically optimize exit-intent modals.
 
 **Key Concepts:**
 - **Variants** = Individual modal versions (organisms)
@@ -295,9 +295,9 @@ An archetype is a **coherent modal pattern** that combines a headline style, an 
 |-----------|----------------|-------|-----|
 | `THRESHOLD_DISCOUNT` | "Spend $X more, save Y%" | Tiered discount | "Add to qualify" |
 | `SOFT_UPSELL` | Recommendation-based | None or small | "See picks" |
-| `FREE_SHIPPING_INCENTIVE` | "You're $X away from free shipping" | Free shipping | "Add more" |
+| `PERCENT_DISCOUNT` | "Take X% off" | Percentage discount | "Apply discount" |
 | `URGENCY_PUSH` | Countdown-driven | Time-bound discount | "Claim now" |
-| `LOYALTY_NUDGE` | Customer-status copy | Loyalty perk | "Use my reward" |
+| `TRUST_REMINDER` | Reassurance copy | None | "Continue" |
 
 Archetype is **denormalized onto every `VariantImpression`** for fast aggregator queries (no joins to figure out which baseline a variant came from).
 
@@ -305,7 +305,7 @@ Archetype is **denormalized onto every `VariantImpression`** for fast aggregator
 
 Genes (raw headline/CTA/offer text) are the AI's atoms — but the patterns *between* genes are where merchant insight lives. Telling a merchant "your top headline is X" is less actionable than "your customers respond to upsells, not discounts."
 
-Archetypes also enable cross-store learning that doesn't leak copy: the meta-learning aggregator can publish "stores in this vertical win with FREE_SHIPPING_INCENTIVE for first-time mobile guests" without exposing any specific headline text or revenue figure.
+Archetypes also enable cross-store learning that doesn't leak copy: the meta-learning aggregator can publish "stores in this vertical win with SOFT_UPSELL for first-time mobile guests" without exposing any specific headline text or revenue figure.
 
 ### Brand-safety guard
 
@@ -372,7 +372,7 @@ Runs every 5 minutes. When a store has 50+ new intervention outcomes since last 
 
 ### Purpose
 
-Proves the causal revenue lift from Repsarq. Without a holdout, the system can optimize but can't answer "how much incremental revenue did we generate?"
+Proves the causal revenue lift from Resparq. Without a holdout, the system can optimize but can't answer "how much incremental revenue did we generate?"
 
 ### How It Works
 

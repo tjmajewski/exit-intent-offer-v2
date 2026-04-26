@@ -53,7 +53,6 @@ const SUBHEADS = [
   "Complete your purchase now and save",
   "This offer won't last long",
   "Treat yourself - you deserve it!",
-  "Free shipping on orders over $50",
   "Join thousands of happy customers"
 ];
 
@@ -84,8 +83,7 @@ const STATUSES = ['alive', 'alive', 'alive', 'alive', 'dying', 'dead', 'champion
 const PROMOTIONS = [
   { code: 'SUMMER25', amount: 25, type: 'percentage', classification: 'site_wide', aiStrategy: 'pause', reason: 'Site-wide promotion detected - pausing exit modal to avoid discount stacking' },
   { code: 'WELCOME10', amount: 10, type: 'percentage', classification: 'targeted', aiStrategy: 'continue', reason: 'Targeted new customer promotion - exit modal still effective for returning visitors' },
-  { code: 'VIP15', amount: 15, type: 'percentage', classification: 'targeted', aiStrategy: 'continue', reason: 'VIP-only promotion - modal can run for non-VIP segments' },
-  { code: 'FREESHIP', amount: 0, type: 'free_shipping', classification: 'site_wide', aiStrategy: 'ignore', reason: 'Free shipping only - does not conflict with discount offers' }
+  { code: 'VIP15', amount: 15, type: 'percentage', classification: 'targeted', aiStrategy: 'continue', reason: 'VIP-only promotion - modal can run for non-VIP segments' }
 ];
 
 // Seasonal patterns
@@ -98,7 +96,7 @@ const SEASONS = [
 
 async function seedData() {
   console.log('\n======================================');
-  console.log('  Repsarq Screenshot Data Seeder');
+  console.log('  Resparq Screenshot Data Seeder');
   console.log('======================================\n');
 
   // Find the shop

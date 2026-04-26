@@ -72,7 +72,7 @@ export async function loader({ request }) {
       cartValueMin: 0,
       cartValueMax: 1000,
       discountEnabled: false,
-      offerType: "percentage", // "percentage", "fixed", or "giftcard"
+      offerType: "percentage", // "percentage" or "fixed"
       discountPercentage: 10,
       discountAmount: 10,
       discountCode: null,

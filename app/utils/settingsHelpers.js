@@ -29,9 +29,7 @@ export function getDiscountDisplay(settings) {
     return `${settings.discountPercentage}%`;
   } else if (offerType === "fixed") {
     return `$${settings.discountAmount}`;
-  } else if (offerType === "giftcard") {
-    return `$${settings.discountAmount} gift card`;
   }
-  
+
   return `${settings.discountPercentage}%`;
 }

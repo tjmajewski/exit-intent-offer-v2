@@ -388,7 +388,7 @@ When a site-wide promotion is detected, AI can automatically:
 
 **3. Continue Strategy**
 - Keep showing normal exit-intent offers
-- Use when: Offers are complementary (e.g., free shipping + percentage off)
+- Use when: Offers are complementary (e.g., site-wide promo + targeted exit-intent discount)
 
 **4. Ignore Strategy (Merchant Override)**
 - Manually override AI decision
@@ -748,7 +748,6 @@ Promotional intelligence is one of Enterprise's most powerful features.
 Resparq scans your store every hour for:
 - Active Shopify discount codes
 - Site-wide promotions
-- Free shipping offers
 - BFCM/seasonal sales
 - Percentage and fixed amount discounts
 
@@ -774,9 +773,9 @@ AI chooses best strategy:
 - Action: Increase exit-intent to 20% (better for abandoners)
 
 **Continue** (Offers are complementary):
-- Site-wide: Free shipping
-- Exit-intent: 15% off
-- Action: Continue (stack savings)
+- Site-wide: Product-specific 10% off
+- Exit-intent: 15% off site-wide
+- Action: Continue (different scopes)
 
 **Ignore** (Merchant override):
 - You manually set strategy
@@ -846,11 +845,6 @@ Navigate to **Promotions** page (linked from dashboard widget):
 - Example: 25% sale → 30% exit-intent
 - Rewards abandoners with best deal
 
-**For Free Shipping Promotions:**
-- Use "continue" strategy
-- Stack free shipping + percentage discount
-- Messaging: "Get Free Shipping + 15% Off"
-
 **For Product-Specific Promotions:**
 - Use "ignore" or "continue"
 - Exit-intent can target different products
@@ -872,14 +866,9 @@ Navigate to **Promotions** page (linked from dashboard widget):
 - Exit-intent: "VIP access to 25% off"
 - Creates exclusivity feeling
 
-**Strategy 3: Stack & Save**
-- Site-wide: Free shipping
-- Exit-intent: "Free shipping + save 15%"
-- Explicitly call out stacking
-
-**Strategy 4: Different Value Props**
-- Site-wide: 20% off
-- Exit-intent: Free gift with purchase (no discount)
+**Strategy 3: Different Value Props**
+- Site-wide: 20% off (product-specific)
+- Exit-intent: $15 off cart-wide (different scope)
 - Non-conflicting offers
 
 ---

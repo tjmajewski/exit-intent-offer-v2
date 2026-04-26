@@ -1,8 +1,8 @@
-# Discount Code Implementation - Repsarq
+# Discount Code Implementation - Resparq
 **Status:** ✅ COMPLETE (Updated January 16, 2026)
 
 ## Overview
-Repsarq supports automatic discount code creation and application in both Manual and AI modes. Discount codes are unique per customer in AI mode to prevent sharing on Reddit/social media. Manual mode uses simple, reusable codes.
+Resparq supports automatic discount code creation and application in both Manual and AI modes. Discount codes are unique per customer in AI mode to prevent sharing on Reddit/social media. Manual mode uses simple, reusable codes.
 
 ---
 
@@ -383,19 +383,6 @@ async handleCTAClick() {
   const offerType = this.settings.offerType || 'percentage';
   const destination = this.settings.redirectDestination || 'checkout';
   
-  // Handle gift card offer
-  if (offerType === 'giftcard') {
-    await fetch('/cart/add.js', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        items: [{ id: 7790476951630, quantity: 1 }]
-      })
-    });
-    window.location.href = destination === 'cart' ? '/cart' : '/checkout';
-    return;
-  }
-  
   // ✅ Apply discount via Cart API (modern Shopify requirement)
   if (discountCode) {
     try {
@@ -582,7 +569,7 @@ window.location.href = '/checkout';
 
 **Settings & Creation:**
 - `app/routes/app.settings.jsx` - Discount creation, database save, form handling
-- `app/utils/discounts.js` - Manual mode discount creation (percentage, fixed, gift card)
+- `app/utils/discounts.js` - Manual mode discount creation (percentage, fixed)
 - `app/utils/discount-codes.js` - AI mode unique code generation
 
 **API:**

@@ -2,7 +2,7 @@
 **Last Updated:** March 13, 2026
 
 > This doc covers **subscription billing** (plan tiers and feature gating).
-> For **usage billing** (per-conversion commission charges), see [USAGE_BILLING.md](./USAGE_BILLING.md).
+> Usage-based billing was removed; pricing is flat-rate only.
 
 ---
 

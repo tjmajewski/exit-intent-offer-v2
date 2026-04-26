@@ -1,4 +1,4 @@
-# Excel Export Implementation - Repsarq
+# Excel Export Implementation - Resparq
 **Date:** January 16, 2026
 **Status:** ✅ Working (Bug #8 Fixed)
 

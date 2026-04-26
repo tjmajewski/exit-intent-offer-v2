@@ -34,17 +34,17 @@ was no way to reload the numbers without a full page refresh.
 **Problem:** Revenue Saved / Orders Created were always zero. The webhook only
 counted a conversion when a recognizable discount code was on the order
 (legacy regex, `EXIT` prefix, or a stored configured code). No-discount modals,
-gift-card-only offers, and any custom code format were silently skipped.
+and any custom code format were silently skipped.
 
 **Fix:**
 - `exit-intent-modal.js`: stamps `exit_intent: true` as a Shopify **cart
-  attribute** on every CTA click (both gift-card and checkout/cart paths).
+  attribute** on every CTA click (checkout/cart paths).
   Cart attributes flow into orders as `note_attributes`.
 - `webhooks.orders.create.jsx`: checks `note_attributes` for the `exit_intent`
   flag as the **primary** attribution signal. Existing discount-code checks
   are kept as fallbacks.
 - Fixed a `TypeError` crash where `exitDiscountUsed.code` was dereferenced
-  when `exitDiscountUsed` was `null` (gift-card or attribute-only path).
+  when `exitDiscountUsed` was `null` (attribute-only path).
 
 ---
 
