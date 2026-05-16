@@ -187,7 +187,7 @@ export default function AppLayout({ children, plan }) {
           {navItems.map((item) => (
             <Link
               key={item.path}
-              to={item.path}
+              to={{ pathname: item.path, search: location.search }}
               style={{
                 display: "flex",
                 alignItems: "center",
