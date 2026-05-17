@@ -230,24 +230,12 @@ export default function AISettingsTab({
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 500, marginBottom: 4 }}>Generic Code (Same for everyone)</div>
                   <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
-                    AI uses a single reusable code for all customers. Easy to track and no expiry.
+                    Same code for every customer. Easy to track, no expiry.
                   </div>
                   {aiDiscountCodeMode === "generic" && (
-                    <input
-                      type="text"
-                      name="aiGenericDiscountCode"
-                      defaultValue={settings.aiGenericDiscountCode || ""}
-                      placeholder="e.g., SAVE15"
-                      maxLength="20"
-                      style={{
-                        padding: "8px 12px",
-                        border: "1px solid #d1d5db",
-                        borderRadius: 6,
-                        fontSize: 16,
-                        textTransform: "uppercase"
-                      }}
-                      onChange={(e) => { e.target.value = e.target.value.toUpperCase(); setFormChanged(true); }}
-                    />
+                    <div style={{ fontSize: 13, color: "#6b7280" }}>
+                      Auto-branded with your store name (e.g. <strong style={{ color: "#374151" }}>YOURSTORESAVE10</strong>).
+                    </div>
                   )}
                 </div>
               </label>

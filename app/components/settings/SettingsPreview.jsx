@@ -22,8 +22,12 @@ export default function SettingsPreview({
   brandSecondaryColor,
   brandAccentColor,
   brandFont,
-  customCSS
+  customCSS,
+  plan,
+  aggressionLevel
 }) {
+  const planTier = plan?.tier || 'starter';
+  const showPoweredBy = planTier !== 'enterprise';
   const active = variant === "inline" ? true : !!isOpen;
 
   useEffect(() => {
@@ -69,19 +73,34 @@ export default function SettingsPreview({
     const max = cartValueMax || "∞";
     features.push({ label: `Cart Value: $${min} - $${max}` });
   }
-  if (discountEnabled) {
-    if (offerType === 'percentage') {
-      features.push({ label: `${discountPercentage}% Discount` });
-    } else if (offerType === 'fixed') {
-      features.push({ label: `$${discountAmount} Discount` });
+
+  // Discount feature line — AI mode is driven by the aggression slider
+  // (0 = announcement only; >0 = AI will offer discounts). Manual mode is
+  // driven by the explicit discountEnabled toggle.
+  if (isAIMode) {
+    if (aggressionLevel && aggressionLevel > 0) {
+      features.push({ label: `AI Discount Active (Aggression: ${aggressionLevel}/10)` });
+    } else {
+      features.push({ label: "No Discount (Announcement Only)" });
     }
   } else {
-    features.push({ label: "No Discount (Announcement Only)" });
+    if (discountEnabled) {
+      if (offerType === 'percentage') {
+        features.push({ label: `${discountPercentage}% Discount` });
+      } else if (offerType === 'fixed') {
+        features.push({ label: `$${discountAmount} Discount` });
+      }
+    } else {
+      features.push({ label: "No Discount (Announcement Only)" });
+    }
   }
+
   if (isAIMode) features.push({ label: "AI Optimization Active" });
 
-  // Reusable modal card preview
-  const ModalCard = ({ scale = 1 }) => (
+  // Reusable modal card preview.
+  // `compact` (inline rail variant) drops the X close button — the live
+  // preview rail isn't a modal, nothing to close.
+  const ModalCard = ({ scale = 1, compact = false }) => (
     <div id="exit-intent-modal" style={{
       background: 'white',
       borderRadius: '16px',
@@ -106,32 +125,34 @@ export default function SettingsPreview({
         </div>
       )}
 
-      <button
-        type="button"
-        disabled
-        style={{
-          position: 'absolute',
-          top: '20px',
-          right: isAIMode ? '110px' : '20px',
-          background: '#f3f4f6',
-          border: 'none',
-          fontSize: '20px',
-          color: '#6b7280',
-          width: '28px',
-          height: '28px',
-          borderRadius: '8px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'not-allowed',
-          opacity: 0.5
-        }}
-      >
-        ×
-      </button>
+      {!compact && (
+        <button
+          type="button"
+          disabled
+          style={{
+            position: 'absolute',
+            top: '20px',
+            right: isAIMode ? '110px' : '20px',
+            background: '#f3f4f6',
+            border: 'none',
+            fontSize: '20px',
+            color: '#6b7280',
+            width: '28px',
+            height: '28px',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'not-allowed',
+            opacity: 0.5
+          }}
+        >
+          ×
+        </button>
+      )}
 
       <h2 style={{
-        margin: '0 0 16px 0',
+        margin: isAIMode && compact ? '32px 0 16px 0' : '0 0 16px 0',
         fontSize: scale < 1 ? '22px' : '32px',
         fontWeight: '700',
         color: isAIMode ? '#6b7280' : '#1f2937',
@@ -175,15 +196,17 @@ export default function SettingsPreview({
         {displayCTA}
       </button>
 
-      <div style={{
-        marginTop: '16px',
-        textAlign: 'right',
-        fontSize: '11px',
-        color: '#9ca3af'
-      }}>
-        <span>Powered by </span>
-        <span style={{ fontWeight: '600', color: '#8B5CF6' }}>Resparq</span>
-      </div>
+      {showPoweredBy && (
+        <div style={{
+          marginTop: '16px',
+          textAlign: 'right',
+          fontSize: '11px',
+          color: '#9ca3af'
+        }}>
+          <span>Powered by </span>
+          <span style={{ fontWeight: '600', color: '#8B5CF6' }}>Resparq</span>
+        </div>
+      )}
     </div>
   );
 
@@ -223,7 +246,7 @@ export default function SettingsPreview({
           </span>
         </div>
 
-        <ModalCard scale={0.85} />
+        <ModalCard scale={0.85} compact />
 
         {features.length > 0 && (
           <div style={{ marginTop: '16px' }}>

@@ -6,7 +6,7 @@ import { getAvailableTemplates, MODAL_TEMPLATES } from "../utils/templates";
 import { generateModalHash, getDefaultModalLibrary, findModalByHash, getNextModalName } from "../utils/modalHash";
 // Old generic discount helpers are no longer used at save time —
 // unique codes are now minted per-session via /api/generate-code
-import { createGenericDiscountCode } from "../utils/discount-codes";
+import { createGenericDiscountCode, derivePrefixFromShop } from "../utils/discount-codes";
 import { getTriggerDisplay, getDiscountDisplay } from "../utils/settingsHelpers";
 import { getShopPlan } from "../utils/plan.server";
 import AppLayout from "../components/AppLayout";
@@ -261,28 +261,37 @@ export async function action({ request }) {
       const discountCodeMode = settings.mode === "ai"
         ? settings.aiDiscountCodeMode
         : settings.manualDiscountCodeMode;
-      const genericDiscountCode = settings.mode === "ai"
-        ? settings.aiGenericDiscountCode
-        : settings.manualGenericDiscountCode;
 
-      console.log(`Using ${settings.mode} mode settings:`, { discountCodeMode, genericDiscountCode });
+      console.log(`Using ${settings.mode} mode settings:`, { discountCodeMode });
 
-      // MODE: Generic - Create or verify generic code
-      if (discountCodeMode === "generic" && genericDiscountCode) {
-        console.log('Creating generic discount code:', genericDiscountCode);
-
+      // MODE: Generic - Auto-derive a single reusable code from the shop name.
+      // Format mirrors unique codes: {SHOP_PREFIX}SAVE{AMOUNT} for fixed, or
+      // {SHOP_PREFIX}{AMOUNT} for percentage. Merchant has zero input.
+      if (discountCodeMode === "generic") {
         const discountAmount = settings.offerType === "percentage"
           ? settings.discountPercentage
           : settings.discountAmount;
+        const shopPrefix = derivePrefixFromShop(session.shop);
+        const autoCode = settings.offerType === "percentage"
+          ? `${shopPrefix}${discountAmount}`
+          : `${shopPrefix}SAVE${discountAmount}`;
+
+        console.log('Creating auto-branded generic discount code:', autoCode);
 
         const result = await createGenericDiscountCode(
           admin,
-          genericDiscountCode,
+          autoCode,
           settings.offerType,
           discountAmount
         );
 
         settings.discountCode = result.code;
+        // Stash the derived code so downstream UI / DB reflects what was used
+        if (settings.mode === "ai") {
+          settings.aiGenericDiscountCode = result.code;
+        } else {
+          settings.manualGenericDiscountCode = result.code;
+        }
         console.log('Generic code ready:', settings.discountCode, result.exists ? '(reused)' : '(created)');
       }
       // MODE: Unique - Codes are generated per-session at modal display time
@@ -291,8 +300,6 @@ export async function action({ request }) {
       else if (discountCodeMode === "unique") {
         settings.discountCode = null; // Clear any stale static code
         console.log('Unique code mode: codes will be generated per-session (no static code created)');
-      } else {
-        console.log('Generic mode selected but no generic code provided');
       }
     } else {
       console.log('Discount not enabled');
@@ -649,6 +656,8 @@ export default function Settings() {
   
   const livePreviewProps = {
     variant: "inline",
+    plan,
+    aggressionLevel,
     optimizationMode,
     modalHeadline,
     modalBody,
