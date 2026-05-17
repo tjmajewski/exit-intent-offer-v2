@@ -19,6 +19,71 @@
     }
   }
 
+  // Detect if the cart already has competing promo surfaces (free-shipping bars,
+  // discount progress trackers, upsell banners). When detected we downgrade to
+  // text-only inline rendering so we don't pile on top of existing promos.
+  function detectCompetingPromos(scope) {
+    if (!scope) return false;
+    const promoSelectors = [
+      '[class*="free-shipping"]',
+      '[class*="shipping-bar"]',
+      '[class*="shipping-progress"]',
+      '[data-shipping-threshold]',
+      '[class*="cart-promotion"]',
+      '[class*="cart-banner"]',
+      '[class*="upsell"]',
+      '[class*="goal-bar"]',
+      '[class*="reward-bar"]',
+      '[id*="boost-bar"]',
+      '[id*="reconvert"]'
+    ];
+    for (const sel of promoSelectors) {
+      if (scope.querySelector(sel)) return true;
+    }
+    // Heuristic: text-content scan for "free shipping" or "spend $X" copy
+    try {
+      const text = (scope.textContent || '').toLowerCase();
+      if (text.includes('free shipping') || text.includes('away from free')) return true;
+    } catch (_) {}
+    return false;
+  }
+
+  // Clone a few visual properties off the cart's existing checkout button so
+  // our injected Apply button looks like it belongs to the theme.
+  function cloneCheckoutButtonStyle(scope) {
+    const root = scope || document;
+    const selectors = [
+      '#CartDrawer-Checkout',
+      'button[name="checkout"]',
+      '[name="checkout"]',
+      '.cart__checkout-button',
+      '.cart-drawer__checkout',
+      '.cart__submit',
+      '[type="submit"][value*="checkout" i]'
+    ];
+    for (const sel of selectors) {
+      const el = root.querySelector(sel);
+      if (el && el.offsetParent !== null) {
+        const cs = window.getComputedStyle(el);
+        return {
+          borderRadius: cs.borderRadius,
+          fontFamily: cs.fontFamily,
+          fontWeight: cs.fontWeight,
+          letterSpacing: cs.letterSpacing,
+          textTransform: cs.textTransform
+        };
+      }
+    }
+    return null;
+  }
+
+  // Hide the persistent offer pill while a cart-surface offer is mounted
+  // (one-surface rule: never stack pill + cart line).
+  function hideOfferPill() {
+    const pill = document.getElementById('exit-intent-offer-pill');
+    if (pill) pill.remove();
+  }
+
   console.log('[Cart Monitor] Script loaded');
 
   class CartMonitor {
@@ -47,39 +112,66 @@
     }
 
     checkForOffer() {
-      const offerData = this.getActiveOffer();
-      
-      if (!offerData) {
-        // No offer yet, keep waiting
+      // 1) Threshold offers (legacy path — drives progress bar / qualification banner)
+      const thresholdOffer = this.getActiveOffer();
+      if (thresholdOffer) {
+        if (this.currentOfferId !== thresholdOffer.code) {
+          console.log('[Cart Monitor] Active threshold offer found:', thresholdOffer);
+          this.currentOfferId = thresholdOffer.code;
+          const isCartPage = window.location.pathname.includes('/cart');
+          const hasMiniCart = this.detectMiniCart();
+          if (isCartPage || hasMiniCart) {
+            this.startMonitoring(thresholdOffer, isCartPage, hasMiniCart);
+          }
+        }
         return;
       }
 
-      // Offer found! Check if we're already monitoring it
-      if (this.currentOfferId === offerData.code) {
-        // Already monitoring this offer
-        return;
-      }
+      // 2) Flat % / $ off offers (from dismissed-modal pending offer)
+      const flatOffer = this.getPendingFlatOffer();
+      if (!flatOffer) return;
+      if (this.currentFlatOfferCode === flatOffer.code) return;
 
-      // New offer detected!
-      console.log('[Cart Monitor] Active offer found:', offerData);
-      this.currentOfferId = offerData.code;
-      
-      // Check if we're on cart page OR if there's a mini-cart
       const isCartPage = window.location.pathname.includes('/cart');
-      const hasMiniCart = this.detectMiniCart();
-      
-      if (!isCartPage && !hasMiniCart) {
-        console.log('[Cart Monitor] Not on cart page and no mini-cart detected');
-        return;
-      }
+      const miniCart = this.detectMiniCart();
+      if (!isCartPage && !miniCart) return;
 
-      console.log('[Cart Monitor] Starting monitoring', {
-        cartPage: isCartPage,
-        miniCart: hasMiniCart
-      });
-      
-      // Start monitoring cart
-      this.startMonitoring(offerData, isCartPage, hasMiniCart);
+      console.log('[Cart Monitor] Active flat offer found:', flatOffer);
+      this.currentFlatOfferCode = flatOffer.code;
+
+      // One-surface rule: kill the pill while cart shows the offer
+      hideOfferPill();
+
+      if (isCartPage) {
+        this.mountFlatCartPageSurface(flatOffer);
+      }
+      if (miniCart) {
+        this.mountFlatMiniCartSurface(flatOffer, miniCart);
+        this.watchMiniCartForFlatOffer(miniCart, flatOffer);
+      }
+    }
+
+    /**
+     * Read the pending flat-discount offer set by the modal's closeModal
+     * when the customer dismisses without clicking the CTA. This is the
+     * surface that recovers accidental click-offs.
+     */
+    getPendingFlatOffer() {
+      try {
+        if (sessionStorage.getItem('exitIntentPillDismissed') === 'true') return null;
+        const raw = sessionStorage.getItem('exitIntentPendingOffer');
+        if (!raw) return null;
+        const offer = JSON.parse(raw);
+        if (!offer || !offer.code) return null;
+        // 24h expiry matches code TTL
+        if (offer.timestamp && Date.now() - offer.timestamp > 24 * 60 * 60 * 1000) {
+          sessionStorage.removeItem('exitIntentPendingOffer');
+          return null;
+        }
+        return offer;
+      } catch (_) {
+        return null;
+      }
     }
 
     detectMiniCart() {
@@ -420,6 +512,216 @@
       }
 
       console.log(`[Cart Monitor] Mini-cart CTA updated (qualified: ${qualified})`);
+    }
+
+    // ============================================================
+    // FLAT OFFER SURFACES (% off / $ off — accidental dismissal recovery)
+    // Native-feeling, coexistence-aware. When the cart already shows
+    // competing promos (free-shipping bars, etc.) we downgrade to a
+    // text-only inline line instead of a full banner.
+    // ============================================================
+
+    buildFlatOfferLabel(offer) {
+      if (offer.savingsText) return `${offer.savingsText} ready — code ${offer.code}`;
+      return `Apply code ${offer.code}`;
+    }
+
+    applyFlatOffer(offer) {
+      try {
+        sessionStorage.setItem('exitIntentPillDismissed', 'true');
+        sessionStorage.removeItem('exitIntentPendingOffer');
+        const attrs = { exit_intent: 'true' };
+        if (offer.aiDecisionId) attrs.exit_intent_ai_decision = offer.aiDecisionId;
+        fetch('/cart/update.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ attributes: attrs })
+        }).catch(() => {});
+      } catch (_) {}
+      try { sessionStorage.setItem('exitIntentDiscount', offer.code); } catch (_) {}
+      window.location.replace(`/discount/${encodeURIComponent(offer.code)}?redirect=/checkout`);
+    }
+
+    mountFlatCartPageSurface(offer) {
+      const existing = document.getElementById('exit-intent-flat-cart-banner');
+      if (existing) return;
+
+      const accent = offer.accentColor || '#111827';
+      const font = offer.brandFont || 'inherit';
+
+      // Find a sensible mount point near the top of the cart
+      const cartScope =
+        document.querySelector('main [class*="cart"]') ||
+        document.querySelector('main') ||
+        document.body;
+
+      // Coexistence check — if cart already has promo bars, render inline text-only
+      const crowded = detectCompetingPromos(cartScope);
+      const checkoutStyle = cloneCheckoutButtonStyle(cartScope);
+
+      const wrap = document.createElement('div');
+      wrap.id = 'exit-intent-flat-cart-banner';
+      wrap.style.cssText = crowded
+        ? `
+          margin: 8px 0 16px 0;
+          padding: 10px 12px;
+          font-family: ${font};
+          font-size: 14px;
+          color: inherit;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+          border-top: 1px solid rgba(0,0,0,0.08);
+          border-bottom: 1px solid rgba(0,0,0,0.08);
+        `
+        : `
+          margin: 12px 0 20px 0;
+          padding: 14px 16px;
+          background: rgba(0,0,0,0.03);
+          border: 1px solid rgba(0,0,0,0.08);
+          border-radius: ${checkoutStyle?.borderRadius || '8px'};
+          font-family: ${font};
+          font-size: 14px;
+          color: inherit;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        `;
+
+      const label = document.createElement('span');
+      label.textContent = this.buildFlatOfferLabel(offer);
+      label.style.cssText = 'flex: 1; min-width: 0;';
+
+      const applyBtn = document.createElement('button');
+      applyBtn.type = 'button';
+      applyBtn.textContent = 'Apply';
+      applyBtn.style.cssText = `
+        background: ${accent};
+        color: #ffffff;
+        border: none;
+        padding: 10px 18px;
+        border-radius: ${checkoutStyle?.borderRadius || '6px'};
+        font-family: ${checkoutStyle?.fontFamily || font};
+        font-weight: ${checkoutStyle?.fontWeight || '600'};
+        font-size: 13px;
+        letter-spacing: ${checkoutStyle?.letterSpacing || 'normal'};
+        text-transform: ${checkoutStyle?.textTransform || 'none'};
+        cursor: pointer;
+        flex-shrink: 0;
+      `;
+      applyBtn.onclick = () => this.applyFlatOffer(offer);
+
+      wrap.appendChild(label);
+      wrap.appendChild(applyBtn);
+
+      // Mount as the first child of the cart scope so it sits above contents
+      if (cartScope.firstChild) {
+        cartScope.insertBefore(wrap, cartScope.firstChild);
+      } else {
+        cartScope.appendChild(wrap);
+      }
+    }
+
+    mountFlatMiniCartSurface(offer, miniCart) {
+      const existingId = 'exit-intent-flat-minicart-line';
+      if (miniCart.querySelector(`#${existingId}`)) return;
+
+      const accent = offer.accentColor || '#111827';
+      const font = offer.brandFont || 'inherit';
+      const crowded = detectCompetingPromos(miniCart);
+      const checkoutStyle = cloneCheckoutButtonStyle(miniCart);
+
+      const line = document.createElement('div');
+      line.id = existingId;
+      line.style.cssText = crowded
+        ? `
+          margin: 8px 12px;
+          padding: 8px 0;
+          font-family: ${font};
+          font-size: 13px;
+          color: inherit;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          border-top: 1px solid rgba(0,0,0,0.08);
+        `
+        : `
+          margin: 12px;
+          padding: 10px 12px;
+          background: rgba(0,0,0,0.03);
+          border-radius: ${checkoutStyle?.borderRadius || '6px'};
+          font-family: ${font};
+          font-size: 13px;
+          color: inherit;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        `;
+
+      const label = document.createElement('span');
+      label.textContent = this.buildFlatOfferLabel(offer);
+      label.style.cssText = 'flex: 1; min-width: 0; line-height: 1.3;';
+
+      const applyBtn = document.createElement('button');
+      applyBtn.type = 'button';
+      applyBtn.textContent = 'Apply';
+      applyBtn.style.cssText = `
+        background: ${accent};
+        color: #ffffff;
+        border: none;
+        padding: 8px 14px;
+        border-radius: ${checkoutStyle?.borderRadius || '6px'};
+        font-family: ${checkoutStyle?.fontFamily || font};
+        font-weight: ${checkoutStyle?.fontWeight || '600'};
+        font-size: 12px;
+        letter-spacing: ${checkoutStyle?.letterSpacing || 'normal'};
+        text-transform: ${checkoutStyle?.textTransform || 'none'};
+        cursor: pointer;
+        flex-shrink: 0;
+      `;
+      applyBtn.onclick = () => this.applyFlatOffer(offer);
+
+      line.appendChild(label);
+      line.appendChild(applyBtn);
+
+      // Place just above the mini-cart's checkout button when we can find one
+      const checkoutBtn =
+        miniCart.querySelector('#CartDrawer-Checkout') ||
+        miniCart.querySelector('button[name="checkout"]') ||
+        miniCart.querySelector('[name="checkout"]') ||
+        miniCart.querySelector('.cart-drawer__checkout');
+      if (checkoutBtn && checkoutBtn.parentElement) {
+        checkoutBtn.parentElement.insertBefore(line, checkoutBtn);
+      } else {
+        miniCart.appendChild(line);
+      }
+    }
+
+    watchMiniCartForFlatOffer(miniCart, offer) {
+      // Some themes re-render the drawer contents on cart updates. Re-inject
+      // if our line disappears while the drawer is still visible.
+      if (this._miniCartFlatObserver) return;
+      this._miniCartFlatObserver = new MutationObserver(() => {
+        if (!miniCart.querySelector('#exit-intent-flat-minicart-line')) {
+          // Drawer still open?
+          const style = window.getComputedStyle(miniCart);
+          if (style.display !== 'none' && style.visibility !== 'hidden') {
+            this.mountFlatMiniCartSurface(offer, miniCart);
+          }
+        }
+      });
+      this._miniCartFlatObserver.observe(miniCart, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style']
+      });
     }
 
     createMiniCartCTA(ctaId, miniCartElement) {

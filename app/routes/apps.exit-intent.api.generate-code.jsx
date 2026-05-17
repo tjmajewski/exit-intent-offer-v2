@@ -1,6 +1,6 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { createPercentageDiscount, createFixedDiscount } from "../utils/discount-codes";
+import { createPercentageDiscount, createFixedDiscount, derivePrefixFromShop } from "../utils/discount-codes";
 import { enforceRateLimit } from "../utils/rate-limit.server.js";
 import { isValidShopDomain } from "../utils/shop-validation.js";
 
@@ -55,9 +55,15 @@ export async function action({ request }) {
       return json({ error: "Shop is not in unique code mode" }, { status: 400 });
     }
 
-    const prefix = shopRecord.mode === "ai"
-      ? (shopRecord.aiDiscountCodePrefix || "EXIT")
-      : (shopRecord.manualDiscountCodePrefix || "EXIT");
+    // Auto-derive prefix from shop name (zero merchant input required).
+    // Legacy DB-stored prefixes are honored only if explicitly set to something
+    // other than the old "EXIT" default, to preserve any merchant overrides.
+    const storedPrefix = shopRecord.mode === "ai"
+      ? shopRecord.aiDiscountCodePrefix
+      : shopRecord.manualDiscountCodePrefix;
+    const prefix = (storedPrefix && storedPrefix !== "EXIT")
+      ? storedPrefix
+      : derivePrefixFromShop(shop);
 
     // discountPercentage and discountAmount are stored in the metafield JSON,
     // not in the DB columns — read them from the metafield

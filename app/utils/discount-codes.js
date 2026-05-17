@@ -1,5 +1,17 @@
+/**
+ * Derive a branded code prefix from the shop's myshopify domain.
+ * acme-cycling.myshopify.com → "ACMECYCLI" (capped at 8 chars, alphanumeric only).
+ * Falls back to "SAVE" when no usable shop name is available.
+ */
+export function derivePrefixFromShop(shopDomain) {
+  if (!shopDomain || typeof shopDomain !== 'string') return 'SAVE';
+  const handle = shopDomain.split('.')[0] || '';
+  const cleaned = handle.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 8);
+  return cleaned || 'SAVE';
+}
+
 // Generate unique discount code
-function generateUniqueCode(type, amount, prefix = 'EXIT') {
+function generateUniqueCode(type, amount, prefix = 'SAVE') {
   const timestamp = Date.now().toString(36);
   const random = Math.random().toString(36).substring(2, 8);
 
@@ -246,7 +258,7 @@ async function checkDiscountCodeExists(admin, code) {
 }
 
 // Create percentage discount with 24h expiration
-export async function createPercentageDiscount(admin, percentage, prefix = 'EXIT') {
+export async function createPercentageDiscount(admin, percentage, prefix = 'SAVE') {
   const code = generateUniqueCode('percentage', percentage, prefix);
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
   
@@ -315,7 +327,7 @@ export async function createPercentageDiscount(admin, percentage, prefix = 'EXIT
 }
 
 // Create fixed amount discount with 24h expiration
-export async function createFixedDiscount(admin, amount, prefix = 'EXIT') {
+export async function createFixedDiscount(admin, amount, prefix = 'SAVE') {
   const code = generateUniqueCode('fixed', amount, prefix);
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   
@@ -387,7 +399,7 @@ export async function createFixedDiscount(admin, amount, prefix = 'EXIT') {
 }
 
 // Create threshold discount (spend $X get $Y off) with 24h expiration
-export async function createThresholdDiscount(admin, threshold, discountAmount, prefix = 'EXIT') {
+export async function createThresholdDiscount(admin, threshold, discountAmount, prefix = 'SAVE') {
   const code = generateUniqueCode('threshold', { threshold, amount: discountAmount }, prefix);
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   

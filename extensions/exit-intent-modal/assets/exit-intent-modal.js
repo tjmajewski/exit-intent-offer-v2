@@ -74,6 +74,182 @@
     return (inter / Math.min(ht.size, st.size)) >= 0.7;
   }
 
+  // ============================================================
+  // OFFER PILL — persistent "your discount is ready" chip
+  // Replaces the old 60s-delayed reminder toast. Mounts immediately
+  // on modal dismissal, persists across page navigation via
+  // sessionStorage, and respects the one-surface rule (hides itself
+  // on /cart paths where cart-monitor.js handles the surface).
+  // ============================================================
+
+  const OFFER_PILL_ID = 'exit-intent-offer-pill';
+  const PILL_OFFER_KEY = 'exitIntentPendingOffer';
+  const PILL_DISMISSED_KEY = 'exitIntentPillDismissed';
+
+  function buildPillHeadline(offer) {
+    if (offer.savingsText) return `${offer.savingsText} ready`;
+    return 'Your discount is ready';
+  }
+
+  function mountOfferPill(offer) {
+    if (!offer || !offer.code) return;
+    if (document.getElementById(OFFER_PILL_ID)) return;
+    // One-surface rule: cart-monitor handles offer surfaces on /cart
+    if (window.location.pathname.startsWith('/cart')) return;
+    if (!document.body) return;
+
+    const isMobile = window.innerWidth <= 768;
+
+    // Avoid sitting on top of common chat widgets
+    const chatSelectors = [
+      '#tidio-chat', '#hubspot-messages-iframe-container',
+      '.intercom-lightweight-app', '#drift-widget',
+      '.gorgias-chat-container', '#shopify-chat',
+      '.crisp-client', '#tawk-bubble-container',
+      '[class*="zendesk"]', '[id*="chat-widget"]'
+    ];
+    const side = chatSelectors.some(s => document.querySelector(s)) ? 'left' : 'right';
+
+    const accent = offer.accentColor || '#8B5CF6';
+    const font = offer.brandFont || 'inherit';
+
+    const pill = document.createElement('div');
+    pill.id = OFFER_PILL_ID;
+    pill.setAttribute('role', 'button');
+    pill.setAttribute('tabindex', '0');
+    pill.setAttribute('aria-label', `Apply discount and check out`);
+    pill.style.cssText = `
+      position: fixed;
+      bottom: ${isMobile ? '14px' : '20px'};
+      ${side}: ${isMobile ? '14px' : '20px'};
+      z-index: 999998;
+      background: #111827;
+      color: #ffffff;
+      padding: 6px 6px 6px 14px;
+      border-radius: 999px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+      font-family: ${font};
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      transform: translateY(140%);
+      opacity: 0;
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
+      max-width: calc(100vw - 28px);
+    `;
+
+    const label = document.createElement('span');
+    label.textContent = buildPillHeadline(offer);
+    label.style.cssText = `
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-weight: 500;
+    `;
+
+    const applyBtn = document.createElement('span');
+    applyBtn.textContent = 'Apply';
+    applyBtn.style.cssText = `
+      background: ${accent};
+      color: #ffffff;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      flex-shrink: 0;
+    `;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Dismiss');
+    closeBtn.style.cssText = `
+      background: transparent;
+      border: none;
+      color: rgba(255,255,255,0.55);
+      font-size: 18px;
+      cursor: pointer;
+      width: 22px;
+      height: 22px;
+      line-height: 1;
+      padding: 0;
+      flex-shrink: 0;
+      transition: color 0.2s;
+    `;
+    closeBtn.onmouseover = () => { closeBtn.style.color = '#ffffff'; };
+    closeBtn.onmouseout = () => { closeBtn.style.color = 'rgba(255,255,255,0.55)'; };
+    closeBtn.onclick = (e) => {
+      e.stopPropagation();
+      try { sessionStorage.setItem(PILL_DISMISSED_KEY, 'true'); } catch (_) {}
+      pill.style.transform = 'translateY(140%)';
+      pill.style.opacity = '0';
+      setTimeout(() => pill.remove(), 350);
+    };
+
+    pill.appendChild(label);
+    pill.appendChild(applyBtn);
+    pill.appendChild(closeBtn);
+
+    const redeem = () => {
+      // Mark redeemed so the pill doesn't re-mount if the customer
+      // bounces back from checkout
+      try {
+        sessionStorage.setItem(PILL_DISMISSED_KEY, 'true');
+        sessionStorage.removeItem(PILL_OFFER_KEY);
+      } catch (_) {}
+      try {
+        const attrs = { exit_intent: 'true' };
+        if (offer.aiDecisionId) attrs.exit_intent_ai_decision = offer.aiDecisionId;
+        fetch('/cart/update.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ attributes: attrs })
+        }).catch(() => {});
+      } catch (_) {}
+      try { sessionStorage.setItem('exitIntentDiscount', offer.code); } catch (_) {}
+      window.location.replace(`/discount/${encodeURIComponent(offer.code)}?redirect=/checkout`);
+    };
+
+    pill.onclick = redeem;
+    pill.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        redeem();
+      }
+    };
+
+    document.body.appendChild(pill);
+    requestAnimationFrame(() => {
+      pill.style.transform = 'translateY(0)';
+      pill.style.opacity = '1';
+    });
+  }
+
+  // On every page load: re-mount the pill if there's a pending offer.
+  // Keeps the offer visible as the customer navigates the store.
+  function bootPersistedPill() {
+    try {
+      if (sessionStorage.getItem(PILL_DISMISSED_KEY) === 'true') return;
+      const raw = sessionStorage.getItem(PILL_OFFER_KEY);
+      if (!raw) return;
+      const offer = JSON.parse(raw);
+      if (!offer || !offer.code) return;
+      // Drop stale offers (>24h, matches code expiry)
+      if (offer.timestamp && Date.now() - offer.timestamp > 24 * 60 * 60 * 1000) {
+        sessionStorage.removeItem(PILL_OFFER_KEY);
+        return;
+      }
+      const mount = () => mountOfferPill(offer);
+      if (document.body) mount();
+      else document.addEventListener('DOMContentLoaded', mount);
+    } catch (_) {}
+  }
+
+  bootPersistedPill();
+
   // Fetch custom CSS from shop settings
   async function fetchCustomCSS(shopDomain) {
     try {
@@ -1652,11 +1828,11 @@
         document.body.style.width = '';
       }
 
-      // Check if we should show a reminder toast after dismissal.
+      // Check if we should show a recovery pill after dismissal.
       // Only for offers with a discount code — no-discount offers have nothing to remind about.
       const hasDiscountOffer = this.settings.discountCode &&
         this.settings.offerType !== 'no-discount';
-      const shouldShowReminder = hasDiscountOffer && !this.ctaClicked;
+      const shouldShowPill = hasDiscountOffer && !this.ctaClicked;
 
       // Remove from DOM after animation
       setTimeout(() => {
@@ -1669,171 +1845,42 @@
       // Track close
       this.trackEvent('closeout');
 
-      // Show a subtle reminder toast 60s after dismissal
-      if (shouldShowReminder) {
-        this.reminderTimeout = setTimeout(() => {
-          this.showReminderToast();
-        }, 60000);
+      // Immediately mount the persistent offer pill (replaces the old 60s toast).
+      // The pill persists across page navigation via sessionStorage so the
+      // customer can still redeem the offer even if they navigate elsewhere.
+      if (shouldShowPill) {
+        const offer = this.buildPendingOfferData();
+        try {
+          sessionStorage.setItem(PILL_OFFER_KEY, JSON.stringify(offer));
+          sessionStorage.removeItem(PILL_DISMISSED_KEY);
+        } catch (_) {}
+        mountOfferPill(offer);
       }
     }
 
     /**
-     * Show a small, non-intrusive reminder toast in the bottom corner after
-     * the customer dismisses the main modal. This recovers value from customers
-     * who received an offer but didn't act on it immediately.
-     *
-     * Design: small floating pill, matches store's brand font, dismissible.
-     * Positioned bottom-right by default; shifts to bottom-left if a chat
-     * widget is detected in the bottom-right.
+     * Build the pending-offer record stored in sessionStorage. The pill uses
+     * this to re-mount itself on subsequent page loads. Keeps everything
+     * needed for redemption + branded rendering.
      */
-    showReminderToast() {
-      if (!this.settings.discountCode) return;
-
-      const code = this.settings.discountCode;
-      const isMobile = isMobileDevice();
-      const font = this.settings.brandFont || 'inherit';
-
-      // Detect common chat widgets in the bottom-right corner
-      const chatSelectors = [
-        '#tidio-chat', '#hubspot-messages-iframe-container',
-        '.intercom-lightweight-app', '#drift-widget',
-        '.gorgias-chat-container', '#shopify-chat',
-        '.crisp-client', '#tawk-bubble-container',
-        '[class*="zendesk"]', '[id*="chat-widget"]'
-      ];
-      const hasBottomRightWidget = chatSelectors.some(sel => document.querySelector(sel));
-      const side = hasBottomRightWidget ? 'left' : 'right';
-
-      // Create toast container
-      const toast = document.createElement('div');
-      toast.id = 'exit-intent-reminder-toast';
-      toast.style.cssText = `
-        position: fixed;
-        bottom: ${isMobile ? '16px' : '24px'};
-        ${side}: ${isMobile ? '16px' : '24px'};
-        z-index: 999998;
-        background: #1f2937;
-        color: #ffffff;
-        padding: ${isMobile ? '14px 16px' : '16px 20px'};
-        border-radius: 12px;
-        box-shadow: 0 8px 30px rgba(0,0,0,0.2);
-        font-family: ${font};
-        font-size: ${isMobile ? '14px' : '15px'};
-        max-width: ${isMobile ? 'calc(100vw - 32px)' : '320px'};
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        cursor: pointer;
-        transform: translateY(120%);
-        opacity: 0;
-        transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease;
-      `;
-
-      // Toast content
-      const textWrap = document.createElement('div');
-      textWrap.style.cssText = 'flex: 1; min-width: 0;';
-
-      const label = document.createElement('div');
-      label.textContent = 'Your offer is still available';
-      label.style.cssText = `
-        font-weight: 600;
-        margin-bottom: 2px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      `;
-
-      const codeEl = document.createElement('div');
-      codeEl.textContent = `Use code ${code}`;
-      codeEl.style.cssText = `
-        font-size: ${isMobile ? '12px' : '13px'};
-        opacity: 0.75;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      `;
-
-      textWrap.appendChild(label);
-      textWrap.appendChild(codeEl);
-
-      // Close button
-      const closeBtn = document.createElement('button');
-      closeBtn.innerHTML = '&times;';
-      closeBtn.style.cssText = `
-        background: rgba(255,255,255,0.15);
-        border: none;
-        color: #ffffff;
-        font-size: 18px;
-        cursor: pointer;
-        width: 28px;
-        height: 28px;
-        border-radius: 6px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-        transition: background 0.2s;
-      `;
-      closeBtn.onmouseover = () => closeBtn.style.background = 'rgba(255,255,255,0.25)';
-      closeBtn.onmouseout = () => closeBtn.style.background = 'rgba(255,255,255,0.15)';
-      closeBtn.onclick = (e) => {
-        e.stopPropagation();
-        this.dismissReminderToast();
-      };
-
-      toast.appendChild(textWrap);
-      toast.appendChild(closeBtn);
-
-      // Click the toast → go to checkout with discount
-      toast.onclick = () => {
-        this.dismissReminderToast();
-        // Stamp cart for attribution
-        fetch('/cart/update.js', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}) } })
-        }).catch(() => {});
-        // Track as a click
-        this.trackEvent('click');
-        // Apply discount and go to checkout
-        sessionStorage.setItem('exitIntentDiscount', code);
-        window.location.replace(`/discount/${encodeURIComponent(code)}?redirect=/checkout`);
-      };
-
-      document.body.appendChild(toast);
-      this.reminderToast = toast;
-
-      // Animate in
-      requestAnimationFrame(() => {
-        toast.style.transform = 'translateY(0)';
-        toast.style.opacity = '1';
-      });
-
-      // Auto-dismiss after 30 seconds
-      this.reminderAutoDismiss = setTimeout(() => {
-        this.dismissReminderToast();
-      }, 30000);
-
-      console.log('[Reminder Toast] Shown 60s after modal dismissal');
-    }
-
-    /**
-     * Dismiss the reminder toast with animation.
-     */
-    dismissReminderToast() {
-      if (!this.reminderToast) return;
-      if (this.reminderAutoDismiss) {
-        clearTimeout(this.reminderAutoDismiss);
-        this.reminderAutoDismiss = null;
+    buildPendingOfferData() {
+      const offerType = this.settings.offerType;
+      let savingsText = '';
+      if (offerType === 'percentage' && this.settings.discountPercentage) {
+        savingsText = `${this.settings.discountPercentage}% off`;
+      } else if (offerType === 'fixed' && this.settings.discountAmount) {
+        savingsText = `${formatCurrency(this.settings.discountAmount)} off`;
+      } else if (offerType === 'threshold' && this.settings.discountAmount) {
+        savingsText = `${formatCurrency(this.settings.discountAmount)} off`;
       }
-      this.reminderToast.style.transform = 'translateY(120%)';
-      this.reminderToast.style.opacity = '0';
-      setTimeout(() => {
-        if (this.reminderToast) {
-          this.reminderToast.remove();
-          this.reminderToast = null;
-        }
-      }, 400);
+      return {
+        code: this.settings.discountCode,
+        accentColor: this.settings.brandAccentColor,
+        brandFont: this.settings.brandFont,
+        aiDecisionId: this.currentAiDecisionId || null,
+        savingsText,
+        timestamp: Date.now()
+      };
     }
 
     /**

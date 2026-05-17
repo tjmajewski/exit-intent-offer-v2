@@ -570,8 +570,6 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState('quick');
   const actionData = useActionData();
   const navigation = useNavigation();
-  const [showPreview, setShowPreview] = useState(false);
-  const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [formChanged, setFormChanged] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState(settings.template || "discount");
   const [showModalNaming, setShowModalNaming] = useState(false);
@@ -647,9 +645,53 @@ export default function Settings() {
 
      
   
+  const livePreviewProps = {
+    variant: "inline",
+    optimizationMode,
+    modalHeadline,
+    modalBody,
+    ctaButton,
+    discountEnabled: settings.discountEnabled,
+    offerType: settings.offerType,
+    discountPercentage: settings.discountPercentage || 10,
+    discountAmount: settings.discountAmount || 10,
+    exitIntentEnabled: settings.exitIntentEnabled || settings.triggers?.exitIntent,
+    timeDelayEnabled: settings.timeDelayEnabled || settings.triggers?.timeDelay,
+    timeDelaySeconds: settings.timeDelaySeconds || settings.triggers?.timeDelaySeconds || 30,
+    cartValueEnabled: settings.cartValueEnabled || settings.triggers?.cartValue,
+    cartValueMin: settings.cartValueMin || settings.triggers?.minCartValue,
+    cartValueMax: settings.cartValueMax || settings.triggers?.maxCartValue,
+    brandPrimaryColor,
+    brandSecondaryColor,
+    brandAccentColor,
+    brandFont,
+    customCSS
+  };
+
   return (
     <AppLayout plan={plan}>
-      <div style={{ padding: 40, maxWidth: 1200, margin: "0 auto" }}>
+      <style>{`
+        @media (min-width: 1100px) {
+          .settings-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 380px;
+            gap: 32px;
+            align-items: start;
+          }
+          .settings-preview-rail {
+            position: sticky;
+            top: 20px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+          }
+        }
+        @media (max-width: 1099px) {
+          .settings-preview-rail {
+            margin-bottom: 24px;
+          }
+        }
+      `}</style>
+      <div style={{ padding: 40, maxWidth: 1400, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <h1 style={{ fontSize: 32, margin: 0 }}>Settings</h1>
         {modalLibrary?.currentModalId && (
@@ -670,9 +712,12 @@ export default function Settings() {
         Configure your modal, triggers, and optimization
       </p>
 
+      <div className="settings-grid">
+      <div>
+
       {/* Tab Navigation */}
-      <div style={{ 
-        borderBottom: "2px solid #e5e7eb", 
+      <div style={{
+        borderBottom: "2px solid #e5e7eb",
         marginBottom: 32,
         display: "flex",
         gap: 0
@@ -782,8 +827,6 @@ export default function Settings() {
           ctaButton={ctaButton}
           setCtaButton={setCtaButton}
           setFormChanged={setFormChanged}
-          showPreview={showPreview}
-          setShowPreview={setShowPreview}
           setActiveTab={setActiveTab}
           canUseAllTriggers={canUseAllTriggers}
           canUseCartValue={canUseCartValue}
@@ -833,32 +876,12 @@ export default function Settings() {
       <div style={{ marginTop: 32 }}>
         <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
           <button
-            type="button"
-            onClick={() => setShowPreviewModal(true)}
-            disabled={!formChanged}
-            style={{
-              padding: "16px 32px",
-              background: formChanged ? "white" : "#f3f4f6",
-              color: formChanged ? "#8B5CF6" : "#9ca3af",
-              border: formChanged ? "2px solid #8B5CF6" : "2px solid #e5e7eb",
-              borderRadius: 8,
-              fontSize: 17,
-              fontWeight: 600,
-              cursor: formChanged ? "pointer" : "not-allowed",
-              flex: 1,
-              transition: "all 0.2s"
-            }}
-          >
-            Preview Modal
-          </button>
-          
-          <button
             type="submit"
             disabled={!formChanged || isSubmitting}
-            style={{ 
-              padding: "16px 32px", 
-              background: (formChanged && !isSubmitting) ? "#8B5CF6" : "#9ca3af", 
-              color: "white", 
+            style={{
+              padding: "16px 32px",
+              background: (formChanged && !isSubmitting) ? "#8B5CF6" : "#9ca3af",
+              color: "white",
               border: "none",
               borderRadius: 8,
               cursor: (formChanged && !isSubmitting) ? "pointer" : "not-allowed",
@@ -901,102 +924,13 @@ export default function Settings() {
       </div>
       </Form>
 
-      {/* Settings Preview Modal */}
-      <SettingsPreview
-        isOpen={showPreviewModal}
-        onClose={() => setShowPreviewModal(false)}
-        optimizationMode={optimizationMode}
-        modalHeadline={modalHeadline}
-        modalBody={modalBody}
-        ctaButton={ctaButton}
-        discountEnabled={settings.discountEnabled}
-        offerType={settings.offerType}
-        discountPercentage={settings.discountPercentage || 10}
-        discountAmount={settings.discountAmount || 10}
-        exitIntentEnabled={settings.exitIntentEnabled || settings.triggers?.exitIntent}
-        timeDelayEnabled={settings.timeDelayEnabled || settings.triggers?.timeDelay}
-        timeDelaySeconds={settings.timeDelaySeconds || settings.triggers?.timeDelaySeconds || 30}
-        cartValueEnabled={settings.cartValueEnabled || settings.triggers?.cartValue}
-        cartValueMin={settings.cartValueMin || settings.triggers?.minCartValue}
-        cartValueMax={settings.cartValueMax || settings.triggers?.maxCartValue}
-        brandPrimaryColor={brandPrimaryColor}
-        brandSecondaryColor={brandSecondaryColor}
-        brandAccentColor={brandAccentColor}
-        brandFont={brandFont}
-        customCSS={customCSS}
-      />
+      </div>
 
-      {/* Old Preview Modal */}
-      {showPreview && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: "rgba(0, 0, 0, 0.5)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000
-        }}>
-          <div style={{
-            background: "white",
-            padding: 40,
-            borderRadius: 12,
-            maxWidth: 500,
-            width: "90%",
-            position: "relative"
-          }}>
-            <button
-              type="button"
-              onClick={() => setShowPreview(false)}
-              style={{
-                position: "absolute",
-                top: 16,
-                right: 16,
-                background: "#f3f4f6",
-                border: "none",
-                fontSize: 28,
-                cursor: "pointer",
-                color: "#666",
-                lineHeight: 1,
-                width: 36,
-                height: 36,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                zIndex: 9999,
-                borderRadius: 6,
-                transition: "background 0.2s"
-              }}
-              onMouseEnter={(e) => e.target.style.background = "#e5e7eb"}
-              onMouseLeave={(e) => e.target.style.background = "#f3f4f6"}
-            >
-              ×
-            </button>
-            <h2 style={{ fontSize: 24, marginBottom: 16 }}>
-              {settings.modalHeadline}
-            </h2>
-            <p style={{ marginBottom: 24, color: "#666" }}>
-              {settings.modalBody}
-            </p>
-            <button style={{
-              width: "100%",
-              padding: "12px 24px",
-              background: "#8B5CF6",
-              color: "white",
-              border: "none",
-              borderRadius: 6,
-              fontSize: 16,
-              fontWeight: 500,
-              cursor: "pointer"
-            }}>
-              {settings.ctaButton}
-            </button>
-          </div>
-        </div>
-      )}
+      <aside className="settings-preview-rail">
+        <SettingsPreview {...livePreviewProps} />
+      </aside>
+
+      </div>
       </div>
     </AppLayout>
   );

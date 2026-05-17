@@ -20,8 +20,6 @@ export default function QuickSetupTab({
   ctaButton,
   setCtaButton,
   setFormChanged,
-  showPreview,
-  setShowPreview,
   setActiveTab,
   canUseAllTriggers,
   canUseCartValue,
@@ -279,20 +277,6 @@ export default function QuickSetupTab({
               />
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowPreview(!showPreview)}
-              style={{ 
-                padding: "10px 20px", 
-                background: "#f3f4f6", 
-                border: "1px solid #d1d5db",
-                borderRadius: 6,
-                cursor: "pointer",
-                fontSize: 16
-              }}
-            >
-              {showPreview ? "Hide Preview" : "Show Preview"}
-            </button>
           </div>
 
           {/* Discount Section */}
@@ -381,29 +365,8 @@ export default function QuickSetupTab({
                       Generate unique codes with 24-hour expiry. Creates urgency and prevents code sharing.
                     </div>
                     {manualDiscountCodeMode === "unique" && (
-                      <div>
-                        <label style={{ display: "block", fontSize: 13, color: "#666", marginBottom: 4 }}>
-                          Code Prefix (optional)
-                        </label>
-                        <input
-                          type="text"
-                          name="manualDiscountCodePrefix"
-                          defaultValue={settings.manualDiscountCodePrefix || "EXIT"}
-                          placeholder="EXIT"
-                          maxLength="10"
-                          style={{
-                            padding: "8px 12px",
-                            border: "1px solid #d1d5db",
-                            borderRadius: 6,
-                            fontSize: 16,
-                            width: 120,
-                            textTransform: "uppercase"
-                          }}
-                          onChange={(e) => { e.target.value = e.target.value.toUpperCase(); setFormChanged(true); }}
-                        />
-                        <span style={{ marginLeft: 8, fontSize: 13, color: "#666" }}>
-                          -ABC123
-                        </span>
+                      <div style={{ fontSize: 13, color: "#6b7280" }}>
+                        Codes auto-branded with your store name (e.g. <strong style={{ color: "#374151" }}>YOURSTORE-A1B2C3</strong>).
                       </div>
                     )}
                   </div>
@@ -512,7 +475,7 @@ export default function QuickSetupTab({
                 }}>
                   <strong>Unique codes enabled</strong>
                   <div style={{ color: "#15803d", marginTop: 4 }}>
-                    A fresh code (e.g. <strong>{settings.manualDiscountCodePrefix || "EXIT"}-A1B2C3</strong>) will be generated for each customer. Codes expire in 24 hours and can only be used once.
+                    A fresh code branded with your store name (e.g. <strong>YOURSTORE-A1B2C3</strong>) is generated for each customer. Codes expire in 24 hours and can only be used once.
                   </div>
                 </div>
               )}
