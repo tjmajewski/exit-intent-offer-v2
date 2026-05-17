@@ -401,6 +401,12 @@ export default function QuickSetupTab({
                       defaultValue={settings.discountPercentage || 10}
                       min="1"
                       max="100"
+                      step="1"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      onInput={(e) => {
+                        e.target.value = e.target.value.replace(/[^0-9]/g, '');
+                      }}
                       onChange={() => setFormChanged(true)}
                       style={{
                         padding: "8px 12px",
@@ -429,7 +435,7 @@ export default function QuickSetupTab({
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 500, marginBottom: 4 }}>Fixed Amount Off</div>
                     <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
-                      e.g., "SAVE10" for 10 off (in your store's currency)
+                      Whole numbers only, in your store's currency (e.g. 10 = $10 off, €10 off, ¥10 off).
                     </div>
                     <input
                       type="number"
@@ -437,6 +443,11 @@ export default function QuickSetupTab({
                       defaultValue={settings.discountAmount || 10}
                       min="1"
                       step="1"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      onInput={(e) => {
+                        e.target.value = e.target.value.replace(/[^0-9]/g, '');
+                      }}
                       onChange={() => setFormChanged(true)}
                       style={{
                         padding: "8px 12px",

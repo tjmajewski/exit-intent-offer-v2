@@ -181,8 +181,10 @@ export async function action({ request }) {
     cartValueMax: parseFloat(formData.get("cartValueMax") || "999999"),
     discountEnabled: formData.get("discountEnabled") === "on",
     offerType: formData.get("offerType") || "percentage",
-    discountPercentage: parseInt(formData.get("discountPercentage") || "10"),
-    discountAmount: parseFloat(formData.get("discountAmount") || "10"),
+    // Discount amounts are whole-number only (UI is locked to integers).
+    // Floor any decimal that slips through and clamp to a sensible minimum.
+    discountPercentage: Math.min(100, Math.max(1, Math.floor(parseFloat(formData.get("discountPercentage") || "10")) || 10)),
+    discountAmount: Math.max(1, Math.floor(parseFloat(formData.get("discountAmount") || "10")) || 10),
     discountCode: null,
     // Manual mode discount settings
     manualDiscountCodeMode: formData.get("manualDiscountCodeMode") || "unique",
