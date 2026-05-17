@@ -54,13 +54,17 @@ Allow merchants to choose between **unique discount codes** (one per customer se
 
 3. **Unique Code Behavior** (Current)
    - Create unique code per customer session
-   - Code format: `EXIT15-ABC123` (random suffix)
+   - Code format: `{SHOP_HANDLE}15-ABC123` — prefix auto-derived from the
+     shop's myshopify handle via `derivePrefixFromShop()` in
+     `app/utils/discount-codes.js`. Example: `acme-cycling.myshopify.com`
+     → `ACMECYCL15-A1B2C3`. Falls back to `SAVE` if no handle.
    - 24-hour expiry from creation
    - Track in DiscountOffer table
 
 4. **Manual Mode**
    - Generic: Merchant sets code in settings (e.g., "SAVE15")
-   - Unique: System generates codes with merchant-set prefix
+   - Unique: Codes auto-branded with the shop name (zero merchant input).
+     The prefix UI field was removed on 2026-05-17 to reduce setup friction.
 
 5. **AI Mode**
    - Generic: Use single merchant-set code for all AI offers
@@ -86,7 +90,11 @@ model Shop {
   // Discount Code Mode (All plans, both Manual and AI)
   discountCodeMode        String   @default("unique") // "unique" or "generic"
   genericDiscountCode     String?  // The generic code (if mode = generic)
-  discountCodePrefix      String?  @default("EXIT") // Prefix for unique codes
+  // Legacy: prefix for unique codes. As of 2026-05-17, treated as a sentinel:
+  // any value equal to "EXIT" means "auto-derive prefix from shop handle".
+  // The UI field was removed; this column is retained only to honor
+  // pre-existing merchant overrides.
+  discountCodePrefix      String?  @default("EXIT")
 }
 ```
 
@@ -181,23 +189,13 @@ Add to Quick Setup or Advanced tab:
       </>
     ) : (
       <>
-        <TextField
-          label="Code prefix (optional)"
-          value={settings.discountCodePrefix}
-          onChange={(value) => setSettings({
-            ...settings,
-            discountCodePrefix: value.toUpperCase()
-          })}
-          placeholder="EXIT"
-          maxLength={10}
-          helpText="Unique codes will be formatted as: PREFIX-ABC123"
-        />
-
+        {/* No prefix input — codes auto-branded with the shop's handle as of 2026-05-17 */}
         <Banner status="info">
           <p>
-            <strong>Unique mode:</strong> Each customer gets a unique code like
-            "{settings.discountCodePrefix || 'EXIT'}-ABC123" that expires in 24 hours.
-            This prevents code sharing and creates urgency.
+            <strong>Unique mode:</strong> Each customer gets a unique code
+            auto-branded with your store name (e.g. <code>YOURSTORE-A1B2C3</code>)
+            that expires in 24 hours. This prevents code sharing and creates
+            urgency.
           </p>
         </Banner>
       </>
@@ -303,8 +301,9 @@ export async function createDiscountCode(admin, shop, options = {}) {
     };
   }
 
-  // MODE: Unique - Generate new code
-  const uniqueCode = generateUniqueCode(shop.discountCodePrefix || 'EXIT');
+  // MODE: Unique - Generate new code (prefix auto-derived from shop handle)
+  const prefix = derivePrefixFromShop(shop.shopifyDomain);
+  const uniqueCode = generateUniqueCode(prefix);
 
   // Create discount in Shopify
   await createShopifyDiscount(admin, {

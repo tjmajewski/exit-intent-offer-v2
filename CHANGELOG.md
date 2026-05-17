@@ -1,5 +1,81 @@
 # @shopify/shopify-app-template-react-router
 
+## Resparq AI - May 17, 2026 (Friction Reduction & Dismissal Recovery)
+
+### Added
+- **Live settings preview rail.** Settings page now renders a sticky
+  side-by-side modal preview that updates as merchants type. Replaces
+  the click-to-open "Preview Modal" button. Two-column grid on screens
+  ≥1100px, stacks on narrower screens. See
+  [`app/components/settings/SettingsPreview.jsx`](app/components/settings/SettingsPreview.jsx)
+  (now supports `variant="inline"` and `variant="modal"`).
+- **Persistent offer pill** replacing the 60s-delayed reminder toast.
+  Mounts immediately when a customer dismisses the modal with an
+  unredeemed discount, persists across page navigation via
+  sessionStorage, and removes itself on `/cart` paths so cart-monitor
+  owns that surface. Branded with the merchant's accent color. See
+  the `mountOfferPill` / `bootPersistedPill` helpers at the top of
+  [`extensions/exit-intent-modal/assets/exit-intent-modal.js`](extensions/exit-intent-modal/assets/exit-intent-modal.js).
+- **Cart-surface offer recovery for flat % / $ off offers.**
+  [`extensions/exit-intent-modal/assets/cart-monitor.js`](extensions/exit-intent-modal/assets/cart-monitor.js)
+  was previously threshold-only; it now also reads the dismissed-modal
+  pending offer and mounts a native-styled Apply line above the
+  checkout button (cart page + mini-cart drawer). Coexistence-aware:
+  detects competing free-shipping bars / promo callouts and downgrades
+  to a text-only inline line when the cart is crowded. Clones the
+  theme's checkout button styles (border-radius, font-family) so the
+  Apply button looks native.
+- **`derivePrefixFromShop()` helper** in
+  [`app/utils/discount-codes.js`](app/utils/discount-codes.js).
+  Auto-brands unique discount codes from the shop's myshopify handle
+  (e.g. `acme-cycling.myshopify.com` → `ACMECYCL-A1B2C3`).
+  Falls back to `SAVE` when no handle is available.
+
+### Changed
+- **Unique discount codes are now auto-branded.** Merchant no longer
+  has to type a code prefix. Both the manual-mode (`QuickSetupTab`)
+  and AI-mode (`AISettingsTab`) prefix input fields were removed.
+  The generator at
+  [`app/routes/apps.exit-intent.api.generate-code.jsx`](app/routes/apps.exit-intent.api.generate-code.jsx)
+  treats any stored prefix equal to the legacy `"EXIT"` sentinel as
+  "auto-derive from shop name." Default fallback prefix changed from
+  `EXIT` to `SAVE`.
+- **Manual discount amounts are locked to whole numbers.** UI inputs
+  enforce integer-only via `inputMode="numeric"`, `pattern="[0-9]*"`,
+  and an `onInput` regex strip. The settings action floors any decimal
+  that slips through and clamps to a minimum of 1 (max 100 for
+  percentage). Helper copy under the fixed-amount field now reads
+  "Whole numbers only, in your store's currency (e.g. 10 = $10 off,
+  €10 off, ¥10 off)" to convey currency-agnostic semantics. AI mode
+  was already integer-only (`ai-decision.server.js` rounds via
+  `Math.round` or to $5/$10/$25 buckets).
+- **`formatCurrency()` locale chain hardened.** Dropped the bare
+  `window.Shopify.country` fallback — a 2-letter country code is not
+  a valid BCP 47 locale tag and caused `Intl.NumberFormat` to silently
+  fall back. Chain is now `Shopify.locale → navigator.language → "en"`.
+  Symbol positioning (`$10`, `€10`, `10 €`, `¥10`, `R$ 10`, `10,00 zł`)
+  was already locale-correct; this just makes it correct in the edge
+  case where Shopify exposed only a country.
+
+### Removed
+- 60s-delayed reminder toast (`showReminderToast` / `dismissReminderToast`
+  on the `ExitIntentModal` class). Replaced by the immediate, persistent
+  offer pill described above.
+- "Preview Modal" button + `showPreviewModal` state from
+  [`app/routes/app.settings.jsx`](app/routes/app.settings.jsx).
+  Live preview rail makes it redundant.
+- "Show Preview" toggle button inside `QuickSetupTab.jsx`.
+- "Code Prefix" input fields from both `QuickSetupTab.jsx` and
+  `AISettingsTab.jsx`.
+
+### Storefront behavior
+- One-surface rule: the offer pill and cart-surface line are mutually
+  exclusive. Pill hides on `/cart` paths (cart-monitor handles
+  there), and cart-monitor calls `hideOfferPill()` when it mounts
+  a surface so the two never stack on top of each other.
+
+---
+
 ## Resparq AI - April 21, 2026 (Archetype System — Phases 2A–2H)
 
 ### Added

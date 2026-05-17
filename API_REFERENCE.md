@@ -445,7 +445,7 @@ Analyzes customer signals and returns personalized offer configuration.
   "offer": {
     "type": "percentage",
     "amount": 15,
-    "discountCode": "EXIT15-ABC123",
+    "discountCode": "ACMECYCL15-ABC123",
     "expiresAt": "2026-01-16T14:30:00Z",
     "headline": "Special offer just for you!",
     "body": "Complete your order now and save 15%",

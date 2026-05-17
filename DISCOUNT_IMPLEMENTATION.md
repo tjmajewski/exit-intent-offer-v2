@@ -279,21 +279,30 @@ console.log('✓ Settings saved to database including discount code:', settings.
 ## AI Mode Implementation
 
 ### Unique Codes Per Customer
-AI mode generates unique codes to prevent sharing:
+AI mode generates unique codes to prevent sharing. The prefix is
+auto-derived from the shop's myshopify handle (no merchant input
+required) — e.g. `acme-cycling.myshopify.com` → `ACMECYCL`:
 ```javascript
 // app/utils/discount-codes.js
 
-function generateUniqueCode(type, amount) {
+// Auto-brand the prefix from the shop's domain. Falls back to "SAVE".
+export function derivePrefixFromShop(shopDomain) {
+  if (!shopDomain || typeof shopDomain !== 'string') return 'SAVE';
+  const handle = shopDomain.split('.')[0] || '';
+  return handle.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 8) || 'SAVE';
+}
+
+function generateUniqueCode(type, amount, prefix = 'SAVE') {
   const timestamp = Date.now().toString(36);
   const random = Math.random().toString(36).substring(2, 8);
-  
+
   if (type === 'percentage') {
-    return `EXIT${amount}-${timestamp}${random}`.toUpperCase();
+    return `${prefix}${amount}-${timestamp}${random}`.toUpperCase();
   } else if (type === 'fixed') {
-    return `EXIT${amount}OFF-${timestamp}${random}`.toUpperCase();
+    return `${prefix}${amount}OFF-${timestamp}${random}`.toUpperCase();
   }
-  
-  return `EXIT-${timestamp}${random}`.toUpperCase();
+
+  return `${prefix}-${timestamp}${random}`.toUpperCase();
 }
 
 export async function createPercentageDiscount(admin, percentage) {
@@ -476,7 +485,7 @@ When budget exhausted, AI returns no-discount modal.
 1. Switch to AI Mode in settings
 2. Go to store, add item to cart
 3. Trigger modal
-4. AI generates unique code (e.g., `EXIT10-ABC123DEF`)
+4. AI generates unique code (e.g., `ACMECYCL10-ABC123DEF` — prefix auto-derived from your shop's myshopify handle)
 5. Click CTA
 6. Verify unique discount code applied at checkout ✅
 

@@ -89,25 +89,18 @@ Automatically generate and manage the right type of Shopify discount code based 
 
 These features reduce churn and make the product stickier. They don't directly convert customers but they make merchants love the product.
 
-### 2.1 Live Preview Panel (Split-Screen Settings)
+### 2.1 Live Preview Panel (Split-Screen Settings) — ~~SHIPPED 2026-05-17~~
 **Impact:** High for merchant satisfaction — eliminates the clunky preview-button loop
 **Effort:** Medium (4-6 days)
 **Tier:** All tiers
 
 Replace the current "Preview Modal" button with a persistent side-by-side layout: settings on the left, live modal preview on the right, updating in real time.
 
-**Core scope:**
-- Split-screen layout on settings page (collapsible on smaller screens)
-- Preview updates instantly as merchant changes any setting
-- Shows actual modal with current brand colors, fonts, copy
-- Device toggle: preview as desktop or mobile
-- Preview includes all active features (timer, images)
-- Does NOT count as an impression
+**Shipped:** [`SettingsPreview.jsx`](app/components/settings/SettingsPreview.jsx) now supports `variant="inline"` (sticky right rail) and `variant="modal"` (legacy overlay). [`app/routes/app.settings.jsx`](app/routes/app.settings.jsx) renders the inline variant in a 2-column grid alongside the form on screens ≥1100px and stacks on narrower viewports. The old `setShowPreviewModal` button + "Show Preview" toggle were removed.
 
-**Implementation notes:**
-- Reuse modal rendering logic from the storefront extension
-- React component that mirrors the modal output
-- Debounce updates (100ms) to avoid jank during typing
+**Deferred (low priority):**
+- Explicit desktop/mobile device toggle (currently always renders desktop scale)
+- Debounced updates (current render is fast enough without debouncing in testing)
 
 ---
 
@@ -207,7 +200,7 @@ Level up the existing AI evolution system with smarter signals and faster learni
 
 ~~**Funnel-stage-aware offer selection:**~~ SHIPPED — Replaced the static merchant "revenue mode vs conversion mode" toggle with automatic per-customer funnel-stage detection. The AI scores revenue signals (browsing, fresh cart, high page views) against conversion signals (cart/checkout page, hesitation, failed coupon, stale cart) and selects the right offer type per customer. Removed the Optimization Goal dropdown from AI settings.
 
-~~**Post-dismissal reminder toast:**~~ SHIPPED — Small floating pill appears 60s after a customer dismisses the modal (discount offers only). Shows "Your offer is still available" with the code. Click → checkout with discount applied. Auto-dismisses after 30s. Detects chat widgets to avoid overlap. Recovers value from customers who received an offer but didn't act immediately.
+~~**Post-dismissal offer pill:**~~ SHIPPED (revised 2026-05-17) — Persistent chip-style pill mounts **immediately** when a customer dismisses the modal with an unredeemed discount (replaces the original 60s-delayed reminder toast). Branded with the merchant's accent color, includes an Apply button. Persists across page navigation via `sessionStorage["exitIntentPendingOffer"]`. Honors a **one-surface rule**: hides itself on `/cart` paths so `cart-monitor.js` owns the in-cart surface; `cart-monitor` reciprocally calls `hideOfferPill()` when it mounts its native-styled Apply line above the checkout button (full cart + mini-cart drawer). Recovers value from customers who accidentally click off the modal, across all theme contexts.
 
 - **More signals:** Add scroll velocity, mouse movement patterns, tab-switching behavior, referral page context
 - **Faster convergence:** Bayesian optimization to replace pure genetic algorithm for small-traffic stores
