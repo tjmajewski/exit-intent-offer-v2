@@ -2,10 +2,14 @@
   'use strict';
 
   // Currency formatting helper - uses shop's active currency + buyer locale.
+  // Symbol position (€10 vs 10 €, R$ 10, ¥10, 10 zł) is locale-driven via
+  // Intl.NumberFormat, so each market sees their native convention.
   function formatCurrency(amount) {
     try {
       const currencyCode = window.Shopify?.currency?.active || 'USD';
-      const locale = (window.Shopify && (window.Shopify.locale || window.Shopify.country)) ||
+      // BCP 47 locale chain. window.Shopify.country is a country code (e.g.
+      // "US") which is NOT a valid locale on its own — skip it.
+      const locale = (window.Shopify && window.Shopify.locale) ||
         (typeof navigator !== 'undefined' && (navigator.language || (navigator.languages && navigator.languages[0]))) ||
         'en';
       return new Intl.NumberFormat(locale, {

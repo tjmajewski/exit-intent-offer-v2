@@ -21,12 +21,15 @@
   }
 
   // Currency formatting helper - uses shop's active currency + buyer locale.
-  // The locale comes from Shopify (set per market) or the browser, so a French
-  // shopper sees "1 234 €" rather than "€1,234".
+  // Symbol position (€10 vs 10 €, R$ 10, ¥10, 10 zł) is locale-driven via
+  // Intl.NumberFormat, so each market sees their native convention.
   function formatCurrency(amount) {
     try {
       const currencyCode = window.Shopify?.currency?.active || 'USD';
-      const locale = (window.Shopify && (window.Shopify.locale || window.Shopify.country)) ||
+      // BCP 47 locale chain. window.Shopify.country is a country code (e.g.
+      // "US") which is NOT a valid locale on its own — skip it. Intl will
+      // fall back gracefully even if the resolved locale is unknown.
+      const locale = (window.Shopify && window.Shopify.locale) ||
         (typeof navigator !== 'undefined' && (navigator.language || (navigator.languages && navigator.languages[0]))) ||
         'en';
       return new Intl.NumberFormat(locale, {
