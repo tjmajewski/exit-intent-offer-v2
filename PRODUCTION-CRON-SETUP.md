@@ -1,297 +1,172 @@
-# Production Cron Job Setup
+# Production Cron Job Setup (Fly.io)
 
-## Overview
-The Exit Intent Offer evolution system requires 3 cron jobs to run automatically:
+Production deploys recurring jobs as **Fly scheduled machines**. They share the
+deployed app image, run the script, and exit. No external scheduler is involved.
 
-1. **Evolution Cycle** - Every 5 minutes - Kills poor variants, breeds winners
-2. **Gene Aggregation** - Nightly at 12 AM - Network intelligence meta-learning
-3. **Seasonal Tracking** - Daily at 2 AM - Records seasonal performance patterns
+The canonical schedule table also lives in
+[DATABASE_MAINTENANCE.md](DATABASE_MAINTENANCE.md#automated-cleanup--cron-schedule).
+This doc is the operational runbook: how to register, inspect, debug, and
+manually invoke each job.
 
 ---
 
-## Heroku Setup
+## Jobs
 
-### 1. Install Heroku Scheduler Add-on
+| Script | Schedule | Purpose |
+|--------|----------|---------|
+| `app/cron/evolution-cycle.js` | hourly | Variant evolution (Pro/Enterprise AI shops with 100+ new impressions) |
+| `app/cron/threshold-learning-cycle.js` | hourly | Per-shop intervention threshold recalc (50+ new outcomes) |
+| `app/cron/aggregate-gene-performance.js` | daily | Cross-store gene + archetype meta-learning; also cleans expired offers / old rows |
+| `app/cron/track-seasonal-patterns.js` | weekly | Seasonal performance snapshot |
+
+All four are plain Node entry points invoked via the deployed image:
+`node app/cron/<name>.js`. They read the same `DATABASE_URL` /
+`CRON_SECRET` env that the web process has.
+
+---
+
+## Registering / re-registering
+
+Run once per job after a successful deploy. Re-run when the image changes
+(only needed if the cron entry-point code changes — Fly pins the registered
+machine to the image tag at registration time).
+
 ```bash
-heroku addons:create scheduler:standard
+flyctl m run -a resparq --schedule hourly  registry.fly.io/resparq:latest node app/cron/evolution-cycle.js
+flyctl m run -a resparq --schedule hourly  registry.fly.io/resparq:latest node app/cron/threshold-learning-cycle.js
+flyctl m run -a resparq --schedule daily   registry.fly.io/resparq:latest node app/cron/aggregate-gene-performance.js
+flyctl m run -a resparq --schedule weekly  registry.fly.io/resparq:latest node app/cron/track-seasonal-patterns.js
 ```
 
-### 2. Open Scheduler Dashboard
+Confirm with:
+
 ```bash
-heroku addons:open scheduler
+flyctl m list -a resparq
 ```
 
-### 3. Add Jobs
+Scheduled machines show their schedule (`hourly` / `daily` / `weekly`) in the
+output. The web machine is the one with `state=started` continuously; the cron
+machines spend most of their time in `stopped` and only spin up at their tick.
 
-**Evolution Cycle (Every 10 minutes):**
-- Frequency: Every 10 minutes
-- Command: `npm run evolution`
+### Re-registering after an image change
 
-**Gene Aggregation (Daily at 12 AM UTC):**
-- Frequency: Daily at 00:00
-- Command: `npm run aggregate-genes`
+Fly does not auto-update scheduled machines. If a cron script changed:
 
-**Seasonal Tracking (Daily at 2 AM UTC):**
-- Frequency: Daily at 02:00
-- Command: `npm run track-seasonal`
-
----
-
-## Vercel Setup
-
-Vercel doesn't support traditional cron jobs, but you can use Vercel Cron (serverless functions).
-
-### 1. Create API Routes for Cron
-
-**Create:** `app/routes/api.cron.evolution.jsx`
-```javascript
-import { json } from "@remix-run/node";
-import { exec } from "child_process";
-import { promisify } from "util";
-
-const execAsync = promisify(exec);
-
-export async function action({ request }) {
-  // Verify cron secret
-  const authHeader = request.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  try {
-    await execAsync("npm run evolution");
-    return json({ success: true });
-  } catch (error) {
-    return json({ error: error.message }, { status: 500 });
-  }
-}
-```
-
-**Create:** `app/routes/api.cron.aggregate-genes.jsx`
-```javascript
-import { json } from "@remix-run/node";
-import { exec } from "child_process";
-import { promisify } from "util";
-
-const execAsync = promisify(exec);
-
-export async function action({ request }) {
-  const authHeader = request.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  try {
-    await execAsync("npm run aggregate-genes");
-    return json({ success: true });
-  } catch (error) {
-    return json({ error: error.message }, { status: 500 });
-  }
-}
-```
-
-**Create:** `app/routes/api.cron.seasonal.jsx`
-```javascript
-import { json } from "@remix-run/node";
-import { exec } from "child_process";
-import { promisify } from "util";
-
-const execAsync = promisify(exec);
-
-export async function action({ request }) {
-  const authHeader = request.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  try {
-    await execAsync("npm run track-seasonal");
-    return json({ success: true });
-  } catch (error) {
-    return json({ error: error.message }, { status: 500 });
-  }
-}
-```
-
-### 2. Create vercel.json
-```json
-{
-  "crons": [
-    {
-      "path": "/api/cron/evolution",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/aggregate-genes",
-      "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/cron/seasonal",
-      "schedule": "0 2 * * *"
-    }
-  ]
-}
-```
-
-### 3. Set Environment Variable
 ```bash
-vercel env add CRON_SECRET
-# Enter a secure random string
+# Find the machine ID for the job you want to refresh
+flyctl m list -a resparq
+
+# Destroy the old scheduled machine
+flyctl m destroy <machine-id> -a resparq --force
+
+# Re-create with the new image
+flyctl m run -a resparq --schedule <hourly|daily|weekly> registry.fly.io/resparq:latest node app/cron/<file>.js
 ```
 
 ---
 
-## AWS Lambda + CloudWatch Events
+## Manual invocation (debugging / one-offs)
 
-### 1. Package Each Cron as Lambda Function
+To run a cron job immediately against production data without waiting for the
+tick, SSH into the live web machine and exec it there. It shares the same DB
+and env, so the result is identical to a scheduled run.
 
-**evolution-lambda.js:**
-```javascript
-const { exec } = require('child_process');
-const { promisify } = require('util');
-const execAsync = promisify(exec);
-
-exports.handler = async (event) => {
-  try {
-    await execAsync('npm run evolution');
-    return { statusCode: 200, body: 'Success' };
-  } catch (error) {
-    return { statusCode: 500, body: error.message };
-  }
-};
-```
-
-### 2. Create CloudWatch Rules
-
-**Evolution (Every 5 minutes):**
-- Rate expression: `rate(5 minutes)`
-- Target: evolution-lambda
-
-**Gene Aggregation (Daily at midnight):**
-- Cron expression: `cron(0 0 * * ? *)`
-- Target: aggregate-genes-lambda
-
-**Seasonal Tracking (Daily at 2 AM):**
-- Cron expression: `cron(0 2 * * ? *)`
-- Target: seasonal-lambda
-
----
-
-## Railway Setup
-
-Railway supports cron jobs natively.
-
-### 1. Add to railway.json
-```json
-{
-  "build": {
-    "builder": "NIXPACKS"
-  },
-  "deploy": {
-    "numReplicas": 1,
-    "restartPolicyType": "ON_FAILURE"
-  },
-  "cron": [
-    {
-      "schedule": "*/5 * * * *",
-      "command": "npm run evolution"
-    },
-    {
-      "schedule": "0 0 * * *",
-      "command": "npm run aggregate-genes"
-    },
-    {
-      "schedule": "0 2 * * *",
-      "command": "npm run track-seasonal"
-    }
-  ]
-}
-```
-
----
-
-## Render Setup
-
-### 1. Create Cron Jobs in Dashboard
-
-Go to Dashboard → Cron Jobs → New Cron Job
-
-**Evolution Cycle:**
-- Name: evolution-cycle
-- Command: `npm run evolution`
-- Schedule: `*/5 * * * *`
-
-**Gene Aggregation:**
-- Name: gene-aggregation
-- Command: `npm run aggregate-genes`
-- Schedule: `0 0 * * *`
-
-**Seasonal Tracking:**
-- Name: seasonal-tracking
-- Command: `npm run track-seasonal`
-- Schedule: `0 2 * * *`
-
----
-
-## Testing Cron Jobs
-
-### Local Testing
 ```bash
-# Test evolution cycle
-npm run evolution
-
-# Test gene aggregation
-npm run aggregate-genes
-
-# Test seasonal tracking
-npm run track-seasonal
+fly ssh console -a resparq -C "node app/cron/evolution-cycle.js"
+fly ssh console -a resparq -C "node app/cron/threshold-learning-cycle.js"
+fly ssh console -a resparq -C "node app/cron/aggregate-gene-performance.js"
+fly ssh console -a resparq -C "node app/cron/track-seasonal-patterns.js"
 ```
 
-### Monitor Logs
-- Check cron job execution in your platform's logs
-- Look for `[Evolution]`, `[Meta-Learning]`, `[Seasonal]` prefixes
-- Verify variants are being killed/bred
-- Check database for updated performance metrics
+For the cleanup endpoint specifically:
+
+```bash
+fly ssh console -a resparq -C "curl -X POST http://localhost:3000/api/cleanup-old-data"
+```
+
+---
+
+## Local testing
+
+```bash
+npm run evolution         # node app/cron/evolution-cycle.js
+npm run aggregate-genes   # node app/cron/aggregate-gene-performance.js
+npm run track-seasonal    # node app/cron/track-seasonal-patterns.js
+```
+
+(There is no npm script for `threshold-learning-cycle.js` — invoke it directly
+with `node app/cron/threshold-learning-cycle.js` if needed.)
+
+Local runs hit your `DATABASE_URL` — point it at a dev DB before testing.
+
+---
+
+## Logs
+
+Cron machines log to the same stream as the web machine. Filter by prefix:
+
+```bash
+# Tail everything
+flyctl logs -a resparq
+
+# Filter to a specific job (each script logs with a tagged prefix)
+flyctl logs -a resparq | grep '\[Evolution Cron\]'
+flyctl logs -a resparq | grep '\[Threshold Cron\]'
+flyctl logs -a resparq | grep '\[Meta-Learning\]'
+flyctl logs -a resparq | grep '\[Seasonal\]'
+```
+
+---
+
+## Health monitoring
+
+`/api/health` is pinged every 5 minutes by Fly's `[[http_service.checks]]`.
+The endpoint returns 500 (→ Sentry alert + Fly machine restart) when:
+
+- DB is unreachable, **or**
+- Newest `Variant.birthDate` across AI-mode shops is > 2h old **while** real
+  traffic exists (a `VariantImpression` in the last 24h).
+
+Quiet stores skip the freshness check, so a no-traffic period won't false-alarm.
+This is the tripwire for "evolution cron silently stopped firing." If you see
+the 500 in Sentry, the first thing to check is `flyctl m list -a resparq` — a
+destroyed or stuck scheduled machine is the usual cause.
 
 ---
 
 ## Troubleshooting
 
-**Cron not running:**
-- Check environment variables are set
-- Verify database connection string
-- Check platform-specific logs
+**Cron didn't run at its tick.**
+- `flyctl m list -a resparq` — is the scheduled machine still there? If a
+  recent `flyctl m destroy` or a manual cleanup removed it, re-register.
+- Check the machine's state. `stopped` between ticks is normal; `failed` is not.
+- `flyctl logs -a resparq | grep '<job-prefix>'` — did it run and error out?
 
-**Evolution not killing variants:**
-- Need 100+ impressions since last cycle
-- Variants need 50+ impressions to be evaluated
-- Check `lastEvolutionCycle` timestamp in database
+**Evolution not killing/breeding variants.**
+- Need 100+ impressions since last cycle for a shop to be eligible.
+- Variants need 50+ impressions to be evaluated.
+- Check `Shop.lastEvolutionCycle` in the DB.
 
-**Gene aggregation failing:**
-- Need 3+ shops with AI mode enabled
-- Variants need 10+ impressions to be included
-- Check for database connection issues
+**Gene aggregation produced no updates.**
+- Need 3+ shops in AI mode with sufficient impressions.
+- Variants need 10+ impressions to be included in the aggregation.
 
----
+**Threshold learning isn't moving.**
+- Need 50+ new outcomes (intervention + post-intervention signal) since the
+  last recalc for that shop.
 
-## Monitoring Success
-
-After deployment, verify:
-1. Evolution cycle runs every 5 minutes (check logs)
-2. Variants show increasing generation numbers (Gen 1, 2, 3...)
-3. Gene aggregation updates MetaLearningGene table nightly
-4. Seasonal patterns update daily
-5. New shops inherit proven genes from network
+**Image is stale.** After a deploy, scheduled machines keep running the
+previously-registered image until re-registered (see "Re-registering after an
+image change" above).
 
 ---
 
-## Production Checklist
+## Post-deploy checklist
 
-- [ ] Cron jobs scheduled
-- [ ] Environment variables set
-- [ ] Database migrated (PostgreSQL in production)
-- [ ] Logs monitored
-- [ ] Evolution cycle confirmed working
-- [ ] Gene aggregation confirmed working
-- [ ] Seasonal tracking confirmed working
-- [ ] Dashboard shows real-time variant performance
+After a deploy that touches anything in `app/cron/`:
+
+- [ ] Re-register affected scheduled machine(s) against the new image
+- [ ] `flyctl m list -a resparq` shows all four cron schedules
+- [ ] Manual invocation (see above) of the changed job succeeds
+- [ ] `/api/health` returns 200
+- [ ] Logs show the next tick firing cleanly
