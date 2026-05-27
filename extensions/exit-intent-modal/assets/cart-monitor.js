@@ -328,6 +328,8 @@
         return;
       }
 
+      const t = this.getThemeTokens();
+
       // Create banner
       const banner = document.createElement('div');
       banner.id = 'exit-intent-qualification-banner';
@@ -336,13 +338,14 @@
         top: 0;
         left: 0;
         right: 0;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
+        background: ${t.primary};
+        color: ${t.primaryText};
         padding: 16px;
         text-align: center;
         font-size: 16px;
         font-weight: 600;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        font-family: ${t.fontFamily};
+        box-shadow: 0 2px 10px rgba(0,0,0,0.15);
         z-index: 9998;
         animation: slideDown 0.5s ease-out;
       `;
@@ -358,9 +361,9 @@
             right: 20px;
             top: 50%;
             transform: translateY(-50%);
-            background: rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.18);
             border: none;
-            color: white;
+            color: ${t.primaryText};
             width: 30px;
             height: 30px;
             border-radius: 50%;
@@ -373,7 +376,7 @@
             background: rgba(255,255,255,0.3);
           }
         </style>
-        <span> Congratulations! You qualified for ${formatCurrency(offer.discount)} off! Code <strong>${offer.code}</strong> has been applied at checkout.</span>
+        <span>You qualified for ${formatCurrency(offer.discount)} off — code <strong>${offer.code}</strong> applied at checkout.</span>
         <button class="close-banner" onclick="this.parentElement.remove()">×</button>
       `;
 
@@ -392,10 +395,12 @@
     showProgressBanner(offer, currentTotal) {
       // Check if banner already exists
       let banner = document.getElementById('exit-intent-progress-banner');
-      
+
       const remaining = offer.threshold - currentTotal;
-      
+
       if (!banner) {
+        const t = this.getThemeTokens();
+
         // Create banner
         banner = document.createElement('div');
         banner.id = 'exit-intent-progress-banner';
@@ -404,17 +409,18 @@
           top: 0;
           left: 0;
           right: 0;
-          background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-          color: white;
+          background: ${t.primary};
+          color: ${t.primaryText};
           padding: 16px;
           text-align: center;
           font-size: 16px;
           font-weight: 600;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+          font-family: ${t.fontFamily};
+          box-shadow: 0 2px 10px rgba(0,0,0,0.15);
           z-index: 9998;
           animation: slideDown 0.5s ease-out;
         `;
-        
+
         banner.innerHTML = `
           <style>
             @keyframes slideDown {
@@ -426,9 +432,9 @@
               right: 20px;
               top: 50%;
               transform: translateY(-50%);
-              background: rgba(255,255,255,0.2);
+              background: rgba(255,255,255,0.18);
               border: none;
-              color: white;
+              color: ${t.primaryText};
               width: 30px;
               height: 30px;
               border-radius: 50%;
@@ -441,15 +447,15 @@
               background: rgba(255,255,255,0.3);
             }
           </style>
-          <span> Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off!</span>
+          <span>Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off</span>
           <button class="close-banner" onclick="this.parentElement.remove()">×</button>
         `;
-        
+
         document.body.appendChild(banner);
         console.log('[Cart Monitor] Progress banner displayed');
       } else {
         // Update existing banner
-        banner.querySelector('span').textContent = ` Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off!`;
+        banner.querySelector('span').textContent = `Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off`;
       }
     }
 
@@ -480,6 +486,7 @@
     updateMiniCartCTA(miniCartElement, offer, currentTotal, qualified) {
       const ctaId = 'exit-intent-minicart-cta';
       let existingCTA = miniCartElement.querySelector(`#${ctaId}`);
+      const t = this.getThemeTokens();
 
       if (qualified) {
         // Show "qualified" message
@@ -489,15 +496,16 @@
 
         existingCTA.innerHTML = `
           <div style="text-align: center; padding: 12px;">
-            <div style="font-size: 18px; margin-bottom: 4px;"> You Qualified!</div>
-            <div style="font-size: 14px; opacity: 0.9;">${formatCurrency(offer.discount)} off applied at checkout</div>
+            <div style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">You qualified</div>
+            <div style="font-size: 14px; opacity: 0.92;">${formatCurrency(offer.discount)} off applied at checkout</div>
           </div>
         `;
-        existingCTA.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+        existingCTA.style.background = t.primary;
+        existingCTA.style.color = t.primaryText;
       } else {
         // Show progress
         const remaining = offer.threshold - currentTotal;
-        
+
         if (!existingCTA) {
           existingCTA = this.createMiniCartCTA(ctaId, miniCartElement);
         }
@@ -505,14 +513,15 @@
         existingCTA.innerHTML = `
           <div style="text-align: center; padding: 12px;">
             <div style="font-size: 16px; font-weight: 600; margin-bottom: 4px;">
-              Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off!
+              Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off
             </div>
             <div style="font-size: 13px; opacity: 0.9;">
               ${this.getProgressBar(currentTotal, offer.threshold)}
             </div>
           </div>
         `;
-        existingCTA.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
+        existingCTA.style.background = t.primary;
+        existingCTA.style.color = t.primaryText;
       }
 
       console.log(`[Cart Monitor] Mini-cart CTA updated (qualified: ${qualified})`);
@@ -729,14 +738,15 @@
     }
 
     createMiniCartCTA(ctaId, miniCartElement) {
+      const t = this.getThemeTokens();
       const cta = document.createElement('div');
       cta.id = ctaId;
       cta.style.cssText = `
-        color: white;
-        border-radius: 8px;
+        color: ${t.primaryText};
+        border-radius: ${t.borderRadius};
         margin: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+        font-family: ${t.fontFamily};
         transition: all 0.3s ease;
       `;
 
@@ -756,11 +766,85 @@
 
     getProgressBar(current, threshold) {
       const percentage = Math.min((current / threshold) * 100, 100);
+      const t = this.getThemeTokens();
       return `
-        <div style="background: rgba(255,255,255,0.3); border-radius: 10px; height: 6px; overflow: hidden; margin-top: 8px;">
-          <div style="background: white; height: 100%; width: ${percentage}%; transition: width 0.3s ease;"></div>
+        <div style="background: ${t.trackBg}; border-radius: 999px; height: 6px; overflow: hidden; margin-top: 8px;">
+          <div style="background: ${t.primaryText}; height: 100%; width: ${percentage}%; transition: width 0.3s ease;"></div>
         </div>
       `;
+    }
+
+    // ============================================================
+    // THEME TOKEN SNIFFING
+    // Reads merchant's theme CSS custom properties at runtime so our
+    // surfaces (banners, mini-cart CTA, progress bar) adopt the store's
+    // colors, fonts, and button radius. Falls back to neutral defaults
+    // if theme doesn't expose tokens.
+    //
+    // Supports Dawn-style themes (RGB triples like "18 18 18") and
+    // direct color values. Cached after first call.
+    // ============================================================
+    getThemeTokens() {
+      if (this._themeTokens) return this._themeTokens;
+
+      const root = getComputedStyle(document.documentElement);
+      const readVar = (name) => (root.getPropertyValue(name) || '').trim();
+
+      // Dawn-style themes expose RGB triples ("18 18 18"); normalize to rgb()
+      const toColor = (val) => {
+        if (!val) return null;
+        const trimmed = val.trim();
+        if (/^\d+\s+\d+\s+\d+$/.test(trimmed)) {
+          return `rgb(${trimmed.split(/\s+/).join(', ')})`;
+        }
+        return trimmed;
+      };
+      const pick = (vars, fallback) => {
+        for (const v of vars) {
+          const c = toColor(readVar(v));
+          if (c) return c;
+        }
+        return fallback;
+      };
+
+      // Sniff a primary button for border-radius and font
+      let btnRadius = '8px';
+      let btnFont = '';
+      const btn = document.querySelector(
+        '.shopify-payment-button__button, button[type="submit"], .button--primary, ' +
+        '[class*="button-primary"], .btn-primary, button.product-form__submit, ' +
+        'button.cart__submit, .cart__checkout, [name="checkout"]'
+      );
+      if (btn) {
+        const cs = getComputedStyle(btn);
+        if (cs.borderRadius) btnRadius = cs.borderRadius;
+        if (cs.fontFamily) btnFont = cs.fontFamily;
+      }
+
+      const primary = pick(
+        ['--color-button', '--color-accent-1', '--color-primary', '--color-foreground'],
+        '#1a1a1a'
+      );
+      const primaryText = pick(
+        ['--color-button-text', '--color-background', '--color-base-background-1'],
+        '#ffffff'
+      );
+      const accent = pick(
+        ['--color-accent-2', '--color-accent-1', '--color-link'],
+        primary
+      );
+
+      this._themeTokens = {
+        primary,
+        primaryText,
+        accent,
+        fontFamily: btnFont || readVar('--font-body-family') ||
+          "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        borderRadius: btnRadius,
+        // semi-transparent track derived from primaryText for use against primary bg
+        trackBg: 'rgba(255, 255, 255, 0.25)'
+      };
+      return this._themeTokens;
     }
   }
 

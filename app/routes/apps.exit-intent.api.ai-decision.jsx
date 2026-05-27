@@ -102,7 +102,20 @@ export async function action({ request }) {
         }
       }
     }
-    
+
+    // Plan gate: AI mode requires Pro or Enterprise.
+    // Settings.mode='ai' could be set on a Starter shop (e.g. downgrade after
+    // upgrade), but the AI engine must not run for Starter. Treat as not-enabled.
+    const shopPlan = shopRecord.plan || 'starter';
+    if (shopPlan === 'starter') {
+      console.log(`[AI Decision] Blocked: shop ${shop} on Starter plan — AI mode requires Pro or Enterprise`);
+      return json({
+        error: "AI mode requires Pro or Enterprise plan",
+        plan: shopPlan,
+        upgradeRequired: true
+      }, { status: 403 });
+    }
+
     // Check budget if enabled
     if (budgetEnabled) {
       const budgetCheck = await checkBudget(db, shopRecord.id, budgetPeriod);
