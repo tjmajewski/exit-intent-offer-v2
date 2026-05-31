@@ -88,13 +88,36 @@ export const MODAL_LAYOUTS = {
     name: "Coupon Ticket",
     description: "Gamified, dashed edge",
     tier: 1
+  },
+  "split-hero": {
+    id: "split-hero",
+    name: "Split Hero",
+    description: "Two-panel, bold offer",
+    tier: 2
+  },
+  "timer-front": {
+    id: "timer-front",
+    name: "Timer Front",
+    description: "Live countdown urgency",
+    tier: 2
+  },
+  "testimonial": {
+    id: "testimonial",
+    name: "Testimonial",
+    description: "Star rating + social proof",
+    tier: 2
+  },
+  "scratch-reveal": {
+    id: "scratch-reveal",
+    name: "Scratch Reveal",
+    description: "Scratch-off to reveal",
+    tier: 2
   }
 };
 
 export const DEFAULT_MODAL_LAYOUT_ID = "classic-card";
 
 export function getAvailableLayouts() {
-  // For now, all merchants see all Tier 1 layouts.
-  // Tier 2 will be added in Sprint 2.
-  return Object.values(MODAL_LAYOUTS).filter((l) => l.tier === 1);
+  // All merchants see Tier 1 + Tier 2 layouts.
+  return Object.values(MODAL_LAYOUTS).filter((l) => l.tier <= 2);
 }

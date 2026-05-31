@@ -706,6 +706,52 @@ function LayoutThumbnail({ layoutId, selected }) {
           <rect x="55" y="48" width="50" height="7" rx="2" fill={fill} />
         </svg>
       );
+    case "split-hero":
+      return (
+        <svg viewBox="0 0 160 70" style={box} preserveAspectRatio="none">
+          <rect x="0" y="0" width="160" height="70" fill="#f9fafb" />
+          <rect x="24" y="14" width="112" height="42" rx="6" fill="white" stroke={stroke} strokeWidth="1.5" />
+          <path d="M24 20 a6 6 0 0 1 6 -6 h36 v42 h-36 a6 6 0 0 1 -6 -6 Z" fill={fill} />
+          <text x="48" y="40" textAnchor="middle" fontSize="13" fontWeight="800" fill="white">25%</text>
+          <rect x="78" y="22" width="44" height="4" rx="1" fill={stroke} />
+          <rect x="78" y="30" width="50" height="3" rx="1" fill={muted} />
+          <rect x="78" y="42" width="50" height="8" rx="2" fill={fill} />
+        </svg>
+      );
+    case "timer-front":
+      return (
+        <svg viewBox="0 0 160 70" style={box} preserveAspectRatio="none">
+          <rect x="0" y="0" width="160" height="70" fill="#f9fafb" />
+          <rect x="36" y="8" width="88" height="54" rx="6" fill="white" stroke={stroke} strokeWidth="1.5" />
+          <rect x="60" y="16" width="18" height="14" rx="2" fill={fill} />
+          <rect x="82" y="16" width="18" height="14" rx="2" fill={fill} />
+          <rect x="78" y="21" width="4" height="4" rx="1" fill={stroke} />
+          <rect x="56" y="38" width="48" height="3" rx="1" fill={stroke} />
+          <rect x="60" y="50" width="40" height="7" rx="2" fill={fill} />
+        </svg>
+      );
+    case "testimonial":
+      return (
+        <svg viewBox="0 0 160 70" style={box} preserveAspectRatio="none">
+          <rect x="0" y="0" width="160" height="70" fill="#f9fafb" />
+          <rect x="34" y="10" width="92" height="50" rx="6" fill="white" stroke={stroke} strokeWidth="1.5" />
+          <text x="80" y="26" textAnchor="middle" fontSize="9" fill={fill} letterSpacing="1">★★★★★</text>
+          <rect x="50" y="32" width="60" height="3" rx="1" fill={muted} />
+          <rect x="56" y="39" width="48" height="3" rx="1" fill={muted} />
+          <rect x="58" y="48" width="44" height="7" rx="2" fill={fill} />
+        </svg>
+      );
+    case "scratch-reveal":
+      return (
+        <svg viewBox="0 0 160 70" style={box} preserveAspectRatio="none">
+          <rect x="0" y="0" width="160" height="70" fill="#f9fafb" />
+          <rect x="34" y="10" width="92" height="50" rx="6" fill="white" stroke={stroke} strokeWidth="1.5" />
+          <rect x="48" y="20" width="64" height="22" rx="4" fill={muted} />
+          <text x="76" y="36" textAnchor="middle" fontSize="11" fontWeight="800" fill={fill}>30%</text>
+          <path d="M96 22 l14 -4 M98 30 l16 -3" stroke={stroke} strokeWidth="1.5" strokeLinecap="round" />
+          <rect x="58" y="48" width="44" height="7" rx="2" fill={fill} />
+        </svg>
+      );
     default:
       return <div style={box} />;
   }

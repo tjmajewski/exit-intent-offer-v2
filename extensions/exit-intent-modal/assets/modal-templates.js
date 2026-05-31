@@ -608,6 +608,483 @@
   }
 
   // ===========================================================================
+  // TEMPLATE 5: SPLIT HERO
+  // Two-panel modal. Colored left panel carries the discount amount as a big
+  // hero; right panel holds headline, subhead, CTA. Stacks on mobile.
+  // ===========================================================================
+  function renderSplitHero(props) {
+    const t = tokensFor(props.themeOverrides);
+    const mobile = isMobile();
+
+    const overlay = makeOverlay({ align: mobile ? 'flex-end' : 'center' });
+
+    const modal = document.createElement('div');
+    modal.className = 'resparq-modal resparq-split-hero';
+    modal.style.cssText = `
+      background: ${t.background};
+      color: ${t.foreground};
+      border-radius: ${mobile ? '20px 20px 0 0' : t.borderRadius};
+      max-width: ${mobile ? '100%' : '620px'};
+      width: ${mobile ? '100%' : '92%'};
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 25px 60px -15px rgba(0,0,0,0.3);
+      font-family: ${t.fontFamily};
+      display: flex;
+      flex-direction: ${mobile ? 'column' : 'row'};
+    `;
+
+    const closeBtn = makeCloseButton(t, { tone: 'dark' });
+
+    // Left hero panel
+    const hero = document.createElement('div');
+    hero.style.cssText = `
+      background: ${t.primary};
+      color: ${t.primaryText};
+      flex: ${mobile ? '0 0 auto' : '0 0 42%'};
+      padding: ${mobile ? '28px 22px' : '36px 28px'};
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: ${mobile ? 'center' : 'flex-start'};
+      text-align: ${mobile ? 'center' : 'left'};
+    `;
+    const heroLabel = document.createElement('div');
+    heroLabel.textContent = 'YOUR OFFER';
+    heroLabel.style.cssText =
+      'font-size:11px;font-weight:700;letter-spacing:0.15em;opacity:0.75;margin-bottom:8px;';
+    const heroAmount = document.createElement('div');
+    heroAmount.textContent = props.amountText || props.amount || props.headline;
+    heroAmount.style.cssText = `
+      font-size: ${mobile ? '40px' : '54px'};
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    `;
+    const heroSub = document.createElement('div');
+    heroSub.textContent = props.amountText ? 'OFF your order' : '';
+    heroSub.style.cssText = 'font-size:13px;font-weight:600;opacity:0.85;margin-top:8px;';
+    hero.appendChild(heroLabel);
+    hero.appendChild(heroAmount);
+    if (props.amountText) hero.appendChild(heroSub);
+
+    // Right content panel
+    const content = document.createElement('div');
+    content.style.cssText = `
+      flex: 1 1 auto;
+      padding: ${mobile ? '24px 22px 22px' : '36px 32px 30px'};
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    `;
+    const headline = document.createElement('h2');
+    headline.textContent = props.headline;
+    headline.style.cssText = `
+      margin: 0 0 10px;
+      font-size: ${mobile ? '22px' : '26px'};
+      font-weight: 700;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      color: ${t.foreground};
+    `;
+    const subhead = document.createElement('p');
+    subhead.textContent = props.subhead;
+    subhead.style.cssText =
+      `margin:0 0 22px;font-size:15px;line-height:1.5;color:${t.muted};`;
+
+    const primaryCta = makePrimaryButton(props.cta, t);
+    const secondaryCta = makeSecondaryButton(props.secondaryCta || 'No thanks', t);
+    if (!props.showSecondary) secondaryCta.style.display = 'none';
+
+    content.appendChild(headline);
+    content.appendChild(subhead);
+    content.appendChild(primaryCta);
+    content.appendChild(secondaryCta);
+    content.appendChild(makePoweredBy(props.showPoweredBy));
+
+    modal.appendChild(closeBtn);
+    modal.appendChild(hero);
+    modal.appendChild(content);
+    overlay.appendChild(modal);
+    return { overlay, modal, primaryCta, secondaryCta, closeBtn };
+  }
+
+  // ===========================================================================
+  // TEMPLATE 6: TIMER-FRONT
+  // Countdown timer is the hero. Live mm:ss ticker drives urgency. Interval
+  // self-clears once the element leaves the DOM (modal closed).
+  // ===========================================================================
+  function renderTimerFront(props) {
+    const t = tokensFor(props.themeOverrides);
+    const mobile = isMobile();
+
+    const overlay = makeOverlay({ align: mobile ? 'flex-end' : 'center' });
+
+    const modal = document.createElement('div');
+    modal.className = 'resparq-modal resparq-timer-front';
+    modal.style.cssText = `
+      background: ${t.background};
+      color: ${t.foreground};
+      border-radius: ${mobile ? '20px 20px 0 0' : t.borderRadius};
+      padding: ${mobile ? '30px 22px 22px' : '38px 36px 32px'};
+      max-width: ${mobile ? '100%' : '460px'};
+      width: ${mobile ? '100%' : '90%'};
+      position: relative;
+      text-align: center;
+      box-shadow: 0 25px 60px -15px rgba(0,0,0,0.3);
+      font-family: ${t.fontFamily};
+    `;
+
+    const closeBtn = makeCloseButton(t);
+
+    const label = document.createElement('div');
+    label.textContent = 'OFFER EXPIRES IN';
+    label.style.cssText =
+      `font-size:11px;font-weight:700;letter-spacing:0.15em;color:${t.muted};margin-bottom:12px;`;
+
+    // Countdown display
+    const timer = document.createElement('div');
+    timer.style.cssText = `
+      display: inline-flex;
+      gap: 8px;
+      margin-bottom: 18px;
+    `;
+    const makeCell = () => {
+      const cell = document.createElement('div');
+      cell.style.cssText = `
+        background: ${t.primary};
+        color: ${t.primaryText};
+        font-size: ${mobile ? '30px' : '36px'};
+        font-weight: 800;
+        line-height: 1;
+        padding: 14px 12px;
+        border-radius: 10px;
+        min-width: 58px;
+        font-variant-numeric: tabular-nums;
+      `;
+      cell.textContent = '00';
+      return cell;
+    };
+    const minCell = makeCell();
+    const secCell = makeCell();
+    const colon = document.createElement('div');
+    colon.textContent = ':';
+    colon.style.cssText =
+      `font-size:30px;font-weight:800;color:${t.primary};align-self:center;`;
+    timer.appendChild(minCell);
+    timer.appendChild(colon);
+    timer.appendChild(secCell);
+
+    // 15-minute countdown. Interval clears itself when modal removed from DOM.
+    let remaining = 15 * 60;
+    const paint = () => {
+      const m = Math.floor(remaining / 60);
+      const s = remaining % 60;
+      minCell.textContent = String(m).padStart(2, '0');
+      secCell.textContent = String(s).padStart(2, '0');
+    };
+    paint();
+    const tick = setInterval(() => {
+      if (!document.body.contains(modal)) { clearInterval(tick); return; }
+      remaining = Math.max(0, remaining - 1);
+      paint();
+      if (remaining === 0) clearInterval(tick);
+    }, 1000);
+
+    const headline = document.createElement('h2');
+    headline.textContent = props.headline;
+    headline.style.cssText = `
+      margin: 0 0 8px;
+      font-size: ${mobile ? '22px' : '26px'};
+      font-weight: 700;
+      line-height: 1.25;
+      letter-spacing: -0.02em;
+      color: ${t.foreground};
+    `;
+
+    const subhead = document.createElement('p');
+    subhead.textContent = props.subhead;
+    subhead.style.cssText =
+      `margin:0 0 22px;font-size:15px;line-height:1.5;color:${t.muted};`;
+
+    const primaryCta = makePrimaryButton(props.cta, t);
+    const secondaryCta = makeSecondaryButton(props.secondaryCta || 'No thanks', t);
+    if (!props.showSecondary) secondaryCta.style.display = 'none';
+
+    modal.appendChild(closeBtn);
+    modal.appendChild(label);
+    modal.appendChild(timer);
+    const badge = makeDiscountBadge(props.amountText, t);
+    if (badge) { badge.style.display = 'block'; modal.appendChild(badge); }
+    modal.appendChild(headline);
+    modal.appendChild(subhead);
+    modal.appendChild(primaryCta);
+    modal.appendChild(secondaryCta);
+    modal.appendChild(makePoweredBy(props.showPoweredBy));
+
+    overlay.appendChild(modal);
+    return { overlay, modal, primaryCta, secondaryCta, closeBtn };
+  }
+
+  // ===========================================================================
+  // TEMPLATE 7: TESTIMONIAL
+  // Social-proof card. Star row + merchant-supplied quote (subhead) framed as
+  // a testimonial, then the offer and CTA. No fabricated names or stats.
+  // ===========================================================================
+  function renderTestimonial(props) {
+    const t = tokensFor(props.themeOverrides);
+    const mobile = isMobile();
+
+    const overlay = makeOverlay({ align: mobile ? 'flex-end' : 'center' });
+
+    const modal = document.createElement('div');
+    modal.className = 'resparq-modal resparq-testimonial';
+    modal.style.cssText = `
+      background: ${t.background};
+      color: ${t.foreground};
+      border-radius: ${mobile ? '20px 20px 0 0' : t.borderRadius};
+      padding: ${mobile ? '32px 22px 22px' : '40px 36px 32px'};
+      max-width: ${mobile ? '100%' : '460px'};
+      width: ${mobile ? '100%' : '90%'};
+      position: relative;
+      text-align: center;
+      box-shadow: 0 25px 60px -15px rgba(0,0,0,0.3);
+      font-family: ${t.fontFamily};
+    `;
+
+    const closeBtn = makeCloseButton(t);
+
+    const stars = document.createElement('div');
+    stars.textContent = '★★★★★';
+    stars.setAttribute('aria-label', '5 out of 5 stars');
+    stars.style.cssText =
+      `color:${t.primary};font-size:20px;letter-spacing:3px;margin-bottom:14px;`;
+
+    const quote = document.createElement('p');
+    quote.textContent = props.subhead
+      ? `“${props.subhead}”`
+      : `“${props.headline}”`;
+    quote.style.cssText = `
+      margin: 0 0 18px;
+      font-size: ${mobile ? '18px' : '20px'};
+      line-height: 1.4;
+      font-weight: 600;
+      font-style: italic;
+      color: ${t.foreground};
+    `;
+
+    const headline = document.createElement('h2');
+    headline.textContent = props.headline;
+    headline.style.cssText = `
+      margin: 0 0 18px;
+      font-size: 15px;
+      font-weight: 500;
+      line-height: 1.5;
+      color: ${t.muted};
+    `;
+
+    const primaryCta = makePrimaryButton(props.cta, t);
+    const secondaryCta = makeSecondaryButton(props.secondaryCta || 'No thanks', t);
+    if (!props.showSecondary) secondaryCta.style.display = 'none';
+
+    modal.appendChild(closeBtn);
+    modal.appendChild(stars);
+    const badge = makeDiscountBadge(props.amountText, t);
+    if (badge) { badge.style.display = 'inline-block'; modal.appendChild(badge); }
+    modal.appendChild(quote);
+    modal.appendChild(headline);
+    modal.appendChild(primaryCta);
+    modal.appendChild(secondaryCta);
+    modal.appendChild(makePoweredBy(props.showPoweredBy));
+
+    overlay.appendChild(modal);
+    return { overlay, modal, primaryCta, secondaryCta, closeBtn };
+  }
+
+  // ===========================================================================
+  // TEMPLATE 8: SCRATCH REVEAL
+  // Canvas scratch-off over the discount hero. Drag (pointer/touch) erases the
+  // foil; once enough is cleared the foil auto-fades. CTA stays clickable
+  // throughout so the claim flow never depends on the canvas working.
+  // ===========================================================================
+  function renderScratchReveal(props) {
+    const t = tokensFor(props.themeOverrides);
+    const mobile = isMobile();
+
+    const overlay = makeOverlay({ align: mobile ? 'flex-end' : 'center' });
+
+    const modal = document.createElement('div');
+    modal.className = 'resparq-modal resparq-scratch-reveal';
+    modal.style.cssText = `
+      background: ${t.background};
+      color: ${t.foreground};
+      border-radius: ${mobile ? '20px 20px 0 0' : t.borderRadius};
+      padding: ${mobile ? '32px 22px 22px' : '40px 36px 32px'};
+      max-width: ${mobile ? '100%' : '440px'};
+      width: ${mobile ? '100%' : '90%'};
+      position: relative;
+      text-align: center;
+      box-shadow: 0 25px 60px -15px rgba(0,0,0,0.3);
+      font-family: ${t.fontFamily};
+    `;
+
+    const closeBtn = makeCloseButton(t);
+
+    const headline = document.createElement('h2');
+    headline.textContent = props.headline;
+    headline.style.cssText = `
+      margin: 0 0 6px;
+      font-size: ${mobile ? '22px' : '26px'};
+      font-weight: 700;
+      line-height: 1.25;
+      letter-spacing: -0.02em;
+      color: ${t.foreground};
+    `;
+
+    const hint = document.createElement('p');
+    hint.textContent = 'Scratch the panel to reveal your offer';
+    hint.style.cssText = `margin:0 0 18px;font-size:14px;color:${t.muted};`;
+
+    // Scratch stage: reward layer underneath + canvas foil on top
+    const stage = document.createElement('div');
+    const stageW = mobile ? 240 : 300;
+    const stageH = 120;
+    stage.style.cssText = `
+      position: relative;
+      width: ${stageW}px;
+      height: ${stageH}px;
+      margin: 0 auto 22px;
+      border-radius: 14px;
+      overflow: hidden;
+      touch-action: none;
+      user-select: none;
+    `;
+
+    const reward = document.createElement('div');
+    reward.style.cssText = `
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: ${t.background};
+      color: ${t.foreground};
+    `;
+    const rewardAmount = document.createElement('div');
+    rewardAmount.textContent = props.amountText || props.amount || 'YOUR OFFER';
+    rewardAmount.style.cssText = `
+      font-size: ${mobile ? '38px' : '46px'};
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      color: ${t.primary};
+    `;
+    const rewardSub = document.createElement('div');
+    rewardSub.textContent = props.amountText ? 'OFF your order' : '';
+    rewardSub.style.cssText =
+      `font-size:12px;font-weight:600;letter-spacing:0.1em;color:${t.muted};margin-top:6px;`;
+    reward.appendChild(rewardAmount);
+    if (props.amountText) reward.appendChild(rewardSub);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = stageW;
+    canvas.height = stageH;
+    canvas.style.cssText =
+      'position:absolute;inset:0;width:100%;height:100%;cursor:grab;';
+
+    stage.appendChild(reward);
+    stage.appendChild(canvas);
+
+    // Paint the foil. Diagonal hatch + label so it reads as scratchable.
+    const ctx = canvas.getContext('2d');
+    const paintFoil = () => {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = '#c7ccd1';
+      ctx.fillRect(0, 0, stageW, stageH);
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 6;
+      for (let x = -stageH; x < stageW; x += 18) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x + stageH, stageH);
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#6b7280';
+      ctx.font = '600 14px ' + t.fontFamily;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('SCRATCH HERE', stageW / 2, stageH / 2);
+    };
+    paintFoil();
+
+    let scratching = false;
+    let revealed = false;
+    const eraseAt = (clientX, clientY) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = (clientX - rect.left) * (stageW / rect.width);
+      const y = (clientY - rect.top) * (stageH / rect.height);
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.beginPath();
+      ctx.arc(x, y, 20, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    const clearedRatio = () => {
+      const data = ctx.getImageData(0, 0, stageW, stageH).data;
+      let clear = 0;
+      for (let i = 3; i < data.length; i += 4 * 80) {
+        if (data[i] === 0) clear++;
+      }
+      return clear / (data.length / (4 * 80));
+    };
+    const maybeReveal = () => {
+      if (revealed) return;
+      if (clearedRatio() > 0.45) {
+        revealed = true;
+        canvas.style.transition = 'opacity 0.4s';
+        canvas.style.opacity = '0';
+        setTimeout(() => { canvas.style.display = 'none'; }, 400);
+      }
+    };
+    const start = (e) => {
+      scratching = true;
+      canvas.style.cursor = 'grabbing';
+      const p = e.touches ? e.touches[0] : e;
+      eraseAt(p.clientX, p.clientY);
+    };
+    const move = (e) => {
+      if (!scratching) return;
+      e.preventDefault();
+      const p = e.touches ? e.touches[0] : e;
+      eraseAt(p.clientX, p.clientY);
+    };
+    const end = () => {
+      if (!scratching) return;
+      scratching = false;
+      canvas.style.cursor = 'grab';
+      maybeReveal();
+    };
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
+    canvas.addEventListener('touchstart', start, { passive: false });
+    canvas.addEventListener('touchmove', move, { passive: false });
+    canvas.addEventListener('touchend', end);
+
+    const primaryCta = makePrimaryButton(props.cta, t);
+    const secondaryCta = makeSecondaryButton(props.secondaryCta || 'No thanks', t);
+    if (!props.showSecondary) secondaryCta.style.display = 'none';
+
+    modal.appendChild(closeBtn);
+    modal.appendChild(headline);
+    modal.appendChild(hint);
+    modal.appendChild(stage);
+    modal.appendChild(primaryCta);
+    modal.appendChild(secondaryCta);
+    modal.appendChild(makePoweredBy(props.showPoweredBy));
+
+    overlay.appendChild(modal);
+    return { overlay, modal, primaryCta, secondaryCta, closeBtn };
+  }
+
+  // ===========================================================================
   // REGISTRY + DISPATCHER
   // ===========================================================================
   const TEMPLATES = {
@@ -638,6 +1115,34 @@
       description: 'Gamified, dashed edge',
       tier: 1,
       render: renderCouponTicket
+    },
+    'split-hero': {
+      id: 'split-hero',
+      name: 'Split Hero',
+      description: 'Two-panel, bold offer',
+      tier: 2,
+      render: renderSplitHero
+    },
+    'timer-front': {
+      id: 'timer-front',
+      name: 'Timer Front',
+      description: 'Live countdown urgency',
+      tier: 2,
+      render: renderTimerFront
+    },
+    'testimonial': {
+      id: 'testimonial',
+      name: 'Testimonial',
+      description: 'Star rating + social proof',
+      tier: 2,
+      render: renderTestimonial
+    },
+    'scratch-reveal': {
+      id: 'scratch-reveal',
+      name: 'Scratch Reveal',
+      description: 'Scratch-off to reveal',
+      tier: 2,
+      render: renderScratchReveal
     }
   };
 

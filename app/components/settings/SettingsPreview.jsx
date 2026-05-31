@@ -146,6 +146,14 @@ export default function SettingsPreview({
                                     discountPercentage={discountPercentage}
                                     discountAmount={discountAmount}
                                     offerType={offerType} />;
+      case 'split-hero':
+        return <SplitHeroPreview {...cardProps} scale={scale} compact={compact} />;
+      case 'timer-front':
+        return <TimerFrontPreview {...cardProps} scale={scale} compact={compact} />;
+      case 'testimonial':
+        return <TestimonialPreview {...cardProps} scale={scale} compact={compact} />;
+      case 'scratch-reveal':
+        return <ScratchRevealPreview {...cardProps} scale={scale} compact={compact} />;
       case 'classic-card':
       default:
         return <ClassicCardPreview {...cardProps} scale={scale} compact={compact} />;
@@ -545,6 +553,212 @@ function CouponTicketPreview({ isAIMode, displayHeadline, displayBody, displayCT
         <PrimaryCta tokens={tokens} isAIMode={isAIMode} scale={scale}>{displayCTA}</PrimaryCta>
         {showPoweredBy && <PoweredBy />}
       </div>
+    </div>
+  );
+}
+
+function SplitHeroPreview({ isAIMode, displayHeadline, displayBody, displayCTA, showPoweredBy, tokens, scale, compact, amountText }) {
+  return (
+    <div id="exit-intent-modal" style={{
+      display: 'flex',
+      borderRadius: tokens.borderRadius,
+      overflow: 'hidden',
+      boxShadow: '0 10px 25px -5px rgba(0,0,0,0.12)',
+      border: '1px solid #e5e7eb',
+      position: 'relative',
+      fontFamily: tokens.fontFamily
+    }}>
+      {isAIMode && <AIBadge />}
+      <div style={{
+        background: tokens.primary,
+        color: tokens.primaryText,
+        flex: '0 0 42%',
+        padding: scale < 1 ? '22px 16px' : '32px 22px',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center'
+      }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', opacity: 0.75, marginBottom: 6 }}>YOUR OFFER</div>
+        <div style={{ fontSize: scale < 1 ? '34px' : '44px', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1 }}>
+          {amountText || 'Deal'}
+        </div>
+        {amountText && <div style={{ fontSize: 12, fontWeight: 600, opacity: 0.85, marginTop: 6 }}>OFF your order</div>}
+      </div>
+      <div style={{
+        flex: '1 1 auto',
+        padding: scale < 1 ? '20px 18px' : '32px 26px',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center'
+      }}>
+        <h2 style={{
+          margin: '0 0 8px',
+          fontSize: scale < 1 ? '19px' : '24px',
+          fontWeight: 700,
+          color: isAIMode ? '#6b7280' : tokens.foreground,
+          fontStyle: isAIMode ? 'italic' : 'normal',
+          lineHeight: 1.2,
+          letterSpacing: '-0.02em'
+        }}>{displayHeadline}</h2>
+        <p style={{
+          margin: '0 0 18px',
+          fontSize: 14,
+          lineHeight: 1.5,
+          color: tokens.muted,
+          fontStyle: isAIMode ? 'italic' : 'normal'
+        }}>{displayBody}</p>
+        <PrimaryCta tokens={tokens} isAIMode={isAIMode} scale={scale}>{displayCTA}</PrimaryCta>
+        {showPoweredBy && <PoweredBy />}
+      </div>
+    </div>
+  );
+}
+
+function TimerFrontPreview({ isAIMode, displayHeadline, displayBody, displayCTA, showPoweredBy, tokens, scale, compact, amountText }) {
+  const Cell = ({ children }) => (
+    <div style={{
+      background: tokens.primary,
+      color: tokens.primaryText,
+      fontSize: scale < 1 ? '26px' : '32px',
+      fontWeight: 800,
+      lineHeight: 1,
+      padding: '12px 10px',
+      borderRadius: 10,
+      minWidth: 50,
+      fontVariantNumeric: 'tabular-nums'
+    }}>{children}</div>
+  );
+  return (
+    <div id="exit-intent-modal" style={{
+      background: tokens.background,
+      borderRadius: tokens.borderRadius,
+      padding: scale < 1 ? '26px 22px 22px' : '36px 32px 30px',
+      boxShadow: '0 10px 25px -5px rgba(0,0,0,0.12)',
+      border: '1px solid #e5e7eb',
+      position: 'relative',
+      textAlign: 'center',
+      fontFamily: tokens.fontFamily
+    }}>
+      {isAIMode && <AIBadge />}
+      {!compact && <PreviewCloseBtn />}
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', color: tokens.muted, marginBottom: 10 }}>OFFER EXPIRES IN</div>
+      <div style={{ display: 'inline-flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+        <Cell>14</Cell>
+        <div style={{ fontSize: 26, fontWeight: 800, color: tokens.primary }}>:</div>
+        <Cell>59</Cell>
+      </div>
+      <h2 style={{
+        margin: '0 0 8px',
+        fontSize: scale < 1 ? '19px' : '24px',
+        fontWeight: 700,
+        color: isAIMode ? '#6b7280' : tokens.foreground,
+        fontStyle: isAIMode ? 'italic' : 'normal',
+        letterSpacing: '-0.02em'
+      }}>{displayHeadline}</h2>
+      <p style={{
+        margin: '0 0 18px',
+        fontSize: 14,
+        lineHeight: 1.5,
+        color: tokens.muted,
+        fontStyle: isAIMode ? 'italic' : 'normal'
+      }}>{displayBody}</p>
+      <PrimaryCta tokens={tokens} isAIMode={isAIMode} scale={scale}>{displayCTA}</PrimaryCta>
+      {showPoweredBy && <PoweredBy />}
+    </div>
+  );
+}
+
+function TestimonialPreview({ isAIMode, displayHeadline, displayBody, displayCTA, showPoweredBy, tokens, scale, compact, amountText }) {
+  return (
+    <div id="exit-intent-modal" style={{
+      background: tokens.background,
+      borderRadius: tokens.borderRadius,
+      padding: scale < 1 ? '28px 22px 22px' : '36px 32px 30px',
+      boxShadow: '0 10px 25px -5px rgba(0,0,0,0.12)',
+      border: '1px solid #e5e7eb',
+      position: 'relative',
+      textAlign: 'center',
+      fontFamily: tokens.fontFamily
+    }}>
+      {isAIMode && <AIBadge />}
+      {!compact && <PreviewCloseBtn />}
+      <div style={{ color: tokens.primary, fontSize: 18, letterSpacing: 3, marginBottom: 12 }}>★★★★★</div>
+      {amountText && <DiscountBadge amountText={amountText} tokens={tokens} />}
+      <p style={{
+        margin: '0 0 16px',
+        fontSize: scale < 1 ? '17px' : '19px',
+        lineHeight: 1.4,
+        fontWeight: 600,
+        fontStyle: 'italic',
+        color: isAIMode ? '#6b7280' : tokens.foreground
+      }}>“{displayBody}”</p>
+      <p style={{
+        margin: '0 0 16px',
+        fontSize: 14,
+        fontWeight: 500,
+        lineHeight: 1.5,
+        color: tokens.muted,
+        fontStyle: isAIMode ? 'italic' : 'normal'
+      }}>{displayHeadline}</p>
+      <PrimaryCta tokens={tokens} isAIMode={isAIMode} scale={scale}>{displayCTA}</PrimaryCta>
+      {showPoweredBy && <PoweredBy />}
+    </div>
+  );
+}
+
+function ScratchRevealPreview({ isAIMode, displayHeadline, displayBody, displayCTA, showPoweredBy, tokens, scale, compact, amountText }) {
+  return (
+    <div id="exit-intent-modal" style={{
+      background: tokens.background,
+      borderRadius: tokens.borderRadius,
+      padding: scale < 1 ? '28px 22px 22px' : '36px 32px 30px',
+      boxShadow: '0 10px 25px -5px rgba(0,0,0,0.12)',
+      border: '1px solid #e5e7eb',
+      position: 'relative',
+      textAlign: 'center',
+      fontFamily: tokens.fontFamily
+    }}>
+      {isAIMode && <AIBadge />}
+      {!compact && <PreviewCloseBtn />}
+      <h2 style={{
+        margin: '0 0 4px',
+        fontSize: scale < 1 ? '19px' : '24px',
+        fontWeight: 700,
+        color: isAIMode ? '#6b7280' : tokens.foreground,
+        fontStyle: isAIMode ? 'italic' : 'normal',
+        letterSpacing: '-0.02em'
+      }}>{displayHeadline}</h2>
+      <p style={{ margin: '0 0 16px', fontSize: 14, color: tokens.muted }}>Scratch the panel to reveal your offer</p>
+      <div style={{
+        position: 'relative',
+        width: '100%',
+        maxWidth: 280,
+        height: 110,
+        margin: '0 auto 18px',
+        borderRadius: 14,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'repeating-linear-gradient(45deg, #c7ccd1 0 12px, #d4d9de 12px 24px)'
+      }}>
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          background: tokens.background,
+          clipPath: 'polygon(0 0, 62% 0, 48% 100%, 0 100%)'
+        }}>
+          <div style={{ fontSize: scale < 1 ? '32px' : '40px', fontWeight: 800, letterSpacing: '-0.03em', color: tokens.primary, lineHeight: 1 }}>
+            {amountText || 'Deal'}
+          </div>
+          {amountText && <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', color: tokens.muted, marginTop: 4 }}>OFF</div>}
+        </div>
+        <div style={{ position: 'relative', fontSize: 13, fontWeight: 600, color: '#6b7280', alignSelf: 'flex-end', marginRight: 24 }}>SCRATCH</div>
+      </div>
+      <PrimaryCta tokens={tokens} isAIMode={isAIMode} scale={scale}>{displayCTA}</PrimaryCta>
+      {showPoweredBy && <PoweredBy />}
     </div>
   );
 }
