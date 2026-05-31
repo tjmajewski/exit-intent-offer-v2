@@ -650,22 +650,29 @@
 
       const line = document.createElement('div');
       line.id = existingId;
+      // Full-width block row. box-sizing + zero horizontal margin keep it from
+      // overflowing the drawer; we always mount it as its own row (above the
+      // footer) so it never gets squeezed beside the checkout button.
       line.style.cssText = crowded
         ? `
-          margin: 8px 12px;
-          padding: 8px 0;
+          box-sizing: border-box;
+          width: 100%;
+          margin: 8px 0;
+          padding: 10px 16px;
           font-family: ${font};
           font-size: 13px;
           color: inherit;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 10px;
+          gap: 12px;
           border-top: 1px solid rgba(0,0,0,0.08);
         `
         : `
-          margin: 12px;
-          padding: 10px 12px;
+          box-sizing: border-box;
+          width: 100%;
+          margin: 0 0 12px;
+          padding: 12px 16px;
           background: rgba(0,0,0,0.03);
           border-radius: ${checkoutStyle?.borderRadius || '6px'};
           font-family: ${font};
@@ -674,12 +681,12 @@
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 10px;
+          gap: 12px;
         `;
 
       const label = document.createElement('span');
       label.textContent = this.buildFlatOfferLabel(offer);
-      label.style.cssText = 'flex: 1; min-width: 0; line-height: 1.3;';
+      label.style.cssText = 'flex: 1 1 auto; min-width: 0; line-height: 1.3; font-weight: 500;';
 
       const applyBtn = document.createElement('button');
       applyBtn.type = 'button';
@@ -688,7 +695,7 @@
         background: ${accent};
         color: #ffffff;
         border: none;
-        padding: 8px 14px;
+        padding: 9px 16px;
         border-radius: ${checkoutStyle?.borderRadius || '6px'};
         font-family: ${checkoutStyle?.fontFamily || font};
         font-weight: ${checkoutStyle?.fontWeight || '600'};
@@ -696,24 +703,49 @@
         letter-spacing: ${checkoutStyle?.letterSpacing || 'normal'};
         text-transform: ${checkoutStyle?.textTransform || 'none'};
         cursor: pointer;
-        flex-shrink: 0;
+        white-space: nowrap;
+        flex: 0 0 auto;
       `;
       applyBtn.onclick = () => this.applyFlatOffer(offer);
 
       line.appendChild(label);
       line.appendChild(applyBtn);
 
-      // Place just above the mini-cart's checkout button when we can find one
+      this.insertMiniCartRow(miniCart, line);
+    }
+
+    /**
+     * Mount a full-width row in the drawer. Prefer sitting ABOVE the drawer's
+     * footer/totals block (so it's its own row), not as a sibling of the
+     * checkout button — many themes lay the footer out as a flex row, which
+     * squeezes an inline sibling to half-width and clips its text.
+     */
+    insertMiniCartRow(miniCart, row) {
       const checkoutBtn =
         miniCart.querySelector('#CartDrawer-Checkout') ||
         miniCart.querySelector('button[name="checkout"]') ||
         miniCart.querySelector('[name="checkout"]') ||
         miniCart.querySelector('.cart-drawer__checkout');
-      if (checkoutBtn && checkoutBtn.parentElement) {
-        checkoutBtn.parentElement.insertBefore(line, checkoutBtn);
-      } else {
-        miniCart.appendChild(line);
+
+      if (checkoutBtn) {
+        // Walk up to a footer/totals/summary ancestor inside the drawer.
+        let node = checkoutBtn;
+        let footer = null;
+        for (let i = 0; i < 5 && node && node !== miniCart; i++) {
+          const cls = (node.className && node.className.toString().toLowerCase()) || '';
+          if (/footer|totals|summary|subtotal|bottom/.test(cls)) footer = node;
+          node = node.parentElement;
+        }
+        if (footer && footer.parentElement) {
+          footer.parentElement.insertBefore(row, footer);
+          return;
+        }
+        if (checkoutBtn.parentElement) {
+          checkoutBtn.parentElement.insertBefore(row, checkoutBtn);
+          return;
+        }
       }
+      miniCart.appendChild(row);
     }
 
     watchMiniCartForFlatOffer(miniCart, offer) {
