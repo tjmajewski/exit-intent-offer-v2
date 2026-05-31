@@ -18,7 +18,7 @@ User asked: review the AI mode against the spec in `Resparq AI 5.26.26.pdf`, the
 3. Build the 8 modal-design templates the marketing deck already promised but never existed in code
 4. Wire templates to a manual picker + live preview
 5. Then a "catch" component for dismissal recovery
-6. Then AI integration (templateId as gene, meta-learning, Pro lift upsell, queue tab)
+6. Then AI integration (templateId as gene, meta-learning, Pro lift upsell)
 
 ## Architecture decisions made (don't relitigate)
 
@@ -42,9 +42,10 @@ User asked: review the AI mode against the spec in `Resparq AI 5.26.26.pdf`, the
 - **Catch component:** mini-cart inline by default, cart-page banner if
   full cart page detected. Trigger = modal closed without claim. Lifespan
   = rest of session. Same theming pipeline as templates.
-- **Queue tab (#7):** one view, two sections — "Live now" + "On deck"
-  (bred-but-warming + next-to-breed). Skip the cross-store meta-learning
-  "ideas" section for now.
+- **Queue tab (#7): DROPPED (2026-05-31).** Decided not to build. Manual
+  reorder fights the bandit (overrides Live-now traffic allocation, starves
+  exploration); the read-only queue view wasn't worth the surface on its own.
+  Cut from Sprint 3.
 - **No merchant context survey.** Earlier idea to ask onboarding questions
   about existing apps was rejected — kills the few-clicks install promise.
   Free Shipping Bar template is the only one with real economic conflict,
@@ -126,11 +127,37 @@ User asked: review the AI mode against the spec in `Resparq AI 5.26.26.pdf`, the
   (`discount-codes.js`) so exit offers still stack with the store's own promos —
   left intact intentionally; the dedup is purely storefront-side.
 
-**Sprint 3 — NOT STARTED**
-- Wire `templateId` as a gene on `Variant` (Prisma migration)
-- Populate `MetaLearningGene` with templateId
-- #5 Pro lift upsell (device-conditional posterior + UI card)
-- #7 Queue tab (Live now + On deck sections on variants page)
+**Sprint 3 — IN PROGRESS**
+
+Step 1 foundation — DONE (this commit):
+- `templateId` is now a gene on `Variant` (`@default("classic-card")`), migration
+  `20260531120000_add_template_id_to_variant` applied locally + committed.
+- Gene pool: shared `TEMPLATE_IDS` (all 8 layouts) added to every archetype in
+  `gene-pools.js` (cross-archetype pooling, per locked decision).
+- Evolution engine wired in `variant-engine.js`: random create, diverse seed
+  (spread evenly), crossover, mutation (`geneToPoolKey.templateId`), and the
+  proven-gene seeding override all handle `templateId`.
+- Meta-learning: `aggregate-gene-performance.js` aggregates `templateId` as a
+  geneType, so cross-store `MetaLearningGene` populates it (covers original
+  step 2). `determineBaseline` handles it via the generic string branch.
+- Decision payload: `apps.exit-intent.api.ai-decision.jsx` now returns
+  `decision.templateId` on both variant-bearing return shapes (discount +
+  no-discount). Enterprise/variant path only — Pro determineOffer is rule-based.
+
+Still TODO in Sprint 3:
+- **Storefront AI render (next, RISKY — needs runtime verify).** AI mode still
+  renders the legacy modal; `updateModalWithAI` patches copy via `h2`/`p`/
+  `#modal-primary-cta` selectors. To honor `decision.templateId`, AI mode must
+  rebuild the modal DOM from `ResparqTemplates` (mirror
+  `renderFromTemplateRegistry`) seeded with AI copy. Verify template DOM exposes
+  the selectors `updateModalWithAI` expects, or refactor that patch path. Can't
+  test here (no customers + dev-data poisoning → "no intervention").
+- **3-level hierarchical template posterior** (archetype → store-pooled →
+  cross-store meta, anneal with sample count). Not yet built — current wiring
+  treats templateId as a flat gene like the others.
+- #5 Pro lift upsell (device-conditional posterior + UI card).
+- Add Modal Design column to Component Analysis tab (surfaces templateId gene).
+- ~~#7 Queue tab~~ — DROPPED 2026-05-31
 
 ## How the template system actually works
 
@@ -190,8 +217,8 @@ To add a Tier 2 template:
    `makePrimaryButton`, `makeDiscountBadge`, `makePoweredBy` helpers)
 2. Register in the `TEMPLATES` object at the bottom of that file
 3. Add entry to `MODAL_LAYOUTS` in `app/utils/templates.js` with `tier: 2`
-4. `getAvailableLayouts()` filters by `tier === 1` today — change to
-   `tier <= 2` when ready to expose Tier 2 in the picker
+4. `getAvailableLayouts()` filters by `tier <= 2` today — bump the cap
+   when ready to expose a higher tier in the picker
 5. Add a matching JSX preview component in `SettingsPreview.jsx` + register
    in the switch inside `ModalCard` component
 6. Add a thumbnail case in `LayoutThumbnail` (`QuickSetupTab.jsx`)
@@ -276,12 +303,19 @@ touches DB schema + evolution engine + admin UI). Decisions are locked above
    anneal with sample count.
 2. **Populate `MetaLearningGene` with templateId** — so cross-store meta-learning
    has the new gene.
-3. **#7 Queue tab** — one view, two sections: "Live now" + "On deck"
-   (bred-but-warming + next-to-breed). Skip the cross-store "ideas" section.
-   Lower risk (admin UI), good to do before/after the engine work.
+3. **Modal Design column on Component Analysis tab** — surfaces the new
+   templateId gene as a fourth leaderboard column in
+   `app/routes/app.variants._index.jsx`. Aggregate by `v.templateId` (mirror
+   `byHeadline`/`bySubhead`/`byCTA` at ~line 733), emit `performance.templates`,
+   widen grid `'1fr 1fr 1fr'` → 4 cols at ~line 1448. Card shows layout
+   name/thumbnail (from `MODAL_LAYOUTS`), not copy text — needs a
+   `ComponentCard type="template"` branch. Gated on step 1 (no templateId on
+   Variant until the migration lands).
 4. **#5 Pro lift upsell** — device-conditional posterior as a partial-pool prior
    layered on existing segment population (NOT new segments — data fragmentation
    kills bandits). Plus the UI upsell card.
+
+(Queue tab #7 dropped 2026-05-31 — see Architecture decisions.)
 
 Don't restart the architectural conversation — decisions above are locked.
 

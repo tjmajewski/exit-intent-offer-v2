@@ -498,6 +498,7 @@ export async function action({ request }) {
       showSubhead: effectiveShowSubhead,
       triggerType: selectedVariant.triggerType || 'exit_intent',
       idleSeconds: selectedVariant.idleSeconds || 30,
+      templateId: selectedVariant.templateId || 'classic-card',
       variantId: selectedVariant.id,
       variantPublicId: selectedVariant.variantId,
       baseline: baseline,
@@ -576,6 +577,7 @@ export async function action({ request }) {
           },
           triggerType: decision.triggerType,
           idleSeconds: decision.idleSeconds,
+          templateId: decision.templateId,
           variantId: decision.variantId,
           variantPublicId: decision.variantPublicId,
           impressionId: impressionRecord.id
@@ -726,6 +728,7 @@ export async function action({ request }) {
     };
     response.decision.triggerType = decision.triggerType;
     response.decision.idleSeconds = decision.idleSeconds;
+    response.decision.templateId = decision.templateId;
     response.decision.variantId = decision.variantId;
     response.decision.variantPublicId = decision.variantPublicId;
     response.decision.impressionId = impressionRecord.id; // For tracking clicks/conversions

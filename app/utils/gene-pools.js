@@ -33,6 +33,18 @@ const UNIVERSAL_BANNED_PATTERNS = [
   /money.?back.+guarantee/i                     // merchant may not offer it
 ];
 
+// Modal-design template gene (Sprint 3). Cross-archetype: all 8 visual
+// templates are copy-agnostic chrome, so every archetype draws from the same
+// pool. Must stay in sync with MODAL_LAYOUTS (app/utils/templates.js) and the
+// storefront TEMPLATES registry (modal-templates.js). Testimonial renders
+// decorative stars + merchant copy only (no fabricated social proof);
+// Timer-Front is deadline-driven from offerExpiresAt, independent of the
+// urgency gene — both safe to pair with any archetype.
+export const TEMPLATE_IDS = [
+  'classic-card', 'top-banner', 'bottom-sheet', 'coupon-ticket',
+  'split-hero', 'timer-front', 'testimonial', 'scratch-reveal'
+];
+
 export const genePools = {
   // REVENUE + DISCOUNT: Threshold offers to increase cart value (e.g., "Spend $X more, save $Y")
   revenue_with_discount: {
@@ -96,7 +108,8 @@ export const genePools = {
     // idle = show after X seconds idle on page with cart items
     // exit_intent_or_idle = whichever fires first (covers both desktop & mobile)
     triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
-    idleSeconds: [15, 30, 45, 60]  // Only used when trigger includes idle
+    idleSeconds: [15, 30, 45, 60],  // Only used when trigger includes idle
+    templateIds: TEMPLATE_IDS
   },
 
   // REVENUE + NO DISCOUNT: Upsell without discount (high-propensity customers)
@@ -148,7 +161,8 @@ export const genePools = {
     urgency: [false],  // No urgency without incentive
     showSubhead: [true, false],
     triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
-    idleSeconds: [15, 30, 45, 60]
+    idleSeconds: [15, 30, 45, 60],
+    templateIds: TEMPLATE_IDS
   },
 
   // CONVERSION + DISCOUNT: % off to prevent cart abandonment
@@ -208,7 +222,8 @@ export const genePools = {
     urgency: [true, false],
     showSubhead: [true, false],
     triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
-    idleSeconds: [15, 30, 45, 60]
+    idleSeconds: [15, 30, 45, 60],
+    templateIds: TEMPLATE_IDS
   },
 
   // CONVERSION + NO DISCOUNT: Convert without discount (social proof / trust focus)
@@ -256,7 +271,8 @@ export const genePools = {
     urgency: [false],  // No urgency without incentive
     showSubhead: [true, false],
     triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
-    idleSeconds: [15, 30, 45, 60]
+    idleSeconds: [15, 30, 45, 60],
+    templateIds: TEMPLATE_IDS
   },
 
   // PURE REMINDER: No offers, no discounts, no incentives
@@ -308,7 +324,8 @@ export const genePools = {
     urgency: [false],  // No urgency for reminders
     showSubhead: [true, false],
     triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
-    idleSeconds: [15, 30, 45, 60]
+    idleSeconds: [15, 30, 45, 60],
+    templateIds: TEMPLATE_IDS
   }
 };
 

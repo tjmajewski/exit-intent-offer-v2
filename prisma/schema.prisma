@@ -209,6 +209,10 @@ model Variant {
   buttonStyle String @default("solid")
   animation   String @default("fade")
   typography  String @default("modern")
+  // Modal-design template gene (Sprint 3). Maps to MODAL_LAYOUTS ids in
+  // app/utils/templates.js / the storefront TEMPLATES registry. Default keeps
+  // existing variants on the original Classic Card layout.
+  templateId  String @default("classic-card")
 
   // Performance
   impressions         Int   @default(0)

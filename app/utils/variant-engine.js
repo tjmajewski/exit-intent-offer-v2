@@ -69,7 +69,8 @@ function createRandomVariant(baseline, segment = 'all', useSocialProof = false) 
     showSubhead: pool.showSubhead[Math.floor(Math.random() * pool.showSubhead.length)],
     triggerType: pool.triggerTypes[Math.floor(Math.random() * pool.triggerTypes.length)],
     idleSeconds: pool.idleSeconds[Math.floor(Math.random() * pool.idleSeconds.length)],
-    
+    templateId: pool.templateIds[Math.floor(Math.random() * pool.templateIds.length)],
+
     // Initialize performance
     impressions: 0,
     clicks: 0,
@@ -175,7 +176,9 @@ function generateDiverseVariants(count, baseline, segment = 'all') {
       showSubhead: i % 2 === 0,
       triggerType: pool.triggerTypes[triggerIndex],
       idleSeconds: pool.idleSeconds[idleIndex],
-      
+      // Spread templates evenly across the seed population for fast gene coverage
+      templateId: pool.templateIds[i % pool.templateIds.length],
+
       impressions: 0,
       clicks: 0,
       conversions: 0,
@@ -275,6 +278,8 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
             variant.idleSeconds = parseInt(gene.geneValue);
           } else if (gene.geneType === 'showSubhead') {
             variant.showSubhead = gene.geneValue === 'true';
+          } else if (gene.geneType === 'templateId') {
+            variant.templateId = gene.geneValue;
           }
         });
         
@@ -775,7 +780,8 @@ async function breedNewVariant(parents, baseline, segment = 'all', shopId = null
     urgency: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.urgency : parent2.urgency) : parent1.urgency,
     showSubhead: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.showSubhead : parent2.showSubhead) : parent1.showSubhead,
     triggerType: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.triggerType : parent2.triggerType) : parent1.triggerType,
-    idleSeconds: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.idleSeconds : parent2.idleSeconds) : parent1.idleSeconds
+    idleSeconds: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.idleSeconds : parent2.idleSeconds) : parent1.idleSeconds,
+    templateId: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.templateId : parent2.templateId) : parent1.templateId
   };
 
   // Mutation: Randomize each gene based on mutationRate
@@ -790,7 +796,8 @@ async function breedNewVariant(parents, baseline, segment = 'all', shopId = null
     urgency: 'urgency',
     showSubhead: 'showSubhead',
     triggerType: 'triggerTypes',
-    idleSeconds: 'idleSeconds'
+    idleSeconds: 'idleSeconds',
+    templateId: 'templateIds'
   };
   Object.keys(childGenes).forEach(gene => {
     if (Math.random() < mutationRate) {

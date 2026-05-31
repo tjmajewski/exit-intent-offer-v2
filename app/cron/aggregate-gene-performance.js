@@ -44,7 +44,8 @@ export async function aggregateGenePerformance() {
     subhead: {},
     cta: {},
     redirect: {},
-    urgency: {}
+    urgency: {},
+    templateId: {}
   };
   
   // Aggregate performance for each gene
@@ -55,7 +56,8 @@ export async function aggregateGenePerformance() {
       subhead: v.subhead,
       cta: v.cta,
       redirect: v.redirect,
-      urgency: v.urgency?.toString()
+      urgency: v.urgency?.toString(),
+      templateId: v.templateId
     };
     
     Object.keys(genes).forEach(geneType => {
