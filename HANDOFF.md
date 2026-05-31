@@ -175,6 +175,27 @@ Storefront render refactor — foundation DONE (commit ad01570; seams + preview 
   verify all 8 layouts in a real theme without an exit/convert. Available ids
   logged to console. Use it to QA before enabling the live AI path.
 
+Validation run — 2026-05-31 (headless, no live store):
+- Ran Chrome headless + Node against a standalone harness that loads the real
+  `modal-templates.js` and mirrors `buildTemplateProps` / `renderPreviewTemplate`
+  sample props. All 8 layouts rendered correctly (screenshots eyeballed).
+- Contract checks PASS for all 8: legacy IDs stamped
+  (`#exit-intent-modal-overlay/-modal/-primary-cta/-secondary-cta`), close +
+  primary + secondary handles present, brand accent applied, discount code shown
+  where applicable, `render()` returns the requested templateId (no silent
+  fallback).
+- Engine/cross-file PASS: `TEMPLATE_IDS` === storefront registry ids (no
+  AI→renderer mismatch), all 5 archetype pools expose valid `templateIds`,
+  random/diverse/crossover selection stays in-set (400 iters), Prisma migration
+  applied, `ai-decision` returns `templateId` on both return shapes (lines
+  501/580/731).
+- Gap CONFIRMED (not a regression): `updateModalWithAI` still DOM-patches
+  (`querySelector('h2')`, `p`, `#modal-primary-cta`) and ignores
+  `decision.templateId`. AI-chosen template ships in the payload but isn't
+  rendered yet — this is exactly the "Live AI render" TODO below.
+- Minor cosmetic notes for later: `top-banner` concatenates `15% OFF — headline`
+  (long on mobile); `testimonial` uses the subhead as the quote. Both by design.
+
 Still TODO in Sprint 3:
 - **Live AI render (next).** Wire AI mode to lazy-render the evolved
   `decision.templateId` through `renderTemplate` once the decision lands
@@ -202,7 +223,9 @@ Still TODO in Sprint 3:
 ### Sprint 3 suggested order for the next instance
 1. **Run the preview harness** (`?resparqPreview=<id>`) across all 8 layouts in
    a real theme. Confirm copy/CTA/secondary/code/timer/close render correctly.
-   This de-risks everything downstream.
+   This de-risks everything downstream. (Headless render + contract checks
+   already PASS as of 2026-05-31 — see "Validation run" above. A real-theme
+   eyeball is still worth doing before flipping the AI flag.)
 2. **Live AI render** behind a default-off flag (see TODO above). Hoist
    `updateModalWithAI` copy logic into `resolveModalContent`. Verify via harness,
    then flip flag.
