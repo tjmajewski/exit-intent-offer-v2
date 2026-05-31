@@ -1263,6 +1263,9 @@
      */
     renderPreviewTemplate(templateId) {
       const s = this.settings;
+      // QA harness must never write analytics or redirect — flag it so
+      // trackEvent and the CTA handlers no-op (dev-data poisoning guard).
+      this.isPreview = true;
       const isTimer = templateId === 'timer-front';
       const props = this.buildTemplateProps({
         headline: s.modalHeadline || 'Wait — your 15% off is still here',
@@ -2354,6 +2357,9 @@
       // Mark CTA as clicked so the reminder toast doesn't show after close
       this.ctaClicked = true;
 
+      // QA preview: close without tracking or redirecting
+      if (this.isPreview) { this.closeModal(); return; }
+
       // Track button click
       this.trackEvent('click');
 
@@ -2490,6 +2496,9 @@
     }
 
     async handleSecondaryClick() {
+      // QA preview: close without tracking or redirecting
+      if (this.isPreview) { this.closeModal(); return; }
+
       // Track secondary button click for evolution system
       if (this.currentImpressionId) {
         try {
@@ -2539,6 +2548,7 @@
     }
     
     async trackEvent(eventType) {
+      if (this.isPreview) return;
       // Send analytics to your app via app proxy
       try {
         await fetch('/apps/exit-intent/track', {
