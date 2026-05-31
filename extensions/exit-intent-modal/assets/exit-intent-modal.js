@@ -14,7 +14,13 @@
 
   // Get settings from the snippet (will be injected by Liquid)
   const settings = window.exitIntentSettings || {};
-  
+
+  // Dark launch (Sprint 3 step 2): when true, AI mode lazily re-renders the
+  // evolved decision.templateId through the template registry instead of
+  // DOM-patching the legacy modal. Default OFF. QA override per visit with
+  // ?resparqLiveAI=1 (or =0 to force off), or localStorage.resparqLiveAI='1'.
+  const LIVE_AI_RENDER = false;
+
   // Mobile detection helper
   function isMobileDevice() {
     return window.innerWidth <= 768 || /mobile/i.test(navigator.userAgent);
@@ -1950,6 +1956,16 @@
       // Store urgency gene — when true, expiry is in the copy so hide the separate timer
       this.offerUrgency = decision.variant?.urgency || false;
 
+      // Live AI render (dark launch): lazily render the evolved templateId via
+      // the template registry instead of DOM-patching the legacy modal. Gated
+      // by LIVE_AI_RENDER (default off) + ?resparqLiveAI override for QA. When
+      // the flag is permanently flipped, the DOM-patch body below is deleted
+      // and resolveModalContent becomes the only AI copy source.
+      if (this.shouldLiveRenderAI(decision)) {
+        await this.renderResolvedAIDecision(decision);
+        return;
+      }
+
       // Use variant copy if provided (from evolution system)
       if (decision.variant) {
         // Get current cart value
@@ -2135,7 +2151,209 @@
       
       console.log(`[AI Mode] Updated modal with ${decision.type} offer`);
     }
-    
+
+    /**
+     * Should AI mode render decision.templateId through the template registry
+     * (vs. legacy DOM patch)? Off by default; flip per-visit for QA with
+     * ?resparqLiveAI=1 / =0, or persist with localStorage.resparqLiveAI='1'.
+     * Requires a templateId on the decision + a loaded registry.
+     */
+    shouldLiveRenderAI(decision) {
+      if (!decision || !decision.templateId) return false;
+      if (!window.ResparqTemplates || typeof window.ResparqTemplates.render !== 'function') return false;
+      let on = LIVE_AI_RENDER;
+      try {
+        const q = new URLSearchParams(window.location.search).get('resparqLiveAI');
+        if (q === '1') return true;
+        if (q === '0') return false;
+        if (localStorage.getItem('resparqLiveAI') === '1') on = true;
+      } catch (_) { /* sandboxed storage — fall back to the constant */ }
+      return on;
+    }
+
+    /**
+     * Pure copy/offer resolution for an AI decision. Mirrors the placeholder
+     * replacement, showSubhead suppression, threshold copy enforcement, redirect
+     * derivation and secondary-CTA logic that updateModalWithAI applies to the
+     * DOM — but returns a plain content object instead of touching the DOM or
+     * this.settings. Side-effects (settings + sessionStorage) are applied by the
+     * caller (renderResolvedAIDecision). cartValue must be pre-fetched.
+     */
+    resolveModalContent(decision, cartValue) {
+      const s = this.settings;
+      const amountTextFor = (d) => {
+        if (d.type === 'percentage') return `${d.amount}%`;
+        if (d.type === 'fixed' || d.type === 'threshold') return formatCurrency(d.amount);
+        return null; // no-discount
+      };
+
+      // --- Variant copy (evolution system: Enterprise) ---
+      if (decision.variant) {
+        const thresholdRemaining = decision.threshold ? Math.ceil((decision.threshold - cartValue) / 5) * 5 : 0;
+        const percentToGoal = decision.threshold ? Math.round((cartValue / decision.threshold) * 100) : 0;
+        const replacements = {
+          '{{amount}}': decision.type === 'percentage' ? decision.amount : formatCurrency(decision.amount),
+          '{{threshold}}': decision.threshold ? formatCurrency(decision.threshold) : 0,
+          '{{threshold_remaining}}': formatCurrency(thresholdRemaining),
+          '{{percent_to_goal}}': percentToGoal
+        };
+        const fill = (str) => Object.keys(replacements).reduce(
+          (acc, p) => acc.replace(new RegExp(p, 'g'), replacements[p]), str);
+
+        let headline = fill(decision.variant.headline);
+        let subhead = fill(decision.variant.subhead);
+        let cta = fill(decision.variant.cta);
+
+        // showSubhead gene + auto-suppress when subhead duplicates headline
+        let showSubhead = !(decision.variant.showSubhead === false || isRedundantCopy(headline, subhead));
+
+        let discountCode = decision.code;
+        const offerType = decision.type;
+        let redirectDestination;
+        if (decision.type === 'no-discount') {
+          const ctaLower = cta.toLowerCase();
+          if (ctaLower.includes('complete') || ctaLower.includes('checkout') || ctaLower.includes('order')) {
+            redirectDestination = 'checkout';
+          } else if (ctaLower.includes('pairs') || ctaLower.includes('recommend')) {
+            redirectDestination = 'recommendations';
+          } else {
+            redirectDestination = 'shop';
+          }
+        } else {
+          redirectDestination = decision.variant.redirect || s.redirectDestination;
+        }
+
+        let showSecondary = false;
+        let secondaryCta = null;
+        let thresholdOffer = null;
+
+        // Revenue no-discount offers get a complementary secondary action
+        if (decision.type === 'no-discount' && decision.baseline && decision.baseline.includes('revenue')) {
+          showSecondary = true;
+          secondaryCta = redirectDestination === 'checkout' ? 'Keep Shopping' : 'Complete My Order';
+        }
+
+        if (decision.type === 'threshold') {
+          // ENFORCE offer-mentioning copy (generic gene copy says nothing about the deal)
+          const headlineLC = headline.toLowerCase();
+          const mentionsOffer = headlineLC.includes('off') || headlineLC.includes('save') ||
+            headlineLC.includes('away') || headlineLC.includes('unlock');
+          if (!mentionsOffer) {
+            if (cartValue >= decision.threshold) {
+              headline = `You unlocked ${formatCurrency(decision.amount)} off!`;
+              subhead = `Your cart qualifies — this discount is applied at checkout.`;
+            } else {
+              headline = `You're ${formatCurrency(thresholdRemaining)} away from ${formatCurrency(decision.amount)} off`;
+              subhead = `Add a little more to your cart and save on your entire order.`;
+            }
+          }
+          showSecondary = true;
+          secondaryCta = 'Checkout Now';
+          // Primary CTA must encourage shopping, never checkout
+          cta = cartValue >= decision.threshold ? 'Keep Shopping' : 'Add Items & Save';
+          thresholdOffer = { code: decision.code, threshold: decision.threshold, discount: decision.amount, timestamp: Date.now() };
+        }
+
+        return {
+          headline, subhead, cta, showSubhead, showSecondary, secondaryCta,
+          code: discountCode, amountText: amountTextFor(decision),
+          offerType, discountCode, redirectDestination, thresholdOffer
+        };
+      }
+
+      // --- Pro default copy (no variant) ---
+      let headline = s.modalHeadline;
+      let subhead = s.modalBody;
+      let cta = s.ctaButton || 'Apply Discount Now';
+      let showSecondary = false;
+      let secondaryCta = null;
+      let thresholdOffer = null;
+      let discountCode = s.discountCode;
+      let offerType = s.offerType;
+      let amountText = null;
+
+      if (decision.type === 'no-discount') {
+        headline = s.modalHeadline || "Don't forget your cart!";
+        subhead = s.modalBody || 'Your items are waiting for you. Complete your purchase now!';
+        discountCode = null;
+      } else if (decision.type === 'percentage') {
+        headline = `Get ${decision.amount}% Off Your Order! `;
+        subhead = 'Complete your purchase now and save!';
+        discountCode = decision.code;
+        offerType = 'percentage';
+        amountText = `${decision.amount}%`;
+      } else if (decision.type === 'fixed') {
+        headline = `Get ${formatCurrency(decision.amount)} Off Your Order!`;
+        subhead = 'Complete your purchase now and save!';
+        discountCode = decision.code;
+        offerType = 'fixed';
+        amountText = formatCurrency(decision.amount);
+      } else if (decision.type === 'threshold') {
+        const remaining = Math.ceil((decision.threshold - cartValue) / 5) * 5;
+        if (cartValue >= decision.threshold) {
+          headline = `You unlocked ${formatCurrency(decision.amount)} off!`;
+          subhead = `Your cart qualifies — this discount is applied at checkout.`;
+        } else {
+          headline = `You're ${formatCurrency(remaining)} away from ${formatCurrency(decision.amount)} off`;
+          subhead = `Add a little more to your cart and save on your entire order.`;
+        }
+        discountCode = decision.code;
+        offerType = 'threshold';
+        showSecondary = true;
+        secondaryCta = 'Checkout Now';
+        cta = cartValue >= decision.threshold ? 'Keep Shopping' : 'Add Items & Save';
+        thresholdOffer = { code: decision.code, threshold: decision.threshold, discount: decision.amount, timestamp: Date.now() };
+        amountText = formatCurrency(decision.amount);
+      }
+
+      return {
+        headline, subhead, cta, showSubhead: true, showSecondary, secondaryCta,
+        code: discountCode, amountText, offerType, discountCode,
+        redirectDestination: s.redirectDestination, thresholdOffer
+      };
+    }
+
+    /**
+     * Flag-on AI path: resolve content, apply side-effects, then render the
+     * evolved templateId through the registry (replaces the legacy modal).
+     */
+    async renderResolvedAIDecision(decision) {
+      const cartValue = await this.getCartValue();
+      const content = this.resolveModalContent(decision, cartValue);
+
+      // Side-effects, split out of the pure resolver
+      this.settings.discountCode = content.discountCode;
+      this.settings.offerType = content.offerType;
+      this.settings.redirectDestination = content.redirectDestination;
+      if (content.thresholdOffer) {
+        sessionStorage.setItem('exitIntentThresholdOffer', JSON.stringify(content.thresholdOffer));
+      }
+
+      // timer-front deadline: real offer expiry when known, else a 24h window.
+      // Urgency gene puts the deadline in the copy, so suppress the timer then.
+      let timerEndsAt = null;
+      if (decision.templateId === 'timer-front' && !this.offerUrgency) {
+        timerEndsAt = this.offerExpiresAt ? this.offerExpiresAt.getTime() : Date.now() + 24 * 60 * 60 * 1000;
+      }
+
+      const props = this.buildTemplateProps({
+        headline: content.headline,
+        subhead: content.subhead,
+        showSubhead: content.showSubhead,
+        cta: content.cta,
+        secondaryCta: content.secondaryCta || 'No thanks',
+        showSecondary: content.showSecondary,
+        code: content.code,
+        amountText: content.amountText,
+        timerEndsAt,
+        showPoweredBy: this.settings.plan !== 'enterprise',
+        brand: this.brandFromSettings()
+      });
+
+      this.renderTemplate(decision.templateId, props);
+      console.log(`[AI Mode] Live render via template "${decision.templateId}" (${decision.type})`);
+    }
+
     closeModal() {
       if (!this.modalElement) return;
 
