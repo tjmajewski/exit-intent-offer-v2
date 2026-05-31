@@ -1587,6 +1587,19 @@
      * customer session so every visitor gets their own non-transferable code.
      */
     async generateUniqueCode() {
+      // Dedup guard: the Shopify cart cookie persists for days, so a unique
+      // code applied on an earlier visit is still on the cart when a new visit
+      // mints another. Combinable codes then stack (two EXITINTE… codes, double
+      // discount). Before minting, reuse any code we already issued that is
+      // still live on the cart instead of stacking a second one.
+      const existing = await this.findAppliedIssuedCode();
+      if (existing) {
+        this.settings.discountCode = existing;
+        this.offerExpiresAt = null; // real expiry unknown on reuse; don't re-arm timer
+        console.log('[Unique Code] Reusing already-applied exit-intent code:', existing);
+        return;
+      }
+
       try {
         console.log('[Unique Code] Generating per-session discount code...');
         const response = await fetch('/apps/exit-intent/api/generate-code', {
@@ -1604,10 +1617,50 @@
         if (result.code) {
           this.settings.discountCode = result.code;
           this.offerExpiresAt = result.expiresAt ? new Date(result.expiresAt) : null;
+          this.recordIssuedCode(result.code);
           console.log(`[Unique Code] Generated: ${result.code} (expires: ${result.expiresAt})`);
         }
       } catch (error) {
         console.error('[Unique Code] Failed to generate:', error);
+      }
+    }
+
+    /**
+     * Codes we've minted, persisted in localStorage (survives across sessions
+     * on the same browser/cart — exactly the lifespan over which the cart cookie
+     * keeps a stale applied code). Capped to the most recent 20.
+     */
+    getIssuedCodes() {
+      try { return JSON.parse(localStorage.getItem('exitIntentIssuedCodes') || '[]'); }
+      catch (_) { return []; }
+    }
+
+    recordIssuedCode(code) {
+      if (!code) return;
+      try {
+        const issued = this.getIssuedCodes();
+        if (!issued.includes(code)) {
+          issued.push(code);
+          localStorage.setItem('exitIntentIssuedCodes', JSON.stringify(issued.slice(-20)));
+        }
+      } catch (_) {}
+    }
+
+    /**
+     * Return an exit-intent code we previously issued that is already applied
+     * to the live cart, or null. Used to avoid stacking a second unique code.
+     */
+    async findAppliedIssuedCode() {
+      try {
+        const cart = await fetch('/cart.js').then(r => r.json());
+        const applied = (cart.discount_codes || [])
+          .filter(d => d && d.applicable !== false && d.code)
+          .map(d => d.code);
+        if (!applied.length) return null;
+        const issued = this.getIssuedCodes();
+        return applied.find(code => issued.includes(code)) || null;
+      } catch (_) {
+        return null;
       }
     }
 
