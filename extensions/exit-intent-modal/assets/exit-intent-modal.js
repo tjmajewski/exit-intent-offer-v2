@@ -1658,7 +1658,23 @@
           .map(d => d.code);
         if (!applied.length) return null;
         const issued = this.getIssuedCodes();
-        return applied.find(code => issued.includes(code)) || null;
+
+        // 1) Exact match against a code we know we issued.
+        const direct = applied.find(code => issued.includes(code));
+        if (direct) return direct;
+
+        // 2) Prefix match. Unique codes share a "PREFIX-" segment (e.g.
+        // EXITINTE10-…). Stale codes minted before we tracked them won't be in
+        // localStorage, but they share the prefix of codes we DO track. Treat
+        // any applied code with one of our prefixes as ours and reuse it rather
+        // than stacking another. Also catches multiple already-stacked codes.
+        const prefixOf = (c) => { const i = c.indexOf('-'); return i > 0 ? c.slice(0, i) : null; };
+        const ourPrefixes = new Set(issued.map(prefixOf).filter(Boolean));
+        if (ourPrefixes.size) {
+          const match = applied.find(code => ourPrefixes.has(prefixOf(code)));
+          if (match) return match;
+        }
+        return null;
       } catch (_) {
         return null;
       }
