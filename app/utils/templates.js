@@ -43,11 +43,58 @@ export const MODAL_TEMPLATES = {
 
 export function getAvailableTemplates(planTier) {
   const templates = Object.values(MODAL_TEMPLATES);
-  
+
   if (planTier === "starter") {
     return templates.filter(t => t.tier === "starter");
   }
-  
+
   // Pro and Enterprise get all templates (currently all are starter tier anyway)
   return templates;
+}
+
+// =============================================================================
+// MODAL LAYOUTS (visual templates)
+//
+// Distinct from MODAL_TEMPLATES above — those are *copy* presets (discount,
+// urgency, social, reminder). MODAL_LAYOUTS are *visual* templates (the
+// renderers live in extensions/exit-intent-modal/assets/modal-templates.js
+// and the IDs must stay in sync with that file's TEMPLATES registry).
+//
+// Tiers:
+//   1 = ships with Sprint 1 (Classic Card, Top Banner, Bottom Sheet, Coupon Ticket)
+//   2 = Sprint 2 (Split Hero, Timer-Front, Testimonial, Scratch Reveal)
+// =============================================================================
+export const MODAL_LAYOUTS = {
+  "classic-card": {
+    id: "classic-card",
+    name: "Classic Card",
+    description: "Centered, soft shadow",
+    tier: 1
+  },
+  "top-banner": {
+    id: "top-banner",
+    name: "Top Banner",
+    description: "Slim, non-intrusive",
+    tier: 1
+  },
+  "bottom-sheet": {
+    id: "bottom-sheet",
+    name: "Bottom Sheet",
+    description: "Mobile-first",
+    tier: 1
+  },
+  "coupon-ticket": {
+    id: "coupon-ticket",
+    name: "Coupon Ticket",
+    description: "Gamified, dashed edge",
+    tier: 1
+  }
+};
+
+export const DEFAULT_MODAL_LAYOUT_ID = "classic-card";
+
+export function getAvailableLayouts() {
+  // For now, all merchants see all Tier 1 layouts.
+  // Tier 2 will be added in Sprint 2.
+  return Object.values(MODAL_LAYOUTS).filter((l) => l.tier === 1);
 }

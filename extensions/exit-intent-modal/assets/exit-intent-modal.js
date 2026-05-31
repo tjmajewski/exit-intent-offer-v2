@@ -793,6 +793,28 @@
   }
     
     createModal() {
+      // ---------------------------------------------------------------------
+      // TEMPLATE DISPATCHER PATH
+      // Used when manual mode + templateId is set + template registry loaded.
+      // AI mode continues to use the legacy path below (AI bandit will be
+      // wired to the dispatcher in Sprint 3).
+      // ---------------------------------------------------------------------
+      const useDispatcher = (
+        this.settings.mode === 'manual' &&
+        this.settings.templateId &&
+        window.ResparqTemplates &&
+        typeof window.ResparqTemplates.render === 'function'
+      );
+      if (useDispatcher) {
+        try {
+          this.renderFromTemplateRegistry();
+          return;
+        } catch (err) {
+          console.error('[Modal] Template dispatcher failed, falling back to legacy render:', err);
+          // fall through to legacy createModal below
+        }
+      }
+
       // Create modal overlay
       const overlay = document.createElement('div');
       overlay.id = 'exit-intent-modal-overlay';
@@ -1045,7 +1067,45 @@
       document.body.appendChild(overlay);
       this.modalElement = overlay;
     }
-    
+
+    /**
+     * Dispatcher-based render (manual mode templates).
+     * Builds props from this.settings, asks ResparqTemplates for DOM, then
+     * stamps IDs that legacy show/hide code expects (#exit-intent-modal,
+     * #modal-primary-cta, #modal-secondary-cta).
+     */
+    renderFromTemplateRegistry() {
+      const s = this.settings;
+      const props = {
+        headline: s.modalHeadline,
+        subhead: s.modalBody,
+        cta: s.ctaButton,
+        secondaryCta: 'No thanks',
+        showSecondary: false,
+        code: s.discountCode || null,
+        amount: null, // manual mode doesn't carry discount amount through here
+        showPoweredBy: s.plan !== 'enterprise'
+      };
+
+      const { overlay, modal, primaryCta, secondaryCta, closeBtn } =
+        window.ResparqTemplates.render(s.templateId, props);
+
+      // Stamp IDs so legacy code (showModal, closeModal, handleCTAClick) works
+      overlay.id = 'exit-intent-modal-overlay';
+      modal.id = 'exit-intent-modal';
+      if (primaryCta) primaryCta.id = 'modal-primary-cta';
+      if (secondaryCta) secondaryCta.id = 'modal-secondary-cta';
+
+      // Wire handlers
+      if (closeBtn) closeBtn.onclick = () => this.closeModal();
+      if (primaryCta) primaryCta.onclick = () => this.handleCTAClick();
+      if (secondaryCta) secondaryCta.onclick = () => this.handleSecondaryClick();
+
+      document.body.appendChild(overlay);
+      this.modalElement = overlay;
+      console.log(`[Modal] Rendered template: ${s.templateId}`);
+    }
+
     async evaluateEnterpriseCustomer() {
       console.log('[Enterprise AI] Evaluating customer...');
       

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Form, useLoaderData, useActionData, useNavigation } from "react-router";
 import { authenticate } from "../shopify.server";
 import { hasFeature } from "../utils/featureGates";
-import { getAvailableTemplates, MODAL_TEMPLATES } from "../utils/templates";
+import { getAvailableTemplates, MODAL_TEMPLATES, getAvailableLayouts, DEFAULT_MODAL_LAYOUT_ID } from "../utils/templates";
 import { generateModalHash, getDefaultModalLibrary, findModalByHash, getNextModalName } from "../utils/modalHash";
 // Old generic discount helpers are no longer used at save time —
 // unique codes are now minted per-session via /api/generate-code
@@ -196,6 +196,7 @@ export async function action({ request }) {
     aiDiscountCodePrefix: formData.get("aiDiscountCodePrefix") || "EXIT",
     redirectDestination: formData.get("redirectDestination") || "checkout",
     template: formData.get("template") || "discount",
+    manualTemplateId: formData.get("manualTemplateId") || "classic-card",
     mode: formData.get("mode") || "manual",
     aiGoal: "auto", // Funnel-stage detection: AI auto-selects revenue vs conversion per customer
     aggression: parseInt(formData.get("aggression") || "5"),
@@ -581,6 +582,7 @@ export default function Settings() {
   const navigation = useNavigation();
   const [formChanged, setFormChanged] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState(settings.template || "discount");
+  const [selectedLayout, setSelectedLayout] = useState(settings.manualTemplateId || DEFAULT_MODAL_LAYOUT_ID);
   const [showModalNaming, setShowModalNaming] = useState(false);
   const [modalName, setModalName] = useState("");
   const [optimizationMode, setOptimizationMode] = useState(settings.mode || "manual");
@@ -676,7 +678,8 @@ export default function Settings() {
     brandSecondaryColor,
     brandAccentColor,
     brandFont,
-    customCSS
+    customCSS,
+    selectedLayout
   };
 
   return (
@@ -831,6 +834,8 @@ export default function Settings() {
           selectedTemplate={selectedTemplate}
           setSelectedTemplate={setSelectedTemplate}
           applyTemplate={applyTemplate}
+          selectedLayout={selectedLayout}
+          setSelectedLayout={setSelectedLayout}
           modalHeadline={modalHeadline}
           setModalHeadline={setModalHeadline}
           modalBody={modalBody}

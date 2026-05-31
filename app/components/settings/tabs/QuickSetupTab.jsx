@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { MODAL_TEMPLATES } from "../../../utils/templates";
+import { MODAL_TEMPLATES, getAvailableLayouts } from "../../../utils/templates";
 import AISettingsTab from "./AISettingsTab";
 
 export default function QuickSetupTab({
@@ -13,6 +13,8 @@ export default function QuickSetupTab({
   selectedTemplate,
   setSelectedTemplate,
   applyTemplate,
+  selectedLayout,
+  setSelectedLayout,
   modalHeadline,
   setModalHeadline,
   modalBody,
@@ -202,6 +204,57 @@ export default function QuickSetupTab({
             </div>
 
             <input type="hidden" name="template" value={selectedTemplate} />
+          </div>
+
+          {/* Modal Layout (visual template) — manual mode only */}
+          <div style={{
+            background: "white",
+            padding: 24,
+            borderRadius: 8,
+            border: "1px solid #e5e7eb",
+            marginBottom: 24
+          }}>
+            <h2 style={{ fontSize: 20, marginBottom: 8 }}>
+              Choose a Modal Design
+            </h2>
+            <p style={{ fontSize: 14, color: "#666", marginBottom: 20 }}>
+              The visual layout of the popup. Each design works with any copy template.
+            </p>
+
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+              gap: 12
+            }}>
+              {getAvailableLayouts().map((layout) => {
+                const isSelected = selectedLayout === layout.id;
+                return (
+                  <button
+                    key={layout.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedLayout(layout.id);
+                      setFormChanged(true);
+                    }}
+                    style={{
+                      padding: 14,
+                      border: isSelected ? "2px solid #8B5CF6" : "1px solid #e5e7eb",
+                      borderRadius: 8,
+                      background: isSelected ? "#f5f3ff" : "white",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      transition: "all 0.15s"
+                    }}
+                  >
+                    <LayoutThumbnail layoutId={layout.id} selected={isSelected} />
+                    <div style={{ fontWeight: 600, fontSize: 14, marginTop: 10 }}>{layout.name}</div>
+                    <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{layout.description}</div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <input type="hidden" name="manualTemplateId" value={selectedLayout} />
           </div>
 
           {/* Modal Content Section */}
@@ -597,4 +650,63 @@ export default function QuickSetupTab({
       )}
     </>
   );
+}
+
+// =============================================================================
+// LayoutThumbnail — tiny visual mockup for each layout in the picker.
+// Pure SVG so it ships without an asset pipeline.
+// =============================================================================
+function LayoutThumbnail({ layoutId, selected }) {
+  const stroke = selected ? "#8B5CF6" : "#9ca3af";
+  const fill = selected ? "#8B5CF6" : "#cbd5e1";
+  const muted = selected ? "rgba(139,92,246,0.18)" : "#e5e7eb";
+  const box = { width: "100%", height: 70, background: "#f9fafb", borderRadius: 6, position: "relative", overflow: "hidden" };
+
+  switch (layoutId) {
+    case "classic-card":
+      return (
+        <svg viewBox="0 0 160 70" style={box} preserveAspectRatio="none">
+          <rect x="0" y="0" width="160" height="70" fill="#f9fafb" />
+          <rect x="40" y="14" width="80" height="42" rx="6" fill="white" stroke={stroke} strokeWidth="1.5" />
+          <rect x="50" y="22" width="40" height="4" rx="1" fill={stroke} />
+          <rect x="50" y="30" width="60" height="3" rx="1" fill={muted} />
+          <rect x="50" y="42" width="60" height="8" rx="2" fill={fill} />
+        </svg>
+      );
+    case "top-banner":
+      return (
+        <svg viewBox="0 0 160 70" style={box} preserveAspectRatio="none">
+          <rect x="0" y="0" width="160" height="70" fill="#f9fafb" />
+          <rect x="0" y="0" width="160" height="16" fill={fill} />
+          <rect x="6" y="6" width="60" height="4" rx="1" fill="white" />
+          <rect x="118" y="4" width="36" height="8" rx="2" fill="white" />
+          <rect x="20" y="28" width="120" height="3" rx="1" fill={muted} />
+          <rect x="20" y="36" width="100" height="3" rx="1" fill={muted} />
+          <rect x="20" y="44" width="110" height="3" rx="1" fill={muted} />
+        </svg>
+      );
+    case "bottom-sheet":
+      return (
+        <svg viewBox="0 0 160 70" style={box} preserveAspectRatio="none">
+          <rect x="0" y="0" width="160" height="70" fill="#f9fafb" />
+          <rect x="20" y="32" width="120" height="38" rx="6" fill="white" stroke={stroke} strokeWidth="1.5" />
+          <rect x="74" y="36" width="12" height="2" rx="1" fill={muted} />
+          <rect x="30" y="44" width="50" height="4" rx="1" fill={stroke} />
+          <rect x="30" y="52" width="80" height="3" rx="1" fill={muted} />
+          <rect x="30" y="60" width="100" height="6" rx="2" fill={fill} />
+        </svg>
+      );
+    case "coupon-ticket":
+      return (
+        <svg viewBox="0 0 160 70" style={box} preserveAspectRatio="none">
+          <rect x="0" y="0" width="160" height="70" fill="#f9fafb" />
+          <rect x="30" y="10" width="100" height="50" rx="4" fill="white" stroke={stroke} strokeWidth="1.5" strokeDasharray="3 2" />
+          <text x="80" y="22" textAnchor="middle" fontSize="6" fontWeight="700" fill={stroke} letterSpacing="0.5">COUPON</text>
+          <text x="80" y="42" textAnchor="middle" fontSize="18" fontWeight="800" fill={stroke}>15%</text>
+          <rect x="55" y="48" width="50" height="7" rx="2" fill={fill} />
+        </svg>
+      );
+    default:
+      return <div style={box} />;
+  }
 }

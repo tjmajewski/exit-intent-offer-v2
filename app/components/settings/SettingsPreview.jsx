@@ -24,7 +24,8 @@ export default function SettingsPreview({
   brandFont,
   customCSS,
   plan,
-  aggressionLevel
+  aggressionLevel,
+  selectedLayout = "classic-card"
 }) {
   const planTier = plan?.tier || 'starter';
   const showPoweredBy = planTier !== 'enterprise';
@@ -97,118 +98,47 @@ export default function SettingsPreview({
 
   if (isAIMode) features.push({ label: "AI Optimization Active" });
 
-  // Reusable modal card preview.
-  // `compact` (inline rail variant) drops the X close button — the live
-  // preview rail isn't a modal, nothing to close.
-  const ModalCard = ({ scale = 1, compact = false }) => (
-    <div id="exit-intent-modal" style={{
-      background: 'white',
-      borderRadius: '16px',
-      padding: scale < 1 ? '32px 24px 24px 24px' : '48px 40px 40px 40px',
-      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
-      border: '1px solid #e5e7eb',
-      position: 'relative'
-    }}>
-      {isAIMode && (
-        <div style={{
-          position: 'absolute',
-          top: '16px',
-          right: '16px',
-          background: '#8B5CF6',
-          color: 'white',
-          padding: '4px 12px',
-          borderRadius: '6px',
-          fontSize: '12px',
-          fontWeight: '600'
-        }}>
-          AI Mode
-        </div>
-      )}
+  // Theme tokens for preview (merchant's brand colors stand in for what the
+  // storefront sniffs from the live theme).
+  const previewTokens = {
+    primary: brandAccentColor || '#8B5CF6',
+    primaryText: '#ffffff',
+    foreground: brandPrimaryColor && brandPrimaryColor !== '#000000' ? brandPrimaryColor : '#1f2937',
+    background: brandSecondaryColor && brandSecondaryColor !== '#ffffff' ? brandSecondaryColor : '#ffffff',
+    muted: '#6b7280',
+    borderRadius: '12px',
+    fontFamily: brandFont || 'inherit'
+  };
 
-      {!compact && (
-        <button
-          type="button"
-          disabled
-          style={{
-            position: 'absolute',
-            top: '20px',
-            right: isAIMode ? '110px' : '20px',
-            background: '#f3f4f6',
-            border: 'none',
-            fontSize: '20px',
-            color: '#6b7280',
-            width: '28px',
-            height: '28px',
-            borderRadius: '8px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'not-allowed',
-            opacity: 0.5
-          }}
-        >
-          ×
-        </button>
-      )}
+  const cardProps = {
+    isAIMode,
+    displayHeadline,
+    displayBody,
+    displayCTA,
+    showPoweredBy,
+    tokens: previewTokens
+  };
 
-      <h2 style={{
-        margin: isAIMode && compact ? '32px 0 16px 0' : '0 0 16px 0',
-        fontSize: scale < 1 ? '22px' : '32px',
-        fontWeight: '700',
-        color: isAIMode ? '#6b7280' : '#1f2937',
-        fontFamily: brandFont || 'inherit',
-        fontStyle: isAIMode ? 'italic' : 'normal',
-        lineHeight: '1.3',
-        letterSpacing: '-0.02em'
-      }}>
-        {displayHeadline}
-      </h2>
-
-      <p style={{
-        margin: '0 0 24px 0',
-        fontSize: scale < 1 ? '14px' : '17px',
-        lineHeight: '1.6',
-        color: '#6b7280',
-        fontFamily: brandFont || 'inherit',
-        fontStyle: isAIMode ? 'italic' : 'normal'
-      }}>
-        {displayBody}
-      </p>
-
-      <button
-        type="button"
-        disabled
-        style={{
-          background: isAIMode ? '#9ca3af' : (brandAccentColor || '#8B5CF6'),
-          color: 'white',
-          border: 'none',
-          padding: scale < 1 ? '14px 24px' : '18px 32px',
-          fontSize: scale < 1 ? '14px' : '17px',
-          fontWeight: '600',
-          borderRadius: '12px',
-          boxShadow: isAIMode ? 'none' : '0 4px 14px 0 rgba(139, 92, 246, 0.39)',
-          cursor: 'not-allowed',
-          width: '100%',
-          fontFamily: brandFont || 'inherit',
-          opacity: isAIMode ? 0.7 : 1
-        }}
-      >
-        {displayCTA}
-      </button>
-
-      {showPoweredBy && (
-        <div style={{
-          marginTop: '16px',
-          textAlign: 'right',
-          fontSize: '11px',
-          color: '#9ca3af'
-        }}>
-          <span>Powered by </span>
-          <span style={{ fontWeight: '600', color: '#8B5CF6' }}>Resparq</span>
-        </div>
-      )}
-    </div>
-  );
+  // Layout dispatcher — visually mirrors storefront templates in
+  // extensions/exit-intent-modal/assets/modal-templates.js. JSX duplicates
+  // the renderer for preview-time React rendering.
+  const ModalCard = ({ scale = 1, compact = false }) => {
+    const layoutId = isAIMode ? 'classic-card' : selectedLayout;
+    switch (layoutId) {
+      case 'top-banner':
+        return <TopBannerPreview {...cardProps} scale={scale} compact={compact} />;
+      case 'bottom-sheet':
+        return <BottomSheetPreview {...cardProps} scale={scale} compact={compact} />;
+      case 'coupon-ticket':
+        return <CouponTicketPreview {...cardProps} scale={scale} compact={compact}
+                                    discountPercentage={discountPercentage}
+                                    discountAmount={discountAmount}
+                                    offerType={offerType} />;
+      case 'classic-card':
+      default:
+        return <ClassicCardPreview {...cardProps} scale={scale} compact={compact} />;
+    }
+  };
 
   // ============ INLINE VARIANT (sticky side panel) ============
   if (variant === "inline") {
@@ -396,5 +326,222 @@ export default function SettingsPreview({
         </div>
       </div>
     </>
+  );
+}
+
+// =============================================================================
+// LAYOUT PREVIEW COMPONENTS
+// Mirror the storefront renderers in modal-templates.js. Keep visual parity
+// when you change one — these are the "what the merchant sees" version.
+// =============================================================================
+
+function AIBadge() {
+  return (
+    <div style={{
+      position: 'absolute', top: 14, right: 14,
+      background: '#8B5CF6', color: 'white',
+      padding: '4px 10px', borderRadius: 6,
+      fontSize: 11, fontWeight: 600, zIndex: 2
+    }}>AI Mode</div>
+  );
+}
+
+function PoweredBy() {
+  return (
+    <div style={{
+      marginTop: 14, textAlign: 'right',
+      fontSize: 10, opacity: 0.45, color: '#666'
+    }}>
+      Powered by <span style={{ fontWeight: 600, color: '#8B5CF6' }}>Resparq</span>
+    </div>
+  );
+}
+
+function ClassicCardPreview({ isAIMode, displayHeadline, displayBody, displayCTA, showPoweredBy, tokens, scale, compact }) {
+  return (
+    <div id="exit-intent-modal" style={{
+      background: tokens.background,
+      borderRadius: tokens.borderRadius,
+      padding: scale < 1 ? '28px 22px 22px' : '40px 36px 32px',
+      boxShadow: '0 10px 25px -5px rgba(0,0,0,0.12)',
+      border: '1px solid #e5e7eb',
+      position: 'relative',
+      fontFamily: tokens.fontFamily
+    }}>
+      {isAIMode && <AIBadge />}
+      {!compact && <PreviewCloseBtn />}
+      <h2 style={{
+        margin: isAIMode && compact ? '28px 0 12px' : '0 0 12px',
+        fontSize: scale < 1 ? '22px' : '28px',
+        fontWeight: 700,
+        color: isAIMode ? '#6b7280' : tokens.foreground,
+        fontStyle: isAIMode ? 'italic' : 'normal',
+        lineHeight: 1.25,
+        letterSpacing: '-0.02em'
+      }}>{displayHeadline}</h2>
+      <p style={{
+        margin: '0 0 22px',
+        fontSize: scale < 1 ? '14px' : '15px',
+        lineHeight: 1.5,
+        color: tokens.muted,
+        fontStyle: isAIMode ? 'italic' : 'normal'
+      }}>{displayBody}</p>
+      <PrimaryCta tokens={tokens} isAIMode={isAIMode} scale={scale}>{displayCTA}</PrimaryCta>
+      {showPoweredBy && <PoweredBy />}
+    </div>
+  );
+}
+
+function TopBannerPreview({ isAIMode, displayHeadline, displayBody, displayCTA, tokens }) {
+  return (
+    <div style={{
+      background: tokens.primary,
+      color: tokens.primaryText,
+      padding: '12px 16px',
+      borderRadius: 8,
+      fontFamily: tokens.fontFamily,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+      flexWrap: 'wrap',
+      boxShadow: '0 2px 12px rgba(0,0,0,0.15)',
+      position: 'relative'
+    }}>
+      {isAIMode && <AIBadge />}
+      <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+        <strong style={{ fontSize: 14, fontWeight: 700, fontStyle: isAIMode ? 'italic' : 'normal' }}>
+          {displayHeadline}
+        </strong>
+        {displayBody && (
+          <span style={{ fontSize: 13, opacity: 0.9, marginLeft: 8, fontStyle: isAIMode ? 'italic' : 'normal' }}>
+            {displayBody.length > 50 ? displayBody.slice(0, 50) + '…' : displayBody}
+          </span>
+        )}
+      </div>
+      <button type="button" disabled style={{
+        background: tokens.primaryText,
+        color: tokens.primary,
+        border: 'none',
+        padding: '7px 16px',
+        fontSize: 13,
+        fontWeight: 600,
+        borderRadius: tokens.borderRadius,
+        cursor: 'not-allowed',
+        fontFamily: tokens.fontFamily,
+        whiteSpace: 'nowrap'
+      }}>{displayCTA}</button>
+    </div>
+  );
+}
+
+function BottomSheetPreview({ isAIMode, displayHeadline, displayBody, displayCTA, showPoweredBy, tokens, scale, compact }) {
+  return (
+    <div id="exit-intent-modal" style={{
+      background: tokens.background,
+      borderRadius: '20px 20px 8px 8px',
+      padding: '14px 22px 22px',
+      boxShadow: '0 -8px 25px -8px rgba(0,0,0,0.15)',
+      border: '1px solid #e5e7eb',
+      position: 'relative',
+      fontFamily: tokens.fontFamily
+    }}>
+      {isAIMode && <AIBadge />}
+      <div style={{
+        width: 40, height: 4,
+        background: 'rgba(0,0,0,0.18)',
+        borderRadius: 999,
+        margin: '0 auto 16px'
+      }} />
+      {!compact && <PreviewCloseBtn />}
+      <h2 style={{
+        margin: '4px 0 8px',
+        fontSize: scale < 1 ? '20px' : '22px',
+        fontWeight: 700,
+        color: isAIMode ? '#6b7280' : tokens.foreground,
+        fontStyle: isAIMode ? 'italic' : 'normal',
+        letterSpacing: '-0.01em'
+      }}>{displayHeadline}</h2>
+      <p style={{
+        margin: '0 0 20px',
+        fontSize: 14,
+        lineHeight: 1.5,
+        color: tokens.muted,
+        fontStyle: isAIMode ? 'italic' : 'normal'
+      }}>{displayBody}</p>
+      <PrimaryCta tokens={tokens} isAIMode={isAIMode} scale={scale}>{displayCTA}</PrimaryCta>
+      {showPoweredBy && <PoweredBy />}
+    </div>
+  );
+}
+
+function CouponTicketPreview({ isAIMode, displayHeadline, displayBody, displayCTA, showPoweredBy, tokens, scale, discountPercentage, discountAmount, offerType }) {
+  const heroAmount = offerType === 'fixed' ? `$${discountAmount || 10}` : `${discountPercentage || 15}%`;
+  return (
+    <div style={{ position: 'relative', fontFamily: tokens.fontFamily }}>
+      {isAIMode && <AIBadge />}
+      <div id="exit-intent-modal" style={{
+        background: tokens.background,
+        color: tokens.foreground,
+        border: `2px dashed ${tokens.primary}`,
+        borderRadius: 14,
+        padding: '24px 22px',
+        textAlign: 'center',
+        boxShadow: '0 15px 40px -15px rgba(0,0,0,0.25)'
+      }}>
+        <div style={{
+          fontSize: 10, fontWeight: 700,
+          letterSpacing: '0.15em', color: tokens.primary,
+          marginBottom: 8
+        }}>EXCLUSIVE OFFER</div>
+        <div style={{
+          fontSize: scale < 1 ? '36px' : '46px',
+          fontWeight: 800,
+          letterSpacing: '-0.03em',
+          lineHeight: 1,
+          color: isAIMode ? '#6b7280' : tokens.foreground,
+          margin: '4px 0 6px',
+          fontStyle: isAIMode ? 'italic' : 'normal'
+        }}>{isAIMode ? heroAmount : heroAmount}</div>
+        <div style={{
+          fontSize: 13, color: tokens.muted,
+          marginBottom: 18, lineHeight: 1.4,
+          fontStyle: isAIMode ? 'italic' : 'normal'
+        }}>{displayBody}</div>
+        <PrimaryCta tokens={tokens} isAIMode={isAIMode} scale={scale}>{displayCTA}</PrimaryCta>
+        {showPoweredBy && <PoweredBy />}
+      </div>
+    </div>
+  );
+}
+
+function PreviewCloseBtn() {
+  return (
+    <button type="button" disabled style={{
+      position: 'absolute', top: 14, right: 14,
+      background: 'rgba(0,0,0,0.06)', border: 'none',
+      fontSize: 18, color: '#6b7280',
+      width: 28, height: 28, borderRadius: 999,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      cursor: 'not-allowed', opacity: 0.6
+    }}>×</button>
+  );
+}
+
+function PrimaryCta({ tokens, isAIMode, scale, children }) {
+  return (
+    <button type="button" disabled style={{
+      background: isAIMode ? '#9ca3af' : tokens.primary,
+      color: tokens.primaryText,
+      border: 'none',
+      padding: scale < 1 ? '12px 22px' : '14px 28px',
+      fontSize: scale < 1 ? '14px' : '16px',
+      fontWeight: 600,
+      borderRadius: tokens.borderRadius,
+      cursor: 'not-allowed',
+      width: '100%',
+      fontFamily: tokens.fontFamily,
+      opacity: isAIMode ? 0.7 : 1
+    }}>{children}</button>
   );
 }
