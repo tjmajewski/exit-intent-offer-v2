@@ -10,11 +10,16 @@ export async function action({ request }) {
   const { determineOffer, checkBudget, enterpriseAI } = await import("../utils/ai-decision.server.js");
   try{
     const { admin } = await authenticate.public.appProxy(request);
-    const { shop, signals } = await request.json();
-    
+    const { shop, signals, testMode } = await request.json();
+
     if (!shop || !signals) {
       return json({ error: "Missing shop or signals" }, { status: 400 });
     }
+
+    // Merchant self-test (?resparq_test=1): force an offer and do NOT feed this
+    // visit into threshold/holdout learning. Prevents the merchant's own
+    // non-converting clicks from training the AI to stop showing the modal.
+    const isTestMode = testMode === true;
     
     // Get shop settings from metafield
     const shopQuery = await admin.graphql(`
@@ -157,7 +162,7 @@ export async function action({ request }) {
     // incrementality measurement but never fed into the learning loop.
     // =========================================================================
     const HOLDOUT_RATE = 0.05;
-    const isHoldout = Math.random() < HOLDOUT_RATE;
+    const isHoldout = !isTestMode && Math.random() < HOLDOUT_RATE;
 
     if (isHoldout) {
       const holdoutDecision = {
@@ -210,8 +215,10 @@ export async function action({ request }) {
     // Enterprise promotional intelligence: check for active site-wide promos
     // and adjust aggression before the AI decision runs.
     // (Pro handles this inside determineOffer itself.)
+    // Test mode skips promo intelligence entirely so merchant self-tests always
+    // reach the engine and render an offer, even during an active site-wide promo.
     let effectiveAggression = aggression;
-    if (isEnterprisePlan) {
+    if (isEnterprisePlan && !isTestMode) {
       const activePromo = await db.promotion.findFirst({
         where: {
           shopId: shopRecord.id,
@@ -277,14 +284,15 @@ export async function action({ request }) {
     }
 
     const preScore = isEnterprisePlan
-      ? await enterpriseAI(signals, effectiveAggression, aiGoal, shopRecord.id)
+      ? await enterpriseAI(signals, effectiveAggression, aiGoal, shopRecord.id, { testMode: isTestMode })
       : await determineOffer(
           signals,
           aggression,
           aiGoal,
           signals.cartValue || 0,
           shopRecord.id,
-          shopRecord.plan || 'pro'
+          shopRecord.plan || 'pro',
+          { testMode: isTestMode }
         );
 
     if (preScore === null) {
@@ -532,11 +540,12 @@ export async function action({ request }) {
         }
       });
 
-      // Record "shown" intervention outcome (no discount, but modal was displayed)
+      // Record "shown" intervention outcome (no discount, but modal was displayed).
+      // Skip in merchant test mode so self-tests don't poison threshold learning.
       const { recordInterventionOutcome: recordShownOutcome } = await import('../utils/intervention-threshold.server.js');
       const noDiscSegment = (signals.deviceType === 'mobile') ? 'mobile'
                           : (signals.deviceType === 'desktop') ? 'desktop' : 'all';
-      await recordShownOutcome(db, {
+      if (!isTestMode) await recordShownOutcome(db, {
         shopId: shopRecord.id,
         wasShown: true,
         propensityScore: signals.propensityScore ?? null,
@@ -727,7 +736,7 @@ export async function action({ request }) {
     const { recordInterventionOutcome: recordShown } = await import('../utils/intervention-threshold.server.js');
     const shownSegment = (signals.deviceType === 'mobile') ? 'mobile'
                        : (signals.deviceType === 'desktop') ? 'desktop' : 'all';
-    await recordShown(db, {
+    if (!isTestMode) await recordShown(db, {
       shopId: shopRecord.id,
       wasShown: true,
       propensityScore: signals.propensityScore ?? null,

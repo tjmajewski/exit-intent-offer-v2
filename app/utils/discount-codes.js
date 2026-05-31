@@ -118,6 +118,13 @@ export async function createGenericDiscountCode(admin, code, type, amount) {
       customerSelection: {
         all: true
       },
+      // Stack with the store's own promos so the customer never has to choose
+      // between our exit offer and an active site-wide code at checkout.
+      combinesWith: {
+        orderDiscounts: true,
+        productDiscounts: true,
+        shippingDiscounts: true
+      },
       customerGets: {
         value: type === 'percentage'
           ? { percentage: amount / 100 }
@@ -294,6 +301,13 @@ export async function createPercentageDiscount(admin, percentage, prefix = 'SAVE
       customerSelection: {
         all: true
       },
+      // Stack with the store's own promos so the customer never has to choose
+      // between our exit offer and an active site-wide code at checkout.
+      combinesWith: {
+        orderDiscounts: true,
+        productDiscounts: true,
+        shippingDiscounts: true
+      },
       customerGets: {
         value: {
           percentage: percentage / 100
@@ -362,6 +376,13 @@ export async function createFixedDiscount(admin, amount, prefix = 'SAVE') {
       endsAt: expiresAt.toISOString(),
       customerSelection: {
         all: true
+      },
+      // Stack with the store's own promos so the customer never has to choose
+      // between our exit offer and an active site-wide code at checkout.
+      combinesWith: {
+        orderDiscounts: true,
+        productDiscounts: true,
+        shippingDiscounts: true
       },
       customerGets: {
         value: {
@@ -434,6 +455,13 @@ export async function createThresholdDiscount(admin, threshold, discountAmount, 
       endsAt: expiresAt.toISOString(),
       customerSelection: {
         all: true
+      },
+      // Stack with the store's own promos so the customer never has to choose
+      // between our exit offer and an active site-wide code at checkout.
+      combinesWith: {
+        orderDiscounts: true,
+        productDiscounts: true,
+        shippingDiscounts: true
       },
       minimumRequirement: {
         subtotal: {

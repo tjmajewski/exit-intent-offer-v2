@@ -1,6 +1,6 @@
 import { useLoaderData, Link, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { checkAndResetUsage, PLAN_FEATURES } from "../utils/featureGates";
 import { getShopPlan } from "../utils/plan.server";
 import { createCurrencyFormatter } from "../utils/currency";
@@ -851,11 +851,35 @@ export default function Dashboard() {
   const completedSteps = {
     themeExtension: onboarding?.themeEditorClicked || false,
     configureOffer: modalLibrary?.modals?.length > 0,
-    configureAI: settings?.mode === "ai",
+    // Use persisted flag so switching back to manual doesn't un-check this
+    configureAI: onboarding?.configureAI || settings?.mode === "ai",
     enableModal: isEnabled,
     firstImpression: (analytics?.last30Days?.impressions || 0) > 0 || (analytics?.lifetime?.impressions || 0) > 0,
   };
-  const showOnboarding = !onboarding?.dismissed;
+  const showOnboarding = !onboarding?.dismissed && !onboarding?.completed;
+
+  // Persist configureAI completion so it survives mode switches
+  useEffect(() => {
+    if (settings?.mode === "ai" && !onboarding?.configureAI) {
+      fetcher.submit(
+        { actionType: "onboardingAction", onboardingField: "configureAI", onboardingValue: "true" },
+        { method: "post" }
+      );
+    }
+  }, [settings?.mode]);
+
+  // Auto-complete checklist permanently once all steps are done
+  const steps = tier === "starter" ? ["themeExtension", "configureOffer", "enableModal", "firstImpression"]
+    : ["themeExtension", "configureAI", "enableModal", "firstImpression"];
+  const allComplete = steps.every((k) => completedSteps[k]);
+  useEffect(() => {
+    if (allComplete && showOnboarding && !onboarding?.completed) {
+      fetcher.submit(
+        { actionType: "onboardingAction", onboardingField: "completed", onboardingValue: "true" },
+        { method: "post" }
+      );
+    }
+  }, [allComplete]);
 
   const getStrategyLabel = (strategy) => {
     switch(strategy) {
@@ -908,9 +932,31 @@ export default function Dashboard() {
                 </span>
               </div>
 
-              {/* Show actionable insight for paused promos */}
+              {/* Show actionable insight for the active strategy. Decrease is the
+                  default for high-take-rate site-wide promos: modals keep running
+                  with smaller/no offers that stack on top of the store promo.
+                  Pause only appears if the merchant manually chose it. */}
               {(() => {
+                const decreasedPromo = activePromotions.promotions.find(p => p.aiStrategy === 'decrease');
                 const pausedPromo = activePromotions.promotions.find(p => p.aiStrategy === 'pause');
+                const fmt = (p) => p.type === 'percentage' ? `${p.amount}%` : formatCurrency(p.amount);
+
+                if (decreasedPromo) {
+                  return (
+                    <div style={{
+                      fontSize: 14,
+                      color: "#78350f",
+                      marginBottom: 12,
+                      lineHeight: 1.5,
+                      padding: "10px 14px",
+                      background: "#fef3c7",
+                      borderRadius: 8
+                    }}>
+                      AI reduced exit-offer amounts while <strong>{decreasedPromo.code}</strong> ({fmt(decreasedPromo)} off) is active, so they stack with your promo instead of competing with it. Your modals are still running to recover carts.
+                    </div>
+                  );
+                }
+
                 if (pausedPromo) {
                   return (
                     <div style={{
@@ -922,7 +968,7 @@ export default function Dashboard() {
                       background: "#fef3c7",
                       borderRadius: 8
                     }}>
-                      AI paused exit offers during <strong>{pausedPromo.code}</strong> ({pausedPromo.type === 'percentage' ? `${pausedPromo.amount}%` : formatCurrency(pausedPromo.amount)} off) to protect your margins
+                      You paused exit offers during <strong>{pausedPromo.code}</strong> ({fmt(pausedPromo)} off). Modals are off until the promo ends or you change this on the Promotions page.
                     </div>
                   );
                 }

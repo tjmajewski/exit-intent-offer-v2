@@ -106,7 +106,7 @@ function analyzeCartComposition(signals) {
   };
 }
 
-export async function determineOffer(signals, aggression, _aiGoal, cartValue, shopId = null, plan = 'pro') {
+export async function determineOffer(signals, aggression, _aiGoal, cartValue, shopId = null, plan = 'pro', { testMode = false } = {}) {
   // Funnel-stage detection: automatically choose revenue (upsell) vs conversion
   // (direct discount) based on customer signals instead of static merchant toggle.
   const aiGoal = detectFunnelGoalFromSignals(signals);
@@ -296,19 +296,19 @@ export async function determineOffer(signals, aggression, _aiGoal, cartValue, sh
   const currentCartValue = cartValue || signals.cartValue || 0;
 
   // HARD OVERRIDE: Negative score = very unlikely to convert (always skip)
-  if (score < 0) {
+  if (!testMode && score < 0) {
     console.log(` [Pro AI] Negative score (${score}) - no intervention (preserving margin)`);
     return null;
   }
 
   // HARD OVERRIDE: First-time visitor + quick exit + low cart = accidental visit
-  if (signals.visitFrequency === 1 && signals.timeOnSite < 30 && currentCartValue < 50) {
+  if (!testMode && signals.visitFrequency === 1 && signals.timeOnSite < 30 && currentCartValue < 50) {
     console.log(` [Pro AI] First-time quick exit with low cart - no intervention`);
     return null;
   }
 
   // ADAPTIVE THRESHOLD: consult per-shop learned thresholds for the gray zone
-  if (shopId) {
+  if (!testMode && shopId) {
     const { default: db } = await import('../db.server.js');
     const { shouldIntervene } = await import('./intervention-threshold.server.js');
     const segment = signals.deviceType === 'mobile' ? 'mobile'
@@ -498,7 +498,7 @@ export async function determineOffer(signals, aggression, _aiGoal, cartValue, sh
  * 6. Profitability-aware: understands that stores need to be profitable,
  *    not just maximize raw revenue. No intervention is sometimes the best outcome.
  */
-export async function enterpriseAI(signals, aggression, _aiGoal = 'revenue', shopId = null) {
+export async function enterpriseAI(signals, aggression, _aiGoal = 'revenue', shopId = null, { testMode = false } = {}) {
   // Funnel-stage detection: automatically choose revenue (upsell) vs conversion
   // (direct discount) based on customer signals instead of static merchant toggle.
   const aiGoal = detectFunnelGoalFromSignals(signals);
@@ -558,7 +558,7 @@ export async function enterpriseAI(signals, aggression, _aiGoal = 'revenue', sho
 
   // ADAPTIVE THRESHOLD: consult per-shop learned thresholds for the gray zone.
   // Replaces the old hardcoded propensity > 85/75/40 checks.
-  if (shopId && propensity != null) {
+  if (!testMode && shopId && propensity != null) {
     const { default: db } = await import('../db.server.js');
     const { shouldIntervene } = await import('./intervention-threshold.server.js');
     const segment = signals.deviceType === 'mobile' ? 'mobile'

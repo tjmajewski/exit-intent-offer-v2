@@ -20,6 +20,25 @@
     return window.innerWidth <= 768 || /mobile/i.test(navigator.userAgent);
   }
 
+  // Merchant self-test detection. Add ?resparq_test=1 to any storefront URL to
+  // force the AI to always pick an offer (bypasses the adaptive intervention
+  // threshold) AND stops the visit from being recorded into threshold learning.
+  // Without this, a merchant clicking around their own store without buying
+  // trains the "skip" arm and the AI learns to stop showing the modal.
+  // Persisted for the tab session so it survives navigation between pages.
+  function isResparqTestMode() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('resparq_test') === '1') {
+        sessionStorage.setItem('resparqTestMode', '1');
+        return true;
+      }
+      return sessionStorage.getItem('resparqTestMode') === '1';
+    } catch (e) {
+      return new URLSearchParams(window.location.search).get('resparq_test') === '1';
+    }
+  }
+
   // Currency formatting helper - uses shop's active currency + buyer locale.
   // Symbol position (€10 vs 10 €, R$ 10, ¥10, 10 zł) is locale-driven via
   // Intl.NumberFormat, so each market sees their native convention.
@@ -1210,7 +1229,8 @@
           body: JSON.stringify({
             shop: window.Shopify.shop,
             signals: enrichedSignals,
-            mode: 'enterprise' // Tell backend to use Enterprise AI
+            mode: 'enterprise', // Tell backend to use Enterprise AI
+            testMode: isResparqTestMode()
           })
         });
 
@@ -1588,9 +1608,10 @@
         const response = await fetch('/apps/exit-intent/api/ai-decision', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             shop: window.Shopify.shop,
-            signals 
+            signals,
+            testMode: isResparqTestMode()
           })
         });
         

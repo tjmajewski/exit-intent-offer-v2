@@ -473,11 +473,14 @@ async function classifyPromotion(promoId) {
 
   let classification, aiStrategy, reason;
 
-  // High usage = site-wide promotion
+  // High usage = site-wide promotion.
+  // Never auto-pause: keep recovering carts but let the AI shrink exit offers so
+  // they don't stack on top of the site-wide promo. A merchant can still choose
+  // Pause manually from the Promotions page if they want modals fully off.
   if (usagePerHour > 10) {
     classification = "site_wide";
-    aiStrategy = promo.amount >= 25 ? "pause" : "decrease";
-    reason = `${promo.amount}% site-wide promo detected (${stats.total} uses in ${hoursSince.toFixed(1)} hours)`;
+    aiStrategy = "decrease";
+    reason = `${promo.amount}% site-wide promo detected (${stats.total} uses in ${hoursSince.toFixed(1)} hours). AI reduced exit-offer amounts to avoid stacking discounts.`;
   }
   // Medium usage = targeted campaign
   else if (usagePerHour > 2) {
