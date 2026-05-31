@@ -535,8 +535,8 @@
     // ============================================================
 
     buildFlatOfferLabel(offer) {
-      if (offer.savingsText) return `${offer.savingsText} ready — code ${offer.code}`;
-      return `Apply code ${offer.code}`;
+      if (offer.savingsText) return `Still want your ${offer.savingsText}?`;
+      return 'Still want your discount?';
     }
 
     applyFlatOffer(offer) {

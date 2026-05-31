@@ -109,8 +109,8 @@
   const PILL_DISMISSED_KEY = 'exitIntentPillDismissed';
 
   function buildPillHeadline(offer) {
-    if (offer.savingsText) return `${offer.savingsText} ready`;
-    return 'Your discount is ready';
+    if (offer.savingsText) return `Still want your ${offer.savingsText}?`;
+    return 'Still want your discount?';
   }
 
   function mountOfferPill(offer) {
