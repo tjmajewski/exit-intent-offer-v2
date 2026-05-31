@@ -1,6 +1,8 @@
 # Handoff — Modal templates roadmap
 
-Last updated: 2026-05-31. Sprint 0 + Sprint 1 + Sprint 2 shipped. Sprint 3 not started.
+Last updated: 2026-05-31. Sprint 0 + Sprint 1 + Sprint 2 shipped. Sprint 3 IN
+PROGRESS — templateId gene foundation + storefront render pipeline/preview
+harness landed (commits c6a69fb, ad01570). See Sprint 3 status for what's left.
 
 ## Working agreement (read CLAUDE.md too)
 
@@ -42,10 +44,25 @@ User asked: review the AI mode against the spec in `Resparq AI 5.26.26.pdf`, the
 - **Catch component:** mini-cart inline by default, cart-page banner if
   full cart page detected. Trigger = modal closed without claim. Lifespan
   = rest of session. Same theming pipeline as templates.
-- **Queue tab (#7): DROPPED (2026-05-31).** Decided not to build. Manual
-  reorder fights the bandit (overrides Live-now traffic allocation, starves
-  exploration); the read-only queue view wasn't worth the surface on its own.
-  Cut from Sprint 3.
+- **Queue tab (#7): DROPPED (2026-05-31).** Decided not to build. The queue
+  had two sections — "Live now" (variants serving real traffic) + "On deck"
+  (bred-but-warming + next-to-breed). Idea was Spotify-style drag-reorder.
+  Rejected: the queue is bandit *output*, not a merchant playlist. Reordering
+  Live-now overrides active traffic allocation and corrupts the posterior;
+  even On-deck "next-to-breed" is recomputed each evolution cycle from fitness,
+  so a manual order is an ephemeral nudge unless persisted as a pin. If merchant
+  control is ever wanted, the compatible shape is **pin / exclude** (pin a
+  variant to always-live, or veto/kill one) — NOT free reorder. For now the
+  whole tab is cut.
+- **Pro lift upsell (#5) = device-conditional upgrade nudge.** Enterprise gets
+  device-conditional posteriors (offers personalized by device via partial-pool
+  priors on existing segments — NOT new segments). Pro does not. The upsell
+  analyzes the Pro store's OWN variant data, detects device cohorts behaving
+  differently, and shows a UI card quantifying the lift left on the table →
+  "upgrade to Enterprise." Same "detect but don't act" pattern as the existing
+  promo-detection upsell (`ai-decision.server.js:132`). HARD RULE: the lift
+  figure must come from the store's real device-split data; if there isn't
+  enough, show a qualitative nudge, never a fabricated %.
 - **No merchant context survey.** Earlier idea to ask onboarding questions
   about existing apps was rejected — kills the few-clicks install promise.
   Free Shipping Bar template is the only one with real economic conflict,
@@ -129,7 +146,7 @@ User asked: review the AI mode against the spec in `Resparq AI 5.26.26.pdf`, the
 
 **Sprint 3 — IN PROGRESS**
 
-Step 1 foundation — DONE (this commit):
+Step 1 foundation — DONE (commit c6a69fb):
 - `templateId` is now a gene on `Variant` (`@default("classic-card")`), migration
   `20260531120000_add_template_id_to_variant` applied locally + committed.
 - Gene pool: shared `TEMPLATE_IDS` (all 8 layouts) added to every archetype in
@@ -144,7 +161,7 @@ Step 1 foundation — DONE (this commit):
   `decision.templateId` on both variant-bearing return shapes (discount +
   no-discount). Enterprise/variant path only — Pro determineOffer is rule-based.
 
-Storefront render refactor — foundation DONE (seams + preview harness):
+Storefront render refactor — foundation DONE (commit ad01570; seams + preview harness):
 - `exit-intent-modal.js` now has a single render pipeline. Extracted
   `buildTemplateProps(content)` (one source of truth for render props +
   themeOverrides; copy injected as props, never patched into DOM) and
@@ -171,9 +188,30 @@ Still TODO in Sprint 3:
 - **3-level hierarchical template posterior** (archetype → store-pooled →
   cross-store meta, anneal with sample count). Not yet built — current wiring
   treats templateId as a flat gene like the others.
-- #5 Pro lift upsell (device-conditional posterior + UI card).
-- Add Modal Design column to Component Analysis tab (surfaces templateId gene).
-- ~~#7 Queue tab~~ — DROPPED 2026-05-31
+- #5 Pro lift upsell (device-conditional posterior + UI card). See architecture
+  decision above for exact behavior + the no-fabricated-% rule.
+- **Modal Design column on Component Analysis tab** — surfaces the templateId
+  gene as a 4th leaderboard column in `app/routes/app.variants._index.jsx`.
+  Aggregate by `v.templateId` (mirror `byHeadline`/`bySubhead`/`byCTA` at
+  ~line 733), emit `performance.templates`, widen grid `'1fr 1fr 1fr'` → 4 cols
+  at ~line 1448. Card should show the layout name/thumbnail (from `MODAL_LAYOUTS`)
+  not copy text — needs a `ComponentCard type="template"` branch. Gated on
+  step 1 (no templateId data until variants accumulate impressions).
+- ~~#7 Queue tab~~ — DROPPED 2026-05-31 (see architecture decision).
+
+### Sprint 3 suggested order for the next instance
+1. **Run the preview harness** (`?resparqPreview=<id>`) across all 8 layouts in
+   a real theme. Confirm copy/CTA/secondary/code/timer/close render correctly.
+   This de-risks everything downstream.
+2. **Live AI render** behind a default-off flag (see TODO above). Hoist
+   `updateModalWithAI` copy logic into `resolveModalContent`. Verify via harness,
+   then flip flag.
+3. **Component Analysis column** — low-risk admin UI, good to land anytime.
+4. **3-level hierarchical posterior** — the hard algorithmic piece. Build the
+   shop-level template posterior pooled across archetypes, blended with
+   cross-store meta (`MetaLearningGene` already carries templateId). Weights
+   anneal with sample count.
+5. **#5 Pro lift upsell** — device-conditional posterior + UI card.
 
 ## How the template system actually works
 
