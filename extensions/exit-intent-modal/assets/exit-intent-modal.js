@@ -322,6 +322,17 @@
     }
     
     async init() {
+      // Dev/QA preview harness: ?resparqPreview=<templateId> renders that
+      // template with representative AI-style copy and shows it immediately,
+      // bypassing the bandit, the (dev-poisoned) intervention threshold, and
+      // all triggers. Lets every layout be verified in a real theme without
+      // waiting on an exit/convert event.
+      const previewId = this.getPreviewTemplateId();
+      if (previewId) {
+        this.renderPreviewTemplate(previewId);
+        return;
+      }
+
       // Create modal HTML
       this.createModal();
       
@@ -1107,18 +1118,6 @@
         }
       }
 
-      // Brand settings → theme override. Merchant-controlled colors always
-      // win over auto-sniffed theme tokens to avoid transparent / inverted
-      // backgrounds on unpredictable themes.
-      const isCustomColor = (c, def) => c && c !== def;
-      const themeOverrides = {
-        primary: isCustomColor(s.brandAccentColor, '#f59e0b') ? s.brandAccentColor : undefined,
-        primaryText: undefined, // derive from primary; not user-controlled today
-        background: isCustomColor(s.brandSecondaryColor, '#ffffff') ? s.brandSecondaryColor : '#ffffff',
-        foreground: isCustomColor(s.brandPrimaryColor, '#000000') ? s.brandPrimaryColor : undefined,
-        fontFamily: s.brandFont && s.brandFont !== 'system' ? s.brandFont : undefined
-      };
-
       // Countdown deadline for timer-style templates. Match the real promotion
       // window: unique codes expire 24h after minting. The exact server expiry
       // isn't known until generateUniqueCode() runs (during showModal), so seed
@@ -1131,26 +1130,90 @@
         timerEndsAt = Date.now() + 24 * 60 * 60 * 1000;
       }
 
-      const props = {
+      const props = this.buildTemplateProps({
         headline: s.modalHeadline,
         subhead: s.modalBody,
         cta: s.ctaButton,
         secondaryCta: 'No thanks',
         showSecondary: false,
         code: s.discountCode || null,
-        amount: null,
         amountText,
         timerEndsAt,
-        themeOverrides,
-        showPoweredBy: s.plan !== 'enterprise'
+        showPoweredBy: s.plan !== 'enterprise',
+        brand: this.brandFromSettings()
+      });
+
+      this.renderTemplate(s.templateId, props);
+      console.log(`[Modal] Rendered template: ${s.templateId}`);
+    }
+
+    /**
+     * Merchant brand colors/font from settings, in the shape buildTemplateProps
+     * expects. Single accessor so manual / AI / preview renders read brand
+     * identically.
+     */
+    brandFromSettings() {
+      const s = this.settings;
+      return {
+        accent: s.brandAccentColor,
+        secondary: s.brandSecondaryColor,
+        primary: s.brandPrimaryColor,
+        font: s.brandFont
       };
+    }
 
-      const { overlay, modal, primaryCta, secondaryCta, closeBtn } =
-        window.ResparqTemplates.render(s.templateId, props);
+    /**
+     * Map a normalized content object to ResparqTemplates render props + theme
+     * overrides. Single source of truth for prop shape so manual, AI, and
+     * preview renders stay identical. Copy is injected here as props — never
+     * patched into the DOM after render.
+     *
+     * content: { headline, subhead, cta, secondaryCta, showSecondary,
+     *            showSubhead, code, amountText, timerEndsAt, showPoweredBy,
+     *            brand: { accent, secondary, primary, font } }
+     */
+    buildTemplateProps(content) {
+      const b = content.brand || {};
+      // Merchant brand colors always win over auto-sniffed theme tokens to
+      // avoid transparent / inverted backgrounds on unpredictable themes.
+      const isCustomColor = (c, def) => c && c !== def;
+      const themeOverrides = {
+        primary: isCustomColor(b.accent, '#f59e0b') ? b.accent : undefined,
+        primaryText: undefined, // derive from primary; not user-controlled today
+        background: isCustomColor(b.secondary, '#ffffff') ? b.secondary : '#ffffff',
+        foreground: isCustomColor(b.primary, '#000000') ? b.primary : undefined,
+        fontFamily: b.font && b.font !== 'system' ? b.font : undefined
+      };
+      return {
+        headline: content.headline,
+        // showSubhead === false suppresses the subhead entirely (evolved gene).
+        subhead: content.showSubhead === false ? null : content.subhead,
+        cta: content.cta,
+        secondaryCta: content.secondaryCta || 'No thanks',
+        showSecondary: !!content.showSecondary,
+        code: content.code || null,
+        amount: null,
+        amountText: content.amountText || null,
+        timerEndsAt: content.timerEndsAt || null,
+        themeOverrides,
+        showPoweredBy: content.showPoweredBy !== false
+      };
+    }
 
-      // Stamp IDs so legacy code (showModal, closeModal, handleCTAClick) works
+    /**
+     * Render a template through the registry and mount it. Stamps the legacy
+     * IDs (#exit-intent-modal, #modal-primary-cta, #modal-secondary-cta) that
+     * showModal/closeModal/handleCTAClick rely on, wires handlers, and replaces
+     * any previously mounted modal (so AI mode can lazily re-render once the
+     * decision's templateId is known). Shared by manual + AI + preview.
+     */
+    renderTemplate(templateId, props) {
+      const handles = window.ResparqTemplates.render(templateId, props);
+      const { overlay, modal, primaryCta, secondaryCta, closeBtn } = handles;
+
+      // Stamp IDs so legacy show/hide/CTA code keeps working
       overlay.id = 'exit-intent-modal-overlay';
-      modal.id = 'exit-intent-modal';
+      if (modal) modal.id = 'exit-intent-modal';
       if (primaryCta) primaryCta.id = 'modal-primary-cta';
       if (secondaryCta) secondaryCta.id = 'modal-secondary-cta';
 
@@ -1159,9 +1222,67 @@
       if (primaryCta) primaryCta.onclick = () => this.handleCTAClick();
       if (secondaryCta) secondaryCta.onclick = () => this.handleSecondaryClick();
 
+      // Replace any previously mounted modal (lazy re-render in AI mode)
+      if (this.modalElement && this.modalElement.parentNode) {
+        this.modalElement.parentNode.removeChild(this.modalElement);
+      }
       document.body.appendChild(overlay);
       this.modalElement = overlay;
-      console.log(`[Modal] Rendered template: ${s.templateId}`);
+      return handles;
+    }
+
+    /**
+     * Dev/QA preview: read ?resparqPreview=<templateId> and return a validated
+     * template id, or null. Lets all template layouts be eyeballed in any theme
+     * (incl. the theme editor) without firing the bandit / intervention
+     * threshold / a real exit-intent or conversion event.
+     */
+    getPreviewTemplateId() {
+      try {
+        const id = new URLSearchParams(window.location.search).get('resparqPreview');
+        if (!id) return null;
+        if (!window.ResparqTemplates || typeof window.ResparqTemplates.render !== 'function') {
+          console.warn('[Preview] ResparqTemplates not loaded — cannot preview');
+          return null;
+        }
+        const known = (window.ResparqTemplates.list?.() || []).map((t) => t.id);
+        if (!known.includes(id)) {
+          console.warn(`[Preview] Unknown template "${id}". Known: ${known.join(', ')}`);
+          return null;
+        }
+        return id;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    /**
+     * Render a template with representative AI-style copy and show it
+     * immediately, bypassing triggers/session guards. Verification harness for
+     * the template pipeline (see getPreviewTemplateId).
+     */
+    renderPreviewTemplate(templateId) {
+      const s = this.settings;
+      const isTimer = templateId === 'timer-front';
+      const props = this.buildTemplateProps({
+        headline: s.modalHeadline || 'Wait — your 15% off is still here',
+        subhead: s.modalBody || 'Finish checkout and your discount applies automatically.',
+        cta: s.ctaButton || 'Claim My Discount',
+        secondaryCta: 'No thanks',
+        showSecondary: true,
+        code: 'PREVIEW15',
+        amountText: '15%',
+        timerEndsAt: isTimer ? Date.now() + 24 * 60 * 60 * 1000 : null,
+        showPoweredBy: s.plan !== 'enterprise',
+        brand: this.brandFromSettings()
+      });
+      this.renderTemplate(templateId, props);
+      this.modalElement.style.display = 'flex';
+      requestAnimationFrame(() => {
+        const modal = this.modalElement.querySelector('#exit-intent-modal');
+        if (modal) modal.style.transform = isMobileDevice() ? 'translateY(0)' : 'scale(1)';
+      });
+      console.log(`[Preview] Rendered "${templateId}" with sample AI copy. Switch with ?resparqPreview=<id>. Available: ${(window.ResparqTemplates.list?.() || []).map((t) => t.id).join(', ')}`);
     }
 
     async evaluateEnterpriseCustomer() {

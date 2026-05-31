@@ -144,14 +144,30 @@ Step 1 foundation — DONE (this commit):
   `decision.templateId` on both variant-bearing return shapes (discount +
   no-discount). Enterprise/variant path only — Pro determineOffer is rule-based.
 
+Storefront render refactor — foundation DONE (seams + preview harness):
+- `exit-intent-modal.js` now has a single render pipeline. Extracted
+  `buildTemplateProps(content)` (one source of truth for render props +
+  themeOverrides; copy injected as props, never patched into DOM) and
+  `renderTemplate(templateId, props)` (mounts, stamps legacy IDs, wires
+  handlers, replaces any prior modal so AI can lazy re-render). Manual path
+  `renderFromTemplateRegistry()` refactored to route through both — no
+  behavior change.
+- **Preview harness:** `?resparqPreview=<templateId>` renders any layout with
+  representative AI-style copy and shows it immediately, bypassing the bandit,
+  the dev-poisoned intervention threshold, and all triggers. THIS is how you
+  verify all 8 layouts in a real theme without an exit/convert. Available ids
+  logged to console. Use it to QA before enabling the live AI path.
+
 Still TODO in Sprint 3:
-- **Storefront AI render (next, RISKY — needs runtime verify).** AI mode still
-  renders the legacy modal; `updateModalWithAI` patches copy via `h2`/`p`/
-  `#modal-primary-cta` selectors. To honor `decision.templateId`, AI mode must
-  rebuild the modal DOM from `ResparqTemplates` (mirror
-  `renderFromTemplateRegistry`) seeded with AI copy. Verify template DOM exposes
-  the selectors `updateModalWithAI` expects, or refactor that patch path. Can't
-  test here (no customers + dev-data poisoning → "no intervention").
+- **Live AI render (next).** Wire AI mode to lazy-render the evolved
+  `decision.templateId` through `renderTemplate` once the decision lands
+  (in `getAIDecision`), behind a feature flag (default off) so it dark-launches.
+  This replaces `updateModalWithAI`'s DOM patching. The risky copy-resolution
+  logic in `updateModalWithAI` (placeholder replacement, showSubhead
+  suppression, threshold copy enforcement, redirect derivation, secondary CTA,
+  sessionStorage threshold) must be hoisted into a `resolveModalContent(decision,
+  cartValue)` → fed to `buildTemplateProps`, with side-effects split out. Verify
+  via the preview harness in a real theme before flipping the flag on.
 - **3-level hierarchical template posterior** (archetype → store-pooled →
   cross-store meta, anneal with sample count). Not yet built — current wiring
   treats templateId as a flat gene like the others.
