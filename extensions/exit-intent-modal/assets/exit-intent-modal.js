@@ -1119,6 +1119,18 @@
         fontFamily: s.brandFont && s.brandFont !== 'system' ? s.brandFont : undefined
       };
 
+      // Countdown deadline for timer-style templates. Match the real promotion
+      // window: unique codes expire 24h after minting. The exact server expiry
+      // isn't known until generateUniqueCode() runs (during showModal), so seed
+      // a 24h window here and reconcile to offerExpiresAt afterwards. Generic
+      // codes have no hard expiry — present a 24h limited-time window.
+      let timerEndsAt = null;
+      if (s.offerExpiresAt) {
+        timerEndsAt = new Date(s.offerExpiresAt).getTime();
+      } else if (s.templateId === 'timer-front') {
+        timerEndsAt = Date.now() + 24 * 60 * 60 * 1000;
+      }
+
       const props = {
         headline: s.modalHeadline,
         subhead: s.modalBody,
@@ -1128,6 +1140,7 @@
         code: s.discountCode || null,
         amount: null,
         amountText,
+        timerEndsAt,
         themeOverrides,
         showPoweredBy: s.plan !== 'enterprise'
       };
@@ -1518,6 +1531,7 @@
         // If unique code mode is enabled, generate a fresh code for this customer
         if (this.settings.discountEnabled && this.settings.discountCodeMode === 'unique') {
           await this.generateUniqueCode();
+          this.syncTemplateTimerDeadline();
         }
         await this.trackStarterImpression();
       }
@@ -1594,6 +1608,20 @@
         }
       } catch (error) {
         console.error('[Unique Code] Failed to generate:', error);
+      }
+    }
+
+    /**
+     * Reconcile a timer-style template's countdown to the exact server expiry
+     * once a unique code has been minted. The template seeds a 24h window at
+     * render time and reads its deadline from the modal's dataset each tick, so
+     * we just overwrite that value with the real offerExpiresAt.
+     */
+    syncTemplateTimerDeadline() {
+      if (!this.offerExpiresAt || !this.modalElement) return;
+      const modalEl = this.modalElement.querySelector('#exit-intent-modal');
+      if (modalEl && modalEl.dataset.resparqTimerEndsAt) {
+        modalEl.dataset.resparqTimerEndsAt = String(this.offerExpiresAt.getTime());
       }
     }
 

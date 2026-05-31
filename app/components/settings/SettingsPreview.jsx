@@ -642,9 +642,11 @@ function TimerFrontPreview({ isAIMode, displayHeadline, displayBody, displayCTA,
       {isAIMode && <AIBadge />}
       {!compact && <PreviewCloseBtn />}
       <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', color: tokens.muted, marginBottom: 10 }}>OFFER EXPIRES IN</div>
-      <div style={{ display: 'inline-flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
-        <Cell>14</Cell>
-        <div style={{ fontSize: 26, fontWeight: 800, color: tokens.primary }}>:</div>
+      <div style={{ display: 'inline-flex', gap: 6, marginBottom: 16, alignItems: 'center' }}>
+        <Cell>23</Cell>
+        <div style={{ fontSize: 24, fontWeight: 800, color: tokens.primary }}>:</div>
+        <Cell>59</Cell>
+        <div style={{ fontSize: 24, fontWeight: 800, color: tokens.primary }}>:</div>
         <Cell>59</Cell>
       </div>
       <h2 style={{

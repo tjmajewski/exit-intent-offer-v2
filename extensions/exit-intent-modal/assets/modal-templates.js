@@ -742,7 +742,20 @@
     label.style.cssText =
       `font-size:11px;font-weight:700;letter-spacing:0.15em;color:${t.muted};margin-bottom:12px;`;
 
-    // Countdown display
+    // Countdown deadline. The caller (dispatcher) passes props.timerEndsAt as
+    // an epoch-ms timestamp matching the real promotion window (e.g. 24h for
+    // unique codes). We stash it on the modal's dataset so the lifecycle can
+    // reconcile it to the exact server expiry once the code is minted, and the
+    // interval re-reads it every tick. Fall back to a 24h window if unset.
+    let endsAt = Number(props.timerEndsAt);
+    if (!endsAt || isNaN(endsAt) || endsAt <= Date.now()) {
+      endsAt = Date.now() + 24 * 60 * 60 * 1000;
+    }
+    modal.dataset.resparqTimerEndsAt = String(endsAt);
+
+    // Show an hours cell when the window is an hour or longer.
+    const showHours = (endsAt - Date.now()) >= 60 * 60 * 1000;
+
     const timer = document.createElement('div');
     timer.style.cssText = `
       display: inline-flex;
@@ -754,41 +767,54 @@
       cell.style.cssText = `
         background: ${t.primary};
         color: ${t.primaryText};
-        font-size: ${mobile ? '30px' : '36px'};
+        font-size: ${mobile ? '28px' : '34px'};
         font-weight: 800;
         line-height: 1;
         padding: 14px 12px;
         border-radius: 10px;
-        min-width: 58px;
+        min-width: 54px;
         font-variant-numeric: tabular-nums;
       `;
       cell.textContent = '00';
       return cell;
     };
+    const makeColon = () => {
+      const colon = document.createElement('div');
+      colon.textContent = ':';
+      colon.style.cssText =
+        `font-size:28px;font-weight:800;color:${t.primary};align-self:center;`;
+      return colon;
+    };
+    const hourCell = showHours ? makeCell() : null;
     const minCell = makeCell();
     const secCell = makeCell();
-    const colon = document.createElement('div');
-    colon.textContent = ':';
-    colon.style.cssText =
-      `font-size:30px;font-weight:800;color:${t.primary};align-self:center;`;
+    if (hourCell) { timer.appendChild(hourCell); timer.appendChild(makeColon()); }
     timer.appendChild(minCell);
-    timer.appendChild(colon);
+    timer.appendChild(makeColon());
     timer.appendChild(secCell);
 
-    // 15-minute countdown. Interval clears itself when modal removed from DOM.
-    let remaining = 15 * 60;
     const paint = () => {
-      const m = Math.floor(remaining / 60);
+      const target = Number(modal.dataset.resparqTimerEndsAt) || endsAt;
+      let remaining = Math.max(0, Math.floor((target - Date.now()) / 1000));
+      const h = Math.floor(remaining / 3600);
+      const m = Math.floor((remaining % 3600) / 60);
       const s = remaining % 60;
-      minCell.textContent = String(m).padStart(2, '0');
+      if (hourCell) {
+        hourCell.textContent = String(h).padStart(2, '0');
+        minCell.textContent = String(m).padStart(2, '0');
+      } else {
+        // No hours cell: roll any hours into the minutes display.
+        minCell.textContent = String(h * 60 + m).padStart(2, '0');
+      }
       secCell.textContent = String(s).padStart(2, '0');
     };
     paint();
+    // Interval clears itself when the modal is removed from the DOM.
     const tick = setInterval(() => {
       if (!document.body.contains(modal)) { clearInterval(tick); return; }
-      remaining = Math.max(0, remaining - 1);
       paint();
-      if (remaining === 0) clearInterval(tick);
+      const target = Number(modal.dataset.resparqTimerEndsAt) || endsAt;
+      if (target - Date.now() <= 0) clearInterval(tick);
     }, 1000);
 
     const headline = document.createElement('h2');
