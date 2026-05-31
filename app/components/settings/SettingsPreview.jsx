@@ -110,13 +110,25 @@ export default function SettingsPreview({
     fontFamily: brandFont || 'inherit'
   };
 
+  // Compute the customer-facing discount label ("15%" / "$10") when discount
+  // is enabled — so the amount the merchant typed shows up in the preview.
+  let amountText = null;
+  if (!isAIMode && discountEnabled) {
+    if (offerType === 'fixed' && discountAmount) {
+      amountText = `$${discountAmount}`;
+    } else if (discountPercentage) {
+      amountText = `${discountPercentage}%`;
+    }
+  }
+
   const cardProps = {
     isAIMode,
     displayHeadline,
     displayBody,
     displayCTA,
     showPoweredBy,
-    tokens: previewTokens
+    tokens: previewTokens,
+    amountText
   };
 
   // Layout dispatcher — visually mirrors storefront templates in
@@ -357,7 +369,24 @@ function PoweredBy() {
   );
 }
 
-function ClassicCardPreview({ isAIMode, displayHeadline, displayBody, displayCTA, showPoweredBy, tokens, scale, compact }) {
+function DiscountBadge({ amountText, tokens }) {
+  if (!amountText) return null;
+  return (
+    <div style={{
+      display: 'inline-block',
+      background: tokens.primary,
+      color: tokens.primaryText,
+      padding: '4px 10px',
+      borderRadius: 999,
+      fontSize: 11,
+      fontWeight: 700,
+      letterSpacing: '0.08em',
+      marginBottom: 12
+    }}>{amountText} OFF</div>
+  );
+}
+
+function ClassicCardPreview({ isAIMode, displayHeadline, displayBody, displayCTA, showPoweredBy, tokens, scale, compact, amountText }) {
   return (
     <div id="exit-intent-modal" style={{
       background: tokens.background,
@@ -370,6 +399,7 @@ function ClassicCardPreview({ isAIMode, displayHeadline, displayBody, displayCTA
     }}>
       {isAIMode && <AIBadge />}
       {!compact && <PreviewCloseBtn />}
+      <DiscountBadge amountText={amountText} tokens={tokens} />
       <h2 style={{
         margin: isAIMode && compact ? '28px 0 12px' : '0 0 12px',
         fontSize: scale < 1 ? '22px' : '28px',
@@ -392,7 +422,10 @@ function ClassicCardPreview({ isAIMode, displayHeadline, displayBody, displayCTA
   );
 }
 
-function TopBannerPreview({ isAIMode, displayHeadline, displayBody, displayCTA, tokens }) {
+function TopBannerPreview({ isAIMode, displayHeadline, displayBody, displayCTA, tokens, amountText }) {
+  const headlineText = amountText && !isAIMode
+    ? `${amountText} OFF — ${displayHeadline}`
+    : displayHeadline;
   return (
     <div style={{
       background: tokens.primary,
@@ -411,7 +444,7 @@ function TopBannerPreview({ isAIMode, displayHeadline, displayBody, displayCTA, 
       {isAIMode && <AIBadge />}
       <div style={{ flex: '1 1 auto', minWidth: 0 }}>
         <strong style={{ fontSize: 14, fontWeight: 700, fontStyle: isAIMode ? 'italic' : 'normal' }}>
-          {displayHeadline}
+          {headlineText}
         </strong>
         {displayBody && (
           <span style={{ fontSize: 13, opacity: 0.9, marginLeft: 8, fontStyle: isAIMode ? 'italic' : 'normal' }}>
@@ -435,7 +468,7 @@ function TopBannerPreview({ isAIMode, displayHeadline, displayBody, displayCTA, 
   );
 }
 
-function BottomSheetPreview({ isAIMode, displayHeadline, displayBody, displayCTA, showPoweredBy, tokens, scale, compact }) {
+function BottomSheetPreview({ isAIMode, displayHeadline, displayBody, displayCTA, showPoweredBy, tokens, scale, compact, amountText }) {
   return (
     <div id="exit-intent-modal" style={{
       background: tokens.background,
@@ -454,6 +487,7 @@ function BottomSheetPreview({ isAIMode, displayHeadline, displayBody, displayCTA
         margin: '0 auto 16px'
       }} />
       {!compact && <PreviewCloseBtn />}
+      <DiscountBadge amountText={amountText} tokens={tokens} />
       <h2 style={{
         margin: '4px 0 8px',
         fontSize: scale < 1 ? '20px' : '22px',

@@ -1076,6 +1076,30 @@
      */
     renderFromTemplateRegistry() {
       const s = this.settings;
+
+      // Build human-readable discount amount when discount is enabled.
+      // Manual mode stores discountPercentage/discountAmount on settings.
+      let amountText = null;
+      if (s.discountEnabled) {
+        if (s.offerType === 'fixed' && s.discountAmount) {
+          amountText = `$${s.discountAmount}`;
+        } else if (s.discountPercentage) {
+          amountText = `${s.discountPercentage}%`;
+        }
+      }
+
+      // Brand settings → theme override. Merchant-controlled colors always
+      // win over auto-sniffed theme tokens to avoid transparent / inverted
+      // backgrounds on unpredictable themes.
+      const isCustomColor = (c, def) => c && c !== def;
+      const themeOverrides = {
+        primary: isCustomColor(s.brandAccentColor, '#f59e0b') ? s.brandAccentColor : undefined,
+        primaryText: undefined, // derive from primary; not user-controlled today
+        background: isCustomColor(s.brandSecondaryColor, '#ffffff') ? s.brandSecondaryColor : '#ffffff',
+        foreground: isCustomColor(s.brandPrimaryColor, '#000000') ? s.brandPrimaryColor : undefined,
+        fontFamily: s.brandFont && s.brandFont !== 'system' ? s.brandFont : undefined
+      };
+
       const props = {
         headline: s.modalHeadline,
         subhead: s.modalBody,
@@ -1083,7 +1107,9 @@
         secondaryCta: 'No thanks',
         showSecondary: false,
         code: s.discountCode || null,
-        amount: null, // manual mode doesn't carry discount amount through here
+        amount: null,
+        amountText,
+        themeOverrides,
         showPoweredBy: s.plan !== 'enterprise'
       };
 

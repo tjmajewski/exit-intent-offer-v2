@@ -21,6 +21,8 @@
     discountEnabled: {{ discount_enabled | json }},
     discountCode: {{ active_discount_code | json }},
     offerType: {{ shop.metafields.exit_intent.settings.value.offerType | default: "percentage" | json }},
+    discountPercentage: {{ shop.metafields.exit_intent.settings.value.discountPercentage | default: 10 | json }},
+    discountAmount: {{ shop.metafields.exit_intent.settings.value.discountAmount | default: 10 | json }},
     redirectDestination: {{ shop.metafields.exit_intent.settings.value.redirectDestination | default: "checkout" | json }},
     triggers: {
       exitIntent: {{ shop.metafields.exit_intent.settings.value.exitIntentEnabled | default: true | json }},

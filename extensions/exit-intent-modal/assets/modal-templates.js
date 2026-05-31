@@ -101,6 +101,47 @@
   }
 
   // ===========================================================================
+  // OPAQUE BACKGROUND GUARD
+  // Theme sniffing returned transparent / invalid colors on some merchant
+  // themes (Dawn variants, dark-mode overrides). Modal must always be opaque
+  // and high-contrast. Validate background; fall back to white if unsafe.
+  // ===========================================================================
+  function isSafeOpaqueColor(c) {
+    if (!c || typeof c !== 'string') return false;
+    const v = c.trim().toLowerCase();
+    if (!v || v === 'transparent' || v === 'inherit' || v === 'initial' || v === 'unset') return false;
+    // Reject any rgba with alpha < 0.9
+    const rgba = v.match(/rgba?\(\s*\d+[\s,]+\d+[\s,]+\d+\s*[,/]?\s*([\d.]+)?/);
+    if (rgba && rgba[1] && parseFloat(rgba[1]) < 0.9) return false;
+    return true;
+  }
+
+  /**
+   * Merge sniffed tokens with merchant-provided overrides (brand settings).
+   * Merchant settings always win for visible colors. Sniffed values are kept
+   * for borderRadius and fontFamily (low risk to defer to theme).
+   *
+   * Caller passes brand settings as `{ primary, primaryText, background,
+   * foreground }` — typically built from settings.brand* in the storefront.
+   */
+  function tokensFor(overrides) {
+    const sniffed = getThemeTokens();
+    const o = overrides || {};
+    return {
+      primary: o.primary || sniffed.primary,
+      primaryText: o.primaryText || sniffed.primaryText,
+      background: isSafeOpaqueColor(o.background) ? o.background
+                : isSafeOpaqueColor(sniffed.background) ? sniffed.background
+                : '#ffffff',
+      foreground: o.foreground || sniffed.foreground || '#1a1a1a',
+      muted: o.muted || sniffed.muted,
+      accent: o.accent || sniffed.accent || (o.primary || sniffed.primary),
+      borderRadius: sniffed.borderRadius,
+      fontFamily: o.fontFamily || sniffed.fontFamily
+    };
+  }
+
+  // ===========================================================================
   // SHARED PRIMITIVES
   // ===========================================================================
 
@@ -195,6 +236,24 @@
     return btn;
   }
 
+  function makeDiscountBadge(amountText, t) {
+    if (!amountText) return null;
+    const el = document.createElement('div');
+    el.textContent = `${amountText} OFF`;
+    el.style.cssText = `
+      display: inline-block;
+      background: ${t.primary};
+      color: ${t.primaryText};
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      margin-bottom: 12px;
+    `;
+    return el;
+  }
+
   function makePoweredBy(show) {
     const el = document.createElement('div');
     if (!show) { el.style.display = 'none'; return el; }
@@ -211,7 +270,7 @@
   // Centered modal, soft shadow, neutral baseline. Single column.
   // ===========================================================================
   function renderClassicCard(props) {
-    const t = getThemeTokens();
+    const t = tokensFor(props.themeOverrides);
     const mobile = isMobile();
 
     const overlay = makeOverlay({ align: mobile ? 'flex-end' : 'center' });
@@ -257,6 +316,8 @@
     if (!props.showSecondary) secondaryCta.style.display = 'none';
 
     modal.appendChild(closeBtn);
+    const badge = makeDiscountBadge(props.amountText, t);
+    if (badge) modal.appendChild(badge);
     modal.appendChild(headline);
     modal.appendChild(subhead);
     modal.appendChild(primaryCta);
@@ -273,7 +334,7 @@
   // Headline left, inline CTA right, small close button.
   // ===========================================================================
   function renderTopBanner(props) {
-    const t = getThemeTokens();
+    const t = tokensFor(props.themeOverrides);
     const mobile = isMobile();
 
     // Banner doesn't use a dark overlay — it's non-intrusive by design.
@@ -317,7 +378,10 @@
 
     const text = document.createElement('div');
     const headlineSpan = document.createElement('strong');
-    headlineSpan.textContent = props.headline;
+    // Surface discount amount inline in the banner so the offer is unmissable.
+    headlineSpan.textContent = props.amountText
+      ? `${props.amountText} OFF — ${props.headline}`
+      : props.headline;
     headlineSpan.style.cssText = 'font-size: 15px; font-weight: 700;';
     const subSpan = document.createElement('span');
     subSpan.textContent = props.subhead ? ` — ${props.subhead}` : '';
@@ -367,7 +431,7 @@
   // also works on desktop (anchored to bottom).
   // ===========================================================================
   function renderBottomSheet(props) {
-    const t = getThemeTokens();
+    const t = tokensFor(props.themeOverrides);
 
     const overlay = makeOverlay({ align: 'flex-end' });
 
@@ -421,6 +485,8 @@
 
     modal.appendChild(handle);
     modal.appendChild(closeBtn);
+    const sheetBadge = makeDiscountBadge(props.amountText, t);
+    if (sheetBadge) modal.appendChild(sheetBadge);
     modal.appendChild(headline);
     modal.appendChild(subhead);
     modal.appendChild(primaryCta);
@@ -436,7 +502,7 @@
   // Gamified ticket look with dashed edge. Discount amount as the hero element.
   // ===========================================================================
   function renderCouponTicket(props) {
-    const t = getThemeTokens();
+    const t = tokensFor(props.themeOverrides);
     const mobile = isMobile();
 
     const overlay = makeOverlay({ align: 'center' });
@@ -484,7 +550,9 @@
 
     const hero = document.createElement('div');
     // Show the discount amount as the hero (fall back to headline if no amount)
-    if (props.amount) {
+    if (props.amountText) {
+      hero.textContent = props.amountText;
+    } else if (props.amount) {
       hero.textContent = props.amount;
     } else {
       hero.textContent = props.headline;
