@@ -19,7 +19,7 @@
   // evolved decision.templateId through the template registry instead of
   // DOM-patching the legacy modal. Default OFF. QA override per visit with
   // ?resparqLiveAI=1 (or =0 to force off), or localStorage.resparqLiveAI='1'.
-  const LIVE_AI_RENDER = false;
+  const LIVE_AI_RENDER = true;
 
   // Mobile detection helper
   function isMobileDevice() {
