@@ -653,13 +653,16 @@
     heroLabel.textContent = 'YOUR OFFER';
     heroLabel.style.cssText =
       'font-size:11px;font-weight:700;letter-spacing:0.15em;opacity:0.75;margin-bottom:8px;';
+    // No-discount offers have no amount to feature, so the hero leads with the
+    // headline instead (and the right panel drops it to avoid duplication).
+    const hasAmount = !!(props.amountText || props.amount);
     const heroAmount = document.createElement('div');
-    heroAmount.textContent = props.amountText || props.amount || props.headline;
+    heroAmount.textContent = hasAmount ? (props.amountText || props.amount) : props.headline;
     heroAmount.style.cssText = `
-      font-size: ${mobile ? '40px' : '54px'};
+      font-size: ${hasAmount ? (mobile ? '40px' : '54px') : (mobile ? '24px' : '32px')};
       font-weight: 800;
       letter-spacing: -0.03em;
-      line-height: 1;
+      line-height: 1.05;
     `;
     const heroSub = document.createElement('div');
     heroSub.textContent = props.amountText ? 'OFF your order' : '';
@@ -696,7 +699,7 @@
     const secondaryCta = makeSecondaryButton(props.secondaryCta || 'No thanks', t);
     if (!props.showSecondary) secondaryCta.style.display = 'none';
 
-    content.appendChild(headline);
+    if (hasAmount) content.appendChild(headline);
     content.appendChild(subhead);
     content.appendChild(primaryCta);
     content.appendChild(secondaryCta);
