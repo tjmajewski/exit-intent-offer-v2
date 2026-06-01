@@ -325,6 +325,27 @@ export async function loader({ request }) {
       }
     }
 
+    // Pro lift upsell (Sprint 3 #5): device-conditional "detect but don't act".
+    // Analyze the Pro store's OWN data for device cohorts that prefer different
+    // layouts and quantify the lift Enterprise's device personalization would
+    // unlock. Real-data-only — never a fabricated %.
+    let deviceUpsell = null;
+    if (plan && plan.tier === 'pro' && shopRecord && settings?.mode === 'ai') {
+      try {
+        const [{ computeDeviceLiftUpsell }, { MODAL_LAYOUTS }] = await Promise.all([
+          import("../utils/device-lift-upsell.server.js"),
+          import("../utils/templates.js")
+        ]);
+        deviceUpsell = await computeDeviceLiftUpsell(
+          db,
+          shopRecord.id,
+          (id) => MODAL_LAYOUTS[id]?.name || id
+        );
+      } catch (e) {
+        console.error("[Pro Device Upsell] Failed:", e.message);
+      }
+    }
+
     // Enterprise: Load active promotions summary
     if (plan && plan.tier === 'enterprise' && shopRecord) {
       const promos = await db.promotion.findMany({
@@ -444,6 +465,7 @@ export async function loader({ request }) {
       plan,
       analytics,
       promoWarning,
+      deviceUpsell,
       activePromotions,
       modalLibrary,
       onboarding,
@@ -823,7 +845,7 @@ function InfoTooltip({ content }) {
 
 
 export default function Dashboard() {
-  const { settings, status, plan, analytics, promoWarning, activePromotions, modalLibrary, onboarding, populationSize, shopDomain, aiProgress, holdoutLift, isAIMode, currencyCode } = useLoaderData();
+  const { settings, status, plan, analytics, promoWarning, deviceUpsell, activePromotions, modalLibrary, onboarding, populationSize, shopDomain, aiProgress, holdoutLift, isAIMode, currencyCode } = useLoaderData();
   const fetcher = useFetcher();
   const [isEnabled, setIsEnabled] = useState(status.enabled);
 
@@ -1078,7 +1100,64 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-      
+
+      {/* Sprint 3 #5: Device-conditional lift upsell (Pro tier).
+          Built from the store's OWN device-split data — quantitative when there's
+          enough, qualitative otherwise. Never a fabricated number. */}
+      {deviceUpsell && (
+        <div style={{
+          background: "linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)",
+          border: "2px solid #6366f1",
+          borderRadius: 12,
+          padding: 24,
+          marginBottom: 32,
+          boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
+        }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: "#3730a3", marginBottom: 8 }}>
+                {deviceUpsell.kind === 'quantitative'
+                  ? `Your devices want different layouts — about ${deviceUpsell.liftPct}% lift left on the table`
+                  : `Your devices are behaving differently`}
+              </h3>
+              <p style={{ margin: 0, fontSize: 16, color: "#3730a3", marginBottom: 16, lineHeight: 1.5, opacity: 0.9 }}>
+                {deviceUpsell.message}
+              </p>
+              <div style={{ background: "white", padding: 16, borderRadius: 8, marginBottom: 16 }}>
+                <p style={{ margin: 0, fontSize: 14, color: "#3730a3", marginBottom: 12 }}>
+                  <strong>What your data shows:</strong>
+                </p>
+                <ul style={{ margin: 0, paddingLeft: 20, color: "#4338ca", fontSize: 14 }}>
+                  {deviceUpsell.cohorts.map((c, i) => (
+                    <li key={i}>
+                      <strong>{c.deviceLabel}</strong> converts best on{" "}
+                      <strong>{c.bestTemplateLabel}</strong>{" "}
+                      ({(c.cvr * 100).toFixed(1)}% CVR, {c.impressions} impressions)
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <Link
+                to="/app/upgrade"
+                style={{
+                  display: "inline-block",
+                  background: "#6366f1",
+                  color: "white",
+                  padding: "12px 24px",
+                  borderRadius: 8,
+                  textDecoration: "none",
+                  fontWeight: 600,
+                  fontSize: 16,
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
+                }}
+              >
+                Upgrade to Enterprise →
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Onboarding Checklist */}
       {showOnboarding && (
         <OnboardingChecklist
