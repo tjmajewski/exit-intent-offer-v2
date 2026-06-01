@@ -6,6 +6,7 @@ import { validateVariantCopy } from './brand-safety.js';
 import { hasSocialProof, replaceSocialProofPlaceholders } from './social-proof.js';
 import { getSocialProofFromCache, setSocialProofCache } from './social-proof-cache.js';
 import { computeArchetypePriors, getArchetypeMultiplier } from './archetype-priors.js';
+import { computeTemplatePriors, getTemplateMultiplier } from './template-priors.js';
 
 // Helper to get db instance (dynamic import for React Router 7 compatibility)
 let dbInstance = null;
@@ -390,7 +391,7 @@ function betaSample(alpha, beta) {
 const MIN_TRIGGER_IMPRESSIONS = 20;
 
 export async function selectVariantForImpression(shopId, baseline, segment = 'all', triggerReason = null, opts = {}) {
-  const { segmentKey = null, storeVertical = null, enableArchetypePriors = false } = opts;
+  const { segmentKey = null, storeVertical = null, enableArchetypePriors = false, enableTemplatePriors = false } = opts;
   // Get all live variants
   const liveVariants = await getLiveVariants(shopId, baseline, segment);
 
@@ -494,6 +495,29 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
     }
   }
 
+  // Sprint 3: 3-level hierarchical template posterior. Pools templateId
+  // performance across the store + cross-store meta and tilts sampling toward
+  // winning layouts. Independent of archetype priors — both multipliers stack.
+  let templatePriors = null;
+  let templatePriorsSource = 'none';
+  if (enableTemplatePriors) {
+    try {
+      const db = await getDb();
+      const archetypeName = getArchetype(baseline)?.archetypeName || null;
+      const { priors, source } = await computeTemplatePriors(db, shopId, {
+        baseline,
+        archetypeName
+      });
+      if (priors.size > 0) {
+        templatePriors = priors;
+        templatePriorsSource = source;
+        console.log(` [Priors] Template biasing active (source=${source}, templates=${priors.size})`);
+      }
+    } catch (err) {
+      console.error(' [Priors] Failed to compute template priors:', err.message);
+    }
+  }
+
   // Thompson Sampling: Sample from beta distribution for each variant.
   // When trigger-specific stats are available and a variant has enough
   // trigger-specific impressions, use those stats instead of overall stats.
@@ -524,6 +548,11 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
       sample *= getArchetypeMultiplier(archetypePriors, archetypeName);
     }
 
+    // Stack the hierarchical template-posterior multiplier.
+    if (templatePriors) {
+      sample *= getTemplateMultiplier(templatePriors, variant.templateId);
+    }
+
     return {
       variant: variant,
       sample: sample
@@ -535,7 +564,7 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
 
   const winner = samples[0].variant;
   const winnerArchetype = getArchetype(winner.baseline)?.archetypeName || 'none';
-  console.log(` Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)}${triggerStats ? `, trigger: ${triggerReason}` : ''}${archetypePriors ? `, priors=${priorsSource}, archetype=${winnerArchetype}` : ''})`);
+  console.log(` Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)}${triggerStats ? `, trigger: ${triggerReason}` : ''}${archetypePriors ? `, priors=${priorsSource}, archetype=${winnerArchetype}` : ''}${templatePriors ? `, templatePriors=${templatePriorsSource}, template=${winner.templateId}` : ''})`);
 
   return winner;
 }

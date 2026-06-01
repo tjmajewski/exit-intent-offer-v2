@@ -429,7 +429,11 @@ export async function action({ request }) {
       {
         segmentKey,
         storeVertical: shopRecord.storeVertical || null,
-        enableArchetypePriors: prioriEnabled
+        enableArchetypePriors: prioriEnabled,
+        // Sprint 3: hierarchical template posterior. Enterprise only — Pro's
+        // 2-variant cap barely spans the layout space, so template pooling adds
+        // little; the device-conditional lift is surfaced to Pro as an upsell.
+        enableTemplatePriors: planTierForPriors === 'enterprise'
       }
     );
     console.log(`[Variant Selection] Selected ${selectedVariant.variantId} (Gen ${selectedVariant.generation}, trigger: ${triggerReason}, segmentKey: ${segmentKey}, priors: ${prioriEnabled ? planTierForPriors : 'off'})`);
