@@ -5,6 +5,7 @@ import AppLayout from "../components/AppLayout";
 import db from "../db.server";
 import { getShopPlan } from "../utils/plan.server";
 import { parseSegmentKey } from "../utils/segment-key";
+import { MODAL_LAYOUTS, DEFAULT_MODAL_LAYOUT_ID } from "../utils/templates";
 
 // Presentation helpers (shared across stat cards + archetype tab)
 function cap(s) {
@@ -733,9 +734,25 @@ export default function VariantsIndex() {
     const byHeadline = {};
     const bySubhead = {};
     const byCTA = {};
+    const byTemplate = {};
 
     variants.forEach(v => {
       const revenue = v.profitPerImpression * v.impressions;
+
+      const tid = v.templateId || DEFAULT_MODAL_LAYOUT_ID;
+      if (!byTemplate[tid]) {
+        const layout = MODAL_LAYOUTS[tid];
+        byTemplate[tid] = {
+          text: layout?.name || tid,
+          description: layout?.description || '',
+          templateId: tid,
+          cvr: 0, revenue: 0, impressions: 0, conversions: 0, variants: []
+        };
+      }
+      byTemplate[tid].revenue += revenue;
+      byTemplate[tid].impressions += v.impressions;
+      byTemplate[tid].conversions += v.conversions;
+      byTemplate[tid].variants.push(v);
 
       if (!byHeadline[v.headline]) {
         byHeadline[v.headline] = { text: v.headline, cvr: 0, revenue: 0, impressions: 0, conversions: 0, variants: [] };
@@ -778,7 +795,12 @@ export default function VariantsIndex() {
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 10);
 
-    return { headlines, subheads, ctas };
+    const templates = Object.values(byTemplate)
+      .map(t => ({ ...t, cvr: t.impressions > 0 ? (t.conversions / t.impressions) * 100 : 0 }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10);
+
+    return { headlines, subheads, ctas, templates };
   };
 
   const performance = calculatePerformance(filteredVariants);
@@ -877,7 +899,16 @@ export default function VariantsIndex() {
           minHeight: 42,
           fontWeight: 500
         }}>
-          "{item.text}"
+          {type === 'template' ? (
+            <>
+              <div style={{ fontWeight: 700 }}>{item.text}</div>
+              {item.description && (
+                <div style={{ fontSize: 12, fontWeight: 400, color: '#666', marginTop: 2 }}>{item.description}</div>
+              )}
+            </>
+          ) : (
+            <>"{item.text}"</>
+          )}
         </div>
 
         <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1445,7 +1476,7 @@ export default function VariantsIndex() {
               );
             })()}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 24 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 24 }}>
               {/* Headlines Column */}
               <div>
                 <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>
@@ -1482,6 +1513,19 @@ export default function VariantsIndex() {
                 </h3>
                 {performance.ctas.map((item, i) => (
                   <ComponentCard key={i} item={item} type="cta" />
+                ))}
+              </div>
+
+              {/* Modal Design Column */}
+              <div>
+                <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>
+                  Modal Design
+                  <span style={{ fontSize: 14, fontWeight: 400, color: '#666', marginLeft: 8 }}>
+                    (Top {performance.templates.length})
+                  </span>
+                </h3>
+                {performance.templates.map((item, i) => (
+                  <ComponentCard key={i} item={item} type="template" />
                 ))}
               </div>
             </div>
