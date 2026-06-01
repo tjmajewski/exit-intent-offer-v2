@@ -4,6 +4,7 @@ import { createPercentageDiscount, createFixedDiscount, createThresholdDiscount,
 import { getMetaInsight, shouldUseMetaLearning } from "../utils/meta-learning.js";
 import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
 import { composeSegmentKey } from "../utils/segment-key.js";
+import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
 
 export async function action({ request }) {
   const { default: db } = await import("../db.server.js");
@@ -20,7 +21,20 @@ export async function action({ request }) {
     // visit into threshold/holdout learning. Prevents the merchant's own
     // non-converting clicks from training the AI to stop showing the modal.
     const isTestMode = testMode === true;
-    
+
+    // Dev/preview write guard: never let test-store or preview traffic train the
+    // bandit / adaptive threshold (prevents the "AI decided not to show" dead-end
+    // from dev-data poisoning). The decision is still computed + served — we only
+    // suppress the learning-table writes (VariantImpression / InterventionOutcome
+    // / InterventionThreshold).
+    const devWriteSkip = isLearningWriteSkipped({
+      shopDomain: shop,
+      isPreview: signals?.isPreview === true
+    });
+    if (devWriteSkip) {
+      console.log(`[Dev Guard] Learning writes suppressed for ${shop} (dev/preview) — decision still served`);
+    }
+
     // Get shop settings from metafield
     const shopQuery = await admin.graphql(`
       query {
@@ -183,7 +197,7 @@ export async function action({ request }) {
       const { recordInterventionOutcome: recordHoldout } = await import('../utils/intervention-threshold.server.js');
       const holdoutSegment = (signals.deviceType === 'mobile') ? 'mobile'
                            : (signals.deviceType === 'desktop') ? 'desktop' : 'all';
-      await recordHoldout(db, {
+      if (!devWriteSkip) await recordHoldout(db, {
         shopId: shopRecord.id,
         wasShown: false,
         isHoldout: true,
@@ -323,7 +337,7 @@ export async function action({ request }) {
       const { recordInterventionOutcome } = await import('../utils/intervention-threshold.server.js');
       const segment = (signals.deviceType === 'mobile') ? 'mobile'
                     : (signals.deviceType === 'desktop') ? 'desktop' : 'all';
-      await recordInterventionOutcome(db, {
+      if (!devWriteSkip) await recordInterventionOutcome(db, {
         shopId: shopRecord.id,
         wasShown: false,
         propensityScore: signals.propensityScore ?? null,
@@ -516,7 +530,8 @@ export async function action({ request }) {
     // Phase 2A: also persist scenario signals (pageType, promoInCart) and the
     // resolved archetype so cross-store meta-learning can aggregate on these
     // dimensions without joining back through Variant -> baseline -> gene-pools.
-    const impressionRecord = await recordImpression(selectedVariant.id, shopRecord.id, {
+    // Dev/preview: skip the VariantImpression write (no learning contribution).
+    const impressionRecord = devWriteSkip ? null : await recordImpression(selectedVariant.id, shopRecord.id, {
       segment: segment,
       deviceType: signals.deviceType || 'unknown',
       trafficSource: signals.trafficSource || 'unknown',
@@ -529,6 +544,7 @@ export async function action({ request }) {
       archetype: archetypeName,
       segmentKey
     });
+    const impressionId = impressionRecord?.id || null;
 
     // Update analytics metafield for dashboard metrics (fire-and-forget to avoid blocking)
     trackAnalyticsEvent(admin, 'impression').catch(e =>
@@ -550,7 +566,7 @@ export async function action({ request }) {
       const { recordInterventionOutcome: recordShownOutcome } = await import('../utils/intervention-threshold.server.js');
       const noDiscSegment = (signals.deviceType === 'mobile') ? 'mobile'
                           : (signals.deviceType === 'desktop') ? 'desktop' : 'all';
-      if (!isTestMode) await recordShownOutcome(db, {
+      if (!isTestMode && !devWriteSkip) await recordShownOutcome(db, {
         shopId: shopRecord.id,
         wasShown: true,
         propensityScore: signals.propensityScore ?? null,
@@ -559,7 +575,7 @@ export async function action({ request }) {
         trafficSource: signals.trafficSource,
         segment: noDiscSegment,
         aiDecisionId: noDiscAiDec.id,
-        impressionId: impressionRecord.id
+        impressionId
       }).catch(e => console.error('[Threshold] Failed to record shown outcome:', e));
 
       return json({
@@ -584,7 +600,7 @@ export async function action({ request }) {
           templateId: decision.templateId,
           variantId: decision.variantId,
           variantPublicId: decision.variantPublicId,
-          impressionId: impressionRecord.id
+          impressionId
         }
       });
     }
@@ -735,7 +751,7 @@ export async function action({ request }) {
     response.decision.templateId = decision.templateId;
     response.decision.variantId = decision.variantId;
     response.decision.variantPublicId = decision.variantPublicId;
-    response.decision.impressionId = impressionRecord.id; // For tracking clicks/conversions
+    response.decision.impressionId = impressionId; // For tracking clicks/conversions
     
     console.log(`[Variant Engine] Returning variant ${decision.variantPublicId} (Gen ${selectedVariant.generation})`);
 
@@ -743,7 +759,7 @@ export async function action({ request }) {
     const { recordInterventionOutcome: recordShown } = await import('../utils/intervention-threshold.server.js');
     const shownSegment = (signals.deviceType === 'mobile') ? 'mobile'
                        : (signals.deviceType === 'desktop') ? 'desktop' : 'all';
-    if (!isTestMode) await recordShown(db, {
+    if (!isTestMode && !devWriteSkip) await recordShown(db, {
       shopId: shopRecord.id,
       wasShown: true,
       propensityScore: signals.propensityScore ?? null,
@@ -752,7 +768,7 @@ export async function action({ request }) {
       trafficSource: signals.trafficSource,
       segment: shownSegment,
       aiDecisionId: discountAiDec.id,
-      impressionId: impressionRecord.id
+      impressionId
     }).catch(e => console.error('[Threshold] Failed to record shown outcome:', e));
 
     return json(response);

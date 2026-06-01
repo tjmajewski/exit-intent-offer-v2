@@ -1,6 +1,7 @@
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { recordInterventionOutcome, recordInterventionConversion } from "../utils/intervention-threshold.server.js";
+import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
 
 export const action = async ({ request }) => {
   try {
@@ -8,6 +9,11 @@ export const action = async ({ request }) => {
 
     console.log(" Webhook received:", topic);
     console.log("Shop:", shop);
+
+    // Dev/test stores must never write to the learning tables (poisons the
+    // adaptive threshold). Decision endpoint already skips their impressions;
+    // gate the webhook's conversion writes for consistency.
+    const devWriteSkip = isLearningWriteSkipped({ shopDomain: shop });
     console.log("Order ID:", payload.id);
     console.log("Order total:", payload.total_price);
 
@@ -156,7 +162,7 @@ export const action = async ({ request }) => {
           }
         }
 
-        await recordInterventionOutcome(db, {
+        if (!devWriteSkip) await recordInterventionOutcome(db, {
           shopId: shopRecord.id,
           wasShown: false,
           isHoldout: true,
@@ -219,7 +225,7 @@ export const action = async ({ request }) => {
           try { signalData = JSON.parse(recentDecision.signals); } catch { /* ignore */ }
         }
 
-        await recordInterventionOutcome(db, {
+        if (!devWriteSkip) await recordInterventionOutcome(db, {
           shopId: shopRecord.id,
           wasShown: false,
           converted: true,
