@@ -1,8 +1,10 @@
 # Handoff — Modal templates roadmap
 
-Last updated: 2026-05-31. Sprint 0 + Sprint 1 + Sprint 2 shipped. Sprint 3 IN
-PROGRESS — templateId gene foundation + storefront render pipeline/preview
-harness landed (commits c6a69fb, ad01570). See Sprint 3 status for what's left.
+Last updated: 2026-06-01. Sprint 0 + Sprint 1 + Sprint 2 + **Sprint 3 SHIPPED.**
+Live AI render is ON (`LIVE_AI_RENDER = true`). 3-level hierarchical template
+posterior, Component Analysis Modal Design column, Pro device-lift upsell, and
+the dev-data poisoning guard all landed. See Sprint 3 status. Remaining: a
+real-theme eyeball of the live AI path + the 17-factors marketing reconciliation.
 
 ## Working agreement (read CLAUDE.md too)
 
@@ -144,7 +146,55 @@ User asked: review the AI mode against the spec in `Resparq AI 5.26.26.pdf`, the
   (`discount-codes.js`) so exit offers still stack with the store's own promos —
   left intact intentionally; the dedup is purely storefront-side.
 
-**Sprint 3 — IN PROGRESS**
+**Sprint 3 — SHIPPED (2026-06-01)**
+
+All Sprint 3 items complete. New commits this round:
+
+```
+5f44022  Add dev/preview learning-write guard
+ba13698  Pro device-lift upsell (detect-but-don't-act) + dashboard card
+9e7b3bc  3-level hierarchical template posterior (enterprise) + meta priors
+812e772  Component Analysis: Modal Design leaderboard column
+b09f870  Flip LIVE_AI_RENDER on
+c1aa0e8  Timer-Front graceful no-discount degrade + top-banner nav inset
+```
+
+What landed:
+- **Live AI render ON.** `LIVE_AI_RENDER = true` in `exit-intent-modal.js:22`.
+  AI mode lazy-renders the evolved `decision.templateId` through
+  `renderTemplate`. Per-visit kill switch: `?resparqLiveAI=1` forces on,
+  `?resparqLiveAI=0` forces legacy DOM-patch path. Timer-Front degrades
+  gracefully when there's no discount (no "offer expires in" with no offer);
+  top-banner insets below sticky theme headers (`bannerTopInset()`).
+- **3-level hierarchical template posterior** (`app/utils/template-priors.js`):
+  cascading shrinkage meta → store-pooled → archetype-specific, weights anneal
+  with sample count. Wired into `variant-engine.js` as a beta-sample multiplier,
+  gated `enableTemplatePriors` = enterprise only (Pro's 2-variant cap barely
+  spans the layout space). Empty until store clears MIN_STORE_IMPRESSIONS=30.
+- **Component Analysis Modal Design column** (`app.variants._index.jsx`): 4th
+  leaderboard column, aggregates by `v.templateId`, shows layout name +
+  description from `MODAL_LAYOUTS` (not copy text). Empty until variants
+  accumulate impressions.
+- **#5 Pro device-lift upsell** (`app/utils/device-lift-upsell.server.js` +
+  card in `app._index.jsx`): analyzes the Pro store's OWN device-split data,
+  detects cohorts preferring different layouts, quantifies lift left on the
+  table → "upgrade to Enterprise." HARD RULE honored: quantitative % only from
+  real device data (gates: 60 impressions/device, 20/template-cell, ≥2 cohorts,
+  ≥2 distinct winners, ≥5% lift); falls back to qualitative nudge; null if no
+  divergence. NEVER fabricates a %.
+- **Dev-data poisoning guard** (`app/utils/dev-shop-guard.server.js`): dev/test
+  stores + preview renders no longer write to the learning tables. Explicit
+  allowlist (env `RESPARQ_DEV_SHOPS` comma-separated + hardcoded
+  `exit-intent-test-2.myshopify.com`) plus per-request `isPreview` signal — all
+  stores are *.myshopify.com so can't skip by suffix. Gates the decision
+  endpoint's 5 write sites + the order webhook's 2 conversion writes.
+
+Verification debt: Sprint 3 was lint/parse-checked and headless-validated but
+NOT yet run against a live store with the AI flag on. The posterior + upsell +
+Modal Design surfaces only populate once real impressions accumulate. Do a
+real-theme eyeball of the live AI render before treating it as battle-tested.
+
+---
 
 Step 1 foundation — DONE (commit c6a69fb):
 - `templateId` is now a gene on `Variant` (`@default("classic-card")`), migration
@@ -196,45 +246,29 @@ Validation run — 2026-05-31 (headless, no live store):
 - Minor cosmetic notes for later: `top-banner` concatenates `15% OFF — headline`
   (long on mobile); `testimonial` uses the subhead as the quote. Both by design.
 
-Still TODO in Sprint 3:
-- **Live AI render (next).** Wire AI mode to lazy-render the evolved
-  `decision.templateId` through `renderTemplate` once the decision lands
-  (in `getAIDecision`), behind a feature flag (default off) so it dark-launches.
-  This replaces `updateModalWithAI`'s DOM patching. The risky copy-resolution
-  logic in `updateModalWithAI` (placeholder replacement, showSubhead
-  suppression, threshold copy enforcement, redirect derivation, secondary CTA,
-  sessionStorage threshold) must be hoisted into a `resolveModalContent(decision,
-  cartValue)` → fed to `buildTemplateProps`, with side-effects split out. Verify
-  via the preview harness in a real theme before flipping the flag on.
-- **3-level hierarchical template posterior** (archetype → store-pooled →
-  cross-store meta, anneal with sample count). Not yet built — current wiring
-  treats templateId as a flat gene like the others.
-- #5 Pro lift upsell (device-conditional posterior + UI card). See architecture
-  decision above for exact behavior + the no-fabricated-% rule.
-- **Modal Design column on Component Analysis tab** — surfaces the templateId
-  gene as a 4th leaderboard column in `app/routes/app.variants._index.jsx`.
-  Aggregate by `v.templateId` (mirror `byHeadline`/`bySubhead`/`byCTA` at
-  ~line 733), emit `performance.templates`, widen grid `'1fr 1fr 1fr'` → 4 cols
-  at ~line 1448. Card should show the layout name/thumbnail (from `MODAL_LAYOUTS`)
-  not copy text — needs a `ComponentCard type="template"` branch. Gated on
-  step 1 (no templateId data until variants accumulate impressions).
+Sprint 3 TODOs — ALL DONE:
+- ~~**Live AI render.**~~ DONE (b09f870). Flag ON. Kill switch `?resparqLiveAI=0`.
+- ~~**3-level hierarchical template posterior.**~~ DONE (9e7b3bc),
+  `app/utils/template-priors.js`, enterprise-gated.
+- ~~#5 Pro lift upsell.~~ DONE (ba13698), `device-lift-upsell.server.js`.
+- ~~**Modal Design column on Component Analysis tab.**~~ DONE (812e772).
 - ~~#7 Queue tab~~ — DROPPED 2026-05-31 (see architecture decision).
 
-### Sprint 3 suggested order for the next instance
-1. **Run the preview harness** (`?resparqPreview=<id>`) across all 8 layouts in
-   a real theme. Confirm copy/CTA/secondary/code/timer/close render correctly.
-   This de-risks everything downstream. (Headless render + contract checks
-   already PASS as of 2026-05-31 — see "Validation run" above. A real-theme
-   eyeball is still worth doing before flipping the AI flag.)
-2. **Live AI render** behind a default-off flag (see TODO above). Hoist
-   `updateModalWithAI` copy logic into `resolveModalContent`. Verify via harness,
-   then flip flag.
-3. **Component Analysis column** — low-risk admin UI, good to land anytime.
-4. **3-level hierarchical posterior** — the hard algorithmic piece. Build the
-   shop-level template posterior pooled across archetypes, blended with
-   cross-store meta (`MetaLearningGene` already carries templateId). Weights
-   anneal with sample count.
-5. **#5 Pro lift upsell** — device-conditional posterior + UI card.
+### Next instance — where to pick up
+Sprint 3 code is shipped but unproven on a live store. In priority order:
+1. **Real-theme eyeball of the live AI render.** Flag is ON. Open a real store
+   in AI mode, trigger an exit, confirm the evolved `decision.templateId`
+   renders (not legacy DOM-patch). If anything looks wrong, `?resparqLiveAI=0`
+   is the per-visit kill switch; flipping `LIVE_AI_RENDER` back to `false` in
+   `exit-intent-modal.js:22` is the global one.
+2. **Confirm the dev guard is working.** Test orders from
+   `exit-intent-test-2.myshopify.com` (or whatever's in `RESPARQ_DEV_SHOPS`)
+   should NOT create VariantImpression / InterventionOutcome /
+   InterventionThreshold rows. Watch for the "[dev-guard] skipping learning
+   write" console line.
+3. **17-factors marketing reconciliation** (see Known issues) — still open.
+4. **Let traffic accumulate**, then verify the posterior multiplier, the Modal
+   Design column, and the Pro device-lift card actually populate.
 
 ## How the template system actually works
 
@@ -302,15 +336,18 @@ To add a Tier 2 template:
 
 ## Known issues / gotchas
 
-- **No-intervention loop in dev.** Adaptive intervention threshold
-  (`app/utils/intervention-threshold.server.js`) poisoned by dev testing
-  data. After 10 outcomes per score bucket, Thompson Sampling kicks in;
-  if `show` arm has accumulated 0-conversion impressions, AI permanently
-  says "no intervention." Symptom: console spam "AI decided not to show
-  a modal." Not a bug — system working as designed. User is moving to
-  a different test instance. **Future dev guard:** detect myshopify.com
-  dev shops or stamped `signals.isPreview` and skip writes to
-  `InterventionThreshold` / `InterventionOutcome` / `VariantImpression`.
+- **No-intervention loop in dev — GUARD SHIPPED (5f44022).** Adaptive
+  intervention threshold (`app/utils/intervention-threshold.server.js`) was
+  poisoned by dev testing data. After 10 outcomes per score bucket, Thompson
+  Sampling kicks in; if `show` arm accumulated 0-conversion impressions, AI
+  permanently said "no intervention" (console spam "AI decided not to show a
+  modal"). Now guarded by `app/utils/dev-shop-guard.server.js`:
+  `isLearningWriteSkipped({ shopDomain, isPreview })` skips all writes to
+  `InterventionThreshold` / `InterventionOutcome` / `VariantImpression` for
+  allowlisted dev shops (env `RESPARQ_DEV_SHOPS` + hardcoded
+  `exit-intent-test-2.myshopify.com`) and preview renders. Gates the decision
+  endpoint (5 sites) + order webhook (2 conversion writes). To add a dev store:
+  set `RESPARQ_DEV_SHOPS=foo.myshopify.com,bar.myshopify.com`.
 - **AI mode + manual templateId.** AI mode currently ignores `templateId`.
   AI uses legacy `createModal` body and AI-decided copy. This is by design
   for Sprint 1 — Sprint 3 wires templateId into the bandit gene set.
@@ -396,12 +433,11 @@ touches DB schema + evolution engine + admin UI). Decisions are locked above
 
 Don't restart the architectural conversation — decisions above are locked.
 
-### Open carry-over items (still unresolved going into Sprint 3)
+### Open carry-over items (post-Sprint-3)
 
-- **Dev-data poisoning guard** (see Known issues): InterventionThreshold can get
-  poisoned by dev testing → "AI decided not to show." Future guard: detect
-  myshopify.com dev shops or `signals.isPreview` and skip writes to
-  `InterventionThreshold` / `InterventionOutcome` / `VariantImpression`.
-- **17 factors claim**: code has ~15-16 signals; marketing says 17. Unresolved.
-- **Scratch Reveal cost / catch copy bandit / native theme block** — see
-  "Open product questions" below. Scratch Reveal shipped in Sprint 2.
+- ~~**Dev-data poisoning guard**~~ — SHIPPED (5f44022). See Known issues.
+- **17 factors claim**: code has ~15-16 signals; marketing says 17. STILL
+  UNRESOLVED. Either bump the code to 17 signals
+  (`ai-decision.server.js:185-286`) or change the marketing. User hasn't decided.
+- **Catch copy bandit / native theme block** — see "Open product questions".
+  Both deferred. Scratch Reveal shipped in Sprint 2.
