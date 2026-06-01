@@ -333,17 +333,47 @@
   // Slim non-blocking strip at top of viewport. No dark overlay.
   // Headline left, inline CTA right, small close button.
   // ===========================================================================
+  // Find the storefront header so the top-banner can sit below it rather than
+  // overlap it. Picks the tallest visible, full-width-ish element anchored at
+  // the very top of the viewport. Returns its bottom edge (px), capped for
+  // safety, or 0 when no header is found / the page is scrolled past it.
+  function bannerTopInset() {
+    let inset = 0;
+    try {
+      const sel = [
+        'header',
+        '.header',
+        '.site-header',
+        '#shopify-section-header',
+        '[data-section-type="header"]',
+        '[class*="ection-header"]'
+      ].join(',');
+      document.querySelectorAll(sel).forEach((el) => {
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return;
+        const r = el.getBoundingClientRect();
+        if (r.top <= 4 && r.height > 8 && r.width >= window.innerWidth * 0.6 && r.bottom > inset) {
+          inset = r.bottom;
+        }
+      });
+    } catch (_) {}
+    return Math.min(Math.max(inset, 0), 240);
+  }
+
   function renderTopBanner(props) {
     const t = tokensFor(props.themeOverrides);
     const mobile = isMobile();
 
     // Banner doesn't use a dark overlay — it's non-intrusive by design.
     // We still wrap in an overlay div for show/hide consistency.
+    // Sit BELOW the storefront's header instead of covering it: measure any
+    // header-like element anchored at the top and offset the banner past it.
+    const topInset = bannerTopInset();
     const overlay = document.createElement('div');
     overlay.className = 'resparq-overlay resparq-banner-overlay';
     overlay.style.cssText = `
       position: fixed;
-      top: 0;
+      top: ${topInset}px;
       left: 0;
       right: 0;
       display: none;
@@ -740,85 +770,88 @@
 
     const closeBtn = makeCloseButton(t);
 
+    // Only show the countdown when the caller passes a real future deadline.
+    // No deadline = no fake urgency: degrade to a headline-led card instead of
+    // inventing a 24h window (e.g. no-discount offers have nothing to expire).
+    const parsedEndsAt = Number(props.timerEndsAt);
+    const hasTimer = !!parsedEndsAt && !isNaN(parsedEndsAt) && parsedEndsAt > Date.now();
+
     const label = document.createElement('div');
     label.textContent = 'OFFER EXPIRES IN';
     label.style.cssText =
       `font-size:11px;font-weight:700;letter-spacing:0.15em;color:${t.muted};margin-bottom:12px;`;
 
-    // Countdown deadline. The caller (dispatcher) passes props.timerEndsAt as
-    // an epoch-ms timestamp matching the real promotion window (e.g. 24h for
-    // unique codes). We stash it on the modal's dataset so the lifecycle can
-    // reconcile it to the exact server expiry once the code is minted, and the
-    // interval re-reads it every tick. Fall back to a 24h window if unset.
-    let endsAt = Number(props.timerEndsAt);
-    if (!endsAt || isNaN(endsAt) || endsAt <= Date.now()) {
-      endsAt = Date.now() + 24 * 60 * 60 * 1000;
+    let endsAt = parsedEndsAt;
+    if (hasTimer) {
+      modal.dataset.resparqTimerEndsAt = String(endsAt);
     }
-    modal.dataset.resparqTimerEndsAt = String(endsAt);
 
-    // Show an hours cell when the window is an hour or longer.
-    const showHours = (endsAt - Date.now()) >= 60 * 60 * 1000;
+    let timer = null;
+    if (hasTimer) {
+      // Show an hours cell when the window is an hour or longer.
+      const showHours = (endsAt - Date.now()) >= 60 * 60 * 1000;
 
-    const timer = document.createElement('div');
-    timer.style.cssText = `
-      display: inline-flex;
-      gap: 8px;
-      margin-bottom: 18px;
-    `;
-    const makeCell = () => {
-      const cell = document.createElement('div');
-      cell.style.cssText = `
-        background: ${t.primary};
-        color: ${t.primaryText};
-        font-size: ${mobile ? '28px' : '34px'};
-        font-weight: 800;
-        line-height: 1;
-        padding: 14px 12px;
-        border-radius: 10px;
-        min-width: 54px;
-        font-variant-numeric: tabular-nums;
+      timer = document.createElement('div');
+      timer.style.cssText = `
+        display: inline-flex;
+        gap: 8px;
+        margin-bottom: 18px;
       `;
-      cell.textContent = '00';
-      return cell;
-    };
-    const makeColon = () => {
-      const colon = document.createElement('div');
-      colon.textContent = ':';
-      colon.style.cssText =
-        `font-size:28px;font-weight:800;color:${t.primary};align-self:center;`;
-      return colon;
-    };
-    const hourCell = showHours ? makeCell() : null;
-    const minCell = makeCell();
-    const secCell = makeCell();
-    if (hourCell) { timer.appendChild(hourCell); timer.appendChild(makeColon()); }
-    timer.appendChild(minCell);
-    timer.appendChild(makeColon());
-    timer.appendChild(secCell);
+      const makeCell = () => {
+        const cell = document.createElement('div');
+        cell.style.cssText = `
+          background: ${t.primary};
+          color: ${t.primaryText};
+          font-size: ${mobile ? '28px' : '34px'};
+          font-weight: 800;
+          line-height: 1;
+          padding: 14px 12px;
+          border-radius: 10px;
+          min-width: 54px;
+          font-variant-numeric: tabular-nums;
+        `;
+        cell.textContent = '00';
+        return cell;
+      };
+      const makeColon = () => {
+        const colon = document.createElement('div');
+        colon.textContent = ':';
+        colon.style.cssText =
+          `font-size:28px;font-weight:800;color:${t.primary};align-self:center;`;
+        return colon;
+      };
+      const hourCell = showHours ? makeCell() : null;
+      const minCell = makeCell();
+      const secCell = makeCell();
+      if (hourCell) { timer.appendChild(hourCell); timer.appendChild(makeColon()); }
+      timer.appendChild(minCell);
+      timer.appendChild(makeColon());
+      timer.appendChild(secCell);
 
-    const paint = () => {
-      const target = Number(modal.dataset.resparqTimerEndsAt) || endsAt;
-      let remaining = Math.max(0, Math.floor((target - Date.now()) / 1000));
-      const h = Math.floor(remaining / 3600);
-      const m = Math.floor((remaining % 3600) / 60);
-      const s = remaining % 60;
-      if (hourCell) {
-        hourCell.textContent = String(h).padStart(2, '0');
-        minCell.textContent = String(m).padStart(2, '0');
-      } else {
-        // No hours cell: roll any hours into the minutes display.
-        minCell.textContent = String(h * 60 + m).padStart(2, '0');
-      }
-      secCell.textContent = String(s).padStart(2, '0');
-    };
-    paint();
-    // Interval clears itself when the modal is removed from the DOM.
-    const tick = setInterval(() => {
-      if (!document.body.contains(modal)) { clearInterval(tick); return; }
+      const paint = () => {
+        const target = Number(modal.dataset.resparqTimerEndsAt) || endsAt;
+        let remaining = Math.max(0, Math.floor((target - Date.now()) / 1000));
+        const h = Math.floor(remaining / 3600);
+        const m = Math.floor((remaining % 3600) / 60);
+        const s = remaining % 60;
+        if (hourCell) {
+          hourCell.textContent = String(h).padStart(2, '0');
+          minCell.textContent = String(m).padStart(2, '0');
+        } else {
+          // No hours cell: roll any hours into the minutes display.
+          minCell.textContent = String(h * 60 + m).padStart(2, '0');
+        }
+        secCell.textContent = String(s).padStart(2, '0');
+      };
       paint();
-      const target = Number(modal.dataset.resparqTimerEndsAt) || endsAt;
-      if (target - Date.now() <= 0) clearInterval(tick);
-    }, 1000);
+      // Interval clears itself when the modal is removed from the DOM.
+      const tick = setInterval(() => {
+        if (!document.body.contains(modal)) { clearInterval(tick); return; }
+        paint();
+        const target = Number(modal.dataset.resparqTimerEndsAt) || endsAt;
+        if (target - Date.now() <= 0) clearInterval(tick);
+      }, 1000);
+    }
 
     const headline = document.createElement('h2');
     headline.textContent = props.headline;
@@ -841,8 +874,10 @@
     if (!props.showSecondary) secondaryCta.style.display = 'none';
 
     modal.appendChild(closeBtn);
-    modal.appendChild(label);
-    modal.appendChild(timer);
+    if (hasTimer) {
+      modal.appendChild(label);
+      modal.appendChild(timer);
+    }
     const badge = makeDiscountBadge(props.amountText, t);
     if (badge) { badge.style.display = 'block'; modal.appendChild(badge); }
     modal.appendChild(headline);

@@ -1129,11 +1129,14 @@
       // isn't known until generateUniqueCode() runs (during showModal), so seed
       // a 24h window here and reconcile to offerExpiresAt afterwards. Generic
       // codes have no hard expiry — present a 24h limited-time window.
+      // No-discount offers have nothing to expire — never arm fake urgency.
       let timerEndsAt = null;
-      if (s.offerExpiresAt) {
-        timerEndsAt = new Date(s.offerExpiresAt).getTime();
-      } else if (s.templateId === 'timer-front') {
-        timerEndsAt = Date.now() + 24 * 60 * 60 * 1000;
+      if (s.offerType !== 'no-discount') {
+        if (s.offerExpiresAt) {
+          timerEndsAt = new Date(s.offerExpiresAt).getTime();
+        } else if (s.templateId === 'timer-front') {
+          timerEndsAt = Date.now() + 24 * 60 * 60 * 1000;
+        }
       }
 
       const props = this.buildTemplateProps({
@@ -2331,8 +2334,9 @@
 
       // timer-front deadline: real offer expiry when known, else a 24h window.
       // Urgency gene puts the deadline in the copy, so suppress the timer then.
+      // No-discount offers have nothing to expire — never arm fake urgency.
       let timerEndsAt = null;
-      if (decision.templateId === 'timer-front' && !this.offerUrgency) {
+      if (decision.templateId === 'timer-front' && !this.offerUrgency && decision.type !== 'no-discount') {
         timerEndsAt = this.offerExpiresAt ? this.offerExpiresAt.getTime() : Date.now() + 24 * 60 * 60 * 1000;
       }
 
