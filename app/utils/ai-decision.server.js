@@ -244,6 +244,10 @@ export async function determineOffer(signals, aggression, _aiGoal, cartValue, sh
   // Previous abandoner who came back = second chance, high intent
   if (signals.hasAbandonedBefore) score += 25;
 
+  // Repeat abandonment = demonstrated intent + price hesitation (core recovery signal)
+  if (signals.abandonmentCount >= 1) score += 15;
+  if (signals.abandonmentCount >= 3) score += 10; // Chronic — strongly discount-responsive
+
   // Cart hesitation (added then removed items) = price sensitivity
   if (signals.cartHesitation > 0) score += 15;
 

@@ -219,6 +219,46 @@ export async function action({ request }) {
       });
     }
 
+    // ---------------------------------------------------------------------
+    // SERVER-SIDE SIGNAL ENRICHMENT: purchaseHistoryCount
+    // The Pro intent score (determineOffer) reads signals.purchaseHistoryCount,
+    // but the Pro storefront path sends raw signals with no client enrichment,
+    // so the signal was always undefined → inert. Resolve it here from the
+    // app-proxy logged_in_customer_id so it's live for BOTH tiers with no extra
+    // storefront round-trip. Guests (no customer id) correctly contribute 0.
+    // Uses numberOfOrders (ordersCount was removed in API 2026-01).
+    // ---------------------------------------------------------------------
+    if (signals.purchaseHistoryCount === undefined || signals.purchaseHistoryCount === null) {
+      try {
+        const loggedInCustomerId = new URL(request.url).searchParams.get('logged_in_customer_id');
+        if (loggedInCustomerId) {
+          const custResp = await admin.graphql(`
+            query {
+              customer(id: "gid://shopify/Customer/${loggedInCustomerId}") {
+                numberOfOrders
+                amountSpent { amount }
+              }
+            }
+          `);
+          const custJson = await custResp.json();
+          const customer = custJson?.data?.customer;
+          if (customer) {
+            signals.purchaseHistoryCount = parseInt(customer.numberOfOrders ?? 0, 10) || 0;
+            signals.customerLifetimeValue = parseFloat(customer.amountSpent?.amount ?? 0) || 0;
+            console.log(`[AI Decision] Enriched purchaseHistoryCount=${signals.purchaseHistoryCount} for customer ${loggedInCustomerId}`);
+          } else {
+            signals.purchaseHistoryCount = 0;
+          }
+        } else {
+          // No logged-in customer → guest → no purchase history.
+          signals.purchaseHistoryCount = 0;
+        }
+      } catch (err) {
+        console.error('[AI Decision] purchaseHistoryCount enrichment failed:', err);
+        signals.purchaseHistoryCount = signals.purchaseHistoryCount ?? 0;
+      }
+    }
+
     // PRE-CHECK: Run AI scoring to determine if intervention is warranted
     // This enables "no_intervention" as a learned outcome
     // Enterprise customers use the dedicated enterpriseAI() engine which

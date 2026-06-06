@@ -441,3 +441,272 @@ Don't restart the architectural conversation — decisions above are locked.
   (`ai-decision.server.js:185-286`) or change the marketing. User hasn't decided.
 - **Catch copy bandit / native theme block** — see "Open product questions".
   Both deferred. Scratch Reveal shipped in Sprint 2.
+
+---
+
+# Session 2026-06-05 — Signal wiring audit + Pro/Enterprise unification plan
+
+This session did two things: (1) resolved the 17-factors claim and audited/fixed
+the intent-signal wiring, and (2) discovered that Pro and Enterprise are two
+forked decision engines and produced a plan to unify them. **The unification is
+NOT built yet — it is the next instance's main job.** The concrete numbers
+(propensity bands, discount curve, margin floor) are specified below so the next
+instance does not have to re-derive them.
+
+## STATUS — read first
+
+- The signal-wiring fixes below are **applied as local edits but NOT yet
+  committed/pushed** (unless a commit was made after this doc was written —
+  check `git log`). The next instance MUST `git pull` and confirm these changes
+  are present, or they will be working against stale code.
+- The unification is a **plan only**. No unification code has been written.
+
+## 17 factors — RESOLVED (was unresolved in prior handoff)
+
+Decision: bump the code to 17 signals (not change marketing). Added two scoring
+contributions in `determineOffer` (`ai-decision.server.js`):
+
+- `abandonmentCount` (repeat cart abandonment): `>=1` +15, `>=3` +10.
+- This brought the Pro intent-score block to 17 distinct factors. Full table of
+  all 17 (source + weight + rationale) was added to
+  `AI_TECHNICAL_ARCHITECTURE.md` ("The 17 Intent-Scoring Factors").
+
+## Signal-wiring audit — 5 defects found and fixed
+
+Audited all 17 factors end-to-end (collected → sent/enriched → scored). 12 were
+fine. Five were broken and were fixed this session:
+
+- **#10 hasAbandonedBefore** — was DEAD. The `abandonedCart=true` cookie it reads
+  was never set anywhere. Always false.
+- **#11 abandonmentCount** — was DEAD. The `exitIntentAbandonments` localStorage
+  counter it reads was never written. Always 0.
+- Fix for #10 + #11: added `trackCartAbandonment()` in `exit-intent-modal.js`
+  (called in `init`). Detects abandonment via **next-session cart carryover** —
+  if a new session starts with items still in the cart from a prior session, the
+  prior session abandoned. Sets the cookie + increments the counter, guarded so
+  the same physical cart (by `cartFirstItemTimestamp`) is counted once.
+  Conversion is auto-excluded because checkout empties the cart, so a converted
+  cart never carries over. Chosen over `beforeunload` (fires on internal nav,
+  can't tell "left site" from "went to checkout & bought").
+- **#14 productDwellTime** — read bug. `getProductDwellTime()` returned 0 unless
+  the visitor was CURRENTLY on a product page, discarding all accumulated dwell
+  whenever the exit happened on cart/checkout/collection (the common case).
+  Fixed to return the accumulated session total regardless of current page.
+- **#15 purchaseHistoryCount** — structurally inert in Pro. The 17-factor score
+  lives in `determineOffer` (Pro only), but the Pro storefront path
+  (`getAIDecision`) sends raw signals with no enrichment, so this was always
+  undefined. Fixed with **server-side enrichment** in the `ai-decision` endpoint:
+  reads the app-proxy `logged_in_customer_id`, queries `customer.numberOfOrders`,
+  sets `signals.purchaseHistoryCount` before the decision. Works for both tiers,
+  no extra storefront round-trip. Guests correctly get 0.
+- **enrich-signals.jsx (Enterprise path) double bug** — it read
+  `response.data?.customer` without `await response.json()` (so it silently got
+  nothing) AND queried the removed `ordersCount` field (gone in API 2026-01).
+  Fixed both: `await response.json()` + `numberOfOrders`. This had made
+  purchaseHistoryCount inert on the Enterprise propensity path too.
+
+Files touched this session:
+- `extensions/exit-intent-modal/assets/exit-intent-modal.js` (trackCartAbandonment, getProductDwellTime)
+- `app/routes/apps.exit-intent.api.ai-decision.jsx` (purchaseHistoryCount enrichment)
+- `app/routes/apps.exit-intent.api.enrich-signals.jsx` (.json() + numberOfOrders)
+- `app/utils/ai-decision.server.js` (abandonmentCount scoring)
+- `AI_TECHNICAL_ARCHITECTURE.md` (17-factor table)
+
+## THE BIG FINDING — Pro and Enterprise are a hard fork
+
+There are two learning layers and they are in OPPOSITE states:
+
+- **Layer 1 — variant/template bandit** (`variant-engine.js`): already unified,
+  param-driven. Enterprise differs only by parameters (variant cap Pro 2 /
+  Enterprise 20, device-conditional priors). This is the desired shape. Leave it.
+- **Layer 2 — offer / show-decision engine** (`ai-decision.server.js`): a HARD
+  FORK. `determineOffer()` (Pro) and `enterpriseAI()` (Enterprise) are entirely
+  separate functions. This is what must be unified.
+
+Concrete divergences in Layer 2:
+- **Show/skip metric differs.** Pro feeds an additive 17-factor `score`
+  (unbounded, ~ -50..+200) into `shouldIntervene`; Enterprise feeds a 0-100
+  `propensityScore` (a different, log-scaled formula in `enrich-signals`) into
+  the same function. Same bandit, two incompatible scales → split learning.
+- **Hard overrides differ.** Pro only has SKIP overrides. Enterprise FORCE-SHOWS
+  via 4 dedicated offer builders (discount-seeker, checkout-recovery,
+  price-sensitive, stale-cart) that Pro lacks entirely.
+- **Offer math differs.** Pro: score→5-25%, fixed-vs-%, margin-capped via
+  `capDiscountForProfitability`. Enterprise: propensity tiers (>75 / 40-75 / <40)
+  + time-of-day modulation, and **NO margin cap at all** (biggest margin risk in
+  the codebase).
+- **Timing differs.** Enterprise returns `timing`; Pro relies on storefront
+  evolved trigger genes.
+
+Already shared (keep): `detectFunnelGoalFromSignals`, the `shouldIntervene`
+adaptive-threshold call, and device segmentation at the threshold
+(mobile/desktop/all — both tiers already do this).
+
+Side findings:
+- `determineOffer`'s `plan === 'enterprise'` promo branch (lines ~144-182) is
+  DEAD CODE — Enterprise never calls `determineOffer`. Delete during unification.
+- Margin-capping is Pro-only today; Enterprise must gain it (see margin floor).
+
+## UNIFICATION PLAN (Layer 2) — the next instance's main task
+
+Goal stated by the user: maximize conversion lift that is **noticeable in the
+store's Resparq dashboard**, WITHOUT throwing big offers at every add-to-cart
+(a conversion that loses money on the order is worthless). Collapse
+`determineOffer` + `enterpriseAI` into ONE engine where tier is pure config.
+
+Target shape:
+
+```
+decideOffer(signals, ctx) -> { show, type, amount, threshold, timing,
+                               triggerReason, reasoning, confidence }
+  ctx = { plan, aggression, cartValue, shopId, tierProfile, marginFloor, testMode }
+```
+
+Four shared stages (each currently duplicated/forked):
+
+- **Stage 1 — One scoring metric: unified propensity P in [0,100]** = P(convert
+  WITHOUT an offer). Promote `calculatePropensity` (currently in
+  `enrich-signals.jsx`, 23-signal log-scaled) into a shared `propensity.server.js`
+  used by both tiers AND the endpoint. RETIRE Pro's additive `score` block; the
+  17 factors fold into propensity. High P → little/no offer; low P → bigger offer.
+- **Stage 2 — One show/skip decision.** Both tiers feed the SAME propensity into
+  the SAME `shouldIntervene(db, shopId, P, segment)`. One ordered hard-override
+  list (force-show: failedCoupon, checkoutExit, hesitation>1, staleCart>60;
+  force-skip: accidental visit, P>=85). Consistent triggerReason for both.
+- **Stage 3 — One offer constructor, margin-aware** (see curve + floor below).
+  The 4 Enterprise trigger builders become presets available to BOTH tiers.
+  Revenue (AOV threshold) vs conversion (direct discount) modes shared.
+  Time-of-day modulation available to both.
+- **Stage 4 — Margin guardrail, always-on.** Apply the margin floor to EVERY
+  path (Enterprise currently skips it). Keep `checkBudget` and the existing
+  holdout group (`isHoldout`) so dashboard "recovered revenue" is true
+  incremental lift, not inflated.
+
+Tier becomes a profile, not a fork:
+- variantCap: Pro 2 / Enterprise 20 (more modals → faster learning)
+- explorationRate / annealing: Enterprise more aggressive (learns faster)
+- deviceConditioning: Pro = segment threshold only; Enterprise = device-conditional
+  offer PRIORS (partial-pool, layered on the unified offer — NOT new segments,
+  per locked decision)
+- timingControl: Pro = trigger genes; Enterprise = engine emits timing
+- promoControl: Pro = detect-only (upsell); Enterprise = auto-optimize
+- marginFloor: enforced for both
+
+## THE NUMBERS — propensity, discount curve, margin floor (USE THESE)
+
+These were chosen so a store sees a real, attributable lift in the dashboard
+while no single offer can turn an order unprofitable. Anchored to the existing
+`capDiscountForProfitability` assumption (~40% avg margin, give away at most half
+of it), made configurable.
+
+Unified propensity P in [0,100] = probability the visitor converts with NO offer.
+
+Discount curve (conversion mode), pre-margin-clamp:
+
+```
+D_MIN = 5      // percent — below this, do NOT discount; show no-discount/announce
+D_MAX = 25     // percent — absolute ceiling on any single exit offer
+P_LO  = 20
+P_HI  = 80
+d_raw(P) = clamp( D_MIN + (D_MAX - D_MIN) * (P_HI - P) / (P_HI - P_LO), D_MIN, D_MAX )
+d_curve  = d_raw * (aggression / 5)   // merchant dial 0-10, default 5 -> 1.0x
+```
+
+Margin floor (hard guardrail, always-on, applied after the curve):
+
+```
+assumedGrossMargin = settings.assumedGrossMargin ?? 0.40   // overridable per store
+MAX_MARGIN_SHARE   = 0.50    // an offer may consume at most half the gross margin
+MARGIN_FLOOR       = 0.20    // post-discount gross margin must stay >= 20%
+
+shareCap = MAX_MARGIN_SHARE * assumedGrossMargin                  // 0.40 -> 20%
+floorCap = 1 - (1 - assumedGrossMargin) / (1 - MARGIN_FLOOR)      // 0.40 -> 25%
+aggrCap  = 10 + aggression * 1.5    // existing capDiscountForProfitability: 10-25%
+final_d  = min(d_curve, shareCap, floorCap, aggrCap, D_MAX)
+if (final_d < D_MIN) -> no-discount / announcement modal (zero margin cost)
+```
+
+Consolidate this into `capDiscountForProfitability` (extend it to take
+assumedGrossMargin; keep the aggression term it already has).
+
+CRITICAL — `aggression` is the MERCHANT'S dial, not an AI-learned value. The store
+sets "Promo Aggression" (0-10) in the Admin (AISettingsTab.jsx, persisted in the
+shop settings metafield -> Shop.aggression). The decision endpoint reads it from
+`settings.aggression` and passes it into the engine; the AI must NEVER override it
+upward. It appears in TWO places and both must keep listening to the store value:
+  1. `d_curve = d_raw * (aggression / 5)` — scales the whole curve. 0 = AI shows
+     no discounts at all (announce-only); 5 = neutral 1.0x; 10 = 2.0x toward D_MAX.
+  2. `aggrCap = 10 + aggression * 1.5` — the merchant's hard ceiling, still inside
+     the margin floor. The AI may only move the offer DOWN from this cap, never up.
+Per-segment/Bayesian learning tunes WHICH carts get discounted and the propensity
+estimate — it does not get to exceed the merchant's aggression ceiling. aggression=0
+must short-circuit to a no-discount modal on every path.
+
+Worked examples (assumedGrossMargin 0.40, aggression 5 -> aggrCap 17.5%, shareCap 20%):
+
+```
+P >= 85  -> announce only, $0 margin spent (they'll convert anyway)
+P = 75   -> d_raw 6.7%  -> ~7%
+P = 60   -> d_raw 11.7% -> ~12%
+P = 45   -> d_raw 16.7% -> ~17%
+P = 30   -> d_raw 21.7% -> clamped to 17.5% (aggrCap)
+P = 20   -> d_raw 25%   -> clamped to 17.5% (aggrCap)
+```
+
+So default stores: hot carts 0-7%, warm ~12%, cool/cold capped ~17.5%. Merchant
+raising aggression lifts the ceiling toward 25% but the margin caps still bind
+first on thin-margin stores.
+
+Why these numbers (so the next instance does not relitigate):
+- **D_MIN 5%:** below ~5% an offer is ignorable and won't lift claims, so it
+  produces no visible dashboard signal — better to show a no-discount/announce
+  modal (captures the visitor, spends zero margin).
+- **D_MAX 25%:** matches the historical ceiling; at 40% assumed margin a 25%
+  discount still leaves ~33% post-discount margin — safe.
+- **P_LO 20 / P_HI 80:** concentrates real discounts in the band where the modal
+  is actually causal. At P>=85 the customer converts anyway, so discounting there
+  burns margin AND pollutes attribution — skip/announce. The curve tapers to
+  near-zero by P=80.
+- **MAX_MARGIN_SHARE 0.50 + MARGIN_FLOOR 0.20:** even a worst-case thin-margin
+  store keeps a positive, meaningful per-order profit; the guardrail binds before
+  any offer makes the order a money-loser. This is the "don't decimate margin"
+  requirement, enforced structurally.
+
+How this makes value VISIBLE in the dashboard (the user's explicit ask):
+- Concentrating spend on carts that actually need it raises **incremental**
+  conversion per margin dollar — the recovered-revenue figure is both larger and
+  credible.
+- Showing across the mid/low propensity band (not skipping everyone) gives a
+  visible VOLUME of recovered carts.
+- A >=5% minimum effective offer means claimed offers actually convert.
+- Attribute everything against the existing 5% holdout (`isHoldout`) so
+  "recovered revenue" is true lift, not inflated — a number the merchant trusts.
+
+## Migration (safe — live AI flag is ON, but ZERO customers so no real data to lose)
+
+1. **Phase A** — Extract `computePropensity` + `constructOffer` + unified
+   overrides into a core. Keep `determineOffer`/`enterpriseAI` as thin wrappers
+   calling the core with a tierProfile. Zero caller change.
+2. **Phase B** — Point the endpoint at `decideOffer` directly. Delete the forks
+   and the dead `determineOffer` enterprise promo branch.
+3. **Phase C** — RESET the adaptive-threshold buckets. Pro moves from additive
+   `score` to `propensity`, so existing `InterventionThreshold` rows are on the
+   wrong scale. Zero customers = ideal time to reset.
+4. **Phase D** — Verify via the `?resparqPreview=<templateId>` harness + a
+   real-store eyeball (folds into the outstanding Sprint 3 verification debt).
+
+Tests to add:
+- **Golden-master:** snapshot current Pro + Enterprise outputs over a
+  signal-fixture matrix; assert intended parity/improvement post-refactor.
+- **Margin invariant:** randomized carts x offers -> assert post-discount margin
+  >= MARGIN_FLOOR on EVERY code path. This is the regression guard for the
+  "don't lose money" requirement.
+
+Risks:
+- Threshold metric scale change -> must reset bandit buckets (Phase C).
+- Adding the margin cap to Enterprise shrinks some Enterprise offers -> slightly
+  lower conversion on those, BY DESIGN (the conversion-vs-margin tradeoff).
+- Time-of-day modulation is new behavior for Pro.
+
+Don't relitigate the locked architecture decisions earlier in this doc; the
+unification implements them, it does not change them.

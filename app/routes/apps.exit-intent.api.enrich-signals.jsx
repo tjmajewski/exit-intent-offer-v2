@@ -9,22 +9,23 @@ export async function action({ request }) {
   
   if (customerId) {
     try {
-      // Shopify API calls
+      // Shopify API calls. admin.graphql() returns a Response — must .json() it.
+      // numberOfOrders replaces the removed ordersCount field (API 2026-01).
       const response = await admin.graphql(`
         query {
           customer(id: "gid://shopify/Customer/${customerId}") {
-            ordersCount
+            numberOfOrders
             amountSpent {
               amount
             }
           }
         }
       `);
-      
-      const customerData = response.data?.customer;
-      
+
+      const customerData = (await response.json())?.data?.customer;
+
       if (customerData) {
-        enriched.purchaseHistoryCount = customerData.ordersCount || 0;
+        enriched.purchaseHistoryCount = parseInt(customerData.numberOfOrders ?? 0, 10) || 0;
         enriched.customerLifetimeValue = parseFloat(customerData.amountSpent?.amount || 0);
         enriched.averageOrderValue = enriched.purchaseHistoryCount > 0 
           ? enriched.customerLifetimeValue / enriched.purchaseHistoryCount 

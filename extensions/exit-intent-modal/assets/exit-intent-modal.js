@@ -365,7 +365,11 @@
 
       // Track cart age (when items were first added)
       this.trackCartAge();
-      
+
+      // Record cart abandonment from a prior session (feeds hasAbandonedBefore
+      // + abandonmentCount intent signals)
+      this.trackCartAbandonment();
+
       // AI Mode: Set up intelligent triggers
       if (this.settings.mode === 'ai' && this.settings.plan === 'enterprise') {
         // Enterprise AI evaluation (decides if/when to show)
@@ -545,25 +549,13 @@
     }
     
     getProductDwellTime() {
-      // Track time spent on product pages
-      const currentPath = window.location.pathname;
-
-      // Check if on a product page
-      if (currentPath.includes('/products/')) {
-        const dwellStart = sessionStorage.getItem('productPageStart');
-
-        if (!dwellStart) {
-          // First product page of session
-          sessionStorage.setItem('productPageStart', Date.now());
-          return 0;
-        }
-
-        // Calculate total dwell time across all product pages
-        const totalDwell = parseInt(sessionStorage.getItem('totalProductDwell') || '0');
-        return totalDwell;
-      }
-
-      return 0;
+      // Total seconds spent on product pages this session. Accumulated by
+      // trackProductDwellTime() (a 5s interval + a beforeunload flush) into
+      // sessionStorage.totalProductDwell, which already includes the current
+      // page in progress. Return it regardless of the CURRENT page — otherwise
+      // dwell was lost whenever the exit happened off a product page (cart,
+      // checkout, collection), which is the common case.
+      return parseInt(sessionStorage.getItem('totalProductDwell') || '0');
     }
 
     // HIGH-VALUE SIGNAL: Failed coupon attempt detection
@@ -741,6 +733,53 @@
       // Check on load and when cart updates
       checkCart();
       document.addEventListener('cart:updated', checkCart);
+    }
+
+    // Record a cart abandonment when a NEW session starts with items that were
+    // carried over from a previous session without a purchase. Feeds two intent
+    // signals: hasAbandonedBefore (cookie boolean) + abandonmentCount (counter).
+    //
+    // Why detect on next-session carryover instead of beforeunload:
+    //  - beforeunload fires on every internal navigation → false positives
+    //  - it can't distinguish "left the site" from "went to checkout & bought"
+    //  - a purchase empties the cart, so trackCartAge() clears
+    //    cartFirstItemTimestamp → a converted cart never carries over → never
+    //    counted as abandoned. Conversion is excluded for free.
+    trackCartAbandonment() {
+      const SESSION_KEY = 'exitIntentSessionStarted';
+      const isNewSession = !sessionStorage.getItem(SESSION_KEY);
+      sessionStorage.setItem(SESSION_KEY, '1');
+
+      // Only evaluate once, at the start of each new session.
+      if (!isNewSession) return;
+
+      fetch('/cart.js')
+        .then(r => r.json())
+        .then(cart => {
+          // Nothing carried over → no abandonment to record.
+          if (!cart || cart.item_count <= 0) return;
+
+          // No age stamp means the cart was created during THIS session by
+          // trackCartAge → still actively shopping, not an abandonment.
+          const ts = localStorage.getItem('cartFirstItemTimestamp');
+          if (!ts) return;
+
+          // Guard against double-counting the same physical cart across multiple
+          // return visits. We only count a given cart (identified by its
+          // first-item timestamp) once. A new cart gets a new timestamp.
+          const counted = localStorage.getItem('exitIntentAbandonCountedFor');
+          if (counted === ts) return;
+
+          const next = parseInt(localStorage.getItem('exitIntentAbandonments') || '0') + 1;
+          localStorage.setItem('exitIntentAbandonments', next);
+          localStorage.setItem('exitIntentAbandonCountedFor', ts);
+
+          // 30-day cookie powers the hasAbandonedBefore boolean signal.
+          document.cookie = 'abandonedCart=true; path=/; max-age=' + (60 * 60 * 24 * 30);
+
+          console.log('[Signal] Cart abandonment recorded (prior session), count:', next);
+        })
+        .catch(err => console.error('[Signal] Error recording cart abandonment:', err));
     }
 
     // Cart monitoring for add-to-cart timer trigger

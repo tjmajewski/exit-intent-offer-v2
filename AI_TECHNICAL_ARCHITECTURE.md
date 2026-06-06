@@ -166,6 +166,37 @@ Pro uses an intent scoring system to make show/no-show decisions. Hard overrides
 | `cartHesitation > 1` | Always show — price-sensitive |
 | Otherwise | **Adaptive threshold decides** (Thompson Sampling per score bucket) |
 
+### The 17 Intent-Scoring Factors
+
+The intent score is the sum of weighted contributions from 17 behavioral factors, computed in [`app/utils/ai-decision.server.js`](app/utils/ai-decision.server.js) (scoring block ~lines 185–290). A higher score means the visitor is more likely to convert with a nudge. Hard overrides (table above) sit on top of the score for the strongest signals.
+
+Most factors are collected client-side in [`extensions/exit-intent-modal/assets/exit-intent-modal.js`](extensions/exit-intent-modal/assets/exit-intent-modal.js) and sent with the decision request. Two are enriched server-side from Shopify customer data via [`app/routes/apps.exit-intent.api.enrich-signals.jsx`](app/routes/apps.exit-intent.api.enrich-signals.jsx).
+
+| # | Factor | Source | Scoring | Why |
+|---|--------|--------|---------|-----|
+| 1 | `visitFrequency` | client (localStorage visit count) | `>1` +20, `>3` +10; `==1` −10 | Returning visitors convert 2–3× better; first-timers rarely convert |
+| 2 | `trafficSource` | client (referrer parse) | `paid` +15 | Ad clickers are pre-qualified, showed intent |
+| 3 | `timeOnSite` | client (session timer, sec) | `>120` +20, `>300` +10; `<30` −15 | Long sessions = genuine consideration; quick exits = accidental |
+| 4 | `pageViews` | client (sessionStorage) | `>=5` +15, `>=3` +10; `<2` −10 | Deeper browsing = engagement |
+| 5 | `cartValue` | client (cart total) | `50–200` +10, `>100` +5; `<25` −10 | Sweet-spot carts are serious but not over-committed; tiny carts rarely convert |
+| 6 | `accountStatus` | client (`Shopify.customer`) | `logged_in` +15 | Account holders are more committed |
+| 7 | `scrollDepth` | client (max scroll %) | `>75` +10 | Read the content, engaged with the page |
+| 8 | `deviceType` | client (UA) | `mobile` −5 | Mobile converts ~50% lower than desktop |
+| 9 | `failedCouponAttempt` | client (checkout/discount error) | +35 | **Strongest signal** — customer explicitly wants a discount |
+| 10 | `hasAbandonedBefore` | client (cookie boolean) | +25 | Returning abandoner = second-chance, high intent |
+| 11 | `abandonmentCount` | client (localStorage counter) | `>=1` +15, `>=3` +10 | Repeat abandonment = demonstrated intent + price hesitation; chronic abandoners are strongly discount-responsive (core recovery signal) |
+| 12 | `cartHesitation` | client (add/remove tracking) | `>0` +15 | Add-then-remove behavior = price sensitivity |
+| 13 | `exitPage` | client (path context) | `checkout` +30, `cart` +15 | Exit from checkout = was about to buy, something stopped them |
+| 14 | `productDwellTime` | client (product-page timer, sec) | `>60` +15 | Long dwell = serious consideration of a specific product |
+| 15 | `purchaseHistoryCount` | **server** (enrich-signals, Shopify orders) | `>0` +20, `>3` +10 | Past customers know and trust the brand; loyal customers more so |
+| 16 | `cartAgeMinutes` | client (cart timestamp) | `>30` +10, `>60` +5 | Stale carts may need a push to close |
+| 17 | `localHour` | client (browser hour 0–23) | late-night (22–5) +20, early-AM (5–8) +10, lunch (11–13) +5, mid-PM (14–17) −5 | Late-night shoppers are deliberate/impulsive (high intent); mid-afternoon is casual browsing (lowest) |
+
+**Notes:**
+- Weights are hand-tuned priors. The store has no live conversion data yet, so they are not empirically fit — the [adaptive intervention threshold](#adaptive-intervention-thresholds) corrects show/no-show decisions per score bucket once real outcomes accumulate.
+- `purchaseHistoryCount` is `0` unless server-side enrichment resolves a logged-in customer; for guests it contributes nothing.
+- `abandonmentCount` (#11) is numeric and layered on top of the `hasAbandonedBefore` boolean (#10) — the two are intentionally complementary (binary first-touch vs. graded repeat behavior), not duplicates.
+
 ### Enterprise Tier
 - **Advanced AI** with all signals including high-value indicators
 - AI determines **what**, **when**, and **whether** to show
