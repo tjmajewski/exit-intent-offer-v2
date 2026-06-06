@@ -1,5 +1,44 @@
 # @shopify/shopify-app-template-react-router
 
+## Resparq AI - June 5, 2026 (Offer Engine Unification + Always-On Margin Floor)
+
+### Changed
+- **Pro and Enterprise offer decisions are now ONE engine.** `determineOffer`
+  (Pro) and `enterpriseAI` (Enterprise) — previously two forked functions with
+  incompatible scoring scales — were collapsed into a single
+  `decideOffer(signals, ctx)` in
+  [`app/utils/ai-decision.server.js`](app/utils/ai-decision.server.js). Tier is
+  now config, not a code fork. Show/skip, trigger overrides, offer math, and the
+  margin floor are identical for both tiers; tiering lives in the variant engine
+  (Layer 1) + endpoint config.
+- **One unified propensity metric.** Both tiers (and the decision endpoint) now
+  score with [`computePropensity`](app/utils/propensity.server.js) — a single
+  0-100 propensity P (probability of converting WITHOUT an offer). Retired the
+  Pro additive 17-factor "intent score"; the bandit's adaptive intervention
+  threshold now learns on ONE scale instead of two incompatible ones.
+
+### Added
+- **Always-on margin floor (both tiers).** Every offer path runs through
+  `offerCeilingPercent` — a propensity-tapered discount curve scaled by the
+  merchant aggression dial, hard-clamped so post-discount gross margin stays
+  ≥ 20%, the offer consumes ≤ half the gross margin, and it never exceeds the
+  merchant's aggression ceiling. Sub-floor results become announce-only modals
+  (zero margin spent). Enterprise previously had NO margin cap — its biggest
+  margin risk — now closed. Ceiling floors (not rounds) so the integer result
+  can never round up through a cap.
+- **Regression guards** (no test runner in this project — standalone node
+  harnesses): `scripts/dev/verify-margin-invariant.mjs` (20k randomized draws
+  assert the margin invariant on every path) and `scripts/dev/golden-master.mjs`
+  (pins engine output across 20 representative scenarios).
+
+### Removed
+- Deleted the four Enterprise-only offer builders (discount-seeker,
+  checkout-recovery, price-sensitive, stale-cart), `capDiscountForProfitability`,
+  and the dead `determineOffer` enterprise promo branch. `determineOffer` remains
+  only as a thin legacy wrapper for the webhook + idle-cart callers.
+- Reset the `InterventionThreshold` table — Pro's pre-unification rows were on the
+  old additive-score scale; cleared so the bandit relearns on unified propensity.
+
 ## Resparq AI - May 17, 2026 (Friction Reduction & Dismissal Recovery)
 
 ### Added

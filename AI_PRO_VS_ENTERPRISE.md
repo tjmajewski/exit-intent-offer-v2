@@ -198,9 +198,12 @@
 - Use case: Black Friday sale already live
 
 **B. Increase Offers**
-- AI automatically beats promo by 5%+
-- Example: 20% site-wide → AI offers 25%+
-- Use case: Want exit intent to beat regular promo
+- AI raises offers toward the promo level, still inside the margin floor
+- Example: 20% site-wide → AI lifts offers up to the 25% absolute ceiling
+  (`D_MAX`), but the always-on margin floor binds first on thin-margin stores
+- Use case: Want exit intent to stay competitive with a regular promo
+- Note: the margin floor (post-discount margin ≥ 20%, offer ≤ half the margin)
+  is never overridden — the AI cannot exceed it to "beat" a promo
 
 **C. Merchant Override**
 - Custom aggression during promo

@@ -1,10 +1,21 @@
-# Margin Protection Feature - Enterprise AI Mode
+# Margin Protection Feature - AI Mode
 
-**Status:** Pre-Implementation Documentation
-**Target Release:** Before Production Launch
-**Plan Tier:** Enterprise Only
+**Status:** SUPERSEDED — a simplified margin floor shipped (June 2026) instead
+of this per-product-cost design.
+**Plan Tier:** Both Pro and Enterprise (no longer Enterprise-only)
 **Mode:** AI Mode Only
-**Priority:** High (Pre-Launch Requirement)
+
+---
+
+> **What actually shipped.** The June 2026 offer-engine unification made margin
+> protection **always-on for both tiers** via `offerCeilingPercent` in
+> [`app/utils/ai-decision.server.js`](app/utils/ai-decision.server.js). It uses a
+> single per-store `assumedGrossMargin` setting (default 0.40), NOT per-product
+> Shopify `unitCost` fetching. Three caps bind every offer: post-discount gross
+> margin ≥ 20%, offer ≤ half the gross margin, and the merchant's aggression
+> ceiling. Regression-guarded by `scripts/dev/verify-margin-invariant.mjs`. The
+> per-product cost-based design below is **deferred** — kept for reference if
+> finer-grained, SKU-level margin control is ever needed.
 
 ---
 

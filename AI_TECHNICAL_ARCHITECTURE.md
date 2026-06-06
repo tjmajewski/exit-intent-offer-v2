@@ -1,5 +1,5 @@
 # Resparq AI - Technical Architecture
-**Last Updated:** April 6, 2026
+**Last Updated:** June 5, 2026
 **Audience:** Developers
 
 ---
@@ -113,7 +113,7 @@ Propensity scoring uses **continuous functions with logarithmic diminishing retu
 
 **Contradiction Handling:** If `visitFrequency = 1` but `purchaseHistoryCount > 0`, the first-visit penalty is skipped (returning customer on a new device/session).
 
-Enterprise AI also uses time of day to adjust discount sizing: late-night shoppers get ~20% smaller discounts (impulse buyers need less incentive), while afternoon browsers get ~15% larger discounts (casual browsers need more nudging).
+Time of day feeds the unified propensity (both tiers): late-night shoppers score higher (impulse intent → smaller offers), while mid-afternoon browsers score lower (casual browsing → larger offers). It shapes the offer indirectly through P, not as a separate discount multiplier.
 
 ---
 
@@ -153,22 +153,38 @@ Even though Starter customers can't enable AI, their data helps train it:
 - Trigger type is an evolved gene (`exit_intent`, `idle`, or `exit_intent_or_idle`)
 - Activates at add-to-cart time (watches for cart changes if cart is initially empty)
 
-**Pro AI "Should We Show" Logic:**
+**"Should We Show" Logic (both tiers):**
 
 Pro uses an intent scoring system to make show/no-show decisions. Hard overrides are kept for the strongest signals, but the gray zone is now handled by **adaptive intervention thresholds** (see [Adaptive Intervention Thresholds](#adaptive-intervention-thresholds)).
 
 | Condition | Decision |
 |-----------|----------|
-| Score < 0 | Don't show — very unlikely to convert |
 | First visit + quick exit + cart < $50 | Don't show — accidental visit |
 | `failedCouponAttempt` | Always show — explicitly seeking discount |
 | `exitPage = 'checkout'` | Always show — needs help completing |
 | `cartHesitation > 1` | Always show — price-sensitive |
-| Otherwise | **Adaptive threshold decides** (Thompson Sampling per score bucket) |
+| `cartAgeMinutes > 60` | Always show — stale cart needs a push |
+| Otherwise | **Adaptive threshold decides** (Thompson Sampling per propensity bucket) |
 
-### The 17 Intent-Scoring Factors
+Both tiers run the SAME ordered override list and the SAME adaptive threshold,
+keyed on the unified propensity P (see below). High propensity does not force a
+skip — it yields an **announce-only** modal (offer ceiling 0, zero margin spent).
 
-The intent score is the sum of weighted contributions from 17 behavioral factors, computed in [`app/utils/ai-decision.server.js`](app/utils/ai-decision.server.js) (scoring block ~lines 185–290). A higher score means the visitor is more likely to convert with a nudge. Hard overrides (table above) sit on top of the score for the strongest signals.
+### The 17 Intent Factors → unified propensity
+
+> **Engine unification (June 2026).** The old additive Pro "intent score" and the
+> separate Enterprise propensity formula were collapsed into ONE metric. Both
+> tiers now feed these factors into [`computePropensity`](app/utils/propensity.server.js)
+> (unified propensity **P ∈ [0,100]** = probability the visitor converts WITHOUT
+> an offer). High P → little/no offer; low P → bigger offer. The discrete weights
+> in the table below (`+20`, `+35`, …) are the legacy additive priors kept for
+> *direction and rationale* — the live engine expresses them as log-scaled,
+> bounded contributions in `propensity.server.js`, so a single signal can no
+> longer dominate. There is no longer a separate `determineOffer` (Pro) vs
+> `enterpriseAI` (Enterprise) scoring path.
+
+The 17 factors below are the behavioral inputs that feed P. A higher P means the
+visitor is more likely to convert on their own, so the engine spends less margin.
 
 Most factors are collected client-side in [`extensions/exit-intent-modal/assets/exit-intent-modal.js`](extensions/exit-intent-modal/assets/exit-intent-modal.js) and sent with the decision request. Two are enriched server-side from Shopify customer data via [`app/routes/apps.exit-intent.api.enrich-signals.jsx`](app/routes/apps.exit-intent.api.enrich-signals.jsx).
 
@@ -197,29 +213,22 @@ Most factors are collected client-side in [`extensions/exit-intent-modal/assets/
 - `purchaseHistoryCount` is `0` unless server-side enrichment resolves a logged-in customer; for guests it contributes nothing.
 - `abandonmentCount` (#11) is numeric and layered on top of the `hasAbandonedBefore` boolean (#10) — the two are intentionally complementary (binary first-touch vs. graded repeat behavior), not duplicates.
 
-### Enterprise Tier
-- **Advanced AI** with all signals including high-value indicators
-- AI determines **what**, **when**, and **whether** to show
-- Access to 17+ signals including failed coupon detection and time-of-day
-- Dynamic timing control (immediate, exit_intent, delayed)
-- Smart "should we show" logic
-- Promotional intelligence integration
-- Budget-aware offer sizing
+### Shared offer-decision capabilities (both tiers)
 
-**Enterprise-Exclusive Features:**
+Since the June 2026 unification, the offer-decision capabilities below are
+available to **both** Pro and Enterprise — they live in `decideOffer`, not in a
+tier fork. (Tier differences are in Layer 1 + endpoint config; see the table in
+§5 `ai-decision.server.js`.)
 
-1. **Failed Coupon Detection**: If customer tries an invalid coupon code, they're flagged as discount-seeking. Enterprise AI immediately shows a targeted offer.
+1. **Failed Coupon Detection**: An invalid coupon attempt flags discount-seeking → force-show with `immediate` timing.
 
-2. **Exit Page Context**: Different strategies for checkout abandonment vs. product page exit.
+2. **Exit Page Context**: `checkout` exit force-shows immediately; other exit pages feed the propensity + adaptive threshold.
 
-3. **Cart Age Tracking**: Stale carts (60+ minutes) get proactive offers.
+3. **Cart Age Tracking**: Stale carts (60+ minutes) force-show with `immediate` timing.
 
-4. **Cart Hesitation Analysis**: Add/remove behavior indicates price sensitivity.
+4. **Cart Hesitation Analysis**: `cartHesitation > 1` force-shows (add/remove = price sensitivity).
 
-5. **Smart Timing**: AI decides optimal moment to show modal:
-   - `immediate`: Show right away (high intent signals)
-   - `exit_intent`: Wait for exit (standard)
-   - `delayed`: Wait X seconds (building engagement)
+5. **Smart Timing**: `immediate` for failedCoupon / checkoutExit / staleCart; otherwise `exit_intent`.
 
 ---
 
@@ -506,17 +515,31 @@ clearAllSocialProofCache()
 
 ### 6. `ai-decision.server.js`
 
-**Purpose:** Determine offer type and amount based on signals
+**Purpose:** One unified, margin-aware offer engine. Decides whether to show, what offer, and the timing — identical logic for both tiers (tier is config, not a fork).
+
+> **Unification (June 2026).** `determineOffer` (Pro) and `enterpriseAI`
+> (Enterprise) were collapsed into a single `decideOffer(signals, ctx)`. The four
+> Enterprise-only offer builders (discount-seeker / checkout-recovery /
+> price-sensitive / stale-cart) and the dead `determineOffer` enterprise promo
+> branch were deleted. `determineOffer` survives only as a thin legacy wrapper
+> (webhook + idle-cart callers); the decision endpoint calls `decideOffer`
+> directly.
 
 **Key Functions:**
 ```javascript
-// Pro AI: Main decision function
-determineOffer(signals, aggression, _aiGoal, cartValue, shopId, plan)  // aiGoal ignored, auto-detected from signals
-→ { type, amount, threshold, confidence, reasoning }
+// Unified decision engine (both tiers). testMode/shopId null => no DB access.
+decideOffer(signals, ctx)
+  // ctx = { aggression=5, cartValue, shopId=null, testMode=false, assumedGrossMargin=0.40 }
+→ { show, propensity, triggerReason, timing, ceilingPercent,
+    type, amount, threshold, confidence, reasoning } | null
 
-// Enterprise AI: Advanced decision with timing and high-value signals
-enterpriseAI(signals, aggression, _aiGoal, shopId)  // aiGoal ignored, auto-detected from signals
-→ { type, amount, timing, confidence, reasoning }
+// Margin-aware discount ceiling (always-on guardrail, both tiers).
+offerCeilingPercent({ propensity, aggression=5, assumedGrossMargin=0.40 })
+→ integer percent in [0, 25]   // 0 = announce-only (no discount)
+
+// Legacy wrapper — preserves the old shape for webhook + idle-cart callers.
+determineOffer(signals, aggression, _aiGoal, cartValue, shopId, plan, { testMode })
+→ { type, amount, threshold, timing, confidence, triggerReason, reasoning } | null
 
 // Budget check
 checkBudget(db, shopId, budgetPeriod)
@@ -527,101 +550,75 @@ analyzeCartComposition(signals)
 → { isHighTicket, isMultiItem, avgItemPrice, itemCount }
 ```
 
-**Pro vs Enterprise Decision Flow:**
+**The offer ceiling (margin floor, always-on).** Every path runs through
+`offerCeilingPercent`. Linear taper by propensity, scaled by the merchant's
+aggression dial, then clamped by three margin caps:
+
+```
+D_MIN=5  D_MAX=25  P_LO=20  P_HI=80          // curve bounds
+dCurve   = clamp(D_MIN + (D_MAX-D_MIN)*(P_HI-P)/(P_HI-P_LO), 0, D_MAX) * (aggression/5)
+shareCap = 0.50 * assumedGrossMargin * 100   // offer consumes <= half the margin
+floorCap = (1 - (1-agm)/(1-0.20)) * 100      // post-discount margin stays >= 20%
+aggrCap  = 10 + aggression * 1.5             // merchant's hard ceiling
+final    = floor(min(dCurve, shareCap, floorCap, aggrCap, D_MAX))
+return final < D_MIN ? 0 : final             // sub-floor => announce-only
+```
+
+`aggression` is the MERCHANT'S dial (0–10, from settings) — the AI may only move
+an offer DOWN from this ceiling, never up. `aggression = 0` short-circuits to
+announce-only everywhere. Regression-guarded by
+[`scripts/dev/verify-margin-invariant.mjs`](scripts/dev/verify-margin-invariant.mjs)
+and [`scripts/dev/golden-master.mjs`](scripts/dev/golden-master.mjs).
+
+**Unified Decision Flow (both tiers):**
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     PRO AI FLOW                             │
+│                  decideOffer(signals, ctx)                  │
 ├─────────────────────────────────────────────────────────────┤
-│ 1. ACTIVATION (page load or add-to-cart):                   │
-│    - If cart has items → activate immediately               │
-│    - If cart empty → watchForAddToCart() listens for:       │
-│      • cart:updated event                                   │
-│      • Add-to-cart button click                             │
-│      • Cart polling fallback (every 3s)                     │
-│    - Once cart has items → activate                         │
-│ 2. Pre-fetch AI decision (POST /api/ai-decision)           │
-│ 3. Collect signals (core + basic high-value)                │
-│ 4. Calculate intent score                                   │
-│ 5. SHOULD WE SHOW? (adaptive thresholds)                     │
-│    - Score < 0 → NO                                         │
-│    - First visit + quick exit + low cart → NO               │
-│    - Hard overrides (coupon/checkout/hesitation) → YES      │
-│    - Otherwise: shouldIntervene() per score bucket           │
-│ 6. WHEN TO SHOW? (evolved trigger gene)                     │
-│    - exit_intent: mouseout on desktop                       │
-│    - idle: fires after X seconds of inactivity              │
-│    - exit_intent_or_idle: whichever fires first             │
-│    - Mobile fallback: idle 30s if exit_intent-only          │
-│ 7. Calculate offer based on score + aggression              │
-│ 8. Show modal with offer                                    │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│                   ENTERPRISE AI FLOW                        │
-├─────────────────────────────────────────────────────────────┤
-│ 1. ACTIVATION (page load or add-to-cart):                   │
-│    - Same watchForAddToCart() as Pro (see above)            │
-│    - Once cart has items → evaluate                         │
-│ 2. Collect ALL 16+ signals (including high-value)           │
-│ 3. Enrich signals server-side (POST /api/enrich-signals):   │
-│    - Purchase history, CLV, avg order value                 │
-│    - Cart composition, premium item detection               │
-│    - Temporal patterns (hour/day)                           │
-│    - Propensity score (0-100)                               │
-│ 4. CHECK HIGH-VALUE SIGNALS FIRST:                          │
-│    - Failed coupon? → IMMEDIATE targeted offer              │
-│    - Checkout exit? → IMMEDIATE recovery offer              │
-│    - Cart hesitation > 1? → Price-sensitive offer           │
-│    - Stale cart (60+ min)? → IMMEDIATE nudge                │
-│ 5. Calculate propensity score with full signal set          │
-│ 6. SHOULD WE SHOW? (adaptive thresholds)                    │
-│    - Hard overrides: failedCoupon/checkout/hesitation/stale │
-│    - Otherwise: adaptive threshold per score bucket          │
-│ 7. WHEN TO SHOW? (dynamic timing)                           │
-│    - immediate: High-value signals detected (1s delay)      │
-│    - exit_intent: Wait for mouseout                         │
-│    - delayed: Wait X seconds                                │
-│ 8. Calculate specialized offer for situation                │
-│ 9. Return decision with timing control                      │
+│ 1. ACTIVATION (storefront): watchForAddToCart() — activate   │
+│    once the cart has items (cart:updated / ATC click / poll). │
+│ 2. Pre-fetch decision (POST /api/ai-decision). Endpoint       │
+│    stamps signals.propensityScore via computePropensity if    │
+│    not already enriched (covers the Pro path).                │
+│ 3. STAGE 1 — unified propensity P ∈ [0,100] (computePropensity│
+│    or the enriched score). One metric for both tiers.         │
+│ 4. STAGE 2 — show / skip:                                     │
+│    - Ordered triggerReason: failedCoupon > checkoutExit >     │
+│      cartHesitation>1 > staleCart(>60m) > general.            │
+│    - Any non-"general" trigger force-shows.                   │
+│    - Else: accidental-visit skip, then shouldIntervene(P)     │
+│      adaptive threshold per propensity bucket + segment.       │
+│ 5. TIMING — immediate for failedCoupon/checkoutExit/staleCart;│
+│    otherwise exit_intent.                                      │
+│ 6. STAGE 3/4 — offerCeilingPercent(P, aggression, agm):       │
+│    - 0  → announce-only modal (no discount, zero margin).     │
+│    - revenue mode (aiGoal + cart>$20) → threshold (AOV) offer.│
+│    - else → percentage discount at the margin-safe ceiling.   │
+│ 7. Return decision (or null to skip).                         │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Key Differences:**
+**Tier is config, not a fork.** The show/skip logic, propensity, trigger
+overrides, offer math, and margin floor are IDENTICAL for Pro and Enterprise.
+Tiering lives in Layer 1 (the variant/template engine) and the endpoint config:
 
 | Capability | Pro | Enterprise |
 |------------|-----|------------|
-| Add-to-cart activation | ✓ watchForAddToCart | ✓ watchForAddToCart |
-| Decides whether to show | ✓ Adaptive thresholds | ✓ Adaptive thresholds |
-| Decides what offer | ✓ Score-based | ✓ Situation-specific |
-| Decides when (timing) | Evolved gene (exit/idle/both) | Immediate/exit/delayed |
-| Failed coupon detection | Scores it | Acts on it immediately |
-| Checkout recovery | Scores it | Special recovery offer |
-| Cart hesitation handling | Scores it | Price-sensitive offer |
-| Stale cart detection | Scores it | Proactive nudge |
-| Per-store threshold learning | ✓ Per score bucket | ✓ Per score bucket |
-| Signal enrichment | ✗ | ✓ Server-side propensity scoring |
-
-**Enterprise-Only Helper Functions:**
-```javascript
-// For customers who tried invalid coupon codes
-calculateOfferForDiscountSeeker(signals, aggression, aiGoal, cartValue, cart)
-
-// For checkout page abandonment
-calculateCheckoutRecoveryOffer(signals, aggression, cartValue, cart)
-
-// For add/remove cart behavior
-calculateOfferForPriceSensitive(signals, aggression, aiGoal, cartValue, cart)
-
-// For carts sitting 60+ minutes
-calculateStaleCartOffer(signals, aggression, aiGoal, cartValue, cart)
-```
+| Offer engine (`decideOffer`) | ✓ identical | ✓ identical |
+| Unified propensity + adaptive threshold | ✓ | ✓ |
+| Trigger overrides + timing | ✓ | ✓ |
+| Always-on margin floor | ✓ | ✓ |
+| Variant cap (Layer 1) | 2 / archetype / segment | 20 / archetype / segment |
+| Device-conditional offer priors | ✗ (segment threshold only) | ✓ partial-pool priors |
+| Hierarchical template posterior | ✗ | ✓ (enterprise-gated) |
+| Promo intelligence | Detect-only (upsell) | Auto-optimize |
 
 ---
 
 ### 7. `intervention-threshold.server.js`
 
-**Purpose:** Adaptive per-store learning of whether to show or skip the modal per propensity/intent score bucket. Uses the same Thompson Sampling pattern as `variant-engine.js`.
+**Purpose:** Adaptive per-store learning of whether to show or skip the modal per propensity bucket. Both tiers feed the SAME unified propensity here (pre-unification, Pro fed an additive score on a different scale). Uses the same Thompson Sampling pattern as `variant-engine.js`.
 
 **Key Functions:**
 ```javascript
@@ -942,8 +939,8 @@ model InterventionOutcome {
   discountAmount  Float?
   profit          Float?               // revenue - discountAmount
 
-  propensityScore Int?                 // 0-100 (Enterprise)
-  intentScore     Int?                 // Pro AI score
+  propensityScore Int?                 // 0-100 unified propensity (both tiers since June 2026)
+  intentScore     Int?                 // LEGACY (pre-unification Pro additive score); now written null
   cartValue       Float?
   deviceType      String?
   trafficSource   String?
@@ -1863,7 +1860,7 @@ Per-store, per-score-bucket learning using Thompson Sampling (same Bayesian band
 
 ### Score Buckets
 
-Propensity/intent scores (0-100) are partitioned into 10-point buckets:
+Unified propensity scores (0-100) are partitioned into 10-point buckets:
 `0-10`, `10-20`, `20-30`, `30-40`, `40-50`, `50-60`, `60-70`, `70-80`, `80-90`, `90-100`
 
 Each bucket × segment (mobile/desktop/all) gets its own `InterventionThreshold` record with independent Thompson Sampling state.
