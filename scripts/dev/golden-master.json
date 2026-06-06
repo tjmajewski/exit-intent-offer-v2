@@ -1,0 +1,222 @@
+{
+  "P95 high-propensity announce": {
+    "show": true,
+    "propensity": 95,
+    "triggerReason": "general",
+    "timing": "exit_intent",
+    "ceilingPercent": 0,
+    "type": "no-discount",
+    "amount": 0,
+    "threshold": null,
+    "confidence": "high"
+  },
+  "P85 announce boundary": {
+    "show": true,
+    "propensity": 85,
+    "triggerReason": "general",
+    "timing": "exit_intent",
+    "ceilingPercent": 0,
+    "type": "no-discount",
+    "amount": 0,
+    "threshold": null,
+    "confidence": "high"
+  },
+  "P80 first discount": {
+    "show": true,
+    "propensity": 80,
+    "triggerReason": "general",
+    "timing": "exit_intent",
+    "ceilingPercent": 5,
+    "type": "threshold",
+    "amount": 5,
+    "threshold": 100,
+    "confidence": "high"
+  },
+  "P60 mid taper": {
+    "show": true,
+    "propensity": 60,
+    "triggerReason": "general",
+    "timing": "exit_intent",
+    "ceilingPercent": 11,
+    "type": "threshold",
+    "amount": 11,
+    "threshold": 100,
+    "confidence": "medium"
+  },
+  "P30 low propensity": {
+    "show": true,
+    "propensity": 30,
+    "triggerReason": "general",
+    "timing": "exit_intent",
+    "ceilingPercent": 17,
+    "type": "threshold",
+    "amount": 15,
+    "threshold": 100,
+    "confidence": "low"
+  },
+  "P10 floor of curve": {
+    "show": true,
+    "propensity": 10,
+    "triggerReason": "general",
+    "timing": "exit_intent",
+    "ceilingPercent": 17,
+    "type": "threshold",
+    "amount": 15,
+    "threshold": 100,
+    "confidence": "low"
+  },
+  "P50 aggression 0 announce": {
+    "show": true,
+    "propensity": 50,
+    "triggerReason": "general",
+    "timing": "exit_intent",
+    "ceilingPercent": 0,
+    "type": "no-discount",
+    "amount": 0,
+    "threshold": null,
+    "confidence": "medium"
+  },
+  "P50 aggression 2": {
+    "show": true,
+    "propensity": 50,
+    "triggerReason": "general",
+    "timing": "exit_intent",
+    "ceilingPercent": 6,
+    "type": "threshold",
+    "amount": 6,
+    "threshold": 100,
+    "confidence": "medium"
+  },
+  "P50 aggression 10 max": {
+    "show": true,
+    "propensity": 50,
+    "triggerReason": "general",
+    "timing": "exit_intent",
+    "ceilingPercent": 20,
+    "type": "threshold",
+    "amount": 20,
+    "threshold": 100,
+    "confidence": "medium"
+  },
+  "P30 thin margin 0.25": {
+    "show": true,
+    "propensity": 30,
+    "triggerReason": "general",
+    "timing": "exit_intent",
+    "ceilingPercent": 6,
+    "type": "threshold",
+    "amount": 6,
+    "threshold": 100,
+    "confidence": "low"
+  },
+  "P30 fat margin 0.60": {
+    "show": true,
+    "propensity": 30,
+    "triggerReason": "general",
+    "timing": "exit_intent",
+    "ceilingPercent": 22,
+    "type": "threshold",
+    "amount": 20,
+    "threshold": 100,
+    "confidence": "low"
+  },
+  "failed coupon immediate": {
+    "show": true,
+    "propensity": 55,
+    "triggerReason": "failedCoupon",
+    "timing": "immediate",
+    "ceilingPercent": 13,
+    "type": "percentage",
+    "amount": 13,
+    "threshold": null,
+    "confidence": "medium"
+  },
+  "checkout exit immediate": {
+    "show": true,
+    "propensity": 55,
+    "triggerReason": "checkoutExit",
+    "timing": "immediate",
+    "ceilingPercent": 13,
+    "type": "percentage",
+    "amount": 13,
+    "threshold": null,
+    "confidence": "medium"
+  },
+  "cart hesitation trigger": {
+    "show": true,
+    "propensity": 55,
+    "triggerReason": "cartHesitation",
+    "timing": "exit_intent",
+    "ceilingPercent": 13,
+    "type": "percentage",
+    "amount": 13,
+    "threshold": null,
+    "confidence": "medium"
+  },
+  "stale cart trigger": {
+    "show": true,
+    "propensity": 55,
+    "triggerReason": "staleCart",
+    "timing": "immediate",
+    "ceilingPercent": 13,
+    "type": "percentage",
+    "amount": 13,
+    "threshold": null,
+    "confidence": "medium"
+  },
+  "revenue mode single item": {
+    "show": true,
+    "propensity": 40,
+    "triggerReason": "general",
+    "timing": "exit_intent",
+    "ceilingPercent": 19,
+    "type": "threshold",
+    "amount": 28,
+    "threshold": 150,
+    "confidence": "low"
+  },
+  "revenue mode multi item": {
+    "show": true,
+    "propensity": 40,
+    "triggerReason": "general",
+    "timing": "exit_intent",
+    "ceilingPercent": 19,
+    "type": "threshold",
+    "amount": 30,
+    "threshold": 160,
+    "confidence": "low"
+  },
+  "computeP: engaged repeat buyer": {
+    "show": true,
+    "propensity": 100,
+    "triggerReason": "general",
+    "timing": "exit_intent",
+    "ceilingPercent": 0,
+    "type": "no-discount",
+    "amount": 0,
+    "threshold": null,
+    "confidence": "high"
+  },
+  "computeP: discount seeker": {
+    "show": true,
+    "propensity": 1,
+    "triggerReason": "failedCoupon",
+    "timing": "immediate",
+    "ceilingPercent": 20,
+    "type": "percentage",
+    "amount": 20,
+    "threshold": null,
+    "confidence": "low"
+  },
+  "computeP: cold first-timer": {
+    "show": true,
+    "propensity": 27,
+    "triggerReason": "general",
+    "timing": "exit_intent",
+    "ceilingPercent": 17,
+    "type": "percentage",
+    "amount": 17,
+    "threshold": null,
+    "confidence": "low"
+  }
+}
