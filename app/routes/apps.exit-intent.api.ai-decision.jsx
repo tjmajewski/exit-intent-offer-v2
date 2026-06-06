@@ -5,10 +5,11 @@ import { getMetaInsight, shouldUseMetaLearning } from "../utils/meta-learning.js
 import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
 import { composeSegmentKey } from "../utils/segment-key.js";
 import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
+import { computePropensity } from "../utils/propensity.server.js";
 
 export async function action({ request }) {
   const { default: db } = await import("../db.server.js");
-  const { determineOffer, checkBudget, enterpriseAI } = await import("../utils/ai-decision.server.js");
+  const { decideOffer, checkBudget, offerCeilingPercent } = await import("../utils/ai-decision.server.js");
   try{
     const { admin } = await authenticate.public.appProxy(request);
     const { shop, signals, testMode } = await request.json();
@@ -259,18 +260,25 @@ export async function action({ request }) {
       }
     }
 
-    // PRE-CHECK: Run AI scoring to determine if intervention is warranted
-    // This enables "no_intervention" as a learned outcome
-    // Enterprise customers use the dedicated enterpriseAI() engine which
-    // leverages propensity scores, high-value signals, and timing control.
-    // Pro customers use the simpler determineOffer() intent-score logic.
+    // UNIFIED METRIC: stamp propensity for BOTH tiers. The Pro storefront path
+    // doesn't run enrich-signals, so propensityScore was previously absent for
+    // Pro — the adaptive-threshold bandit then mis-bucketed Pro outcomes at the
+    // default 50. Compute it here so the show/skip decision, the threshold
+    // recording, and the holdout path all learn on ONE scale.
+    if (signals.propensityScore == null) {
+      signals.propensityScore = computePropensity(signals);
+      console.log(`[AI Decision] Propensity P=${signals.propensityScore} (${shopRecord.plan || 'pro'})`);
+    }
+
+    // PRE-CHECK: the unified decideOffer engine determines whether intervention
+    // is warranted (enables "no_intervention" as a learned outcome). Both tiers
+    // share the same propensity metric, show/skip logic, and margin ceiling.
     const isEnterprisePlan = (shopRecord.plan || 'pro') === 'enterprise';
 
-    // Enterprise promotional intelligence: check for active site-wide promos
-    // and adjust aggression before the AI decision runs.
-    // (Pro handles this inside determineOffer itself.)
-    // Test mode skips promo intelligence entirely so merchant self-tests always
-    // reach the engine and render an offer, even during an active site-wide promo.
+    // Enterprise promotional intelligence: check for active site-wide promos and
+    // adjust aggression before the decision runs. Pro is detect-only (the
+    // device-lift / promo upsell surfaces it elsewhere). Test mode skips promo
+    // intelligence so merchant self-tests always reach the engine.
     let effectiveAggression = aggression;
     if (isEnterprisePlan && !isTestMode) {
       const activePromo = await db.promotion.findFirst({
@@ -337,17 +345,17 @@ export async function action({ request }) {
       }
     }
 
-    const preScore = isEnterprisePlan
-      ? await enterpriseAI(signals, effectiveAggression, aiGoal, shopRecord.id, { testMode: isTestMode })
-      : await determineOffer(
-          signals,
-          aggression,
-          aiGoal,
-          signals.cartValue || 0,
-          shopRecord.id,
-          shopRecord.plan || 'pro',
-          { testMode: isTestMode }
-        );
+    // Unified decision engine for BOTH tiers. Tier-specific behavior lives in
+    // the variant engine (Layer 1) and ctx config below — the show/skip + offer
+    // ceiling are now one code path.
+    const preScore = await decideOffer(signals, {
+      plan: shopRecord.plan || 'pro',
+      aggression: effectiveAggression,
+      cartValue: signals.cartValue || 0,
+      shopId: shopRecord.id,
+      testMode: isTestMode,
+      assumedGrossMargin: settings.assumedGrossMargin
+    });
 
     if (preScore === null) {
       // AI determined no modal intervention is needed — record this decision
@@ -381,7 +389,7 @@ export async function action({ request }) {
         shopId: shopRecord.id,
         wasShown: false,
         propensityScore: signals.propensityScore ?? null,
-        intentScore: isEnterprisePlan ? null : (preScore?.intentScore ?? null),
+        intentScore: null, // unified on propensity; intent score retired
         cartValue: signals.cartValue,
         deviceType: signals.deviceType,
         trafficSource: signals.trafficSource,
@@ -504,6 +512,33 @@ export async function action({ request }) {
       if (cappedOfferAmount > maxAllowed) {
         console.log(`[Aggression Cap] Capping offer from ${cappedOfferAmount} to ${maxAllowed} (aggression ${effectiveAggression}/10, pool max ${poolMax})`);
         cappedOfferAmount = maxAllowed;
+      }
+
+      // STAGE 4 — margin guardrail, always-on. The served amount comes from the
+      // variant gene pool, which the aggression cap alone does NOT make
+      // margin-safe. Clamp to the propensity + margin ceiling so no single offer
+      // can turn the order unprofitable, and high-propensity carts get little or
+      // nothing (announce-only). This is the guard the old engines computed but
+      // never actually applied to the served offer.
+      const ceilingPct = offerCeilingPercent({
+        propensity: signals.propensityScore,
+        aggression: effectiveAggression,
+        assumedGrossMargin: settings.assumedGrossMargin
+      });
+      const isRevenueBaseline = baseline.includes('revenue');
+      if (ceilingPct === 0) {
+        console.log(`[Margin Guard] P=${signals.propensityScore} → announce-only (no discount)`);
+        cappedOfferAmount = 0;
+      } else if (isRevenueBaseline) {
+        const thr = Math.round((signals.cartValue || 0) * 1.3);
+        const maxDollars = Math.floor(thr * ceilingPct / 100);
+        if (cappedOfferAmount > maxDollars) {
+          console.log(`[Margin Guard] Capping threshold discount from $${cappedOfferAmount} to $${maxDollars} (ceiling ${ceilingPct}%, P=${signals.propensityScore})`);
+          cappedOfferAmount = Math.max(maxDollars, 0);
+        }
+      } else if (cappedOfferAmount > ceilingPct) {
+        console.log(`[Margin Guard] Capping discount from ${cappedOfferAmount}% to ${ceilingPct}% (P=${signals.propensityScore})`);
+        cappedOfferAmount = ceilingPct;
       }
     }
 
@@ -768,7 +803,7 @@ export async function action({ request }) {
         type: decision.type,
         amount: decision.amount,
         threshold: decision.threshold || null,
-        timing: decision.timing || null, // Enterprise AI timing control
+        timing: preScore.timing || decision.timing || null, // engine-emitted timing (both tiers)
         code: discountResult.code,
         confidence: decision.confidence,
         expiresAt: discountResult.expiresAt,
