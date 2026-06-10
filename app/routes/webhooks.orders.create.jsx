@@ -10,6 +10,23 @@ export const action = async ({ request }) => {
     console.log(" Webhook received:", topic);
     console.log("Shop:", shop);
 
+    // IDEMPOTENCY: claim this order before processing. Shopify retries
+    // webhooks (and a 500 below guarantees one); without the claim, retries
+    // double-count analytics revenue, conversion rows, and threshold counters.
+    // At-most-once semantics: a partial failure after the claim loses that
+    // order's attribution rather than double-counting on retry.
+    try {
+      await db.webhookOrder.create({
+        data: { shopDomain: shop, orderId: String(payload.id) }
+      });
+    } catch (e) {
+      if (e?.code === 'P2002') {
+        console.log(`[Webhook] Order ${payload.id} already processed — skipping duplicate delivery`);
+        return new Response(null, { status: 200 });
+      }
+      throw e;
+    }
+
     // Dev/test stores must never write to the learning tables (poisons the
     // adaptive threshold). Decision endpoint already skips their impressions;
     // gate the webhook's conversion writes for consistency.
@@ -71,12 +88,15 @@ export const action = async ({ request }) => {
       });
 
       if (shopRecord) {
-        // Find the most recent impression that hasn't been converted yet
+        // Find the most recent impression that hasn't been converted yet.
+        // 24h window matches the discount-code expiry — without it an order
+        // could credit a weeks-old impression from a different visitor.
         const impression = await db.variantImpression.findFirst({
           where: {
             shopId: shopRecord.id,
             converted: false,
-            clicked: true // Only count if they clicked the modal
+            clicked: true, // Only count if they clicked the modal
+            timestamp: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
           },
           orderBy: { timestamp: 'desc' }
         });
@@ -358,6 +378,9 @@ export const action = async ({ request }) => {
 
     return new Response(null, { status: 200 });
   } catch (error) {
+    // authenticate.webhook throws a Response (401) on invalid HMAC — return
+    // it as-is. Swallowing it into a 500 made Shopify retry forged requests.
+    if (error instanceof Response) throw error;
     console.error("Webhook error:", error);
     return new Response(null, { status: 500 });
   }

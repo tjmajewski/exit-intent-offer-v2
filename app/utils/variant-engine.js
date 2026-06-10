@@ -228,9 +228,17 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
   const totalImpressions = await (await getDb()).variantImpression.count({
     where: { shopId: shopId }
   });
-  
+
+  // Tier population cap (mirrors evolutionCycle): Pro = 2 variants,
+  // Enterprise/other = 10. Previously every plan seeded 10, so Pro shops ran
+  // the full population indefinitely — evolution only kills on Bayesian
+  // confidence, never down to the tier cap.
+  const seedTarget = shop.plan === 'pro' ? 2 : 10;
+  const provenTarget = Math.max(1, Math.floor(seedTarget / 2));
+  const randomTarget = Math.max(seedTarget - provenTarget, 0);
+
   let variants = [];
-  
+
   // NEW STORE: Inherit proven genes from network
   if (totalImpressions < 100 && shop.contributeToMetaLearning) {
     console.log('🆕 New store detected - checking for proven genes from network...');
@@ -251,9 +259,9 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
     if (provenGenes.length >= 3) {
       console.log(` Found ${provenGenes.length} proven genes from network`);
       
-      // Create 5 variants using proven genes + some random genes
+      // Create variants using proven genes + some random genes
       const variantPromises = [];
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < provenTarget; i++) {
         variantPromises.push(createRandomVariantWithSocialProof(shopId, baseline, segment));
       }
       const createdVariants = await Promise.all(variantPromises);
@@ -287,19 +295,21 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
         variants.push(variant);
       });
       
-      // Add 5 random exploration variants
-      variants.push(...generateDiverseVariants(5, baseline, segment));
-      
-      console.log(' Created 5 proven + 5 random variants');
+      // Add random exploration variants
+      if (randomTarget > 0) {
+        variants.push(...generateDiverseVariants(randomTarget, baseline, segment));
+      }
+
+      console.log(` Created ${provenTarget} proven + ${randomTarget} random variants`);
     } else {
       console.log(' Not enough proven genes found, using random seed');
-      variants = generateDiverseVariants(10, baseline, segment);
+      variants = generateDiverseVariants(seedTarget, baseline, segment);
     }
   }
   // EXISTING STORE: Pure random exploration
   else {
     console.log(' Existing store - generating diverse random variants');
-    variants = generateDiverseVariants(10, baseline, segment);
+    variants = generateDiverseVariants(seedTarget, baseline, segment);
   }
   
   // Save variants to database
@@ -796,7 +806,7 @@ function weightedRandomSelection(variants, weightFn) {
 /**
  * Breed a new variant from two parents using genetic algorithm
  */
-async function breedNewVariant(parents, baseline, segment = 'all', shopId = null, evolutionSettings = null) {
+async function breedNewVariant(parents, baseline, segment = 'all', shopId = null, evolutionSettings = null, attempt = 0) {
   const pool = genePools[baseline];
   
   // Default settings if not provided
@@ -895,8 +905,15 @@ async function breedNewVariant(parents, baseline, segment = 'all', shopId = null
     if (!validation.valid) {
       console.log(`   Brand safety violation, re-breeding...`);
       console.log(`     ${validation.violations.join(', ')}`);
-      // Recursively breed again until valid
-      return await breedNewVariant(parents, baseline, segment, shopId);
+      // Bounded retry (was unbounded recursion that also dropped
+      // evolutionSettings, silently reverting to default rates). After max
+      // attempts fall back to a fresh random variant — the decision
+      // endpoint's serve-time brand-safety guards are the backstop.
+      if (attempt >= 5) {
+        console.warn('   Max re-breed attempts reached — falling back to random variant');
+        return createRandomVariant(baseline, segment);
+      }
+      return await breedNewVariant(parents, baseline, segment, shopId, evolutionSettings, attempt + 1);
     }
   }
   

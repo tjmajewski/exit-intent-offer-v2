@@ -125,6 +125,27 @@ export async function action({ request }) {
       console.error('[Cleanup] DiscountOffer error:', error.message);
     }
 
+    // 4b. Clean up old webhook idempotency rows (only needed to dedupe
+    // Shopify's retries, which happen within ~48h — anything past the
+    // retention window is dead weight)
+    try {
+      const webhookOrderCount = await db.webhookOrder.count({
+        where: { processedAt: { lt: cutoffDate } }
+      });
+
+      if (!dryRun && webhookOrderCount > 0) {
+        await db.webhookOrder.deleteMany({
+          where: { processedAt: { lt: cutoffDate } }
+        });
+      }
+
+      results.deleted.webhookOrders = webhookOrderCount;
+      console.log(`[Cleanup] WebhookOrders: ${webhookOrderCount} rows ${dryRun ? 'would be' : ''} deleted`);
+    } catch (error) {
+      results.errors.push({ table: 'WebhookOrder', error: error.message });
+      console.error('[Cleanup] WebhookOrder error:', error.message);
+    }
+
     // 5. Clean up old MetaLearningInsights versions (keep only latest 3 per segment)
     try {
       // Get all unique segment/insightType combos

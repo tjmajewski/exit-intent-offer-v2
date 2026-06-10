@@ -132,6 +132,16 @@ function roundToNiceNumber(value) {
   return Math.round(value / 25) * 25;
 }
 
+// Shared threshold recommendation for AOV offers — single source for the
+// engine AND the decision endpoint (which previously used a bare
+// Math.round(cartValue * 1.3): no nice-rounding, no floor, so a $0 cart
+// produced a "$0 threshold" offer). The +$10 floor guarantees the customer
+// always has to ADD something to qualify.
+export function recommendedThreshold(cartValue, mult = 1.3) {
+  const cv = Number(cartValue) || 0;
+  return Math.max(roundToNiceNumber(cv * mult), cv + 10);
+}
+
 // =============================================================================
 // CORE: decideOffer — the one engine. Tier is pure config (ctx.plan).
 //
@@ -242,7 +252,7 @@ export async function decideOffer(signals, ctx = {}) {
   if (aiGoal === 'revenue' && cartValue > 20) {
     const mult = cart.isHighTicket && !cart.isMultiItem ? 1.25
                : cart.isMultiItem ? 1.3 : 1.25;
-    const threshold = Math.max(roundToNiceNumber(cartValue * mult), cartValue + 10);
+    const threshold = recommendedThreshold(cartValue, mult);
     // Discount on the qualifying spend, clamped to the margin ceiling.
     const maxDollars = Math.floor(threshold * (ceilingPercent / 100));
     const amount = Math.max(Math.min(roundToNiceNumber(threshold * (ceilingPercent / 100)), maxDollars), 1);

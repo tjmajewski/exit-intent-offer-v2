@@ -8,6 +8,16 @@ import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
 import { computePropensity } from "../utils/propensity.server.js";
 import { enforceRateLimit } from "../utils/rate-limit.server.js";
 
+// FNV-1a 32-bit hash — deterministic holdout bucketing per visitor.
+function fnv1a(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
 export async function action({ request }) {
   // Per-IP rate limit — public app-proxy endpoint; each call does multiple
   // Admin API round-trips + DB writes and (unique mode) creates a real Shopify
@@ -19,7 +29,7 @@ export async function action({ request }) {
   if (limited) return limited;
 
   const { default: db } = await import("../db.server.js");
-  const { decideOffer, checkBudget, offerCeilingPercent } = await import("../utils/ai-decision.server.js");
+  const { decideOffer, checkBudget, offerCeilingPercent, recommendedThreshold } = await import("../utils/ai-decision.server.js");
   try{
     const { admin } = await authenticate.public.appProxy(request);
     const { shop, signals, testMode } = await request.json();
@@ -91,23 +101,36 @@ export async function action({ request }) {
     });
     
     if (!shopRecord) {
-      shopRecord = await db.shop.create({
-        data: {
-          shopifyDomain: shop,
-          mode: 'ai',
-          aiGoal: aiGoal || 'revenue',
-          aggression: aggression || 5,
-          budgetEnabled: budgetEnabled || false,
-          budgetAmount: budgetAmount || 500,
-          budgetPeriod: budgetPeriod || 'month'
+      let createdNew = false;
+      try {
+        shopRecord = await db.shop.create({
+          data: {
+            shopifyDomain: shop,
+            mode: 'ai',
+            aiGoal: aiGoal || 'revenue',
+            aggression: aggression || 5,
+            budgetEnabled: budgetEnabled || false,
+            budgetAmount: budgetAmount || 500,
+            budgetPeriod: budgetPeriod || 'month'
+          }
+        });
+        createdNew = true;
+      } catch (e) {
+        // Concurrent first-visit requests race the create — the loser picks
+        // up the winner's row (and skips one-time init) instead of 500ing.
+        if (e?.code === 'P2002') {
+          shopRecord = await db.shop.findUnique({ where: { shopifyDomain: shop } });
         }
-      });
-      
+        if (!shopRecord) throw e;
+      }
+
+      // One-time init only for the request that actually created the row
+      if (createdNew) {
       // Initialize copy variants for new shop
       const { initializeCopyVariants } = await import('../utils/copy-variants.js');
       await initializeCopyVariants(db, shopRecord.id);
       console.log('[AI Decision] Initialized copy variants for new shop');
-      
+
       // Auto-detect brand colors for Enterprise customers
       if (shopRecord.plan === 'enterprise') {
         try {
@@ -131,6 +154,7 @@ export async function action({ request }) {
           // Don't fail shop creation if brand detection fails
         }
       }
+      } // end one-time init
     }
 
     // Plan gate: AI mode requires Pro or Enterprise.
@@ -188,8 +212,18 @@ export async function action({ request }) {
     // so the holdout is unbiased. Holdout outcomes are recorded for
     // incrementality measurement but never fed into the learning loop.
     // =========================================================================
+    // STICKY per-visitor assignment: hash the stable visitorId so the same
+    // shopper is always in (or out of) the holdout for this shop. Per-request
+    // randomness flickered assignment across visits and contaminated the
+    // incrementality measurement in both directions. Old cached storefront
+    // scripts without visitorId fall back to per-request random.
     const HOLDOUT_RATE = 0.05;
-    const isHoldout = !isTestMode && Math.random() < HOLDOUT_RATE;
+    const holdoutVisitorId = (typeof signals.visitorId === 'string' && signals.visitorId.length > 0)
+      ? signals.visitorId
+      : null;
+    const isHoldout = !isTestMode && (holdoutVisitorId
+      ? (fnv1a(`${holdoutVisitorId}:${shopRecord.id}`) % 100) < HOLDOUT_RATE * 100
+      : Math.random() < HOLDOUT_RATE);
 
     if (isHoldout) {
       const holdoutDecision = {
@@ -542,7 +576,7 @@ export async function action({ request }) {
         console.log(`[Margin Guard] P=${signals.propensityScore} → announce-only (no discount)`);
         cappedOfferAmount = 0;
       } else if (isRevenueBaseline) {
-        const thr = Math.round((signals.cartValue || 0) * 1.3);
+        const thr = recommendedThreshold(signals.cartValue || 0);
         const maxDollars = Math.floor(thr * ceilingPct / 100);
         if (cappedOfferAmount > maxDollars) {
           console.log(`[Margin Guard] Capping threshold discount from $${cappedOfferAmount} to $${maxDollars} (ceiling ${ceilingPct}%, P=${signals.propensityScore})`);
@@ -594,7 +628,7 @@ export async function action({ request }) {
     const decision = {
       type: baseline.includes('revenue') ? 'threshold' : 'percentage',
       amount: cappedOfferAmount,
-      threshold: baseline.includes('revenue') ? Math.round(signals.cartValue * 1.3) : null,
+      threshold: baseline.includes('revenue') ? recommendedThreshold(signals.cartValue || 0) : null,
       headline: effectiveHeadline,
       subhead: selectedVariant.subhead,
       cta: effectiveCta,

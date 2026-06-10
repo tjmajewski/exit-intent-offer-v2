@@ -478,7 +478,20 @@
       const now = new Date();
       const localHour = now.getHours(); // 0-23 in customer's timezone
 
+      // 17. Stable visitor id — server hashes this for STICKY holdout
+      // assignment (same shopper stays in/out of the 5% holdout across
+      // visits instead of flickering per request).
+      let visitorId = null;
+      try {
+        visitorId = localStorage.getItem('resparqVisitorId');
+        if (!visitorId) {
+          visitorId = 'v_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+          localStorage.setItem('resparqVisitorId', visitorId);
+        }
+      } catch (_) { /* storage blocked — server falls back to random holdout */ }
+
       return {
+        visitorId,
         visitFrequency: visits,
         cartValue,
         itemCount,

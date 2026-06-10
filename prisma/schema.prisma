@@ -372,6 +372,20 @@ model Promotion {
   @@index([detectedAt])
 }
 
+// Webhook idempotency: Shopify retries order webhooks (and any 500 response
+// guarantees one). Each delivery claims its (shop, orderId) row up-front;
+// duplicate deliveries hit the unique constraint and exit cleanly instead of
+// double-counting analytics revenue and conversion rows.
+model WebhookOrder {
+  id          String   @id @default(uuid())
+  shopDomain  String
+  orderId     String
+  processedAt DateTime @default(now())
+
+  @@unique([shopDomain, orderId])
+  @@index([processedAt])
+}
+
 model Conversion {
   id     String @id @default(uuid())
   shopId String
