@@ -1,5 +1,6 @@
 import { authenticate } from "../shopify.server";
 import { checkUsageLimit, PLAN_FEATURES } from "../utils/featureGates";
+import { pruneAnalyticsEvents } from "../utils/analytics-metafield.js";
 
 export async function action({ request }) {
   // Authenticate the request from the storefront
@@ -101,20 +102,14 @@ export async function action({ request }) {
     const metricKey = event + "s";
     currentAnalytics[metricKey] = (currentAnalytics[metricKey] || 0) + 1;
 
-    // Add timestamped event
+    // Add timestamped event, then prune to the shared rolling window + cap.
     if (!currentAnalytics.events) currentAnalytics.events = [];
     currentAnalytics.events.push({
       type: event,
       timestamp: new Date().toISOString()
     });
+    currentAnalytics.events = pruneAnalyticsEvents(currentAnalytics.events);
 
-    // Keep only last 90 days of events (to prevent unlimited growth)
-    const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-    currentAnalytics.events = currentAnalytics.events.filter(e => 
-      new Date(e.timestamp) > ninetyDaysAgo
-    );
-    
     console.log(" Updated analytics:", currentAnalytics);
 
     // Save updated analytics

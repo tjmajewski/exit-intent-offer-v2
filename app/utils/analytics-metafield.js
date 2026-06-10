@@ -1,7 +1,41 @@
+// Rolling-window + hard cap for the analytics `events` array. Without a bound
+// the array grows forever; once the serialized metafield exceeds Shopify's
+// size limit, every `metafieldsSet` fails — and since the writers are
+// fire-and-forget, analytics silently freeze. The dashboard's rolling metrics
+// only need ~90 days, and the hard cap protects against a single shop bursting
+// past the byte limit within the window.
+const EVENTS_RETENTION_DAYS = 90;
+const EVENTS_HARD_CAP = 10000;
+
+/**
+ * Prune the analytics events array to the rolling retention window, then to a
+ * hard count cap (keeping the most recent). Returns a new array. Shared by
+ * every writer (this helper, the storefront tracker, the order webhook) so the
+ * bound stays consistent.
+ */
+export function pruneAnalyticsEvents(events) {
+  if (!Array.isArray(events)) return [];
+  const cutoff = Date.now() - EVENTS_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  let pruned = events.filter((e) => {
+    const t = e?.timestamp ? Date.parse(e.timestamp) : NaN;
+    return Number.isFinite(t) ? t > cutoff : false;
+  });
+  if (pruned.length > EVENTS_HARD_CAP) {
+    pruned = pruned.slice(pruned.length - EVENTS_HARD_CAP);
+  }
+  return pruned;
+}
+
 /**
  * Tracks an analytics event by updating the shop's analytics metafield.
  * Increments the appropriate lifetime counter and appends to the events array
- * used for 30-day rolling metrics on the dashboard.
+ * used for rolling metrics on the dashboard.
+ *
+ * NOTE: this is a read-modify-write on a single shared metafield blob, so
+ * concurrent events can lose a counter increment (last-write-wins). The
+ * ground-truth counts live in Prisma (VariantImpression / Conversion /
+ * InterventionOutcome); this metafield is a denormalized dashboard cache. If
+ * exact counts ever matter, derive them from those tables instead.
  *
  * @param {object} admin - Shopify admin API client
  * @param {'impression'|'click'|'conversion'} eventType
@@ -45,6 +79,7 @@ export async function trackAnalyticsEvent(admin, eventType, extraData = {}) {
     timestamp: new Date().toISOString(),
     ...extraData
   });
+  analytics.events = pruneAnalyticsEvents(analytics.events);
 
   await admin.graphql(`
     mutation SetAnalytics($ownerId: ID!, $value: String!) {

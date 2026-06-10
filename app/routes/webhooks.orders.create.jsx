@@ -2,6 +2,7 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { recordInterventionOutcome, recordInterventionConversion } from "../utils/intervention-threshold.server.js";
 import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
+import { pruneAnalyticsEvents } from "../utils/analytics-metafield.js";
 
 export const action = async ({ request }) => {
   try {
@@ -422,13 +423,15 @@ async function updateAnalytics(admin, revenue) {
   analytics.conversions += 1;
   analytics.revenue += revenue;
 
-  // Add timestamped conversion event
+  // Add timestamped conversion event, then prune to the rolling window + cap
+  // (shared bound — keeps the metafield from growing until metafieldsSet fails)
   if (!analytics.events) analytics.events = [];
   analytics.events.push({
     type: "conversion",
     timestamp: new Date().toISOString(),
     revenue: revenue
   });
+  analytics.events = pruneAnalyticsEvents(analytics.events);
 
   console.log(" New analytics:", analytics);
 
