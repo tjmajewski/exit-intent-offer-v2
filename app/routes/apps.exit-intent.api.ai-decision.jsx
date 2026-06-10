@@ -6,8 +6,18 @@ import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
 import { composeSegmentKey } from "../utils/segment-key.js";
 import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
 import { computePropensity } from "../utils/propensity.server.js";
+import { enforceRateLimit } from "../utils/rate-limit.server.js";
 
 export async function action({ request }) {
+  // Per-IP rate limit — public app-proxy endpoint; each call does multiple
+  // Admin API round-trips + DB writes and (unique mode) creates a real Shopify
+  // discount code. Without this a bot loop mints unlimited price rules.
+  const limited = enforceRateLimit(request, "ai-decision", {
+    limit: 10,
+    windowMs: 60_000,
+  });
+  if (limited) return limited;
+
   const { default: db } = await import("../db.server.js");
   const { decideOffer, checkBudget, offerCeilingPercent } = await import("../utils/ai-decision.server.js");
   try{
@@ -138,7 +148,9 @@ export async function action({ request }) {
 
     // Check budget if enabled
     if (budgetEnabled) {
-      const budgetCheck = await checkBudget(db, shopRecord.id, budgetPeriod);
+      // Budget config comes from the settings metafield (what the merchant
+      // edits), not the DB shop row (only stamped at first install — stale).
+      const budgetCheck = await checkBudget(db, shopRecord.id, { budgetAmount, budgetPeriod });
       
       if (!budgetCheck.hasRoom) {
         console.log(` Budget exhausted for ${shop}. Showing no-discount modal.`);
@@ -232,15 +244,15 @@ export async function action({ request }) {
     if (signals.purchaseHistoryCount === undefined || signals.purchaseHistoryCount === null) {
       try {
         const loggedInCustomerId = new URL(request.url).searchParams.get('logged_in_customer_id');
-        if (loggedInCustomerId) {
+        if (loggedInCustomerId && /^\d+$/.test(loggedInCustomerId)) {
           const custResp = await admin.graphql(`
-            query {
-              customer(id: "gid://shopify/Customer/${loggedInCustomerId}") {
+            query CustomerEnrichment($id: ID!) {
+              customer(id: $id) {
                 numberOfOrders
                 amountSpent { amount }
               }
             }
-          `);
+          `, { variables: { id: `gid://shopify/Customer/${loggedInCustomerId}` } });
           const custJson = await custResp.json();
           const customer = custJson?.data?.customer;
           if (customer) {
@@ -260,15 +272,15 @@ export async function action({ request }) {
       }
     }
 
-    // UNIFIED METRIC: stamp propensity for BOTH tiers. The Pro storefront path
-    // doesn't run enrich-signals, so propensityScore was previously absent for
-    // Pro — the adaptive-threshold bandit then mis-bucketed Pro outcomes at the
-    // default 50. Compute it here so the show/skip decision, the threshold
-    // recording, and the holdout path all learn on ONE scale.
-    if (signals.propensityScore == null) {
-      signals.propensityScore = computePropensity(signals);
-      console.log(`[AI Decision] Propensity P=${signals.propensityScore} (${shopRecord.plan || 'pro'})`);
-    }
+    // UNIFIED METRIC: stamp propensity for BOTH tiers so the show/skip
+    // decision, the threshold recording, and the holdout path all learn on
+    // ONE scale. SECURITY: always recompute server-side, overwriting any
+    // client-supplied value — signals come from the visitor's browser, and a
+    // forced propensityScore of 0 would unlock the max discount while a
+    // forced 100 poisons threshold learning. Same engine as enrich-signals,
+    // so recomputing from the same signals yields the same score.
+    signals.propensityScore = computePropensity(signals);
+    console.log(`[AI Decision] Propensity P=${signals.propensityScore} (${shopRecord.plan || 'pro'})`);
 
     // PRE-CHECK: the unified decideOffer engine determines whether intervention
     // is warranted (enables "no_intervention" as a learned outcome). Both tiers

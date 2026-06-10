@@ -301,40 +301,47 @@ export async function determineOffer(signals, aggression, _aiGoal, cartValue, sh
   };
 }
 
-export async function checkBudget(db, shopId, budgetPeriod) {
-  const shop = await db.shop.findUnique({
-    where: { id: shopId }
-  });
-
-  if (!shop || !shop.budgetEnabled) {
-    return { hasRoom: true, remaining: Infinity };
+// Budget semantics: rolling cap on estimated discount dollars EXTENDED
+// (offers created) in the period — not redemptions, which lag and under-count
+// exposure. Config comes from the caller (settings metafield), not the DB
+// shop row, which is only stamped at install time.
+//
+// Window is createdAt-only. The old `expiresAt >= now` filter made spend
+// SHRINK as 24h codes expired (a budget that reset itself daily) and silently
+// excluded generic-mode offers entirely (expiresAt null fails a gte filter).
+export async function checkBudget(db, shopId, { budgetAmount, budgetPeriod } = {}) {
+  const cap = Number(budgetAmount);
+  if (!Number.isFinite(cap) || cap <= 0) {
+    return { hasRoom: true, remaining: Infinity, totalSpent: 0 };
   }
 
   const now = new Date();
-  let periodStart;
-
+  const periodStart = new Date(now);
   if (budgetPeriod === 'week') {
-    periodStart = new Date(now);
     periodStart.setDate(now.getDate() - 7);
   } else {
-    periodStart = new Date(now);
     periodStart.setMonth(now.getMonth() - 1);
   }
 
   const offers = await db.discountOffer.findMany({
     where: {
       shopId: shopId,
-      createdAt: {
-        gte: periodStart
-      },
-      expiresAt: {
-        gte: now
-      }
-    }
+      createdAt: { gte: periodStart }
+    },
+    select: { offerType: true, amount: true, cartValue: true }
   });
 
-  const totalSpent = offers.reduce((sum, offer) => sum + offer.amount, 0);
-  const remaining = shop.budgetAmount - totalSpent;
+  // `amount` is a PERCENT for percentage offers and DOLLARS for
+  // fixed/threshold — converting percent to an estimated dollar cost against
+  // the cart it was offered on. (The old code summed 15%-off as $15 flat.)
+  const totalSpent = offers.reduce((sum, offer) => {
+    if (offer.offerType === 'percentage') {
+      return sum + (offer.cartValue ? (offer.amount / 100) * offer.cartValue : offer.amount);
+    }
+    return sum + offer.amount;
+  }, 0);
+
+  const remaining = cap - totalSpent;
 
   return {
     hasRoom: remaining > 0,
