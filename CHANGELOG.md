@@ -1,5 +1,72 @@
 # @shopify/shopify-app-template-react-router
 
+## Resparq AI - June 10, 2026 (Security & Data-Integrity Hardening)
+
+Multi-pass code review of the buyer-facing, maintenance, webhook, and
+compliance surfaces. Full detail + threat model in
+[`SECURITY.md`](SECURITY.md) ("2026-06 audit fixes").
+
+### Security
+- **Authenticated the destructive maintenance endpoints.**
+  `api.cleanup-old-data` and `api.cleanup-expired` were fully unauthenticated
+  bulk deletes across all shops (`?days=0` would wipe the entire learning
+  corpus). Now require `Authorization: Bearer <CRON_SECRET>` via the shared
+  `requireCronSecret()` guard; `days` clamped to a 30-day minimum.
+- **Closed an IDOR + GraphQL-injection in `enrich-signals`.** It trusted a
+  body-supplied `customerId` and string-interpolated it into an Admin API
+  query. Now identifies the customer only from the Shopify-signed
+  `logged_in_customer_id`, validates it numeric, and passes it via GraphQL
+  variables. Same variables treatment on `ai-decision`'s enrichment.
+- **`propensityScore` is always recomputed server-side** — a forged client
+  value could otherwise force the maximum discount or poison the bandit.
+- **`track-starter` scoped by `shopId`** (click/conversion were updatable
+  across shops via a guessed `impressionId`) with `revenue` clamped to ≥ 0 and
+  idempotent updates.
+- **`test-meta` restricted to allowlisted dev shops** (it triggered
+  cross-store meta-learning writes from public traffic).
+- **Rate limits added** to `ai-decision` (10/IP/60s — it mints real Shopify
+  discount codes), `enrich-signals`, `track-click`, `track-starter`, and
+  `init-variants`.
+
+### Fixed
+- **GDPR webhooks now actually delete data.** All three
+  (`shop.redact`, `customers.redact`, `customers.data_request`) queried a
+  non-existent `Shop.shopDomain` column, threw, and silently returned 200 —
+  deleting/returning nothing while passing Shopify's review (which only checks
+  HMAC + 200). Rewritten to query `shopifyDomain`, delete every shop-scoped
+  table in FK-safe order (incl. the previously-missed `InterventionOutcome`,
+  `InterventionThreshold`, `UsageCharge`, `BrandSafetyRule`, `WebhookOrder`),
+  and match customer data by `customerEmail`.
+- **Order webhook is now idempotent.** Shopify retries (and any 500 forces a
+  retry) were double-counting analytics revenue and conversion rows. Added a
+  `WebhookOrder` unique-claim table; duplicate deliveries short-circuit. HMAC
+  failures now return 401 instead of a retry-inducing 500.
+- **`DiscountOffer.redeemed` is now set on redemption** (it was never written,
+  so cleanup deleted converted offers as "unredeemed" and redemption reporting
+  was dead).
+- **Evolution fitness uses actual recorded discount cost** instead of assuming
+  every `offerAmount` is a percentage — dollar-amount revenue/threshold
+  variants were mis-costed, corrupting kill/breed decisions.
+- **Click counting is idempotent** — a replayed `impressionId` no longer
+  inflates `variant.clicks` (which feeds fitness + conversion attribution).
+- **Conversion attribution bounded to 24h** so an order can't credit a
+  weeks-old impression from a different visitor.
+- **Holdout assignment is now sticky per visitor** (deterministic FNV-1a hash
+  of a stable `visitorId` + `shopId`) instead of flickering per request, which
+  had contaminated incrementality measurement.
+- **Budget cap actually works** — percentage offers are costed in dollars (was
+  summing "15% off" as $15), the `expiresAt` filter that made spend shrink as
+  codes expired is gone, and the cap is read from the settings metafield rather
+  than a stale install-time DB row.
+- **Shop-create race handled** (concurrent first-visit `P2002` → pick up the
+  winner's row instead of 500ing) and **threshold math unified** on
+  `recommendedThreshold()` (the endpoint's bare `cartValue * 1.3` produced
+  "$0 threshold" offers on empty carts).
+
+### Schema
+- Added `WebhookOrder` (unique `(shopDomain, orderId)`) for webhook
+  idempotency. Run `npx prisma db push` after pulling.
+
 ## Resparq AI - June 5, 2026 (Offer Engine Unification + Always-On Margin Floor)
 
 ### Changed

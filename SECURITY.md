@@ -69,7 +69,17 @@ Currently applied:
 |--------------------------------------------|--------------|--------|
 | `apps.exit-intent.api.shop-settings.jsx`   | 120 req/IP   | 60s    |
 | `apps.exit-intent.api.track-variant.jsx`   | 60 req/IP    | 60s    |
+| `apps.exit-intent.api.track-click.jsx`     | 30 req/IP    | 60s    |
+| `apps.exit-intent.api.track-starter.jsx`   | 30 req/IP    | 60s    |
+| `apps.exit-intent.api.enrich-signals.jsx`  | 30 req/IP    | 60s    |
 | `apps.exit-intent.api.generate-code.jsx`   | 20 req/IP    | 60s    |
+| `apps.exit-intent.api.ai-decision.jsx`     | 10 req/IP    | 60s    |
+| `apps.exit-intent.api.init-variants.jsx`   | 10 req/IP    | 60s    |
+
+`ai-decision` carries the tightest limit because each call makes several
+Admin API round-trips, ~4 DB writes, and (in unique-code mode) **mints a real
+Shopify discount code** — an unbounded loop there is the most expensive abuse
+path in the app.
 
 Client IP is extracted from `X-Forwarded-For`, `X-Real-IP`,
 `CF-Connecting-IP`, or `Fly-Client-IP` (in that order). When the limit is
@@ -99,7 +109,40 @@ The regex enforces the canonical Shopify form:
 `^[a-z0-9][a-z0-9-]*\.myshopify\.com$` (lowercase alphanumeric + hyphen
 subdomain, trailing `.myshopify.com`, max 255 chars).
 
-Applied to: `shop-settings.jsx`, `track-variant.jsx`, `generate-code.jsx`.
+Applied to: `shop-settings.jsx`, `track-variant.jsx`, `generate-code.jsx`,
+`track-starter.jsx`, `init-variants.jsx`. Endpoints that don't take a `shop`
+body param identify the customer differently: `enrich-signals.jsx` and
+`ai-decision.jsx` resolve the customer **only** from the Shopify-signed
+`logged_in_customer_id` query param (never a body-supplied id) and validate it
+is numeric before interpolating it into a `gid://` — see "Customer-data access"
+below.
+
+### Customer-data access (IDOR / GraphQL injection)
+Buyer-facing endpoints must never trust a client-supplied customer identifier.
+The signed app-proxy hop authenticates *the shop*, not *the buyer*, so a body
+field like `customerId` is fully attacker-controlled.
+
+- **`enrich-signals.jsx`** previously read `customerId` from the request body
+  and string-interpolated it into an Admin API query. That was both an IDOR
+  (enumerate any customer's order count + lifetime spend) and a GraphQL
+  injection vector. It now reads only the signed `logged_in_customer_id`,
+  rejects non-numeric values, and passes the id via GraphQL **variables**, not
+  string interpolation. `ai-decision.jsx`'s purchase-history enrichment got the
+  same variables treatment.
+- **`propensityScore` is always recomputed server-side.** All `signals` come
+  from the buyer's browser, so the endpoint overwrites any client-supplied
+  score via `computePropensity(signals)`. A forged `0` would otherwise unlock
+  the maximum discount; a forged `100` would poison the adaptive-threshold
+  bandit.
+- **`track-starter.jsx`** scopes every `click`/`conversion` update by `shopId`
+  (was updatable across shops by guessing an `impressionId`) and clamps the
+  client-supplied `revenue` to a non-negative number so it can't inflate a
+  shop's Starter analytics. Updates are idempotent (`updateMany` guarded on
+  `clicked`/`converted = false`).
+
+The general rule: **the only customer identifier you may trust is
+`logged_in_customer_id` from the signed query string. Anything in the request
+body is attacker-controlled — scope DB writes by `shopId` and validate.**
 
 ### Custom CSS sanitization
 `apps.exit-intent.api.custom-css.jsx` stores CSS that is later rendered on
@@ -175,7 +218,74 @@ Authorization: Bearer <CRON_SECRET>
 
 See `PRODUCTION-CRON-SETUP.md` for the scheduler-specific configuration.
 
+The same guard protects the **destructive maintenance endpoints**, which were
+previously **fully unauthenticated**:
+
+- `api.cleanup-old-data.jsx` (action + stats loader)
+- `api.cleanup-expired.jsx`
+
+Both bulk-delete across *all* shops. Anyone who knew the URL could have called
+`POST /api/cleanup-old-data?days=0` and wiped the entire learning corpus
+(`VariantImpression`, `AIDecision`, `StarterImpression`, `DiscountOffer`,
+`MetaLearningInsights`). They now require the same `Authorization: Bearer
+<CRON_SECRET>` header via the shared `requireCronSecret()` guard in
+`app/utils/cron-auth.server.js`, which fails closed if the secret is unset. The
+`days` parameter is additionally clamped to a 30-day minimum so even an
+authorized call can't zero-out recent data.
+
+### GDPR / data deletion
+Shopify's mandatory compliance webhooks must actually erase data — Shopify's
+app-review check only verifies HMAC + a 200 response, **not** that deletion
+occurred, so a broken handler can pass review while silently retaining data.
+
+All three handlers (`webhooks.shop.redact`, `webhooks.customers.redact`,
+`webhooks.customers.data_request`) had queried `Shop.shopDomain`, which is not
+a column (the field is `shopifyDomain`). Prisma threw `Unknown arg` on the
+first query, the `catch` swallowed it into a 200, and **nothing was ever
+deleted or returned.** Now fixed:
+
+- **`shop.redact`** deletes every shop-scoped table in FK-safe order
+  (`VariantImpression` before `Variant`), including the previously-missed
+  `InterventionOutcome`, `InterventionThreshold`, `UsageCharge`,
+  `BrandSafetyRule`, and `WebhookOrder`. Sessions and webhook-dedupe rows are
+  purged by domain even if the `Shop` row is already gone.
+- **`customers.redact`** deletes conversions by `customerEmail` (the only
+  customer identifier this app stores) plus any `orders_to_redact`.
+- **`customers.data_request`** returns the customer's conversions (matched by
+  email) in the response body.
+- All three rethrow the auth `Response` so an invalid HMAC returns 401 instead
+  of a fake 200.
+
+When adding a model with a `shopId`, add it to the `shop.redact` deletion list.
+
+### Webhook idempotency
+Shopify retries webhooks, and any non-2xx response guarantees a retry — so a
+handler that returns 500 on error and then double-writes on the retry will
+double-count. `webhooks.orders.create` claims each order via a unique
+`(shopDomain, orderId)` row in `WebhookOrder` before processing; duplicate
+deliveries short-circuit with a 200. Invalid-HMAC `Response`s are rethrown
+(401) rather than collapsed into a 500 that would trigger retry storms of
+forged requests.
+
 ## Audit history
+
+### 2026-06 audit fixes
+
+Second pass, covering buyer-facing data access, the maintenance/cron surface,
+GDPR compliance, and webhook integrity.
+
+| #  | Severity | Issue                                                             | Fix                                                                          |
+|----|----------|-------------------------------------------------------------------|------------------------------------------------------------------------------|
+| 1  | Critical | `cleanup-old-data` / `cleanup-expired` fully unauthenticated — any caller could wipe all shops' learning data | `requireCronSecret()` Bearer guard (fails closed); `days` clamped to ≥30     |
+| 2  | Critical | GDPR webhooks queried a non-existent column → deleted/returned nothing while passing review | Query `shopifyDomain`; FK-safe full deletion; match conversions by `customerEmail` |
+| 3  | High     | `enrich-signals` trusted body `customerId` → IDOR + GraphQL injection | Use signed `logged_in_customer_id` only; numeric-validate; GraphQL variables |
+| 4  | High     | Client-supplied `propensityScore` could force max discount / poison the bandit | Always recompute server-side via `computePropensity`                         |
+| 5  | High     | `track-starter` click/conversion updatable across shops; client `revenue` trusted | Scope updates by `shopId`; clamp `revenue ≥ 0`; idempotent `updateMany`      |
+| 6  | High     | No rate limit on `ai-decision` (mints real Shopify discount codes) | 10 req/IP/60s; limits also added to `enrich-signals`, `track-click`, `track-starter`, `init-variants` |
+| 7  | High     | Order webhook not idempotent → retries double-counted revenue/conversions | `WebhookOrder` unique-claim dedupe; rethrow auth `Response` (401 not 500)    |
+| 8  | Medium   | `test-meta` (triggers cross-store meta-learning writes) publicly callable | Restricted to allowlisted dev shops via `isDevShop()`                        |
+| 9  | Medium   | Conversion attribution had no time bound → credited stale impressions | 24h window on the variant-impression lookup                                  |
+| 10 | Medium   | Holdout assignment was per-request `Math.random` → flickered per visit | Deterministic FNV-1a hash of stable `visitorId` + `shopId`                   |
 
 ### 2026-04 audit fixes
 
@@ -209,6 +319,10 @@ When adding a new route, walk down this list before merging:
    - Never return `error.message` — log it, return a generic message.
    - Never make security decisions based on metafield values. Read from
      Prisma.
+   - **Never trust a buyer-supplied customer identifier.** The only customer
+     id you may trust is `logged_in_customer_id` from the signed query string.
+     Scope every DB write by `shopId`; never let a guessable `impressionId` /
+     `customerId` from the body select another shop's rows.
 
 3. **Does it write to the DB or call the Shopify Admin API?**
    - Keep the rate limit tight (20–60 req/min is usually right).
@@ -226,3 +340,16 @@ When adding a new route, walk down this list before merging:
    - For non-HTML formats (CSS, JSON embedded in `<script type=…>`) write
      a dedicated sanitizer that normalizes before checking, and err on the
      side of rejecting suspicious input.
+
+6. **Does it persist any new shop-scoped model?**
+   - Add it to the `webhooks.shop.redact` deletion list (FK-safe order) so
+     GDPR shop-redact still erases everything.
+   - If it stores a customer identifier, add it to `webhooks.customers.redact`
+     and `webhooks.customers.data_request` too.
+
+7. **Is it a webhook that writes to the DB?**
+   - Make it idempotent — Shopify retries deliveries. Claim the event by a
+     unique key (see `WebhookOrder`) or guard writes so a replay is a no-op.
+   - Rethrow the auth `Response` on HMAC failure (`if (error instanceof
+     Response) throw error`) so it returns 401, not a 500 that triggers
+     retry storms.
