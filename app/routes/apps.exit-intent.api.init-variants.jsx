@@ -1,13 +1,25 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { initializeCopyVariants } from "../utils/copy-variants.js";
+import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { isValidShopDomain } from "../utils/shop-validation.js";
 
 export async function action({ request }) {
+  const limited = enforceRateLimit(request, "init-variants", {
+    limit: 10,
+    windowMs: 60_000,
+  });
+  if (limited) return limited;
+
   const { default: db } = await import("../db.server.js");
   try {
     await authenticate.public.appProxy(request);
     const { shop } = await request.json();
-    
+
+    if (!shop || !isValidShopDomain(shop)) {
+      return json({ error: "Missing or invalid shop" }, { status: 400 });
+    }
+
     const shopRecord = await db.shop.findUnique({
       where: { shopifyDomain: shop }
     });

@@ -1,6 +1,8 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
+import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { isValidShopDomain } from "../utils/shop-validation.js";
 
 /**
  * API endpoint for tracking Starter tier impressions
@@ -12,6 +14,13 @@ import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
  * - Outcomes (click, conversion)
  */
 export async function action({ request }) {
+  // Per-IP rate limit — public app-proxy endpoint with DB writes.
+  const limited = enforceRateLimit(request, "track-starter", {
+    limit: 30,
+    windowMs: 60_000,
+  });
+  if (limited) return limited;
+
   const { default: db } = await import("../db.server.js");
 
   try {
@@ -19,8 +28,8 @@ export async function action({ request }) {
     const body = await request.json();
     const { shop, signals, manualSettings, event, impressionId, revenue } = body;
 
-    if (!shop) {
-      return json({ error: "Missing shop" }, { status: 400 });
+    if (!shop || !isValidShopDomain(shop)) {
+      return json({ error: "Missing or invalid shop" }, { status: 400 });
     }
 
     // Find shop
@@ -74,10 +83,18 @@ export async function action({ request }) {
         return json({ error: "Missing impressionId" }, { status: 400 });
       }
 
-      await db.starterImpression.update({
-        where: { id: impressionId },
+      // Scope by shopId AND require clicked=false. Without the shop scope any
+      // storefront could flip another shop's impressions (IDOR); the
+      // clicked=false guard makes replays no-ops. count===0 means the id
+      // doesn't belong to this shop or was already counted.
+      const updated = await db.starterImpression.updateMany({
+        where: { id: impressionId, shopId: shopRecord.id, clicked: false },
         data: { clicked: true }
       });
+
+      if (updated.count === 0) {
+        return json({ success: true, deduped: true });
+      }
 
       console.log(`[Starter Learning] Click tracked: ${impressionId}`);
 
@@ -94,15 +111,25 @@ export async function action({ request }) {
         return json({ error: "Missing impressionId" }, { status: 400 });
       }
 
-      await db.starterImpression.update({
-        where: { id: impressionId },
+      // Don't trust client-supplied revenue — clamp to a non-negative number
+      // so a forged value can't inflate this shop's Starter analytics. (Real
+      // order revenue is attributed via the orders webhook; this is only the
+      // Starter learning signal.) Shop-scoped + converted=false for the same
+      // IDOR / idempotency reasons as the click path.
+      const safeRevenue = Math.max(0, Number(revenue) || 0);
+      const updated = await db.starterImpression.updateMany({
+        where: { id: impressionId, shopId: shopRecord.id, converted: false },
         data: {
           converted: true,
-          revenue: revenue || 0
+          revenue: safeRevenue
         }
       });
 
-      console.log(`[Starter Learning] Conversion tracked: ${impressionId}, revenue: $${revenue}`);
+      if (updated.count === 0) {
+        return json({ success: true, deduped: true });
+      }
+
+      console.log(`[Starter Learning] Conversion tracked: ${impressionId}, revenue: $${safeRevenue}`);
       return json({ success: true });
     }
 

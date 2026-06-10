@@ -1,5 +1,6 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
+import { isDevShop } from "../utils/dev-shop-guard.server.js";
 import {
   aggregateSignalCorrelations,
   aggregateCopyPatterns,
@@ -13,11 +14,18 @@ export async function action({ request }) {
     await authenticate.public.appProxy(request);
     const body = await request.json();
     const { shop, action: testAction } = body;
-    
+
+    // Diagnostic endpoint: the 'aggregate' action triggers cross-store
+    // meta-learning writes. Restrict to allowlisted dev/test stores so it
+    // can't be invoked from arbitrary storefront traffic in production.
+    if (!isDevShop(shop)) {
+      return json({ error: "Not found" }, { status: 404 });
+    }
+
     const shopRecord = await db.shop.findUnique({
       where: { shopifyDomain: shop }
     });
-    
+
     if (!shopRecord) {
       return json({ error: "Shop not found" }, { status: 404 });
     }
