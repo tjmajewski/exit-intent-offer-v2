@@ -4,9 +4,20 @@ import { authenticate } from "../shopify.server.js";
 export async function action({ request }) {
   const { default: db } = await import("../db.server.js");
   const { session, admin } = await authenticate.admin(request);
+
+  // SECURITY: this is the DEV plan switcher — it sets any tier with no billing
+  // check. The UI control (DevPlanSwitcher) is tree-shaken out of production
+  // bundles, but the route handler still runs in prod, so a merchant could POST
+  // here directly to unlock Enterprise for free. Gate the handler server-side.
+  // Real upgrades go through /app/upgrade → Shopify billing → billing-callback.
+  if (process.env.NODE_ENV === "production") {
+    console.warn(`[Dev Update Plan] Blocked in production for ${session.shop}`);
+    return redirect("/app/upgrade");
+  }
+
   const formData = await request.formData();
   const tier = formData.get("tier");
-  
+
   if (!['starter', 'pro', 'enterprise'].includes(tier)) {
     return redirect("/app");
   }
