@@ -4,9 +4,15 @@ import db from "../db.server";
 /**
  * GDPR: Shop Redact (Full Data Deletion)
  *
- * When a shop uninstalls and requests all data be deleted, Shopify sends this webhook.
- * This is sent 48 hours after app/uninstalled.
- * We must delete ALL data for this shop.
+ * Sent 48h after app/uninstalled. We must delete ALL data for this shop.
+ *
+ * NOTE: the previous implementation queried `shop.shopDomain`, which is not a
+ * column (the field is `shopifyDomain`). Prisma threw `Unknown arg` on the
+ * very first query, the catch swallowed it into a 200, and NOTHING was ever
+ * deleted — the endpoint passed Shopify's HMAC/200 check while being
+ * non-functional. It also missed InterventionOutcome/Threshold, UsageCharge,
+ * BrandSafetyRule and WebhookOrder, and referenced a non-existent
+ * evolutionHistory model.
  */
 export const action = async ({ request }) => {
   const { shop, topic } = await authenticate.webhook(request);
@@ -15,13 +21,17 @@ export const action = async ({ request }) => {
   console.log(`Shop redact request - deleting all data for: ${shop}`);
 
   try {
-    // Find the shop
-    const shopRecord = await db.shop.findFirst({
-      where: { shopDomain: shop }
+    const shopRecord = await db.shop.findUnique({
+      where: { shopifyDomain: shop }
     });
 
+    // Sessions and the webhook-dedupe table key off the domain, not shopId,
+    // so purge them even if the Shop row is already gone.
+    await db.session.deleteMany({ where: { shop } }).catch(() => {});
+    await db.webhookOrder.deleteMany({ where: { shopDomain: shop } }).catch(() => {});
+
     if (!shopRecord) {
-      console.log(`Shop ${shop} not found in database - may have been deleted already`);
+      console.log(`Shop ${shop} not found — sessions/webhook rows purged, nothing else to delete`);
       return new Response(JSON.stringify({ success: true }), {
         status: 200,
         headers: { "Content-Type": "application/json" }
@@ -29,99 +39,39 @@ export const action = async ({ request }) => {
     }
 
     const shopId = shopRecord.id;
-    const deletionResults = {};
+    const results = {};
 
-    // Delete all shop data in order (respecting foreign key constraints)
+    // Order matters: VariantImpression FKs to Variant, so impressions must go
+    // first. Everything else links to Shop by shopId (no cascade configured),
+    // so the Shop row is deleted last. Each step is independent so one failure
+    // doesn't abort the rest of the erasure.
+    const steps = [
+      ["variantImpressions", () => db.variantImpression.deleteMany({ where: { shopId } })],
+      ["variants", () => db.variant.deleteMany({ where: { shopId } })],
+      ["interventionOutcomes", () => db.interventionOutcome.deleteMany({ where: { shopId } })],
+      ["interventionThresholds", () => db.interventionThreshold.deleteMany({ where: { shopId } })],
+      ["aiDecisions", () => db.aIDecision.deleteMany({ where: { shopId } })],
+      ["discountOffers", () => db.discountOffer.deleteMany({ where: { shopId } })],
+      ["conversions", () => db.conversion.deleteMany({ where: { shopId } })],
+      ["starterImpressions", () => db.starterImpression.deleteMany({ where: { shopId } })],
+      ["seasonalPatterns", () => db.seasonalPattern.deleteMany({ where: { shopId } })],
+      ["promotions", () => db.promotion.deleteMany({ where: { shopId } })],
+      ["brandSafetyRules", () => db.brandSafetyRule.deleteMany({ where: { shopId } })],
+      ["usageCharges", () => db.usageCharge.deleteMany({ where: { shopId } })],
+      ["shop", () => db.shop.delete({ where: { id: shopId } })],
+    ];
 
-    // 1. Delete StarterImpressions
-    try {
-      const result = await db.starterImpression.deleteMany({ where: { shopId } });
-      deletionResults.starterImpressions = result.count;
-    } catch (e) {
-      deletionResults.starterImpressions = `error: ${e.message}`;
+    for (const [name, fn] of steps) {
+      try {
+        const res = await fn();
+        results[name] = res?.count ?? 1;
+      } catch (e) {
+        results[name] = `error: ${e.message}`;
+        console.error(`[Shop Redact] Failed to delete ${name}:`, e.message);
+      }
     }
 
-    // 2. Delete VariantImpressions
-    try {
-      const result = await db.variantImpression.deleteMany({ where: { shopId } });
-      deletionResults.variantImpressions = result.count;
-    } catch (e) {
-      deletionResults.variantImpressions = `error: ${e.message}`;
-    }
-
-    // 3. Delete AIDecisions
-    try {
-      const result = await db.aIDecision.deleteMany({ where: { shopId } });
-      deletionResults.aiDecisions = result.count;
-    } catch (e) {
-      deletionResults.aiDecisions = `error: ${e.message}`;
-    }
-
-    // 4. Delete Conversions
-    try {
-      const result = await db.conversion.deleteMany({ where: { shopId } });
-      deletionResults.conversions = result.count;
-    } catch (e) {
-      deletionResults.conversions = `error: ${e.message}`;
-    }
-
-    // 5. Delete DiscountOffers
-    try {
-      const result = await db.discountOffer.deleteMany({ where: { shopId } });
-      deletionResults.discountOffers = result.count;
-    } catch (e) {
-      deletionResults.discountOffers = `error: ${e.message}`;
-    }
-
-    // 6. Delete Variants
-    try {
-      const result = await db.variant.deleteMany({ where: { shopId } });
-      deletionResults.variants = result.count;
-    } catch (e) {
-      deletionResults.variants = `error: ${e.message}`;
-    }
-
-    // 7. Delete EvolutionHistory
-    try {
-      const result = await db.evolutionHistory.deleteMany({ where: { shopId } });
-      deletionResults.evolutionHistory = result.count;
-    } catch (e) {
-      deletionResults.evolutionHistory = `error: ${e.message}`;
-    }
-
-    // 8. Delete SeasonalPattern
-    try {
-      const result = await db.seasonalPattern.deleteMany({ where: { shopId } });
-      deletionResults.seasonalPatterns = result.count;
-    } catch (e) {
-      deletionResults.seasonalPatterns = `error: ${e.message}`;
-    }
-
-    // 9. Delete Promotions
-    try {
-      const result = await db.promotion.deleteMany({ where: { shopId } });
-      deletionResults.promotions = result.count;
-    } catch (e) {
-      deletionResults.promotions = `error: ${e.message}`;
-    }
-
-    // 10. Delete the Shop record itself
-    try {
-      await db.shop.delete({ where: { id: shopId } });
-      deletionResults.shop = 1;
-    } catch (e) {
-      deletionResults.shop = `error: ${e.message}`;
-    }
-
-    // 11. Delete sessions for this shop domain
-    try {
-      const result = await db.session.deleteMany({ where: { shop } });
-      deletionResults.sessions = result.count;
-    } catch (e) {
-      deletionResults.sessions = `error: ${e.message}`;
-    }
-
-    console.log(`Shop redact completed for ${shop}:`, deletionResults);
+    console.log(`Shop redact completed for ${shop}:`, results);
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -129,8 +79,10 @@ export const action = async ({ request }) => {
     });
 
   } catch (error) {
+    if (error instanceof Response) throw error; // invalid HMAC → 401
     console.error(`Error processing shop redact:`, error);
-    // Still return 200 to acknowledge receipt
+    // Acknowledge receipt so Shopify doesn't retry indefinitely; the deletion
+    // is best-effort per-step above.
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" }

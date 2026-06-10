@@ -4,12 +4,13 @@ import db from "../db.server";
 /**
  * GDPR: Customer Redact (Data Deletion)
  *
- * When a customer requests their data be deleted, Shopify sends this webhook.
- * We must delete all personal data for this customer.
+ * Delete all personal data we hold for this customer. The only customer
+ * identifier this app stores is `Conversion.customerEmail` (impression /
+ * decision rows are anonymous). Match on that, plus any orders_to_redact.
  *
- * For this app:
- * - Delete conversions linked to this customer
- * - Impression data is anonymous and doesn't need deletion
+ * Previous version queried `shop.shopDomain` (not a column → Prisma threw,
+ * caught, 200) and filtered conversions by `customerId` (also not a column),
+ * so it deleted nothing.
  */
 export const action = async ({ request }) => {
   const { shop, topic, payload } = await authenticate.webhook(request);
@@ -18,9 +19,8 @@ export const action = async ({ request }) => {
   console.log(`Customer redact request for customer: ${payload.customer?.id}`);
 
   try {
-    // Find the shop
-    const shopRecord = await db.shop.findFirst({
-      where: { shopDomain: shop }
+    const shopRecord = await db.shop.findUnique({
+      where: { shopifyDomain: shop }
     });
 
     if (!shopRecord) {
@@ -31,35 +31,34 @@ export const action = async ({ request }) => {
       });
     }
 
-    let deletedCount = 0;
+    let deletedByEmail = 0;
+    let deletedByOrder = 0;
 
-    // Delete conversions for this customer
-    if (payload.customer?.id) {
-      const deleteResult = await db.conversion.deleteMany({
-        where: {
-          shopId: shopRecord.id,
-          customerId: String(payload.customer.id)
-        }
+    // Delete conversions matching the customer's email.
+    const email = payload.customer?.email;
+    if (email) {
+      const res = await db.conversion.deleteMany({
+        where: { shopId: shopRecord.id, customerEmail: email }
       });
-
-      deletedCount = deleteResult.count;
+      deletedByEmail = res.count;
     }
 
-    // If we had customer email in orders array, process those too
-    if (payload.orders_to_redact && payload.orders_to_redact.length > 0) {
-      for (const orderId of payload.orders_to_redact) {
-        await db.conversion.deleteMany({
-          where: {
-            shopId: shopRecord.id,
-            orderId: String(orderId)
-          }
-        });
-      }
+    // Also delete any specifically listed orders.
+    const ordersToRedact = payload.orders_to_redact || [];
+    if (ordersToRedact.length > 0) {
+      const res = await db.conversion.deleteMany({
+        where: {
+          shopId: shopRecord.id,
+          orderId: { in: ordersToRedact.map((id) => String(id)) }
+        }
+      });
+      deletedByOrder = res.count;
     }
 
     console.log(`Customer redact completed for ${shop}:`, {
       customerId: payload.customer?.id,
-      conversionsDeleted: deletedCount
+      conversionsDeletedByEmail: deletedByEmail,
+      conversionsDeletedByOrder: deletedByOrder
     });
 
     return new Response(JSON.stringify({ success: true }), {
@@ -68,8 +67,8 @@ export const action = async ({ request }) => {
     });
 
   } catch (error) {
+    if (error instanceof Response) throw error; // invalid HMAC → 401
     console.error(`Error processing customer redact:`, error);
-    // Still return 200 to acknowledge receipt
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
