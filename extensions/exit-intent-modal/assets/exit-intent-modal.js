@@ -477,6 +477,7 @@
       // 16. Local time of day (customer's browser time)
       const now = new Date();
       const localHour = now.getHours(); // 0-23 in customer's timezone
+      const dayOfWeek = now.getDay();   // 0-6 in customer's timezone (0=Sun)
 
       // 17. Stable visitor id — server hashes this for STICKY holdout
       // assignment (same shopper stays in/out of the 5% holdout across
@@ -509,8 +510,9 @@
         failedCouponAttempt,
         exitPage,
         cartAgeMinutes,
-        // Time-based signal
+        // Time-based signals (customer's timezone, not the server's)
         localHour,
+        dayOfWeek,
         // Phase 2A scenario signals
         pageType: exitPage, // broader page categorization, shared with exitPage
         promoInCart

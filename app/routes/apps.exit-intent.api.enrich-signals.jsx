@@ -71,10 +71,16 @@ export async function action({ request }) {
     };
   }
 
-  // Time patterns
+  // Time-of-day signals must reflect the CUSTOMER's timezone, not the server's
+  // (Fly runs UTC). The storefront (collectCustomerSignals) sends localHour +
+  // dayOfWeek from the browser — preserve them. Only fall back to server time
+  // when the client omitted them; that's a UTC approximation, flagged so it's
+  // never mistaken for the real local time. (Previously this unconditionally
+  // overwrote dayOfWeek with the server clock, which propensity then read —
+  // wrong for any customer far from UTC.)
   const now = new Date();
-  enriched.hourOfDay = now.getHours();
-  enriched.dayOfWeek = now.getDay();
+  if (enriched.localHour == null) enriched.localHour = now.getHours();
+  if (enriched.dayOfWeek == null) enriched.dayOfWeek = now.getDay();
 
   // PROPENSITY SCORE — shared engine (propensity.server.js), single source of truth
   enriched.propensityScore = computePropensity(enriched);
