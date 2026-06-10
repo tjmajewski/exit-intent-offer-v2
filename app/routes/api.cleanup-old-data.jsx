@@ -1,3 +1,5 @@
+import { requireCronSecret } from "../utils/cron-auth.server.js";
+
 /**
  * Cleanup old impression data to manage database size
  *
@@ -5,15 +7,26 @@
  *
  * Usage:
  *   POST /api/cleanup-old-data
- *   POST /api/cleanup-old-data?days=90  (custom retention period)
+ *   POST /api/cleanup-old-data?days=90  (custom retention period, min 30)
  *   POST /api/cleanup-old-data?dryRun=true  (see what would be deleted)
+ *   Header: Authorization: Bearer <CRON_SECRET>
  */
+const MIN_RETENTION_DAYS = 30;
+
 export async function action({ request }) {
+  // Destructive bulk delete across ALL shops — cron-secret only.
+  const unauthorized = requireCronSecret(request);
+  if (unauthorized) return unauthorized;
+
   const { default: db } = await import("../db.server.js");
 
   try {
     const url = new URL(request.url);
-    const retentionDays = parseInt(url.searchParams.get('days') || '90');
+    const requestedDays = parseInt(url.searchParams.get('days') || '90', 10);
+    // Clamp even for authorized callers: days=0 would wipe all learning data.
+    const retentionDays = Number.isFinite(requestedDays)
+      ? Math.max(MIN_RETENTION_DAYS, requestedDays)
+      : 90;
     const dryRun = url.searchParams.get('dryRun') === 'true';
 
     const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
@@ -169,9 +182,12 @@ export async function action({ request }) {
 }
 
 /**
- * GET: Return current database stats
+ * GET: Return current database stats (cron-secret only — cross-shop data)
  */
 export async function loader({ request }) {
+  const unauthorized = requireCronSecret(request);
+  if (unauthorized) return unauthorized;
+
   const { default: db } = await import("../db.server.js");
 
   try {

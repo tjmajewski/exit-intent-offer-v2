@@ -1,4 +1,10 @@
+import { requireCronSecret } from "../utils/cron-auth.server.js";
+
 export async function action({ request }) {
+  // Destructive bulk delete across ALL shops — cron-secret only.
+  const unauthorized = requireCronSecret(request);
+  if (unauthorized) return unauthorized;
+
   const { default: db } = await import("../db.server.js");
   try {
     const now = new Date();

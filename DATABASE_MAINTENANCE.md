@@ -21,10 +21,10 @@ The app generates data on every modal impression:
 
 ```bash
 # Local
-curl http://localhost:3000/api/cleanup-old-data
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cleanup-old-data
 
 # Production
-curl https://your-app.fly.dev/api/cleanup-old-data
+curl -H "Authorization: Bearer $CRON_SECRET" https://your-app.fly.dev/api/cleanup-old-data
 ```
 
 Returns:
@@ -67,20 +67,20 @@ The endpoint automatically adds recommendations when thresholds are exceeded.
 
 ```bash
 # See what would be deleted (90 days default)
-curl -X POST "https://your-app.fly.dev/api/cleanup-old-data?dryRun=true"
+curl -X POST -H "Authorization: Bearer $CRON_SECRET" "https://your-app.fly.dev/api/cleanup-old-data?dryRun=true"
 
-# Custom retention period
-curl -X POST "https://your-app.fly.dev/api/cleanup-old-data?dryRun=true&days=60"
+# Custom retention period (min 30 days, lower values are clamped)
+curl -X POST -H "Authorization: Bearer $CRON_SECRET" "https://your-app.fly.dev/api/cleanup-old-data?dryRun=true&days=60"
 ```
 
 ### Run Cleanup
 
 ```bash
 # Delete data older than 90 days
-curl -X POST https://your-app.fly.dev/api/cleanup-old-data
+curl -X POST -H "Authorization: Bearer $CRON_SECRET" https://your-app.fly.dev/api/cleanup-old-data
 
-# Delete data older than 60 days
-curl -X POST "https://your-app.fly.dev/api/cleanup-old-data?days=60"
+# Delete data older than 60 days (min 30, lower values are clamped)
+curl -X POST -H "Authorization: Bearer $CRON_SECRET" "https://your-app.fly.dev/api/cleanup-old-data?days=60"
 ```
 
 Returns:
@@ -125,7 +125,7 @@ They share the deployed app image and exit on completion.
 
 Cleanup of expired discount offers and old impression/decision rows is handled
 by the same `aggregate-gene-performance` daily run plus `/api/cleanup-old-data`
-(callable on demand via `fly ssh console -C "curl -X POST http://localhost:3000/api/cleanup-old-data"`).
+(callable on demand via `fly ssh console -C "curl -X POST -H \"Authorization: Bearer $CRON_SECRET\" http://localhost:3000/api/cleanup-old-data"`).
 
 ### How they were registered
 

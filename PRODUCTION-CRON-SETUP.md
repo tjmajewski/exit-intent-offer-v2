@@ -81,7 +81,7 @@ fly ssh console -a resparq -C "node app/cron/track-seasonal-patterns.js"
 For the cleanup endpoint specifically:
 
 ```bash
-fly ssh console -a resparq -C "curl -X POST http://localhost:3000/api/cleanup-old-data"
+fly ssh console -a resparq -C "curl -X POST -H \"Authorization: Bearer $CRON_SECRET\" http://localhost:3000/api/cleanup-old-data"
 ```
 
 ---

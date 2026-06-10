@@ -318,6 +318,32 @@ export const action = async ({ request }) => {
       exitDiscountUsed = exitIntentDiscount || configuredDiscountUsed;
     }
 
+    // Mark the offer redeemed — closes the loop for budget tracking, redemption
+    // reporting, and cleanup (which deletes expired UNredeemed offers; without
+    // this flag converted offers were deleted too). Unique codes have one row;
+    // generic codes share a code across rows, so mark only the most recent.
+    if (shopRecord && exitDiscountUsed?.code) {
+      try {
+        const offerRow = await db.discountOffer.findFirst({
+          where: {
+            shopId: shopRecord.id,
+            discountCode: exitDiscountUsed.code,
+            redeemed: false
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+        if (offerRow) {
+          await db.discountOffer.update({
+            where: { id: offerRow.id },
+            data: { redeemed: true, redeemedAt: new Date() }
+          });
+          console.log(`[Webhook] Offer ${exitDiscountUsed.code} marked redeemed`);
+        }
+      } catch (err) {
+        console.error('[Webhook] Error marking offer redeemed:', err.message);
+      }
+    }
+
     const orderValue = parseFloat(payload.total_price);
     console.log(` Exit intent offer attribution: ${exitDiscountUsed?.code || (exitIntentAttribute ? 'cart-attribute' : 'unknown')}`);
     console.log(` Order value: $${orderValue}`);

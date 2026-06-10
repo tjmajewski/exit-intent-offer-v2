@@ -618,24 +618,42 @@ export async function recordImpression(variantId, shopId, context = {}) {
 }
 
 /**
- * Record a click on a variant
+ * Record a click on a variant.
+ *
+ * Idempotent: variant.clicks only increments on the FIRST click per
+ * impression. impressionId is client-supplied (track-click endpoint), so a
+ * replayed id must not inflate click counts — clicked impressions feed both
+ * evolution fitness and the order webhook's conversion attribution.
  */
 export async function recordClick(impressionId) {
-  const impression = await (await getDb()).variantImpression.update({
-    where: { id: impressionId },
+  const db = await getDb();
+
+  // Conditional update: only flips clicked false→true. count tells us
+  // whether this was the first click without a read-then-write race.
+  const firstClick = await db.variantImpression.updateMany({
+    where: { id: impressionId, clicked: false },
     data: { clicked: true }
   });
-  
-  // Update variant click count
-  await (await getDb()).variant.update({
-    where: { id: impression.variantId },
-    data: {
-      clicks: { increment: 1 }
-    }
+
+  const impression = await db.variantImpression.findUnique({
+    where: { id: impressionId }
   });
-  
-  console.log(` Recorded click for impression ${impressionId}`);
-  
+  if (!impression) {
+    throw new Error(`Impression ${impressionId} not found`);
+  }
+
+  if (firstClick.count === 1) {
+    await db.variant.update({
+      where: { id: impression.variantId },
+      data: {
+        clicks: { increment: 1 }
+      }
+    });
+    console.log(` Recorded click for impression ${impressionId}`);
+  } else {
+    console.log(` Duplicate click ignored for impression ${impressionId}`);
+  }
+
   return impression;
 }
 
@@ -971,12 +989,31 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
   
   console.log(` Current population: ${liveVariants.length} live variants`);
   
-  // Step 1: Calculate profit/impression for all variants
+  // Step 1: Recalculate profit/impression for all variants using the ACTUAL
+  // recorded discount cost per conversion (same math as recordConversion).
+  // The old version assumed offerAmount was always a percentage — for
+  // revenue/threshold baselines it's DOLLARS, so a "$20 off" variant was
+  // costed as 20% of AOV and kill/breed decisions ran on wrong fitness.
+  // Recomputing (vs trusting stored profitPerImpression) keeps the
+  // impressions denominator current between conversions.
+  const discountAggs = await (await getDb()).variantImpression.groupBy({
+    by: ['variantId'],
+    where: {
+      variantId: { in: liveVariants.map(v => v.id) },
+      converted: true
+    },
+    _sum: { discountAmount: true }
+  });
+  const discountCostByVariant = {};
+  for (const agg of discountAggs) {
+    discountCostByVariant[agg.variantId] = agg._sum.discountAmount || 0;
+  }
+
   liveVariants.forEach(v => {
     if (v.impressions > 0 && v.conversions > 0) {
       const cvr = v.conversions / v.impressions;
       const aov = v.revenue / v.conversions;
-      const avgDiscountCost = (v.offerAmount / 100) * aov; // Assume percentage discount
+      const avgDiscountCost = (discountCostByVariant[v.id] || 0) / v.conversions;
       const profitPerConversion = aov - avgDiscountCost;
       v.profitPerImpression = profitPerConversion * cvr;
     }
