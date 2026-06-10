@@ -188,17 +188,28 @@ export async function decideOffer(signals, ctx = {}) {
     : 'general';
 
   // -------------------------------------------------------------------------
-  // STAGE 2 — show / skip (ordered hard overrides, then adaptive threshold)
+  // STAGE 2 — show / skip (hard override, then adaptive threshold)
   // -------------------------------------------------------------------------
-  // Force-show: strongest discount-intent signals always get a modal.
-  const forceShow = triggerReason !== 'general';
+  // Hard force-show: ONLY a failed coupon attempt — the visitor has
+  // *explicitly* demonstrated discount intent, so always show, bypassing the
+  // bandit. The other triggers (checkoutExit, cartHesitation, staleCart) are
+  // INFERRED intent: they previously also bypassed the bandit, which starved
+  // it — those triggers cover the bulk of carted exit traffic, so the adaptive
+  // threshold only ever learned on the low-signal 'general' remainder and could
+  // never learn to skip a high-propensity checkout-exit. Route them through the
+  // bandit so it can. Cold-start (no learned threshold yet) still shows by
+  // default, so behavior is unchanged until the bandit has real data.
+  const hardForceShow = triggerReason === 'failedCoupon';
   const timing = (triggerReason === 'failedCoupon' || triggerReason === 'checkoutExit' || triggerReason === 'staleCart')
     ? 'immediate'
     : 'exit_intent';
 
-  if (!testMode && !forceShow) {
+  if (!testMode && !hardForceShow) {
     // Force-skip: first-time quick exit with a tiny cart = accidental visit.
-    if (signals.visitFrequency === 1 && signals.timeOnSite < 30 && cartValue < 50) {
+    // Only a low-intent 'general' exit can be accidental; an inferred trigger
+    // (hesitation, stale cart, checkout exit) is a deliberate signal.
+    if (triggerReason === 'general'
+        && signals.visitFrequency === 1 && signals.timeOnSite < 30 && cartValue < 50) {
       console.log(`[Offer Engine] Accidental visit (P=${P}) — no intervention`);
       return null;
     }
@@ -213,7 +224,7 @@ export async function decideOffer(signals, ctx = {}) {
 
       const decision = await shouldIntervene(db, shopId, P, segment);
       if (!decision.shouldShow) {
-        console.log(`[Offer Engine] Adaptive threshold: skip for P=${P} bucket ${decision.bucket}${decision.isExploring ? ' (exploring)' : ''}`);
+        console.log(`[Offer Engine] Adaptive threshold: skip for P=${P} bucket ${decision.bucket} trigger=${triggerReason}${decision.isExploring ? ' (exploring)' : ''}`);
         return null;
       }
       if (decision.isExploring) {
