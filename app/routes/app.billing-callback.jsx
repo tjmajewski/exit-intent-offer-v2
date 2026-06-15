@@ -100,10 +100,14 @@ async function updatePlanData(admin, session, db, tier, subscription, promoCode 
     currentPlan.usage.resetDate = resetDate.toISOString();
   }
 
-  // Mark trial as used so the merchant can never get another free trial
+  // Mark trial as used so the merchant can never get another free trial.
+  // Record the granted length (EARLYACCESS = 60 days, else 14) so remaining-
+  // trial math survives a later plan switch.
   if (!currentPlan.hasUsedTrial) {
+    const promo = promoCode ? validatePromoCode(promoCode) : null;
     currentPlan.hasUsedTrial = true;
     currentPlan.trialStartedAt = new Date().toISOString();
+    currentPlan.trialLengthDays = promo?.trialDays ?? 14;
   }
 
   // Update plan in metafields

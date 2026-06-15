@@ -89,15 +89,18 @@ export async function loader({ request }) {
       currentBillingCycle = billingCycleFromSubscription(activeSubscription);
     }
 
-    // Calculate remaining trial days for the CTA text
+    // Calculate remaining trial days for the CTA text. An active promo
+    // (EARLYACCESS) extends a fresh trial to its promo length; returning
+    // merchants count down from the length they were originally granted.
     let trialDaysRemaining = 0;
     if (plan.hasUsedTrial && plan.trialStartedAt) {
+      const grantedTrialDays = plan.trialLengthDays ?? 14;
       const daysSinceTrialStart = Math.floor(
         (Date.now() - new Date(plan.trialStartedAt).getTime()) / (1000 * 60 * 60 * 24)
       );
-      trialDaysRemaining = Math.max(0, 14 - daysSinceTrialStart);
+      trialDaysRemaining = Math.max(0, grantedTrialDays - daysSinceTrialStart);
     } else if (!plan.hasUsedTrial && !activeSubscription) {
-      trialDaysRemaining = 14;
+      trialDaysRemaining = promoConfig?.trialDays ?? 14;
     }
 
     // Determine the shop's billing currency so the UI shows the same code
@@ -140,7 +143,12 @@ export async function action({ request }) {
     // test: true for development, set to false for production
     const isTest = process.env.NODE_ENV !== "production";
 
-    // Determine how many trial days this subscription should get
+    // Determine how many trial days this subscription should get.
+    // A validated promo can override the standard 14-day trial (EARLYACCESS
+    // grants 60). Returning merchants resume the length they were originally
+    // granted (stored as trialLengthDays) so a plan switch mid-trial can't
+    // retroactively extend or shorten the runway.
+    const newTrialDays = validatedPromo?.trialDays ?? 14;
     let trialDays = 0;
     try {
       const planResponse = await admin.graphql(`
@@ -158,14 +166,15 @@ export async function action({ request }) {
         : null;
 
       if (currentPlan?.hasUsedTrial && currentPlan?.trialStartedAt) {
+        const grantedTrialDays = currentPlan.trialLengthDays ?? 14;
         const daysSinceTrialStart = Math.floor(
           (Date.now() - new Date(currentPlan.trialStartedAt).getTime()) / (1000 * 60 * 60 * 24)
         );
-        trialDays = Math.max(0, 14 - daysSinceTrialStart);
+        trialDays = Math.max(0, grantedTrialDays - daysSinceTrialStart);
       } else if (!currentPlan?.hasUsedTrial) {
         const activeSub = await getActiveSubscription(admin);
         if (!activeSub) {
-          trialDays = 14;
+          trialDays = newTrialDays;
         }
       }
     } catch (e) {
@@ -231,6 +240,13 @@ export default function Upgrade() {
   const urlHasInvalidPromo = searchParams.has("promo") && !promoCode;
   const [promoInput, setPromoInput] = useState("");
   const navigate = useNavigate();
+
+  // Effective free-trial length for display. A promo (EARLYACCESS = 60 days)
+  // overrides the standard 14-day trial. Render 60 as "2 months".
+  const freeTrialDays = promoConfig?.trialDays ?? 14;
+  const trialLabel = freeTrialDays >= 60
+    ? `${Math.round(freeTrialDays / 30)} Months`
+    : `${freeTrialDays} Days`;
 
   // Redirect to Shopify billing approval page (must break out of iframe)
   useEffect(() => {
@@ -320,10 +336,10 @@ export default function Upgrade() {
             textAlign: "center"
           }}>
             <div style={{ color: "#ec4899", fontWeight: 700, fontSize: 18, marginBottom: 4 }}>
-              You've been invited! Get the Pro plan at {formatPrice(promoConfig.monthlyPrice)}/mo
+              You've been invited! {trialLabel} free, then {formatPrice(promoConfig.monthlyPrice)}/mo on Pro
             </div>
             <div style={{ color: "#f9a8d4", fontSize: 14 }}>
-              Exclusive early access pricing — locked in for as long as you're subscribed.
+              No charge until your free trial ends. Early access pricing locked in for as long as you're subscribed.
             </div>
           </div>
         )}
@@ -338,10 +354,10 @@ export default function Upgrade() {
           textAlign: "center"
         }}>
           <div style={{ color: "#10b981", fontWeight: 700, fontSize: 18, marginBottom: 4 }}>
-            14-Day Free Trial Included on All Plans
+            {trialLabel} Free Trial Included{promoConfig ? " on Pro" : " on All Plans"}
           </div>
           <div style={{ color: "#6ee7b7", fontSize: 14 }}>
-            Try any plan free for 14 days — no charge until your trial ends. Cancel anytime.
+            Try {promoConfig ? "Pro" : "any plan"} free for {trialLabel.toLowerCase()}. No charge until your trial ends. Cancel anytime.
           </div>
         </div>
 
@@ -651,7 +667,7 @@ export default function Upgrade() {
                     >
                       {isSubmitting && submittingTier === planOption.tier
                         ? "Redirecting to Shopify..."
-                        : trialDaysRemaining === 14
+                        : !plan.hasUsedTrial && trialDaysRemaining > 0
                           ? "Start Free Trial"
                           : trialDaysRemaining > 0
                             ? `Switch Plan (${trialDaysRemaining} days left in trial)`

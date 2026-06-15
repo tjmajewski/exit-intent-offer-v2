@@ -33,6 +33,10 @@ const PROMO_CONFIGS = {
     monthlyPrice: 29,
     annualPrice: 24.65,
     annualTotal: 296,
+    // Early-access merchants get a 2-month free trial (vs the standard 14
+    // days). Shopify Billing charges nothing until these days elapse, then
+    // bills the discounted price above on a recurring basis.
+    trialDays: 60,
   },
 };
 
