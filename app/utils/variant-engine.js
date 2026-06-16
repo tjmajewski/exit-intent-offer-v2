@@ -427,8 +427,7 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
         variantId: { in: variantIds },
         triggerReason: triggerReason
       },
-      _count: { id: true },
-      _sum: { converted: false }
+      _count: { id: true }
     });
 
     // Also get conversion counts (groupBy _sum doesn't work on Boolean, use count with filter)

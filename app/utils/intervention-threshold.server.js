@@ -265,7 +265,12 @@ export async function recordInterventionConversion(db, outcomeId, revenue, disco
     }
   });
 
-  // Update the threshold counters with the conversion
+  // Update the threshold counters with the conversion.
+  // create/update need distinct shapes: Prisma validates BOTH branches of an
+  // upsert, and `{ increment }` is only valid for update — using it in create
+  // throws. The create branch is a fallback (the show/skip outcome normally
+  // created the row already); seed it with plain values plus 1 impression,
+  // since a conversion implies the impression that produced it.
   const arm = outcome.wasShown ? 'show' : 'skip';
   const updateData = arm === 'show'
     ? {
@@ -277,6 +282,19 @@ export async function recordInterventionConversion(db, outcomeId, revenue, disco
         skipConversions: { increment: 1 },
         skipRevenue: { increment: revenue },
         skipProfit: { increment: profit }
+      };
+  const createData = arm === 'show'
+    ? {
+        showImpressions: 1,
+        showConversions: 1,
+        showRevenue: revenue,
+        showProfit: profit
+      }
+    : {
+        skipImpressions: 1,
+        skipConversions: 1,
+        skipRevenue: revenue,
+        skipProfit: profit
       };
 
   await db.interventionThreshold.upsert({
@@ -291,7 +309,7 @@ export async function recordInterventionConversion(db, outcomeId, revenue, disco
       shopId: outcome.shopId,
       scoreBucket: outcome.scoreBucket,
       segment: outcome.segment,
-      ...updateData
+      ...createData
     },
     update: updateData
   });
