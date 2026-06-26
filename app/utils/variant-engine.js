@@ -7,6 +7,34 @@ import { hasSocialProof, replaceSocialProofPlaceholders } from './social-proof.j
 import { getSocialProofFromCache, setSocialProofCache } from './social-proof-cache.js';
 import { computeArchetypePriors, getArchetypeMultiplier } from './archetype-priors.js';
 import { computeTemplatePriors, getTemplateMultiplier } from './template-priors.js';
+import { getEnabledLayoutIds } from './templates.js';
+
+// ---------------------------------------------------------------------------
+// Layout QA policy (generation side)
+//
+// The engine stays pure: callers that know the shop resolve its enabled-layout
+// set (templates.getEnabledLayoutIds) and pass the resulting string[] down as
+// `enabledLayouts`. When omitted (null), no policy applies and the full gene
+// pool is used — so existing call sites and tests behave exactly as before.
+// The runtime clamp in ai-decision is the hard guarantee; this just stops the
+// AI wasting population slots (and skewing template learning) on layouts the
+// merchant turned off.
+// ---------------------------------------------------------------------------
+
+/** Intersect a template gene pool with the enabled-layout policy. */
+function allowedTemplateIds(poolTemplateIds, enabledLayouts) {
+  if (!Array.isArray(enabledLayouts)) return poolTemplateIds;
+  const filtered = poolTemplateIds.filter((id) => enabledLayouts.includes(id));
+  // Never strand a variant with no layout — fall back to the full pool (the
+  // runtime clamp will still remap anything disabled).
+  return filtered.length > 0 ? filtered : poolTemplateIds;
+}
+
+/** Pick one allowed templateId at random. */
+function pickTemplateId(poolTemplateIds, enabledLayouts) {
+  const ids = allowedTemplateIds(poolTemplateIds, enabledLayouts);
+  return ids[Math.floor(Math.random() * ids.length)];
+}
 
 // Helper to get db instance (dynamic import for React Router 7 compatibility)
 let dbInstance = null;
@@ -32,7 +60,7 @@ function generateVariantId() {
 /**
  * Create a single random variant from a gene pool
  */
-function createRandomVariant(baseline, segment = 'all', useSocialProof = false) {
+function createRandomVariant(baseline, segment = 'all', useSocialProof = false, enabledLayouts = null) {
   const pool = genePools[baseline];
 
   // Select urgency gene first — it determines which headline/subhead pool to use
@@ -70,7 +98,7 @@ function createRandomVariant(baseline, segment = 'all', useSocialProof = false) 
     showSubhead: pool.showSubhead[Math.floor(Math.random() * pool.showSubhead.length)],
     triggerType: pool.triggerTypes[Math.floor(Math.random() * pool.triggerTypes.length)],
     idleSeconds: pool.idleSeconds[Math.floor(Math.random() * pool.idleSeconds.length)],
-    templateId: pool.templateIds[Math.floor(Math.random() * pool.templateIds.length)],
+    templateId: pickTemplateId(pool.templateIds, enabledLayouts),
 
     // Initialize performance
     impressions: 0,
@@ -91,7 +119,7 @@ function createRandomVariant(baseline, segment = 'all', useSocialProof = false) 
  * 1. Decide whether to use social proof gene pools
  * 2. Replace placeholders with actual values
  */
-export async function createRandomVariantWithSocialProof(shopId, baseline, segment = 'all') {
+export async function createRandomVariantWithSocialProof(shopId, baseline, segment = 'all', enabledLayouts = null) {
   // Try cache first
   let shop = getSocialProofFromCache(shopId);
   
@@ -120,7 +148,7 @@ export async function createRandomVariantWithSocialProof(shopId, baseline, segme
   const socialProofAvailable = shop?.socialProofEnabled && hasSocialProof(shop);
   
   // Create variant with appropriate gene pool
-  const variant = createRandomVariant(baseline, segment, socialProofAvailable);
+  const variant = createRandomVariant(baseline, segment, socialProofAvailable, enabledLayouts);
   
   // Replace placeholders if this variant has social proof genes
   if (socialProofAvailable && variant.headline.includes('{{')) {
@@ -138,10 +166,11 @@ export async function createRandomVariantWithSocialProof(shopId, baseline, segme
  * Latin Hypercube Sampling: Generate diverse starting variants
  * Ensures good coverage of the gene space
  */
-function generateDiverseVariants(count, baseline, segment = 'all') {
+function generateDiverseVariants(count, baseline, segment = 'all', enabledLayouts = null) {
   const pool = genePools[baseline];
+  const layoutPool = allowedTemplateIds(pool.templateIds, enabledLayouts);
   const variants = [];
-  
+
   for (let i = 0; i < count; i++) {
     // Deterministically spread variants across gene space
     const offerIndex = Math.floor(i / (count / pool.offerAmounts.length)) % pool.offerAmounts.length;
@@ -178,7 +207,8 @@ function generateDiverseVariants(count, baseline, segment = 'all') {
       triggerType: pool.triggerTypes[triggerIndex],
       idleSeconds: pool.idleSeconds[idleIndex],
       // Spread templates evenly across the seed population for fast gene coverage
-      templateId: pool.templateIds[i % pool.templateIds.length],
+      // (restricted to enabled layouts so disabled ones never seed in).
+      templateId: layoutPool[i % layoutPool.length],
 
       impressions: 0,
       clicks: 0,
@@ -223,7 +253,11 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
     console.log(` Variants already exist for ${baseline}/${segment}. Skipping seed.`);
     return shop.variants;
   }
-  
+
+  // Resolve the merchant's enabled-layout policy once; thread it into every
+  // creation path below so the seed population never lands on a disabled layout.
+  const enabledLayouts = getEnabledLayoutIds(shop.disabledLayouts);
+
   // Count total impressions across all variants
   const totalImpressions = await (await getDb()).variantImpression.count({
     where: { shopId: shopId }
@@ -262,7 +296,7 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
       // Create variants using proven genes + some random genes
       const variantPromises = [];
       for (let i = 0; i < provenTarget; i++) {
-        variantPromises.push(createRandomVariantWithSocialProof(shopId, baseline, segment));
+        variantPromises.push(createRandomVariantWithSocialProof(shopId, baseline, segment, enabledLayouts));
       }
       const createdVariants = await Promise.all(variantPromises);
       
@@ -288,7 +322,11 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
           } else if (gene.geneType === 'showSubhead') {
             variant.showSubhead = gene.geneValue === 'true';
           } else if (gene.geneType === 'templateId') {
-            variant.templateId = gene.geneValue;
+            // Only inherit a network-proven layout if the merchant hasn't
+            // disabled it; otherwise keep the variant's already-enabled pick.
+            if (enabledLayouts.includes(gene.geneValue)) {
+              variant.templateId = gene.geneValue;
+            }
           }
         });
         
@@ -297,19 +335,19 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
       
       // Add random exploration variants
       if (randomTarget > 0) {
-        variants.push(...generateDiverseVariants(randomTarget, baseline, segment));
+        variants.push(...generateDiverseVariants(randomTarget, baseline, segment, enabledLayouts));
       }
 
       console.log(` Created ${provenTarget} proven + ${randomTarget} random variants`);
     } else {
       console.log(' Not enough proven genes found, using random seed');
-      variants = generateDiverseVariants(seedTarget, baseline, segment);
+      variants = generateDiverseVariants(seedTarget, baseline, segment, enabledLayouts);
     }
   }
   // EXISTING STORE: Pure random exploration
   else {
     console.log(' Existing store - generating diverse random variants');
-    variants = generateDiverseVariants(seedTarget, baseline, segment);
+    variants = generateDiverseVariants(seedTarget, baseline, segment, enabledLayouts);
   }
   
   // Save variants to database
@@ -805,7 +843,7 @@ function weightedRandomSelection(variants, weightFn) {
 /**
  * Breed a new variant from two parents using genetic algorithm
  */
-async function breedNewVariant(parents, baseline, segment = 'all', shopId = null, evolutionSettings = null, attempt = 0) {
+async function breedNewVariant(parents, baseline, segment = 'all', shopId = null, evolutionSettings = null, attempt = 0, enabledLayouts = null) {
   const pool = genePools[baseline];
   
   // Default settings if not provided
@@ -867,7 +905,14 @@ async function breedNewVariant(parents, baseline, segment = 'all', shopId = null
   if (mutations.length > 0) {
     console.log(`   Mutations in: ${mutations.join(', ')}`);
   }
-  
+
+  // Layout policy: crossover can inherit a disabled layout from a parent and
+  // mutation draws from the full pool, so clamp the child's templateId to an
+  // enabled layout. Keeps bred variants off layouts the merchant turned off.
+  if (!allowedTemplateIds(pool.templateIds, enabledLayouts).includes(childGenes.templateId)) {
+    childGenes.templateId = pickTemplateId(pool.templateIds, enabledLayouts);
+  }
+
   const newGeneration = Math.max(parent1.generation, parent2.generation) + 1;
   
   const newVariant = {
@@ -910,9 +955,9 @@ async function breedNewVariant(parents, baseline, segment = 'all', shopId = null
       // endpoint's serve-time brand-safety guards are the backstop.
       if (attempt >= 5) {
         console.warn('   Max re-breed attempts reached — falling back to random variant');
-        return createRandomVariant(baseline, segment);
+        return createRandomVariant(baseline, segment, false, enabledLayouts);
       }
-      return await breedNewVariant(parents, baseline, segment, shopId, evolutionSettings, attempt + 1);
+      return await breedNewVariant(parents, baseline, segment, shopId, evolutionSettings, attempt + 1, enabledLayouts);
     }
   }
   
@@ -973,9 +1018,13 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
       mutationRate: true,
       crossoverRate: true,
       selectionPressure: true,
-      populationSize: true
+      populationSize: true,
+      disabledLayouts: true
     }
   });
+
+  // Merchant's enabled-layout policy — threaded into breeding below.
+  const enabledLayouts = getEnabledLayoutIds(shop?.disabledLayouts);
 
   // Apply tier-based population size limits
   let populationSize = shop?.populationSize || 10;
@@ -1089,7 +1138,7 @@ export async function evolutionCycle(shopId, baseline, segment = 'all') {
     console.log(`\n Breeding ${needToBreed} new variant(s)`);
     
     for (let i = 0; i < needToBreed; i++) {
-      const childData = await breedNewVariant(liveVariants, baseline, segment, shopId, evolutionSettings);
+      const childData = await breedNewVariant(liveVariants, baseline, segment, shopId, evolutionSettings, 0, enabledLayouts);
       
       const newVariant = await (await getDb()).variant.create({
         data: {

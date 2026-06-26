@@ -117,7 +117,47 @@ export const MODAL_LAYOUTS = {
 
 export const DEFAULT_MODAL_LAYOUT_ID = "classic-card";
 
+// Canonical ordered list of every shippable layout id. Mirrors TEMPLATE_IDS in
+// gene-pools.js and the TEMPLATES registry in the storefront extension — kept
+// local so this module has no dependency on the genetic engine.
+export const ALL_LAYOUT_IDS = Object.keys(MODAL_LAYOUTS);
+
 export function getAvailableLayouts() {
   // All merchants see Tier 1 + Tier 2 layouts.
   return Object.values(MODAL_LAYOUTS).filter((l) => l.tier <= 2);
+}
+
+// =============================================================================
+// LAYOUT QA POLICY
+//
+// Merchants can turn off layouts that clash with their theme (see the QA page
+// at /app/qa-layouts). The disabled set is stored on Shop.disabledLayouts as a
+// JSON string array of templateIds. These two helpers are the single source of
+// truth for parsing that column and resolving the enabled set — used by the QA
+// route, the runtime clamp in ai-decision, and the genetic engine.
+// =============================================================================
+
+/**
+ * Parse the Shop.disabledLayouts JSON column into a clean string[] of known
+ * layout ids. Tolerant of null / malformed JSON / unknown ids (returns []).
+ */
+export function parseDisabledLayouts(json) {
+  try {
+    const arr = JSON.parse(json || "[]");
+    if (!Array.isArray(arr)) return [];
+    return arr.filter((id) => typeof id === "string" && ALL_LAYOUT_IDS.includes(id));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Resolve the set of layout ids the AI is allowed to generate and render for a
+ * shop. Never returns empty: if a merchant somehow disabled every layout, falls
+ * back to the default so a pop-up can always render.
+ */
+export function getEnabledLayoutIds(disabledJson) {
+  const disabled = parseDisabledLayouts(disabledJson);
+  const enabled = ALL_LAYOUT_IDS.filter((id) => !disabled.includes(id));
+  return enabled.length > 0 ? enabled : [DEFAULT_MODAL_LAYOUT_ID];
 }

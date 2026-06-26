@@ -7,6 +7,7 @@ import { composeSegmentKey } from "../utils/segment-key.js";
 import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
 import { computePropensity } from "../utils/propensity.server.js";
 import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { getEnabledLayoutIds } from "../utils/templates.js";
 
 // FNV-1a 32-bit hash — deterministic holdout bucketing per visitor.
 function fnv1a(str) {
@@ -605,6 +606,21 @@ export async function action({ request }) {
     // agree on what kind of modal was shown.
     const archetypeName = getArchetype(baseline)?.archetypeName || null;
 
+    // Layout QA guard — the hard guarantee for the disable feature. A merchant
+    // can turn off any layout that clashes with their theme (see /app/qa-layouts).
+    // Generation-side filtering keeps NEW variants off disabled layouts, but
+    // legacy DB variants, crossover inheritance, and meta-learning genes can all
+    // still carry one. This single clamp is the boundary that holds: if the
+    // selected variant points at a disabled layout, render an enabled one
+    // (prefer Classic Card) so a turned-off pop-up can never reach a shopper.
+    const enabledLayouts = getEnabledLayoutIds(shopRecord.disabledLayouts);
+    let effectiveTemplateId = selectedVariant.templateId || 'classic-card';
+    if (!enabledLayouts.includes(effectiveTemplateId)) {
+      const remapped = enabledLayouts.includes('classic-card') ? 'classic-card' : enabledLayouts[0];
+      console.warn(`[Layout QA] Variant ${selectedVariant.id} uses disabled layout "${effectiveTemplateId}" — rendering "${remapped}" instead.`);
+      effectiveTemplateId = remapped;
+    }
+
     let effectiveHeadline = selectedVariant.headline;
     if (!isValidHeadline(baseline, effectiveHeadline) || hasBannedClaim(baseline, effectiveHeadline)) {
       const fallback = pickFallbackHeadline(baseline);
@@ -637,7 +653,7 @@ export async function action({ request }) {
       showSubhead: effectiveShowSubhead,
       triggerType: selectedVariant.triggerType || 'exit_intent',
       idleSeconds: selectedVariant.idleSeconds || 30,
-      templateId: selectedVariant.templateId || 'classic-card',
+      templateId: effectiveTemplateId,
       variantId: selectedVariant.id,
       variantPublicId: selectedVariant.variantId,
       baseline: baseline,

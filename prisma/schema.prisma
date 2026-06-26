@@ -89,6 +89,11 @@ model Shop {
   // Promotional Intelligence (Enterprise)
   promotionalIntelligenceEnabled Boolean @default(true)
 
+  // Layout QA — JSON array of templateIds the merchant turned off because they
+  // clash with their theme. The AI never generates or renders these. Empty
+  // array = all 8 layouts enabled. See app/utils/templates.js getEnabledLayoutIds.
+  disabledLayouts String @default("[]")
+
   // Trigger Settings
   exitIntentEnabled Boolean @default(true)
   timeDelayEnabled  Boolean @default(false)
