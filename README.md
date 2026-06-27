@@ -252,6 +252,7 @@ Comprehensive documentation is available in the following files:
 - **[EXCEL_EXPORT_IMPLEMENTATION.md](./EXCEL_EXPORT_IMPLEMENTATION.md)** - Excel export feature
 - **[PLAN_SWITCHER_ARCHITECTURE.md](./PLAN_SWITCHER_ARCHITECTURE.md)** - Plan tier system
 - **[SOCIAL_PROOF_README.md](./SOCIAL_PROOF_README.md)** - Social proof system
+- **[POPUP_QA_ARCHITECTURE.md](./POPUP_QA_ARCHITECTURE.md)** - Preview & disable pop-up layouts
 - **[CAMPAIGN_ARCHITECTURE.md](./CAMPAIGN_ARCHITECTURE.md)** - A/B testing (future)
 
 ### Operational Documentation
