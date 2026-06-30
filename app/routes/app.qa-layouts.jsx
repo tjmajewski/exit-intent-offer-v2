@@ -101,7 +101,7 @@ export async function loader({ request }) {
 
     return {
       plan,
-      shop: { shopifyDomain: shop.shopifyDomain },
+      shop: { shopifyDomain: shop.shopifyDomain, mode: shop.mode },
       layouts,
       enabledCount: getEnabledLayoutIds(shop.disabledLayouts).length,
       staleVariantCount,
@@ -110,6 +110,121 @@ export async function loader({ request }) {
   } catch (error) {
     console.error("[QA Layouts] loader error:", error);
     return { plan, shop: null, layouts: [], staleVariantCount: 0, dbError: true };
+  }
+}
+
+// Schematic wireframe of where/how each layout sits on the page. Position and
+// footprint are what clash with a theme, so this gives merchants an at-a-glance
+// read before they open a full storefront preview. Purely illustrative — the
+// real render is the "Preview on store" button.
+function LayoutThumbnail({ id }) {
+  const dark = "#1f2937";
+  const accent = "#008060";
+  const line = "#cbd5e1";
+
+  // Shared "browser page" frame: light canvas + a faux header bar.
+  const Frame = ({ children }) => (
+    <svg viewBox="0 0 300 150" width="100%" height="118" role="img" preserveAspectRatio="xMidYMid meet"
+      style={{ display: "block", borderRadius: 8, background: "#f8fafc", border: "1px solid #eef2f7" }}>
+      <rect x="0" y="0" width="300" height="22" fill="#eef2f7" />
+      <circle cx="12" cy="11" r="3" fill="#cbd5e1" />
+      <circle cx="22" cy="11" r="3" fill="#cbd5e1" />
+      <circle cx="32" cy="11" r="3" fill="#cbd5e1" />
+      <rect x="44" y="6" width="120" height="10" rx="3" fill="#dbe3ec" />
+      {/* faint page content lines */}
+      <rect x="20" y="34" width="180" height="6" rx="3" fill="#e9eef3" />
+      <rect x="20" y="46" width="140" height="6" rx="3" fill="#e9eef3" />
+      <rect x="20" y="118" width="160" height="6" rx="3" fill="#e9eef3" />
+      <rect x="20" y="130" width="110" height="6" rx="3" fill="#e9eef3" />
+      {children}
+    </svg>
+  );
+
+  switch (id) {
+    case "top-banner":
+      return (
+        <Frame>
+          <rect x="0" y="22" width="300" height="20" fill={dark} />
+          <rect x="12" y="29" width="150" height="6" rx="3" fill="#fff" opacity="0.9" />
+          <rect x="236" y="27" width="52" height="10" rx="5" fill={accent} />
+        </Frame>
+      );
+    case "bottom-sheet":
+      return (
+        <Frame>
+          <rect x="0" y="100" width="300" height="50" rx="10" fill={dark} />
+          <rect x="130" y="106" width="40" height="3" rx="1.5" fill="#fff" opacity="0.5" />
+          <rect x="20" y="116" width="150" height="7" rx="3" fill="#fff" opacity="0.9" />
+          <rect x="20" y="130" width="100" height="5" rx="2.5" fill="#fff" opacity="0.5" />
+          <rect x="214" y="118" width="66" height="16" rx="8" fill={accent} />
+        </Frame>
+      );
+    case "coupon-ticket":
+      return (
+        <Frame>
+          <rect x="60" y="48" width="180" height="60" rx="8" fill={dark}
+            stroke="#9ca3af" strokeWidth="2" strokeDasharray="5 4" />
+          <circle cx="60" cy="78" r="8" fill="#f8fafc" />
+          <circle cx="240" cy="78" r="8" fill="#f8fafc" />
+          <rect x="78" y="62" width="120" height="9" rx="4" fill={accent} />
+          <rect x="78" y="80" width="90" height="6" rx="3" fill="#fff" opacity="0.7" />
+        </Frame>
+      );
+    case "split-hero":
+      return (
+        <Frame>
+          <rect x="40" y="44" width="220" height="64" rx="8" fill="#fff" stroke={line} />
+          <rect x="40" y="44" width="100" height="64" rx="8" fill={accent} />
+          <rect x="140" y="44" width="2" height="64" fill={line} />
+          <rect x="156" y="58" width="88" height="7" rx="3" fill={dark} />
+          <rect x="156" y="72" width="64" height="5" rx="2.5" fill="#9ca3af" />
+          <rect x="156" y="90" width="56" height="12" rx="6" fill={accent} />
+        </Frame>
+      );
+    case "timer-front":
+      return (
+        <Frame>
+          <rect x="70" y="42" width="160" height="68" rx="8" fill="#fff" stroke={line} />
+          <rect x="106" y="52" width="36" height="14" rx="3" fill={dark} />
+          <rect x="146" y="52" width="36" height="14" rx="3" fill={dark} />
+          <rect x="186" y="52" width="14" height="14" rx="3" fill={dark} />
+          <rect x="92" y="74" width="116" height="6" rx="3" fill="#9ca3af" />
+          <rect x="112" y="88" width="76" height="14" rx="7" fill={accent} />
+        </Frame>
+      );
+    case "testimonial":
+      return (
+        <Frame>
+          <rect x="70" y="42" width="160" height="68" rx="8" fill="#fff" stroke={line} />
+          {[0, 1, 2, 3, 4].map((i) => (
+            <circle key={i} cx={108 + i * 17} cy="56" r="4" fill="#f59e0b" />
+          ))}
+          <rect x="92" y="70" width="116" height="6" rx="3" fill="#9ca3af" />
+          <rect x="100" y="82" width="100" height="5" rx="2.5" fill="#cbd5e1" />
+          <rect x="112" y="94" width="76" height="12" rx="6" fill={accent} />
+        </Frame>
+      );
+    case "scratch-reveal":
+      return (
+        <Frame>
+          <rect x="74" y="44" width="152" height="64" rx="8" fill="#fff" stroke={line} />
+          <rect x="92" y="58" width="116" height="36" rx="6" fill="#9ca3af" />
+          <path d="M92 94 L208 58" stroke="#fff" strokeWidth="3" opacity="0.7" />
+          <path d="M92 80 L150 58" stroke="#fff" strokeWidth="3" opacity="0.5" />
+          <rect x="120" y="98" width="60" height="6" rx="3" fill={accent} />
+        </Frame>
+      );
+    case "classic-card":
+    default:
+      return (
+        <Frame>
+          <rect x="0" y="22" width="300" height="128" fill="#0f172a" opacity="0.18" />
+          <rect x="84" y="44" width="132" height="66" rx="10" fill="#fff" stroke={line} />
+          <rect x="100" y="56" width="100" height="8" rx="4" fill={dark} />
+          <rect x="100" y="70" width="76" height="5" rx="2.5" fill="#9ca3af" />
+          <rect x="100" y="90" width="64" height="13" rx="6.5" fill={accent} />
+        </Frame>
+      );
   }
 }
 
@@ -212,6 +327,24 @@ export default function QaLayouts() {
           appears, turn on the Resparq app embed under Online Store → Themes → Customize → App embeds.
         </div>
 
+        {/* Mode-aware note — disabling only affects AI-mode auto-selection */}
+        {shop.mode !== "ai" && (
+          <div
+            style={{
+              background: "#f9fafb",
+              border: "1px solid #e5e7eb",
+              borderRadius: 12,
+              padding: 16,
+              marginBottom: 20,
+              fontSize: 13,
+              color: "#4b5563",
+              lineHeight: 1.6,
+            }}
+          >
+            {"You're in Manual mode, so your storefront always uses the one layout you picked in Settings. These on/off controls take effect when you switch to AI mode and let it choose layouts for you. Preview still works either way."}
+          </div>
+        )}
+
         {/* Stale-variant note — runtime fallback in effect */}
         {staleVariantCount > 0 && (
           <div
@@ -251,6 +384,10 @@ export default function QaLayouts() {
                   transition: "all 0.2s",
                 }}
               >
+                <div style={{ marginBottom: 12, position: "relative", filter: l.enabled ? "none" : "grayscale(1)" }}>
+                  <LayoutThumbnail id={l.id} />
+                </div>
+
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                   <div style={{ fontSize: 17, fontWeight: 700, color: "#111" }}>{l.name}</div>
                   <span

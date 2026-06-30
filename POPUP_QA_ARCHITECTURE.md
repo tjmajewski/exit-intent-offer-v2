@@ -5,6 +5,7 @@
 **Plan Tier:** All (Starter, Pro, Enterprise)
 **Mode:** Affects AI mode selection; manual mode unaffected
 **Admin page:** `/app/qa-layouts` ("Pop-up QA" in the sidebar)
+**Merchant guide:** [docs/POPUP_QA_GUIDE.md](./docs/POPUP_QA_GUIDE.md)
 
 ---
 
@@ -139,8 +140,18 @@ standing banner saying so, because the admin can't reliably detect embed state.
 [`app/routes/app.qa-layouts.jsx`](./app/routes/app.qa-layouts.jsx)
 
 - **Loader** reads `Shop.disabledLayouts`, builds the 8 cards (name, description,
-  enabled flag), and counts live variants still pointing at a disabled layout
-  (`staleVariantCount`) to surface the runtime-fallback note.
+  enabled flag), returns `shop.mode` for the mode-aware note, and counts live
+  variants still pointing at a disabled layout (`staleVariantCount`) to surface
+  the runtime-fallback note.
+- **Layout schematics** — each card renders a `LayoutThumbnail` SVG wireframe
+  showing where/how that pop-up sits on the page (top bar, centered card, bottom
+  sheet, split, etc.). Position and footprint are what clash with a theme, so
+  this gives an at-a-glance read before opening a full storefront preview. The
+  thumbnail desaturates when the layout is off. It's illustrative only — the
+  definitive check is still "Preview on store."
+- **Mode-aware note** — when `shop.mode !== 'ai'`, the page explains that the
+  on/off switches take effect in AI mode (manual mode always uses the merchant's
+  one chosen layout). Preview works in either mode.
 - **Action** (`intent: "toggle"`) flips one layout via read-modify-write on the
   JSON set. It **blocks disabling the last enabled layout** so a pop-up can
   always render.
