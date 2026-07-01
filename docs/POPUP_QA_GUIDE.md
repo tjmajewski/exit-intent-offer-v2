@@ -34,8 +34,24 @@ pop-up sits before you preview it:
 | Testimonial | Centered box with a star rating |
 | Scratch Reveal | Scratch-off card that reveals the offer |
 
-The wireframe is a quick orientation. The button below it shows you the real
-thing on your live theme.
+The wireframe is a quick orientation. To see the real thing, use one of the two
+previews below.
+
+---
+
+## Two ways to preview
+
+**Preview here** (recommended first stop) shows the exact pop-up right inside the
+app, with a **Desktop / Mobile** toggle. It uses your brand colors and sample
+text. Fast, and no setup needed. It renders on a plain placeholder page, so it
+answers "what does this pop-up look like on desktop and mobile."
+
+**Open on your live store** opens your real storefront in a new tab with the
+pop-up showing. This is the final check for "does it fit my actual theme" (your
+header, colors, spacing). It needs the app embed turned on (see below).
+
+Both are completely safe: nothing is tracked, no discount is created, and your
+shoppers never see your previews.
 
 ---
 
@@ -46,26 +62,28 @@ thing on your live theme.
 In the Resparq sidebar, click **Pop-up QA**. You'll see all eight layouts, each
 marked **On** or **Off**.
 
-### 2. Turn on the app embed (one time)
+### 2. Preview here, on desktop and mobile
 
-Preview shows the pop-up on your actual storefront, which needs the Resparq app
-embed switched on:
+Click **Preview here** on any card (or click its wireframe). A window opens with
+the real pop-up. Use the **Desktop** and **Mobile** buttons at the top to see
+both, and **Previous / Next** (or your arrow keys) to flip through all eight
+without leaving the window.
 
-> Online Store → Themes → Customize → App embeds → enable Resparq
+### 3. Check it against your real theme (optional but recommended)
 
-If you've already finished Resparq setup, this is already on.
-
-### 3. Preview a layout
-
-Click **Preview on store** on any card. Your storefront opens in a new tab with
-that pop-up showing, using sample text. Look for anything that clashes:
+For the final word on theme fit, click **Open on your live store**. Your
+storefront opens in a new tab with that pop-up showing. Look for anything that
+clashes:
 
 - Does it overlap your header, announcement bar, or sticky cart?
 - Do the colors fight with your theme?
 - On mobile, does it cover something important?
 
-Previewing is completely safe. Nothing is tracked, no discount is created, and
-your shoppers don't see it. It's just for you.
+This one needs the Resparq app embed switched on:
+
+> Online Store → Themes → Customize → App embeds → enable Resparq
+
+If you've finished Resparq setup, it's already on.
 
 ### 4. Turn off anything that doesn't fit
 
@@ -98,9 +116,10 @@ do anything.
 
 ## Quick troubleshooting
 
-**Preview opens but no pop-up appears.**
+**"Open on your live store" opens but no pop-up appears.**
 The app embed is probably off. Turn it on under Online Store → Themes →
-Customize → App embeds, then preview again.
+Customize → App embeds, then try again. ("Preview here" doesn't need the embed,
+so use that if you just want to see the layouts.)
 
 **The Enable/Disable button didn't seem to save.**
 You'll see a short message at the bottom of the screen confirming each change.

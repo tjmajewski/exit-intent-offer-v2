@@ -118,20 +118,55 @@ before (used by dev/test paths).
 
 ## Preview Mechanism
 
-Preview reuses an existing storefront harness — **no new storefront code**.
+There are **two** previews, and they answer different questions.
 
-- The "Preview on store" button is an `<a href target="_blank">` to
-  `https://{shop}/?resparqPreview={templateId}`.
-- The extension JS ([`exit-intent-modal.js`](./extensions/exit-intent-modal/assets/exit-intent-modal.js),
-  `getPreviewTemplateId` / `renderPreviewTemplate`) reads the param, validates the
-  id against the loaded template registry, and renders that layout immediately
-  with representative sample copy.
-- The harness sets `isPreview = true`, so it **never writes analytics, fires a
-  conversion, or redirects** — it can't poison learning data.
+### 1. In-app preview ("Preview here") — desktop/mobile, no theme
 
-**Prerequisite:** preview only renders if the Resparq **app embed is enabled** on
-the theme (Online Store → Themes → Customize → App embeds). The QA page shows a
-standing banner saying so, because the admin can't reliably detect embed state.
+The primary preview. Renders the **real** storefront template inside the admin,
+with a desktop/mobile toggle, on a neutral placeholder page.
+
+**Why not just iframe the live storefront?** You can't. Shopify sends
+`X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'` on
+every storefront (verified on both a dev store and a production store). Browsers
+refuse to embed it in any iframe. So the live theme can never be shown inside the
+admin — that's a Shopify anti-clickjacking policy, not our limitation.
+
+Instead, the in-app preview renders the templates directly:
+
+- A **public resource route** [`app/routes/qa-modal-templates.jsx`](./app/routes/qa-modal-templates.jsx)
+  serves the extension's `modal-templates.js` (read from disk) at
+  `/qa-modal-templates.js`. Single source of truth — the admin renders the exact
+  same code shoppers see, no copy/drift. Unauthenticated because it's loaded via a
+  `<script>` tag from a srcdoc iframe (which can't carry the session token); the
+  file is just render code.
+- The preview (`PreviewOverlay` in `app.qa-layouts.jsx`) mounts a **same-origin
+  `srcDoc` iframe** we fully control — no storefront CSP involved. It injects the
+  renderer, builds sample props (mirroring the storefront's `buildTemplateProps`,
+  including the merchant's brand colors/font), and appends the rendered overlay.
+- **Accurate desktop/mobile:** the renderer decides "mobile" via
+  `matchMedia('(max-width: 768px)')` against *the iframe's own viewport*. Sizing
+  the iframe to a phone width (390px) makes the modal render its true mobile
+  behavior (bottom-sheet anchoring, full-width CTAs) with no device spoofing.
+  Verified headlessly: classic-card applies its mobile bottom-anchored radius at
+  390px and not at 1000px.
+- CTA/close clicks are neutralized in the preview (no navigation).
+- The one tradeoff: the backdrop is a **neutral placeholder page**, not the
+  merchant's theme — so this answers "what does each layout look like, on desktop
+  and mobile" but not "does it clash with my header/colors."
+
+### 2. Storefront preview ("Open on your live store") — true theme fit
+
+The definitive theme-fit check, reusing the pre-existing harness:
+
+- An `<a href target="_blank">` to `https://{shop}/?resparqPreview={templateId}`.
+- The extension JS (`getPreviewTemplateId` / `renderPreviewTemplate`) validates the
+  id and renders that layout immediately with sample copy.
+- Sets `isPreview = true`, so it **never writes analytics, fires a conversion, or
+  redirects**.
+
+**Prerequisite (storefront preview only):** renders only if the Resparq **app
+embed is enabled** (Online Store → Themes → Customize → App embeds). The in-app
+preview has no such requirement. The QA page banner explains the distinction.
 
 ---
 
@@ -145,10 +180,13 @@ standing banner saying so, because the admin can't reliably detect embed state.
   the runtime-fallback note.
 - **Layout schematics** — each card renders a `LayoutThumbnail` SVG wireframe
   showing where/how that pop-up sits on the page (top bar, centered card, bottom
-  sheet, split, etc.). Position and footprint are what clash with a theme, so
-  this gives an at-a-glance read before opening a full storefront preview. The
-  thumbnail desaturates when the layout is off. It's illustrative only — the
-  definitive check is still "Preview on store."
+  sheet, split, etc.). Clicking the schematic (or "Preview here") opens the in-app
+  preview. The thumbnail desaturates when the layout is off.
+- **In-app preview overlay** — `PreviewOverlay` gives a full desktop/mobile modal
+  preview with layout switching (prev/next, arrow keys), an Enable/Disable control,
+  and an "Open on your live store" link. Loader passes the shop's `brand` tokens
+  and `showPoweredBy` so the preview matches production props. See Preview
+  Mechanism above.
 - **Mode-aware note** — when `shop.mode !== 'ai'`, the page explains that the
   on/off switches take effect in AI mode (manual mode always uses the merchant's
   one chosen layout). Preview works in either mode.
@@ -194,21 +232,27 @@ is off and will never be selected — and the variant ages out via evolution.
 | `app/utils/templates.js` | `ALL_LAYOUT_IDS`, `parseDisabledLayouts`, `getEnabledLayoutIds` (single source of truth for the policy) |
 | `app/routes/apps.exit-intent.api.ai-decision.jsx` | Runtime clamp (Layer 1) |
 | `app/utils/variant-engine.js` | Generation-side filtering (Layer 2) |
-| `app/routes/app.qa-layouts.jsx` | Admin page (loader, action, UI) |
+| `app/routes/app.qa-layouts.jsx` | Admin page (loader, action, UI, `PreviewOverlay`, `LayoutThumbnail`) |
+| `app/routes/qa-modal-templates.jsx` | Public resource route serving `modal-templates.js` to the in-app preview iframe |
 | `app/components/AppLayout.jsx` | "Pop-up QA" nav entry |
-| `extensions/exit-intent-modal/assets/exit-intent-modal.js` | `?resparqPreview=` harness (pre-existing) |
+| `extensions/exit-intent-modal/assets/modal-templates.js` | Storefront modal renderer — shared by production + in-app preview |
+| `extensions/exit-intent-modal/assets/exit-intent-modal.js` | `?resparqPreview=` storefront harness (pre-existing) |
 
 ---
 
 ## Testing Checklist
 
 1. `npx prisma db push` to add the column, then `npm run dev`.
-2. Open **Pop-up QA**; confirm 8 cards render and "8 of 8 layouts enabled".
-3. Click **Preview on store** on a layout → new tab opens on the live theme with
-   that pop-up showing (requires app embed on). Confirm no discount/analytics.
-4. **Disable** a layout → toast confirms, card flips to "Off", count drops.
-5. Try to disable down to the last one → blocked with "Keep at least one layout on."
-6. Re-enable → toast confirms, card flips back.
-7. In AI mode, confirm the disabled layout no longer appears in newly bred
+2. Open **Pop-up QA**; confirm 8 cards render with schematics and "8 of 8 layouts enabled".
+3. Click **Preview here** (or a schematic) → in-app overlay opens with the real
+   modal. Toggle **Desktop/Mobile** and confirm the modal reflows (e.g. bottom-sheet
+   anchoring on mobile). Use prev/next (or arrow keys) to cycle all 8.
+4. Click **Open on your live store** → new tab on the live theme (requires app
+   embed on). Confirm no discount/analytics.
+5. **Disable** a layout (from card or preview) → toast confirms, card flips to
+   "Off", count drops.
+6. Try to disable down to the last one → blocked with "Keep at least one layout on."
+7. Re-enable → toast confirms, card flips back.
+8. In AI mode, confirm the disabled layout no longer appears in newly bred
    variants (`templateId`) and never renders for shoppers (watch for the
    `[Layout QA]` clamp log on any legacy variant).

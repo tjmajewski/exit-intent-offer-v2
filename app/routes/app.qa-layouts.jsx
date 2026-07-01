@@ -1,5 +1,5 @@
 import { useLoaderData, useFetcher } from "react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import AppLayout from "../components/AppLayout";
@@ -105,6 +105,15 @@ export async function loader({ request }) {
       layouts,
       enabledCount: getEnabledLayoutIds(shop.disabledLayouts).length,
       staleVariantCount,
+      // Brand tokens so the in-app preview renders in the merchant's colors/font,
+      // matching how the storefront builds modal props (brandFromSettings).
+      brand: {
+        primary: shop.brandPrimaryColor,
+        secondary: shop.brandSecondaryColor,
+        accent: shop.brandAccentColor,
+        font: shop.brandFont,
+      },
+      showPoweredBy: plan?.tier !== "enterprise",
       dbError: false,
     };
   } catch (error) {
@@ -228,6 +237,235 @@ function LayoutThumbnail({ id }) {
   }
 }
 
+// Build the srcdoc for the preview iframe. The iframe is a same-origin blank
+// document we fully control (no storefront CSP/X-Frame-Options involved), sized
+// to the chosen device. Because the storefront renderer keys "mobile" off
+// `matchMedia('(max-width: 768px)')` against the iframe's own viewport, sizing
+// the iframe to a phone width makes the modal render its real mobile behavior —
+// accurate desktop/mobile without any device spoofing.
+function buildPreviewSrcDoc({ layoutId, brand, showPoweredBy }) {
+  const cfg = JSON.stringify({ layoutId, brand: brand || {}, showPoweredBy: showPoweredBy !== false });
+  return `<!doctype html><html><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  html,body{margin:0;padding:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}
+  body{background:#eef1f5;}
+  header.rq-h{height:52px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;padding:0 18px;gap:10px;}
+  .rq-logo{width:96px;height:14px;border-radius:4px;background:#d6dbe2;}
+  .rq-nav{flex:1;display:flex;gap:14px;justify-content:flex-end;}
+  .rq-nav span{width:46px;height:8px;border-radius:4px;background:#e3e7ec;}
+  .rq-body{padding:22px;}
+  .rq-body .l{height:9px;border-radius:5px;background:#e3e7ec;margin:0 0 12px;}
+  .rq-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:14px;margin-top:18px;}
+  .rq-grid .c{height:120px;border-radius:10px;background:#e3e7ec;}
+</style></head>
+<body>
+  <header class="rq-h"><div class="rq-logo"></div><div class="rq-nav"><span></span><span></span><span></span></div></header>
+  <div class="rq-body">
+    <div class="l" style="width:60%"></div>
+    <div class="l" style="width:42%"></div>
+    <div class="rq-grid"><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div></div>
+  </div>
+  <script>window.__RQ = ${cfg};</script>
+  <script src="/qa-modal-templates.js"></script>
+  <script>
+    (function () {
+      function go(tries) {
+        if (!window.ResparqTemplates || typeof window.ResparqTemplates.render !== 'function') {
+          if (tries > 60) return;
+          return setTimeout(function () { go((tries || 0) + 1); }, 25);
+        }
+        var c = window.__RQ, b = c.brand || {};
+        function custom(v, def) { return v && v !== def ? v : undefined; }
+        var props = {
+          headline: 'Wait, your 15% off is still here',
+          subhead: 'Finish checkout and your discount applies automatically.',
+          cta: 'Claim My Discount',
+          secondaryCta: 'No thanks',
+          showSecondary: true,
+          code: 'PREVIEW15',
+          amountText: '15%',
+          timerEndsAt: c.layoutId === 'timer-front' ? Date.now() + 86400000 : null,
+          showPoweredBy: c.showPoweredBy,
+          themeOverrides: {
+            primary: custom(b.accent, '#f59e0b'),
+            background: custom(b.secondary, '#ffffff') || '#ffffff',
+            foreground: custom(b.primary, '#000000'),
+            fontFamily: b.font && b.font !== 'system' ? b.font : undefined
+          }
+        };
+        try {
+          var h = window.ResparqTemplates.render(c.layoutId, props);
+          if (h && h.overlay) {
+            h.overlay.style.position = 'fixed';
+            h.overlay.style.inset = '0';
+            document.body.appendChild(h.overlay);
+            var stop = function (e) { e.preventDefault(); e.stopPropagation(); };
+            if (h.primaryCta) h.primaryCta.onclick = stop;
+            if (h.secondaryCta) h.secondaryCta.onclick = stop;
+            if (h.closeBtn) h.closeBtn.style.display = 'none';
+          }
+        } catch (err) { /* preview-only; ignore */ }
+      }
+      go(0);
+    })();
+  </script>
+</body></html>`;
+}
+
+// Full-screen in-admin preview: renders the real storefront template inside a
+// device-sized iframe, with desktop/mobile toggle and layout switching.
+function PreviewOverlay({ layouts, index, device, brand, showPoweredBy, previewUrl, onSetIndex, onSetDevice, onClose, fetcher }) {
+  const layout = layouts[index];
+
+  // Reload the iframe whenever the layout or device changes.
+  const srcDoc = useMemo(
+    () => buildPreviewSrcDoc({ layoutId: layout.id, brand, showPoweredBy }),
+    [layout.id, brand, showPoweredBy],
+  );
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "ArrowRight") onSetIndex((index + 1) % layouts.length);
+      else if (e.key === "ArrowLeft") onSetIndex((index - 1 + layouts.length) % layouts.length);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [index, layouts.length, onClose, onSetIndex]);
+
+  const isMobile = device === "mobile";
+  const frameW = isMobile ? 390 : 1000;
+  const frameH = isMobile ? 760 : 600;
+
+  const deviceBtn = (id, label) => (
+    <button
+      onClick={() => onSetDevice(id)}
+      style={{
+        padding: "6px 14px",
+        border: "1px solid " + (device === id ? "#111827" : "#d1d5db"),
+        background: device === id ? "#111827" : "white",
+        color: device === id ? "white" : "#374151",
+        borderRadius: 8,
+        fontSize: 13,
+        fontWeight: 600,
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 3000,
+        background: "rgba(15,23,42,0.55)",
+        display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "white", borderRadius: 16, width: "100%", maxWidth: 1080,
+          maxHeight: "92vh", display: "flex", flexDirection: "column", overflow: "hidden",
+          boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", borderBottom: "1px solid #e5e7eb" }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#111" }}>{layout.name}</div>
+          <span
+            style={{
+              padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 600,
+              background: layout.enabled ? "#dcfce7" : "#fee2e2",
+              color: layout.enabled ? "#166534" : "#991b1b",
+            }}
+          >
+            {layout.enabled ? "On" : "Off"}
+          </span>
+          <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+            {deviceBtn("desktop", "Desktop")}
+            {deviceBtn("mobile", "Mobile")}
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close preview"
+            style={{ marginLeft: 8, width: 32, height: 32, borderRadius: 8, border: "1px solid #e5e7eb", background: "white", fontSize: 18, lineHeight: 1, cursor: "pointer", color: "#6b7280" }}
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Stage */}
+        <div style={{ flex: 1, overflow: "auto", background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div
+            style={{
+              width: frameW, maxWidth: "100%", height: frameH, maxHeight: "100%",
+              background: "white", borderRadius: isMobile ? 28 : 12,
+              border: isMobile ? "8px solid #111827" : "1px solid #cbd5e1",
+              overflow: "hidden", boxShadow: "0 12px 36px rgba(0,0,0,0.18)",
+            }}
+          >
+            <iframe
+              key={device}
+              title={`${layout.name} preview (${device})`}
+              srcDoc={srcDoc}
+              style={{ width: "100%", height: "100%", border: "none", display: "block" }}
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", borderTop: "1px solid #e5e7eb" }}>
+          <button
+            onClick={() => onSetIndex((index - 1 + layouts.length) % layouts.length)}
+            style={{ padding: "8px 14px", border: "1px solid #d1d5db", background: "white", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+          >
+            ← Previous
+          </button>
+          <button
+            onClick={() => onSetIndex((index + 1) % layouts.length)}
+            style={{ padding: "8px 14px", border: "1px solid #d1d5db", background: "white", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+          >
+            Next →
+          </button>
+          <span style={{ fontSize: 12, color: "#9ca3af" }}>{index + 1} of {layouts.length}</span>
+
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <a
+              href={previewUrl(layout.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ padding: "8px 14px", border: "1px solid #d1d5db", background: "white", color: "#374151", borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: "none" }}
+            >
+              Open on store
+            </a>
+            <fetcher.Form method="post" style={{ margin: 0 }}>
+              <input type="hidden" name="intent" value="toggle" />
+              <input type="hidden" name="layoutId" value={layout.id} />
+              <input type="hidden" name="disable" value={layout.enabled ? "true" : "false"} />
+              <button
+                type="submit"
+                style={{
+                  padding: "8px 16px",
+                  background: layout.enabled ? "white" : "#008060",
+                  color: layout.enabled ? "#dc2626" : "white",
+                  border: layout.enabled ? "1px solid #fca5a5" : "1px solid #008060",
+                  borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                }}
+              >
+                {layout.enabled ? "Disable" : "Enable"}
+              </button>
+            </fetcher.Form>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Toast({ message, tone, onDone }) {
   useEffect(() => {
     if (!message) return;
@@ -261,9 +499,11 @@ function Toast({ message, tone, onDone }) {
 
 export default function QaLayouts() {
   const data = useLoaderData();
-  const { plan, shop, layouts, enabledCount, staleVariantCount, dbError } = data;
+  const { plan, shop, layouts, enabledCount, staleVariantCount, dbError, brand, showPoweredBy } = data;
   const fetcher = useFetcher();
   const [toast, setToast] = useState(null);
+  const [previewIndex, setPreviewIndex] = useState(null);
+  const [device, setDevice] = useState("desktop");
 
   // Surface action results as a toast (success or failure).
   useEffect(() => {
@@ -323,8 +563,7 @@ export default function QaLayouts() {
             lineHeight: 1.6,
           }}
         >
-          <strong>Before you preview:</strong> Preview shows the pop-up on your real theme. If nothing
-          appears, turn on the Resparq app embed under Online Store → Themes → Customize → App embeds.
+          <strong>Two ways to preview.</strong> {"“Preview here” renders the exact pop-up in desktop and mobile, right in this page. To also check it against your real theme, use “Open on your live store” — that one needs the Resparq app embed on (Online Store → Themes → Customize → App embeds)."}
         </div>
 
         {/* Mode-aware note — disabling only affects AI-mode auto-selection */}
@@ -370,7 +609,7 @@ export default function QaLayouts() {
 
         {/* Layout grid */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 20 }}>
-          {layouts.map((l) => {
+          {layouts.map((l, idx) => {
             const isBusy = busyLayoutId === l.id;
             return (
               <div
@@ -384,9 +623,18 @@ export default function QaLayouts() {
                   transition: "all 0.2s",
                 }}
               >
-                <div style={{ marginBottom: 12, position: "relative", filter: l.enabled ? "none" : "grayscale(1)" }}>
+                <button
+                  type="button"
+                  onClick={() => { setDevice("desktop"); setPreviewIndex(idx); }}
+                  title="Preview this layout here"
+                  style={{
+                    display: "block", width: "100%", padding: 0, border: "none", background: "none",
+                    cursor: "pointer", marginBottom: 12, position: "relative",
+                    filter: l.enabled ? "none" : "grayscale(1)",
+                  }}
+                >
                   <LayoutThumbnail id={l.id} />
-                </div>
+                </button>
 
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                   <div style={{ fontSize: 17, fontWeight: 700, color: "#111" }}>{l.name}</div>
@@ -409,24 +657,23 @@ export default function QaLayouts() {
                 </div>
 
                 <div style={{ display: "flex", gap: 8 }}>
-                  <a
-                    href={previewUrl(l.id)}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => { setDevice("desktop"); setPreviewIndex(idx); }}
                     style={{
                       flex: 1,
-                      textAlign: "center",
                       padding: "10px 12px",
                       background: "#111827",
                       color: "white",
+                      border: "1px solid #111827",
                       borderRadius: 8,
                       fontSize: 13,
                       fontWeight: 600,
-                      textDecoration: "none",
+                      cursor: "pointer",
                     }}
                   >
-                    Preview on store
-                  </a>
+                    Preview here
+                  </button>
 
                   <fetcher.Form method="post" style={{ margin: 0, flex: 1 }}>
                     <input type="hidden" name="intent" value="toggle" />
@@ -453,15 +700,37 @@ export default function QaLayouts() {
                   </fetcher.Form>
                 </div>
 
-                <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 10, lineHeight: 1.5 }}>
-                  Opens your live store in a new tab with this pop-up showing. Nothing is tracked and no
-                  discount is created.
+                <a
+                  href={previewUrl(l.id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ display: "inline-block", fontSize: 12, color: "#2563eb", textDecoration: "none", marginTop: 12, fontWeight: 500 }}
+                >
+                  Open on your live store ↗
+                </a>
+                <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 6, lineHeight: 1.5 }}>
+                  {"“Preview here” shows the exact pop-up in desktop and mobile. “Open on your live store” checks it against your real theme. Nothing is tracked."}
                 </div>
               </div>
             );
           })}
         </div>
       </div>
+
+      {previewIndex !== null && layouts[previewIndex] && (
+        <PreviewOverlay
+          layouts={layouts}
+          index={previewIndex}
+          device={device}
+          brand={brand}
+          showPoweredBy={showPoweredBy}
+          previewUrl={previewUrl}
+          onSetIndex={setPreviewIndex}
+          onSetDevice={setDevice}
+          onClose={() => setPreviewIndex(null)}
+          fetcher={fetcher}
+        />
+      )}
 
       <Toast message={toast?.message} tone={toast?.tone} onDone={() => setToast(null)} />
     </AppLayout>
