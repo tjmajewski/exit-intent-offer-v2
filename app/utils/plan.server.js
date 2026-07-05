@@ -5,12 +5,15 @@
  * a shop is on. Every app UI loader should read the plan via `getShopPlan`
  * so the dashboard, settings, analytics, etc. never disagree.
  *
- * Writes to the plan happen in exactly two places:
+ * Writes to the plan happen in exactly three places:
  *   1. Billing callback (real customer upgrades/downgrades via Shopify)
  *   2. Dev plan switcher (`/app/dev-update-plan`, dev-only)
- *
- * Page loaders must NOT call `syncSubscriptionToPlan` directly — that runs
- * in `app.billing-callback.jsx` where it belongs.
+ *   3. `syncSubscriptionToPlan`, called once from the `app.jsx` parent loader
+ *      as a self-heal backstop — it reconciles the DB tier against Shopify's
+ *      active subscription so a missed/forged callback can't leave the DB on
+ *      the wrong tier. Child loaders should read via `getShopPlan` and must
+ *      NOT call `syncSubscriptionToPlan` themselves (one reconcile per page
+ *      load is enough).
  */
 
 import db from "../db.server.js";

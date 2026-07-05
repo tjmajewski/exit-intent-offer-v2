@@ -57,6 +57,20 @@ decisions.
   self-reported and don't control pricing. If you find yourself making a
   security decision based on any metafield value, stop — read from Prisma
   instead.
+- **The billing callback derives the tier only from Shopify's confirmed
+  subscription.** `app.billing-callback.jsx` previously trusted a `?tier=`
+  query param and would write it to `Shop.plan` even with no active
+  subscription — a free self-upgrade to Enterprise for anyone who hit the URL.
+  It now ignores the query string entirely: it reads the tier from
+  `tierFromSubscriptionName(subscription.name)`, validates it against the tier
+  allowlist, and writes the plan **only** when Shopify reports an `ACTIVE`
+  subscription. If Shopify hasn't propagated the subscription yet, the plan is
+  left untouched.
+- **Self-heal backstop.** `app.jsx` (the admin parent loader) calls
+  `syncSubscriptionToPlan` once per page load, reconciling `Shop.plan` against
+  the live Shopify subscription. A missed or forged callback can't leave the
+  DB on the wrong tier — the next admin navigation pulls it back in line.
+  Child loaders read via `getShopPlan` and must not call the sync themselves.
 
 ### Rate limiting (app-proxy endpoints)
 Public app-proxy endpoints are rate-limited per client IP to prevent quota
@@ -75,16 +89,22 @@ Currently applied:
 | `apps.exit-intent.api.generate-code.jsx`   | 20 req/IP    | 60s    |
 | `apps.exit-intent.api.ai-decision.jsx`     | 10 req/IP    | 60s    |
 | `apps.exit-intent.api.init-variants.jsx`   | 10 req/IP    | 60s    |
+| `apps.exit-intent.api.custom-css-public.jsx` | 60 req/IP  | 60s    |
 
 `ai-decision` carries the tightest limit because each call makes several
 Admin API round-trips, ~4 DB writes, and (in unique-code mode) **mints a real
 Shopify discount code** — an unbounded loop there is the most expensive abuse
 path in the app.
 
-Client IP is extracted from `X-Forwarded-For`, `X-Real-IP`,
-`CF-Connecting-IP`, or `Fly-Client-IP` (in that order). When the limit is
-exceeded, the limiter returns a 429 with a `Retry-After` header and does
-not hit the DB or any upstream service.
+Client IP is extracted in spoof-resistance order: platform-controlled headers
+first (`Fly-Client-IP`, then `CF-Connecting-IP`, then `X-Real-IP`), falling
+back to the first hop of `X-Forwarded-For` only when none are present. We
+deploy on Fly, whose edge sets `Fly-Client-IP` and strips any client-supplied
+copy, so it's the trustworthy source. `X-Forwarded-For` is checked **last**
+precisely because a client can send their own value and rotate it per request
+to evade the per-IP limiter. When the limit is exceeded, the limiter returns a
+429 with a `Retry-After` header and does not hit the DB or any upstream
+service.
 
 **Caveat:** the limiter is process-local. If you run multiple app instances
 behind a load balancer, each instance has its own bucket. For
@@ -110,7 +130,8 @@ The regex enforces the canonical Shopify form:
 subdomain, trailing `.myshopify.com`, max 255 chars).
 
 Applied to: `shop-settings.jsx`, `track-variant.jsx`, `generate-code.jsx`,
-`track-starter.jsx`, `init-variants.jsx`. Endpoints that don't take a `shop`
+`track-starter.jsx`, `init-variants.jsx`, `custom-css-public.jsx`. Endpoints
+that don't take a `shop`
 body param identify the customer differently: `enrich-signals.jsx` and
 `ai-decision.jsx` resolve the customer **only** from the Shopify-signed
 `logged_in_customer_id` query param (never a body-supplied id) and validate it
@@ -233,6 +254,30 @@ Both bulk-delete across *all* shops. Anyone who knew the URL could have called
 `days` parameter is additionally clamped to a 30-day minimum so even an
 authorized call can't zero-out recent data.
 
+### Dev/test route gating
+Diagnostic and dev-only endpoints must refuse to run in production, even
+behind admin auth — a merchant is authenticated on their *own* store, so
+admin auth alone doesn't stop them from triggering an expensive or
+plan-mutating dev action. The pattern:
+
+```js
+if (process.env.NODE_ENV === "production") {
+  return json({ success: false, error: "Not available" }, { status: 403 });
+}
+```
+
+Applied to: `apps.exit-intent.api.update-plan.jsx` (self-upgrade tier),
+`app.dev-update-plan.jsx` (dev plan switcher), and `test.evolution.jsx` (runs
+a full, expensive evolution cycle on the caller's shop).
+
+### Build-artifact / secret hygiene
+`.env` is git-ignored, but the Docker image is built with `COPY . .`, so
+`.dockerignore` is the only thing keeping local secrets out of the shipped
+image layers. It now excludes `.env`/`.env.*`, `.git`, `.shopify`, the local
+`prisma/dev.sqlite`, and marketing/doc dirs. Anything holding a secret must be
+listed there — an image layer is trivially extractable by anyone who can pull
+it.
+
 ### GDPR / data deletion
 Shopify's mandatory compliance webhooks must actually erase data — Shopify's
 app-review check only verifies HMAC + a 200 response, **not** that deletion
@@ -268,6 +313,20 @@ deliveries short-circuit with a 200. Invalid-HMAC `Response`s are rethrown
 forged requests.
 
 ## Audit history
+
+### 2026-07 audit fixes
+
+Third pass, covering the billing/plan-mutation surface, dev-route gating in
+production, and build-artifact secret hygiene.
+
+| #  | Severity | Issue                                                             | Fix                                                                          |
+|----|----------|-------------------------------------------------------------------|------------------------------------------------------------------------------|
+| 1  | Critical | `billing-callback` trusted `?tier=` and granted a plan with no active subscription — free self-upgrade to Enterprise | Derive tier from confirmed subscription name only; validate against allowlist; write plan only when subscription is `ACTIVE`; drop the no-subscription grant branch |
+| 2  | Critical | `.dockerignore` didn't exclude `.env` → local secrets (`SHOPIFY_API_SECRET`, `CRON_SECRET`, DB URL) baked into image layers via `COPY . .` | Exclude `.env`/`.env.*`, `.git`, `.shopify`, dev DB, and doc/marketing dirs |
+| 3  | High     | Plan tier had no self-heal — a missed/forged callback left the DB on the wrong tier permanently (`syncSubscriptionToPlan` had zero callers) | Call `syncSubscriptionToPlan` once from the `app.jsx` admin parent loader    |
+| 4  | Medium   | `test.evolution.jsx` ran an expensive evolution cycle in production behind admin auth (any merchant on their own shop) | `NODE_ENV === "production"` 403 guard, matching the other dev routes         |
+| 5  | Medium   | `custom-css-public.jsx` had no rate limit and no `shop` validation — unauthenticated DB hit per call | Add `enforceRateLimit` (60/IP/60s) and `isValidShopDomain`                   |
+| 6  | Low      | Rate limiter read `X-Forwarded-For` first → client could spoof/rotate it to evade per-IP limits | Prefer platform headers (`Fly-Client-IP` → `CF` → `X-Real-IP`); XFF last     |
 
 ### 2026-06 audit fixes
 

@@ -1,15 +1,25 @@
 import { json } from "@remix-run/node";
+import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { isValidShopDomain } from "../utils/shop-validation.js";
 
 // Public endpoint - no authentication required (called by modal JavaScript)
 export async function loader({ request }) {
+  // Per-IP rate limit: CSS is cached client-side (5 min) so legitimate
+  // traffic sits well below this ceiling.
+  const limited = enforceRateLimit(request, "custom-css-public", {
+    limit: 60,
+    windowMs: 60_000,
+  });
+  if (limited) return limited;
+
   const { default: db } = await import("../db.server.js");
   const url = new URL(request.url);
   const shop = url.searchParams.get('shop');
-  
-  if (!shop) {
+
+  if (!shop || !isValidShopDomain(shop)) {
     return json({ customCSS: '' }, { status: 400 });
   }
-  
+
   try {
     const shopRecord = await db.shop.findUnique({
       where: { shopifyDomain: shop },

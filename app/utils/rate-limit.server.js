@@ -26,17 +26,26 @@ function startCleanup() {
 
 /**
  * Extract the client IP from a Request, honoring the usual proxy headers.
+ *
+ * Order matters for spoof resistance. We deploy on Fly, whose edge sets
+ * `Fly-Client-IP` to the real client and strips any client-supplied copy, so
+ * it's the most trustworthy source. `X-Forwarded-For` is checked LAST because
+ * a client can send their own value and rotate it per request to bypass the
+ * per-IP limiter — we only fall back to its first hop when no
+ * platform-controlled header is present.
  */
 export function getClientIp(request) {
   const headers = request.headers;
+  const trusted =
+    headers.get("fly-client-ip") ||
+    headers.get("cf-connecting-ip") ||
+    headers.get("x-real-ip");
+  if (trusted) return trusted.trim();
+
   const forwarded = headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0].trim();
-  return (
-    headers.get("x-real-ip") ||
-    headers.get("cf-connecting-ip") ||
-    headers.get("fly-client-ip") ||
-    "unknown"
-  );
+
+  return "unknown";
 }
 
 /**

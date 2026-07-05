@@ -1,3 +1,25 @@
 .cache
 build
 node_modules
+
+# Secrets — never bake into the image
+.env
+.env.*
+
+# VCS / local state
+.git
+.gitignore
+.shopify
+.claude
+
+# Local dev DB
+prisma/dev.sqlite
+prisma/dev.sqlite-journal
+
+# Docs / marketing drafts (not needed at runtime)
+*.md
+docs
+instagram-drafts
+linkedin-drafts
+resparq-website
+mocks

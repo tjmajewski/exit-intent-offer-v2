@@ -2,17 +2,27 @@ import { redirect } from "react-router";
 import { authenticate } from "../shopify.server";
 import { getActiveSubscription, tierFromSubscriptionName, validatePromoCode } from "../utils/billing.server";
 
+const VALID_TIERS = ["starter", "pro", "enterprise"];
+
 /**
  * Billing callback route.
  * Shopify redirects here after a merchant approves or declines a subscription.
- * URL format: /app/billing-callback?tier=pro&cycle=monthly&promo=EARLYACCESS&charge_id=xxx
+ * URL format: /app/billing-callback?cycle=monthly&promo=EARLYACCESS&charge_id=xxx
+ *
+ * SECURITY: the plan tier is derived *only* from the active Shopify
+ * subscription's name (via `tierFromSubscriptionName`), never from a
+ * `?tier=` query param. The query string is fully attacker-controlled — a
+ * merchant who paid for Pro could otherwise hit this route with
+ * `?tier=enterprise`, and a merchant with no subscription at all could grant
+ * themselves any tier for free. We upgrade the DB only when Shopify confirms
+ * an ACTIVE subscription; otherwise we leave the plan untouched and let the
+ * next admin page load self-heal.
  */
 export async function loader({ request }) {
   const { admin, session } = await authenticate.admin(request);
   const { default: db } = await import("../db.server.js");
 
   const url = new URL(request.url);
-  const requestedTier = url.searchParams.get("tier");
   const promoParam = url.searchParams.get("promo");
   const validatedPromo = promoParam ? validatePromoCode(promoParam) : null;
   const promoCode = validatedPromo ? promoParam.toUpperCase().trim() : null;
@@ -28,29 +38,20 @@ export async function loader({ request }) {
   }
 
   if (subscription && subscription.status === "ACTIVE") {
-    const tier = requestedTier || tierFromSubscriptionName(subscription.name);
+    // Tier comes from Shopify's confirmed subscription, NOT the query string.
+    const tier = tierFromSubscriptionName(subscription.name);
+    if (!VALID_TIERS.includes(tier)) {
+      console.warn(`[Billing] Unrecognized subscription name "${subscription.name}" for ${session.shop} — not updating plan`);
+      return redirect("/app/upgrade");
+    }
     await updatePlanData(admin, session, db, tier, subscription, promoCode);
     console.log(`[Billing] Plan updated to ${tier} for ${session.shop}${promoCode ? ` (promo: ${promoCode})` : ""}`);
-  } else if (requestedTier) {
-    // Subscription not yet active but we have the tier from our own returnUrl.
-    // Update the DB immediately so features are accessible. The metafield
-    // plan object (usage tracking) is updated by updatePlanData() above on
-    // the next successful callback, or via the dashboard's usage-reset path.
-    console.log(`[Billing] Subscription not yet active for ${session.shop}, updating DB to ${requestedTier} from callback params`);
-    await db.shop.upsert({
-      where: { shopifyDomain: session.shop },
-      update: {
-        plan: requestedTier,
-        ...(promoCode ? { promoCode, promoAppliedAt: new Date() } : {}),
-      },
-      create: {
-        shopifyDomain: session.shop,
-        plan: requestedTier,
-        ...(promoCode ? { promoCode, promoAppliedAt: new Date() } : {}),
-      },
-    });
   } else {
-    console.log(`[Billing] Subscription not active for ${session.shop}, status: ${subscription?.status || "none"}`);
+    // No active subscription — do NOT grant any tier. Granting off an
+    // unverified query param is a free-upgrade hole. If Shopify is just slow
+    // to propagate, the merchant's next admin page load self-heals via
+    // syncSubscriptionToPlan once the subscription flips ACTIVE.
+    console.log(`[Billing] Subscription not active for ${session.shop}, status: ${subscription?.status || "none"} — leaving plan unchanged`);
   }
 
   return redirect("/app/upgrade");
