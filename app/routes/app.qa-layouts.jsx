@@ -253,12 +253,19 @@ function buildPreviewSrcDoc({ layoutId, brand, showPoweredBy }) {
     <div class="rq-grid"><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div></div>
   </div>
   <script>window.__RQ = ${cfg};</script>
-  <script src="/qa-modal-templates.js"></script>
+  <script src="/qa-modal-templates"></script>
   <script>
     (function () {
+      function fail(msg) {
+        console.error('[QA preview]', msg);
+        var b = document.createElement('div');
+        b.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font:14px sans-serif;color:#991b1b;background:rgba(255,255,255,0.9);';
+        b.textContent = "Preview couldn't load. Try refreshing — if it persists, use “Open on your live store”.";
+        document.body.appendChild(b);
+      }
       function go(tries) {
         if (!window.ResparqTemplates || typeof window.ResparqTemplates.render !== 'function') {
-          if (tries > 60) return;
+          if (tries > 60) return fail('ResparqTemplates never loaded (qa-modal-templates script blocked or 404)');
           return setTimeout(function () { go((tries || 0) + 1); }, 25);
         }
         var c = window.__RQ, b = c.brand || {};
@@ -295,7 +302,7 @@ function buildPreviewSrcDoc({ layoutId, brand, showPoweredBy }) {
             if (h.secondaryCta) h.secondaryCta.onclick = stop;
             if (h.closeBtn) h.closeBtn.style.display = 'none';
           }
-        } catch (err) { /* preview-only; ignore */ }
+        } catch (err) { fail('render threw: ' + (err && err.message)); }
       }
       go(0);
     })();
