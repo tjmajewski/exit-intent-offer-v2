@@ -8,12 +8,13 @@
  * Writes to the plan happen in exactly three places:
  *   1. Billing callback (real customer upgrades/downgrades via Shopify)
  *   2. Dev plan switcher (`/app/dev-update-plan`, dev-only)
- *   3. `syncSubscriptionToPlan`, called once from the `app.jsx` parent loader
- *      as a self-heal backstop — it reconciles the DB tier against Shopify's
- *      active subscription so a missed/forged callback can't leave the DB on
- *      the wrong tier. Child loaders should read via `getShopPlan` and must
- *      NOT call `syncSubscriptionToPlan` themselves (one reconcile per page
- *      load is enough).
+ *   3. `syncSubscriptionToPlan`, called once from the dashboard loader
+ *      (`app._index.jsx`) as a self-heal backstop — it reconciles the DB tier
+ *      against Shopify's active subscription so a missed/forged callback can't
+ *      leave the DB on the wrong tier. It lives on the dashboard landing (not
+ *      the `app.jsx` parent loader, which revalidates on every action and
+ *      would add a Shopify round-trip to every request). Other loaders should
+ *      read via `getShopPlan` and must NOT call `syncSubscriptionToPlan`.
  */
 
 import db from "../db.server.js";

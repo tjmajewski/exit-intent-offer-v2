@@ -4,19 +4,15 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { AppProvider as PolarisAppProvider } from "@shopify/polaris";
 import "@shopify/polaris/build/esm/styles.css";
 import { authenticate } from "../shopify.server";
-import { syncSubscriptionToPlan } from "../utils/billing.server";
 
 export const loader = async ({ request }) => {
-  const { admin, session } = await authenticate.admin(request);
+  await authenticate.admin(request);
 
-  // Self-heal the DB plan tier against Shopify's active subscription. This is
-  // the backstop for the billing callback: if the callback fired before
-  // Shopify propagated the subscription (race) — or a merchant tried to forge
-  // a tier via the callback query string — this pulls the DB back in line with
-  // what Shopify actually says on the next admin page load. Best-effort:
-  // syncSubscriptionToPlan swallows its own errors and returns null.
-  const { default: db } = await import("../db.server.js");
-  await syncSubscriptionToPlan(admin, session, db);
+  // NOTE: the plan self-heal (syncSubscriptionToPlan) deliberately lives in the
+  // dashboard loader (app._index.jsx), NOT here. This parent loader revalidates
+  // on every child navigation and every action, so an extra Shopify Admin API
+  // call here would add a round-trip to every request — enough to time the app
+  // out (502) through the dev tunnel.
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };

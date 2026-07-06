@@ -3,6 +3,7 @@ import { authenticate } from "../shopify.server";
 import { useState, useEffect } from "react";
 import { checkAndResetUsage, PLAN_FEATURES } from "../utils/featureGates";
 import { getShopPlan } from "../utils/plan.server";
+import { syncSubscriptionToPlan } from "../utils/billing.server";
 import { createCurrencyFormatter } from "../utils/currency";
 import AppLayout from "../components/AppLayout";
 import OnboardingChecklist from "../components/OnboardingChecklist";
@@ -10,6 +11,15 @@ import db from "../db.server";
 
 export async function loader({ request }) {
   const { admin, session } = await authenticate.admin(request);
+
+  // Self-heal the DB plan tier against Shopify's active subscription. Backstop
+  // for the billing callback: if the callback fired before Shopify propagated
+  // the subscription (race), or a merchant tried to forge a tier via the
+  // callback query string, this reconciles the DB on the next dashboard open.
+  // Best-effort — syncSubscriptionToPlan swallows its own errors and returns
+  // null — and lives here (dashboard landing) rather than the parent loader so
+  // it doesn't add a Shopify round-trip to every action/navigation.
+  await syncSubscriptionToPlan(admin, session, db);
 
   // Load plan up-front so it survives any downstream error in this loader.
   // If the rest of the dashboard query fails, we still pass a real plan to

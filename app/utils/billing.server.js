@@ -202,7 +202,11 @@ export async function getActiveSubscription(admin) {
   );
 
   const data = await response.json();
-  const subscriptions = data.data.currentAppInstallation.activeSubscriptions;
+  // A GraphQL error response has `data: null` (with `errors` populated), so
+  // guard every hop — a bare `data.data.currentAppInstallation` deref would
+  // otherwise throw and take down whatever loader called us.
+  const subscriptions =
+    data?.data?.currentAppInstallation?.activeSubscriptions;
 
   if (!subscriptions || subscriptions.length === 0) {
     return null;

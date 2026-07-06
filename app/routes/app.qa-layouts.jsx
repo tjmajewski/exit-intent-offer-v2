@@ -299,6 +299,10 @@ function buildPreviewSrcDoc({ layoutId, brand, showPoweredBy }) {
           if (h && h.overlay) {
             h.overlay.style.position = 'fixed';
             h.overlay.style.inset = '0';
+            // Overlays are created hidden (display:none); the storefront flips
+            // them to flex when it shows the modal. The preview has no lifecycle
+            // to do that, so reveal it directly or only the page skeleton shows.
+            h.overlay.style.display = 'flex';
             document.body.appendChild(h.overlay);
             var stop = function (e) { e.preventDefault(); e.stopPropagation(); };
             if (h.primaryCta) h.primaryCta.onclick = stop;
