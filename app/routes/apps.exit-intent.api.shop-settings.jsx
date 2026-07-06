@@ -46,6 +46,21 @@ export async function loader({ request }) {
       ? shopRecord.aiDiscountCodeMode
       : shopRecord.manualDiscountCodeMode;
 
+    // Brand customization is Enterprise-only (see BrandingTab + schema). Send
+    // the brand colors/font so the storefront modal renders in the merchant's
+    // brand instead of washed-out auto-sniffed theme tokens — matching the
+    // in-app Pop-up QA preview. Non-Enterprise shops get nothing here and the
+    // modal auto-sniffs the theme as before.
+    const isEnterprise = (shopRecord.plan || 'starter') === 'enterprise';
+    const brand = isEnterprise
+      ? {
+          brandPrimaryColor: shopRecord.brandPrimaryColor,
+          brandSecondaryColor: shopRecord.brandSecondaryColor,
+          brandAccentColor: shopRecord.brandAccentColor,
+          brandFont: shopRecord.brandFont,
+        }
+      : {};
+
     return json({
       plan: shopRecord.plan || 'starter',
       mode: shopRecord.mode || 'manual',
@@ -58,6 +73,7 @@ export async function loader({ request }) {
       discountEnabled: shopRecord.discountEnabled || false,
       discountCodeMode: discountCodeMode || "unique",
       offerType: shopRecord.offerType || "percentage",
+      ...brand,
       triggers: {
         exitIntent: shopRecord.exitIntentEnabled ?? true,
         timeDelay: shopRecord.timeDelayEnabled ?? false,

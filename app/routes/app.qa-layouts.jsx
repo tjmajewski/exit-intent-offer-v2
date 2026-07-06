@@ -93,12 +93,18 @@ export async function loader({ request }) {
       enabledCount: getEnabledLayoutIds(shop.disabledLayouts).length,
       // Brand tokens so the in-app preview renders in the merchant's colors/font,
       // matching how the storefront builds modal props (brandFromSettings).
-      brand: {
-        primary: shop.brandPrimaryColor,
-        secondary: shop.brandSecondaryColor,
-        accent: shop.brandAccentColor,
-        font: shop.brandFont,
-      },
+      // Brand customization is Enterprise-only, and the storefront only applies
+      // brand colors for Enterprise shops — so gate here too, otherwise a
+      // non-Enterprise shop's preview would show brand colors the live store
+      // never uses. Non-Enterprise falls back to Resparq brand in the preview.
+      brand: plan?.tier === "enterprise"
+        ? {
+            primary: shop.brandPrimaryColor,
+            secondary: shop.brandSecondaryColor,
+            accent: shop.brandAccentColor,
+            font: shop.brandFont,
+          }
+        : {},
       showPoweredBy: plan?.tier !== "enterprise",
       dbError: false,
     };
