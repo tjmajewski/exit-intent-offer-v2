@@ -270,6 +270,9 @@ function buildPreviewSrcDoc({ layoutId, brand, showPoweredBy }) {
         }
         var c = window.__RQ, b = c.brand || {};
         function custom(v, def) { return v && v !== def ? v : undefined; }
+        // Resparq brand palette — the on-brand fallback when the shop hasn't
+        // configured its own brand colors. Purple matches the app UI + logo.
+        var RQ = { primary: '#8B5CF6', primaryText: '#ffffff', background: '#ffffff', foreground: '#1a1a1a' };
         var props = {
           headline: 'Wait, your 15% off is still here',
           subhead: 'Finish checkout and your discount applies automatically.',
@@ -281,9 +284,15 @@ function buildPreviewSrcDoc({ layoutId, brand, showPoweredBy }) {
           timerEndsAt: c.layoutId === 'timer-front' ? Date.now() + 86400000 : null,
           showPoweredBy: c.showPoweredBy,
           themeOverrides: {
-            primary: custom(b.accent, '#f59e0b'),
-            background: custom(b.secondary, '#ffffff') || '#ffffff',
-            foreground: custom(b.primary, '#000000'),
+            // Use the merchant's configured brand colors when set — that's the
+            // closest we can get to their real storefront in a blank iframe
+            // (we can't sniff their live theme CSS here the way the on-store
+            // preview does). When a color is unset, fall back to Resparq brand
+            // purple rather than a generic default, so the preview is on-brand.
+            primary: custom(b.accent, '#f59e0b') || RQ.primary,
+            primaryText: RQ.primaryText,
+            background: custom(b.secondary, '#ffffff') || RQ.background,
+            foreground: custom(b.primary, '#000000') || RQ.foreground,
             fontFamily: b.font && b.font !== 'system' ? b.font : undefined
           }
         };
