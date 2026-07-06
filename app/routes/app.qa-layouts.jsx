@@ -290,11 +290,11 @@ function buildPreviewSrcDoc({ layoutId, brand, showPoweredBy }) {
         try {
           var h = window.ResparqTemplates.render(c.layoutId, props);
           if (h && h.overlay) {
-            h.overlay.style.position = 'fixed';
-            h.overlay.style.inset = '0';
-            // Overlays are created hidden (display:none); the storefront flips
-            // them to flex when it shows the modal. The preview has no lifecycle
-            // to do that, so reveal it directly or only the page skeleton shows.
+            // Reveal exactly like the storefront does (renderPreviewTemplate):
+            // flip display to flex, nothing else. Each template self-positions —
+            // centered ones are fixed inset:0, the top banner is fixed
+            // top/left/right with NO bottom. Forcing position/inset here would
+            // add bottom:0 to the banner overlay and stretch it to full height.
             h.overlay.style.display = 'flex';
             document.body.appendChild(h.overlay);
             var stop = function (e) { e.preventDefault(); e.stopPropagation(); };
