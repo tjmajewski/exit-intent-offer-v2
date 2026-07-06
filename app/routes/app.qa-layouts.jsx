@@ -75,7 +75,7 @@ export async function loader({ request }) {
   try {
     const shop = await db.shop.findUnique({ where: { shopifyDomain: session.shop } });
     if (!shop) {
-      return { plan, shop: null, layouts: [], staleVariantCount: 0, dbError: false };
+      return { plan, shop: null, layouts: [], dbError: false };
     }
 
     const disabled = parseDisabledLayouts(shop.disabledLayouts);
@@ -86,25 +86,11 @@ export async function loader({ request }) {
       enabled: !disabledSet.has(l.id),
     }));
 
-    // Surface the runtime-fallback case: live variants still pointing at a
-    // disabled layout will be shown as Classic Card until they evolve out.
-    let staleVariantCount = 0;
-    if (disabled.length > 0) {
-      staleVariantCount = await db.variant.count({
-        where: {
-          shopId: shop.id,
-          status: { in: ["alive", "champion"] },
-          templateId: { in: disabled },
-        },
-      });
-    }
-
     return {
       plan,
       shop: { shopifyDomain: shop.shopifyDomain, mode: shop.mode },
       layouts,
       enabledCount: getEnabledLayoutIds(shop.disabledLayouts).length,
-      staleVariantCount,
       // Brand tokens so the in-app preview renders in the merchant's colors/font,
       // matching how the storefront builds modal props (brandFromSettings).
       brand: {
@@ -118,7 +104,7 @@ export async function loader({ request }) {
     };
   } catch (error) {
     console.error("[QA Layouts] loader error:", error);
-    return { plan, shop: null, layouts: [], staleVariantCount: 0, dbError: true };
+    return { plan, shop: null, layouts: [], dbError: true };
   }
 }
 
@@ -503,7 +489,7 @@ function Toast({ message, tone, onDone }) {
 
 export default function QaLayouts() {
   const data = useLoaderData();
-  const { plan, shop, layouts, enabledCount, staleVariantCount, dbError, brand, showPoweredBy } = data;
+  const { plan, shop, layouts, enabledCount, dbError, brand, showPoweredBy } = data;
   const fetcher = useFetcher();
   const [toast, setToast] = useState(null);
   const [previewIndex, setPreviewIndex] = useState(null);
@@ -588,8 +574,8 @@ export default function QaLayouts() {
           </div>
         )}
 
-        {/* Stale-variant note — runtime fallback in effect */}
-        {staleVariantCount > 0 && (
+        {/* Disabled-layout note — shown whenever one or more layouts are off */}
+        {enabledCount < layouts.length && (
           <div
             style={{
               background: "#fffbeb",
@@ -602,8 +588,7 @@ export default function QaLayouts() {
               lineHeight: 1.6,
             }}
           >
-            Some saved variants used a layout you turned off. Shoppers see Classic Card instead until
-            those variants evolve out.
+            Some modal variants are disabled.
           </div>
         )}
 
