@@ -250,7 +250,10 @@ Orchestrate multiple touchpoints across the customer journey, not just exit inte
 - **Post-dismiss follow-up:** If they dismiss the modal, show a minimized sticky reminder
 - **Multi-step sequences:** First visit = soft nudge, second visit = stronger offer, third = best offer
 - **Touchpoint coordination:** Ensure the customer sees a coherent story, not random popups
-- **Frequency capping across touchpoints**
+- **Frequency capping across touchpoints** — modal-level capping SHIPPED
+  2026-07 (cross-session cooldown + backoff + 5/30d ceiling + post-purchase
+  quiet, see `MODAL_FREQUENCY_STRATEGY.md`); this item extends it to the
+  other touchpoints above
 
 **Analytics surface:**
 - Full funnel visualization: awareness → consideration → offer → conversion

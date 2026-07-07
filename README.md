@@ -382,6 +382,9 @@ Cross-store intelligence:
 - [ ] Timer triggers after add-to-cart
 - [ ] Cart value threshold triggers correctly
 - [ ] Modal only shows once per session
+- [ ] Returning visitor within cooldown (default 3d) does NOT see modal again;
+      after cooldown, re-shows with a different variant
+      (cross-session cadence — see MODAL_FREQUENCY_STRATEGY.md)
 - [ ] Mobile version displays as bottom sheet
 
 **Discount Functionality:**
@@ -432,6 +435,9 @@ See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for step-by-step instructions.
 - Verify settings exist in database
 - Check browser console for errors
 - Ensure sessionStorage not blocked
+- Clear frequency state: `sessionStorage.clear()` +
+  `localStorage.removeItem('exitIntentFrequency')`, or test with
+  `?resparq_test=1` (bypasses session + cross-session gates)
 
 **Discount not applying:**
 - Verify discount code exists in Shopify Admin

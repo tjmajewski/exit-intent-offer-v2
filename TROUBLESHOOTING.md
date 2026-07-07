@@ -118,10 +118,21 @@ npx prisma migrate dev
    - Timer: Wait configured seconds after adding to cart
    - Cart value: Ensure cart value is within min/max range
 
-6. **Clear sessionStorage**
-   - Modal only shows once per session
-   - Open Console: `sessionStorage.clear()`
+6. **Clear frequency state (session + cross-session)**
+   - Modal shows at most once per session, AND respects a cross-session
+     cadence stored in localStorage: 3-day cooldown (doubling if dismissed
+     repeatedly), max 5 shows per 30 days, 30-day quiet after a purchase
+     (see MODAL_FREQUENCY_STRATEGY.md)
+   - Console message when suppressed:
+     `[Exit Intent] Suppressed by cross-session frequency gate`
+   - Open Console:
+     ```javascript
+     sessionStorage.clear();
+     localStorage.removeItem('exitIntentFrequency');
+     ```
    - Refresh page
+   - Or append `?resparq_test=1` to the URL — test mode bypasses both gates
+     and never writes frequency state
 
 ---
 
@@ -152,16 +163,22 @@ npx prisma migrate dev
 
 ### Issue: Modal only shows in incognito, not normal browser
 
-**Cause:** SessionStorage flag is set from previous test
+**Cause:** Frequency state from a previous test — either the per-session
+flag (`sessionStorage.exitIntentShown`) or the cross-session record
+(`localStorage.exitIntentFrequency`: cooldown/backoff/ceiling/post-purchase).
+Incognito starts with clean storage, so it shows there.
 
 **Solution:**
 ```javascript
 // In browser console:
 sessionStorage.removeItem('exitIntentShown');
+localStorage.removeItem('exitIntentFrequency');
 
 // Or clear all:
 sessionStorage.clear();
 ```
+
+Or test with `?resparq_test=1` — bypasses both gates without writing state.
 
 ---
 

@@ -212,6 +212,7 @@ Most factors are collected client-side in [`extensions/exit-intent-modal/assets/
 - Weights are hand-tuned priors. The store has no live conversion data yet, so they are not empirically fit — the [adaptive intervention threshold](#adaptive-intervention-thresholds) corrects show/no-show decisions per score bucket once real outcomes accumulate.
 - `purchaseHistoryCount` is `0` unless server-side enrichment resolves a logged-in customer; for guests it contributes nothing.
 - `abandonmentCount` (#11) is numeric and layered on top of the `hasAbandonedBefore` boolean (#10) — the two are intentionally complementary (binary first-touch vs. graded repeat behavior), not duplicates.
+- **Recorded but not P-scored:** `modalShowCount`, `modalIgnoreStreak`, and `daysSinceLastShow` (cross-session frequency state, added July 2026 — see MODAL_FREQUENCY_STRATEGY.md) ride along in the signals payload and are persisted in impression `signalsJson` for first-show vs. re-show learning, but do not currently contribute to the propensity score. Candidate inputs for a future fit once re-show outcome data accumulates.
 
 ### Shared offer-decision capabilities (both tiers)
 

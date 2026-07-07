@@ -80,6 +80,9 @@ Returns current shop settings including modal configuration, triggers, AI settin
     "cartValueEnabled": false,
     "cartValueMin": 0,
     "cartValueMax": 999999,
+    "cooldownDays": 3,
+    "maxShowsPer30d": 5,
+    "postPurchaseDays": 30,
     "aiAggression": 5,
     "aiGoal": "revenue",
     "brandPrimaryColor": "#8B5CF6",
@@ -478,21 +481,25 @@ Analyzes customer signals and returns personalized offer configuration.
 
 Records impressions, clicks, and conversions.
 
-**Authentication:** None (public API)
+**Authentication:** App proxy (Shopify-signed storefront request)
 
 **Request Body:**
 ```json
 {
-  "shop": "example.myshopify.com",
   "event": "impression",
-  "variantId": "var_123",
-  "sessionId": "sess_abc123",
-  "metadata": {
-    "cartValue": 89.50,
-    "deviceType": "mobile"
-  }
+  "timestamp": "2026-07-07T12:00:00.000Z",
+  "showNumber": 2,
+  "daysSinceLastShow": 4.5,
+  "ignoreStreak": 1
 }
 ```
+
+`showNumber` / `daysSinceLastShow` / `ignoreStreak` are optional frequency
+context sent with **impressions only** (which show in the rolling 30-day
+window this was, gap since the previous show, consecutive prior
+dismiss-without-engage). Values are sanitized server-side and stored on the
+analytics + modal-library event records so first-show vs. re-show
+performance can be compared. See MODAL_FREQUENCY_STRATEGY.md.
 
 **Event Types:**
 - `impression` - Modal shown to customer
@@ -503,8 +510,7 @@ Records impressions, clicks, and conversions.
 **Response:**
 ```json
 {
-  "success": true,
-  "tracked": true
+  "success": true
 }
 ```
 

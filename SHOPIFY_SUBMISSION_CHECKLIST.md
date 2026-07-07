@@ -98,6 +98,8 @@ redirect_urls = [ "https://resparq.fly.dev/api/auth" ]
 
 #### Edge Cases
 - [ ] Modal respects "shown once per session"
+- [ ] Modal respects cross-session frequency caps (cooldown, 5/30d ceiling,
+      post-purchase quiet — see MODAL_FREQUENCY_STRATEGY.md)
 - [ ] Budget limits enforced
 - [ ] Impression limits enforced (by plan)
 - [ ] App works on mobile devices

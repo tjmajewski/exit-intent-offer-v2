@@ -1,5 +1,42 @@
 # @shopify/shopify-app-template-react-router
 
+## Resparq AI - July 7, 2026 (Cross-Session Modal Frequency)
+
+Modal frequency changed from **once per session** to a **cross-session
+cadence**: cooldown + escalating backoff + rotation + post-purchase
+suppression. Design + deviations documented in
+[`MODAL_FREQUENCY_STRATEGY.md`](MODAL_FREQUENCY_STRATEGY.md) (§9).
+
+### Added
+- **Cross-session frequency gate** in `exit-intent-modal.js`. After the
+  existing per-session gate, a `localStorage` record (`exitIntentFrequency`)
+  enforces: 3-day cooldown between shows, doubling per consecutive
+  dismiss-without-engage (3→6→12→24→30d cap), a true rolling ceiling of
+  5 shows per 30 days, and a 30-day quiet period after a detected purchase.
+  Every allowed re-show naturally rotates to a fresh bandit variant.
+- **Purchase detection without checkout access.** Checkout-bound engagement
+  (primary CTA, navigating secondary CTA, offer-pill redeem) stamps
+  `checkoutStartedAt`; a later page load with an empty cart confirms the
+  purchase (Shopify clears the cart on checkout completion). A CTA click by
+  itself only resets the ignore backoff — checkout abandoners stay eligible
+  for re-shows. The order webhook remains the analytics source of truth.
+- **Merchant controls** (Advanced tab → `exit_intent.settings` metafield →
+  liquid `frequency` block): `cooldownDays` (0 = every visit),
+  `maxShowsPer30d` (min 1), `postPurchaseDays`. Defaults 3 / 5 / 30.
+- **Re-show analytics.** `collectCustomerSignals()` now reports
+  `modalShowCount`, `modalIgnoreStreak`, `daysSinceLastShow` (flows into
+  AI-decision `signalsJson` + starter-learning rows, so the bandit can learn
+  how re-shows convert). Impression events to `/apps/exit-intent/track`
+  carry sanitized `showNumber` / `daysSinceLastShow` / `ignoreStreak`,
+  stored on the analytics and modal-library event records for
+  first-vs-repeat reporting.
+
+### QA notes
+- `?resparqPreview=<id>` and `?resparq_test=1` bypass both gates and never
+  write frequency state (self-testing doesn't burn the merchant's cooldown).
+- To reset a browser during testing:
+  `localStorage.removeItem('exitIntentFrequency'); sessionStorage.clear()`.
+
 ## Resparq AI - June 10, 2026 (Security & Data-Integrity Hardening)
 
 Multi-pass code review of the buyer-facing, maintenance, webhook, and
