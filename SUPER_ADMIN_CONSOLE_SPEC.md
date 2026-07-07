@@ -1,6 +1,6 @@
 # Super Admin Console — Technical Spec
 **Date:** July 7, 2026
-**Status:** 🟡 PROPOSED — not implemented. Awaiting approval.
+**Status:** ✅ IMPLEMENTED July 7, 2026 (approved as designed; plan tab read-only). Usage: `SUPER_ADMIN_GUIDE.md`.
 **Companion doc:** `ADMIN_AI_GLOBAL_DASHBOARD_SPEC.md` (shares the auth layer defined here)
 
 ## Goal
@@ -125,6 +125,11 @@ Merchant-facing surface area touched: only the settings-write extraction. Storef
 
 ## Decisions log
 - 2026-07-07: Plan tab is read-only — console must NOT be able to change a customer's plan.
+- 2026-07-07 (as built): Settings tab edits the DB-served fields directly via a typed allowlist
+  (`EDITABLE_FIELDS` in `admin.shops.$shopId.jsx`) instead of refactoring the merchant save path —
+  the storefront reads all of those fields from the DB (`apps.exit-intent.api.shop-settings.jsx`),
+  so edits take effect immediately. Plan, discount-code, and branding writes are excluded (they
+  create Shopify-side resources and stay merchant-app-only). `app.settings.jsx` untouched.
 
 ## Open questions (answer before build)
 1. Single shared `ADMIN_PASSWORD` OK for solo dev? (Proposed: yes; revisit if a second admin ever exists.)

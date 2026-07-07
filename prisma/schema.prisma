@@ -273,6 +273,7 @@ model VariantImpression {
   @@index([variantId, converted])
   @@index([shopId, duringPromo])
   @@index([shopId, timestamp])
+  @@index([timestamp])
   @@index([segment, timestamp])
   @@index([shopId, deviceType])
   @@index([shopId, accountStatus])
@@ -531,6 +532,7 @@ model InterventionOutcome {
   @@index([shopId, scoreBucket, wasShown])
   @@index([shopId, timestamp])
   @@index([shopId, wasShown, converted])
+  @@index([timestamp])
 }
 
 model InterventionThreshold {
@@ -562,4 +564,20 @@ model InterventionThreshold {
 
   @@unique([shopId, scoreBucket, segment])
   @@index([shopId, segment])
+}
+
+// Super admin console audit trail. Every write performed through /admin/*
+// (settings edits on a customer's behalf, logins) lands here so there is a
+// permanent record of "who changed what, when" — required because admin edits
+// bypass the merchant's own session. Read-only from the app; never deleted.
+model AdminAuditLog {
+  id        String   @id @default(uuid())
+  action    String // "login" | "login_failed" | "settings_update" | ...
+  shopId    String? // null for non-shop actions (login)
+  payload   String   @default("{}") // JSON: { before, after } diff or context
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([shopId, createdAt])
+  @@index([createdAt])
 }

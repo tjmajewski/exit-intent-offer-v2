@@ -1,6 +1,6 @@
 # Global AI Decision Engine Dashboard — Technical Spec
 **Date:** July 7, 2026
-**Status:** 🟡 PROPOSED — not implemented. Awaiting approval.
+**Status:** ✅ IMPLEMENTED July 7, 2026. Usage: `SUPER_ADMIN_GUIDE.md`.
 **Depends on:** auth layer + `/admin` shell from `SUPER_ADMIN_CONSOLE_SPEC.md` (build that first)
 
 ## Goal

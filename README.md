@@ -245,6 +245,7 @@ Comprehensive documentation is available in the following files:
 - **[DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)** - Production deployment
 - **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** - Common issues and solutions
 - **[ENVIRONMENT_VARIABLES.md](./ENVIRONMENT_VARIABLES.md)** - Required env vars
+- **[SUPER_ADMIN_GUIDE.md](./SUPER_ADMIN_GUIDE.md)** - Operator console: store switcher + global AI dashboard
 
 ### Feature Documentation
 - **[EVOLUTION_SYSTEM.md](./EVOLUTION_SYSTEM.md)** - AI variant evolution deep dive

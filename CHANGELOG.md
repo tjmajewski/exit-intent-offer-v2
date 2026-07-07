@@ -1,5 +1,46 @@
 # @shopify/shopify-app-template-react-router
 
+## Resparq AI - July 7, 2026 (Super Admin Console + Global AI Dashboard)
+
+Operator-only console at `/admin` — password-protected, NOT embedded in
+Shopify, invisible to merchants. Usage: [`SUPER_ADMIN_GUIDE.md`](SUPER_ADMIN_GUIDE.md).
+Specs: [`SUPER_ADMIN_CONSOLE_SPEC.md`](SUPER_ADMIN_CONSOLE_SPEC.md),
+[`ADMIN_AI_GLOBAL_DASHBOARD_SPEC.md`](ADMIN_AI_GLOBAL_DASHBOARD_SPEC.md).
+
+### Added
+- **Auth layer** (`app/utils/admin-auth.server.js`): `ADMIN_PASSWORD` +
+  HMAC-signed 12h cookie (`ADMIN_SESSION_SECRET`), constant-time compare,
+  fails closed when unconfigured, login rate-limited 5/15min per IP,
+  `noindex`/`no-store` headers on every `/admin` response.
+- **Audit trail** (`AdminAuditLog` model + `app/utils/admin-audit.server.js`):
+  every admin write and login attempt recorded with before/after diff and IP.
+- **Customer switcher** (`/admin`): all stores with plan/mode/vertical +
+  30d stats, search and plan filter, dev-shop badges.
+- **Customer detail** (`/admin/shops/:shopId`): Plan & Billing tab
+  (READ-ONLY by design — console cannot change a plan; shows DB vs metafield
+  vs live Shopify subscription drift via `unauthenticated.admin`),
+  Performance tab (7/30/90d stats, variants, recent AI decisions),
+  Settings tab (edits DB-served fields only — mode/AI/budget/triggers/modal
+  content/social proof/vertical/evolution; plan, discounts, branding
+  excluded), Audit log tab.
+- **Global AI dashboard** (`/admin/ai`): cross-customer KPIs with
+  prior-period deltas, holdout lift, impressions-over-time chart with
+  hour/day/week/month buckets and per-shop overlay (≤5 shops),
+  zero-impression red flags (impressions in prior 7d, none in 24h),
+  shown-vs-skipped, CVR vs holdout, revenue/profit charts, breakdowns by
+  plan/device/traffic/trigger/archetype, threshold-learning score-bucket
+  chart, customer leaderboard, engine health, and a deterministic
+  trending-summary sentence (`buildTrendSummary`).
+- **Metrics layer** (`app/utils/admin-metrics.server.js`): shopId-scoped
+  aggregates + `date_trunc` time series; dev shops excluded by default.
+- **Charts** (`app/components/admin/charts.jsx`): Recharts wrappers —
+  dependency code-splits into the `/admin/ai` chunk only; merchants never
+  download it.
+- Global `[timestamp]` indexes on `VariantImpression` and
+  `InterventionOutcome` (migration `20260707120000_add_admin_console`).
+- Env vars `ADMIN_PASSWORD`, `ADMIN_SESSION_SECRET`
+  (see `ENVIRONMENT_VARIABLES.md`).
+
 ## Resparq AI - July 7, 2026 (Cross-Session Modal Frequency)
 
 Modal frequency changed from **once per session** to a **cross-session

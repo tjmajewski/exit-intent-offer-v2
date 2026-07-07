@@ -187,6 +187,42 @@ GET /api/cron/social-proof?secret=your-random-secret-key-here
 
 ---
 
+### ADMIN_PASSWORD
+
+**Description:** Login password for the super admin console at `/admin` (store switcher + cross-customer AI dashboard). See [SUPER_ADMIN_GUIDE.md](./SUPER_ADMIN_GUIDE.md).
+
+**Required:** No (but the console is unreachable without it — fails closed)
+
+**Generate:**
+```bash
+openssl rand -base64 24
+```
+
+**Format:**
+```env
+ADMIN_PASSWORD="your-long-random-passphrase"
+```
+
+---
+
+### ADMIN_SESSION_SECRET
+
+**Description:** HMAC key that signs the super admin session cookie. Rotating it invalidates all active admin sessions immediately.
+
+**Required:** No (but required together with `ADMIN_PASSWORD` for `/admin` to work)
+
+**Generate:**
+```bash
+openssl rand -base64 32
+```
+
+**Format:**
+```env
+ADMIN_SESSION_SECRET="your-random-hmac-secret"
+```
+
+---
+
 ### PORT
 
 **Description:** Server port
