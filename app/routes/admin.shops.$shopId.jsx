@@ -29,6 +29,8 @@ import {
 } from "@shopify/polaris";
 import { requireSuperAdmin, ADMIN_RESPONSE_HEADERS } from "../utils/admin-auth.server.js";
 import { logAdminAction, diffFields } from "../utils/admin-audit.server.js";
+import InfoPopover from "../components/admin/InfoPopover.jsx";
+import { METRIC_INFO } from "../components/admin/metric-info.js";
 import db from "../db.server.js";
 
 export function headers() {
@@ -375,7 +377,7 @@ export default function AdminShopDetail() {
 
         {tabs[selectedTab].id === "performance" && (
           <BlockStack gap="400">
-            <InlineStack gap="200">
+            <InlineStack gap="200" blockAlign="center">
               {[7, 30, 90].map((option) => (
                 <Button
                   key={option}
@@ -389,6 +391,7 @@ export default function AdminShopDetail() {
                   {option}d
                 </Button>
               ))}
+              <InfoPopover info={METRIC_INFO.shopPerformance} />
             </InlineStack>
             <Card>
               <InlineGrid columns={5} gap="400">

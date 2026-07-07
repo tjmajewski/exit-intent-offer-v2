@@ -35,6 +35,8 @@ import {
   ScoreBucketBars,
   SERIES,
 } from "../components/admin/charts.jsx";
+import InfoPopover from "../components/admin/InfoPopover.jsx";
+import { METRIC_INFO } from "../components/admin/metric-info.js";
 
 export function headers() {
   return ADMIN_RESPONSE_HEADERS;
@@ -190,12 +192,15 @@ function Delta({ current, previous, invert = false }) {
   );
 }
 
-function Kpi({ label, value, current, previous }) {
+function Kpi({ label, value, current, previous, info }) {
   return (
     <BlockStack gap="100">
-      <Text as="span" tone="subdued" variant="bodySm">
-        {label}
-      </Text>
+      <InlineStack gap="100" blockAlign="center" wrap={false}>
+        <Text as="span" tone="subdued" variant="bodySm">
+          {label}
+        </Text>
+        {info && <InfoPopover info={info} />}
+      </InlineStack>
       <InlineStack gap="200" blockAlign="end">
         <Text as="span" variant="headingLg">
           {value}
@@ -203,6 +208,17 @@ function Kpi({ label, value, current, previous }) {
         {previous !== undefined && <Delta current={current} previous={previous} />}
       </InlineStack>
     </BlockStack>
+  );
+}
+
+function ChartTitle({ children, info }) {
+  return (
+    <InlineStack gap="150" blockAlign="center">
+      <Text as="h3" variant="headingMd">
+        {children}
+      </Text>
+      <InfoPopover info={info} />
+    </InlineStack>
   );
 }
 
@@ -305,7 +321,10 @@ export default function AdminAIDashboard() {
 
         {/* Trending summary */}
         <Banner tone="info" title="Trend">
-          {summary}
+          <InlineStack gap="150" blockAlign="center" wrap={false}>
+            <span>{summary}</span>
+            <InfoPopover info={METRIC_INFO.trendSummary} />
+          </InlineStack>
         </Banner>
 
         {/* Zero-impression flags */}
@@ -323,16 +342,17 @@ export default function AdminAIDashboard() {
         {/* KPI tiles */}
         <Card>
           <InlineGrid columns={{ xs: 2, md: 4, lg: 8 }} gap="400">
-            <Kpi label="AI decisions" value={current.decisions.toLocaleString()} current={current.decisions} previous={previous.decisions} />
-            <Kpi label="Show rate" value={`${(current.showRate * 100).toFixed(0)}%`} current={current.showRate} previous={previous.showRate} />
-            <Kpi label="Impressions" value={current.impressions.toLocaleString()} current={current.impressions} previous={previous.impressions} />
-            <Kpi label="CVR" value={`${(current.cvr * 100).toFixed(1)}%`} current={current.cvr} previous={previous.cvr} />
-            <Kpi label="Revenue" value={money(current.revenue)} current={current.revenue} previous={previous.revenue} />
-            <Kpi label="Profit" value={money(current.profit)} current={current.profit} previous={previous.profit} />
-            <Kpi label="$ / impression" value={`$${current.profitPerImpression.toFixed(3)}`} current={current.profitPerImpression} previous={previous.profitPerImpression} />
+            <Kpi label="AI decisions" value={current.decisions.toLocaleString()} current={current.decisions} previous={previous.decisions} info={METRIC_INFO.decisions} />
+            <Kpi label="Show rate" value={`${(current.showRate * 100).toFixed(0)}%`} current={current.showRate} previous={previous.showRate} info={METRIC_INFO.showRate} />
+            <Kpi label="Impressions" value={current.impressions.toLocaleString()} current={current.impressions} previous={previous.impressions} info={METRIC_INFO.impressions} />
+            <Kpi label="CVR" value={`${(current.cvr * 100).toFixed(1)}%`} current={current.cvr} previous={previous.cvr} info={METRIC_INFO.cvr} />
+            <Kpi label="Revenue" value={money(current.revenue)} current={current.revenue} previous={previous.revenue} info={METRIC_INFO.revenue} />
+            <Kpi label="Profit" value={money(current.profit)} current={current.profit} previous={previous.profit} info={METRIC_INFO.profit} />
+            <Kpi label="$ / impression" value={`$${current.profitPerImpression.toFixed(3)}`} current={current.profitPerImpression} previous={previous.profitPerImpression} info={METRIC_INFO.profitPerImpression} />
             <Kpi
               label="Holdout lift"
               value={current.holdoutLiftPts === null ? "n/a" : `${current.holdoutLiftPts >= 0 ? "+" : ""}${current.holdoutLiftPts.toFixed(1)}pt`}
+              info={METRIC_INFO.holdoutLift}
             />
           </InlineGrid>
         </Card>
@@ -340,9 +360,7 @@ export default function AdminAIDashboard() {
         {/* Impressions over time — primary troubleshooting chart */}
         <Card>
           <BlockStack gap="300">
-            <Text as="h3" variant="headingMd">
-              Modal impressions over time
-            </Text>
+            <ChartTitle info={METRIC_INFO.impressionsOverTime}>Modal impressions over time</ChartTitle>
             {overlayKeys.length > 0 && overlayData.length > 0 ? (
               <TimeSeriesLines
                 data={overlayData}
@@ -362,9 +380,7 @@ export default function AdminAIDashboard() {
         <InlineGrid columns={{ xs: 1, lg: 2 }} gap="400">
           <Card>
             <BlockStack gap="300">
-              <Text as="h3" variant="headingMd">
-                Decisions: shown vs skipped
-              </Text>
+              <ChartTitle info={METRIC_INFO.shownSkipped}>Decisions: shown vs skipped</ChartTitle>
               <StackedAreaSeries
                 data={chartData}
                 series={[
@@ -376,9 +392,7 @@ export default function AdminAIDashboard() {
           </Card>
           <Card>
             <BlockStack gap="300">
-              <Text as="h3" variant="headingMd">
-                CVR: shown vs holdout (%)
-              </Text>
+              <ChartTitle info={METRIC_INFO.cvrVsHoldout}>CVR: shown vs holdout (%)</ChartTitle>
               <TimeSeriesLines
                 data={chartData}
                 series={[
@@ -391,9 +405,7 @@ export default function AdminAIDashboard() {
           </Card>
           <Card>
             <BlockStack gap="300">
-              <Text as="h3" variant="headingMd">
-                Revenue & profit
-              </Text>
+              <ChartTitle info={METRIC_INFO.revenueProfit}>Revenue & profit</ChartTitle>
               <TimeSeriesLines
                 data={chartData}
                 series={[
@@ -406,9 +418,9 @@ export default function AdminAIDashboard() {
           </Card>
           <Card>
             <BlockStack gap="300">
-              <Text as="h3" variant="headingMd">
+              <ChartTitle info={METRIC_INFO.scoreBuckets}>
                 Threshold learning: profit per impression by score bucket
-              </Text>
+              </ChartTitle>
               <ScoreBucketBars data={scoreBucketData} />
             </BlockStack>
           </Card>
@@ -425,9 +437,7 @@ export default function AdminAIDashboard() {
           ].map(([title, rows]) => (
             <Card key={title}>
               <BlockStack gap="300">
-                <Text as="h3" variant="headingMd">
-                  {title} — profit
-                </Text>
+                <ChartTitle info={METRIC_INFO.breakdown}>{`${title} — profit`}</ChartTitle>
                 {rows.length ? (
                   <BreakdownBars data={rows.slice(0, 8)} yFormatter={money} />
                 ) : (
@@ -440,9 +450,7 @@ export default function AdminAIDashboard() {
           ))}
           <Card>
             <BlockStack gap="300">
-              <Text as="h3" variant="headingMd">
-                Engine health
-              </Text>
+              <ChartTitle info={METRIC_INFO.engineHealth}>Engine health</ChartTitle>
               <InlineGrid columns={2} gap="300">
                 <Kpi label="AI-mode shops" value={String(health.aiShops)} />
                 <Kpi label="Variants alive" value={String(health.aliveVariants)} />
@@ -466,9 +474,7 @@ export default function AdminAIDashboard() {
         {/* Leaderboard */}
         <Card>
           <BlockStack gap="300">
-            <Text as="h3" variant="headingMd">
-              Customer leaderboard
-            </Text>
+            <ChartTitle info={METRIC_INFO.leaderboard}>Customer leaderboard</ChartTitle>
             <DataTable
               columnContentTypes={["text", "text", "numeric", "numeric", "numeric", "numeric", "text", "numeric"]}
               headings={["Store", "Plan", "Impressions", "Conversions", "CVR", "Profit", "Holdout lift", "Skip buckets"]}

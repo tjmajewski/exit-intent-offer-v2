@@ -59,9 +59,13 @@ export function createAdminSessionCookie() {
   const { sessionSecret } = secrets();
   const exp = String(Date.now() + SESSION_TTL_MS);
   const value = `${exp}.${sign(exp, sessionSecret)}`;
+  // Path=/ (not /admin): React Router's SPA data requests hit `/admin.data`,
+  // which RFC 6265 path-matching does NOT consider "under" a /admin cookie
+  // path ("." isn't "/"), so a /admin-scoped cookie silently vanishes from
+  // index-route data fetches and client navigation loops back to login.
   return [
     `${COOKIE_NAME}=${value}`,
-    "Path=/admin",
+    "Path=/",
     "HttpOnly",
     "Secure",
     "SameSite=Lax",
@@ -70,7 +74,7 @@ export function createAdminSessionCookie() {
 }
 
 export function clearAdminSessionCookie() {
-  return `${COOKIE_NAME}=; Path=/admin; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+  return `${COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 }
 
 function readCookie(request) {

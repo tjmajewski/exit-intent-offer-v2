@@ -48,6 +48,7 @@ Cross-customer view of the decision engine. Top nav → **AI Dashboard**.
 
 - **Filters** (all combinable, live in the URL so views are bookmarkable): time range 24h/7d/30d/90d, chart bucket hourly/daily/weekly/monthly, plan, device, traffic source, store vertical, shop name(s) (comma-separated, partial match), dev-shops toggle (off by default).
 - **Trend banner**: auto-generated summary — profit vs prior period, CVR/show-rate/holdout-lift movement, biggest segment mover, and a watch list.
+- **ⓘ info icons** next to every KPI, chart, and table: click for why the metric matters, what it shows, and exactly how it's calculated (copy lives in `app/components/admin/metric-info.js`).
 - **KPI tiles** with ▲▼ vs the prior period of the same length. Holdout lift = shown-group CVR minus 5% holdout CVR — same numbers as each merchant's dashboard lift card.
 - **Modal impressions over time** — the primary troubleshooting chart. When your filter is ≤5 shops it overlays one line per shop so a flatlined store is obvious.
 - **Red banner: "Modals may have stopped showing"** — any store with impressions in the last 7 days but zero in the last 24h, linked straight to its detail page.
