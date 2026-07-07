@@ -125,11 +125,12 @@ Merchant-facing surface: untouched (new route + additive indexes only).
 ## Decisions log
 - 2026-07-07: No CSV export. Trending summary (section 6) is required; deterministic v1.
 
-## Why numbers differ slightly from the merchant analytics page
-Merchant `app.analytics` reads the `exit_intent.analytics` Shopify **metafield counters**, incremented live by the storefront track endpoint. This dashboard reads the **Postgres learning tables**. Three known gaps:
-1. **Skip-arm revenue:** `InterventionOutcome` credits natural conversions when the AI chose NOT to show (that's the point — measuring the skip decision). Merchant analytics never counts those.
-2. **Holdout group:** 5% holdout conversions are tracked here for lift math, excluded from merchant-facing attribution.
-3. **Write-path timing:** metafield counters increment at impression time; DB rows land via a separate write (and webhook order matching for conversions) — small drift at window edges, plus dev/preview traffic is skipped in learning tables by design (`dev-shop-guard`).
+## How numbers relate to merchant-facing numbers
+Merchants see two things, from two different stores:
+- **Holdout lift card** (merchant dashboard, `app._index.jsx:387-467`): computed from `InterventionOutcome` — the SAME table this admin dashboard uses. Admin lift numbers **match** the merchant's lift card exactly when the admin filter is set to that shop + 30d. (Merchant version is fixed 30d / min 10 holdout samples; admin adds arbitrary windows and cross-shop rollups.)
+- **Analytics page tallies** (`app.analytics`): `exit_intent.analytics` Shopify **metafield counters**, incremented live by the storefront tracker. These are the numbers that can drift slightly from admin totals:
+  1. **Skip-arm revenue:** `InterventionOutcome` credits natural conversions when the AI chose NOT to show (measuring the skip decision). Metafield tallies never count those.
+  2. **Write-path timing:** metafield counters bump at impression time; DB rows land via separate writes + webhook order matching — small drift at window edges. Dev/preview traffic is also skipped in learning tables by design (`dev-shop-guard`).
 Same underlying events, two lenses. Dashboard footnotes the source per column.
 
 ## Open questions (answer before build)
