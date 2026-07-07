@@ -64,10 +64,10 @@ One `db.shop.findMany` + count aggregates:
 
 ### Customer detail (`/admin/shops/:shopId`) — 3 tabs
 
-**Tab 1: Plan & Billing**
+**Tab 1: Plan & Billing — READ-ONLY (decided 2026-07-07)**
 - DB truth: `Shop.plan`, `subscriptionId`, `promoCode`, `promoAppliedAt` (per `SUBSCRIPTION_BILLING.md`, DB is source of truth).
 - Live Shopify truth: via `unauthenticated.admin(shop.shopifyDomain)` query `currentAppInstallation.activeSubscriptions` + the `exit_intent.plan` metafield → shows drift between DB / metafield / Shopify (the exact class of bug `syncSubscriptionToPlan` self-heals).
-- **Plan override control:** sets DB `Shop.plan` + metafield tier — same dual-write as `app.dev-update-plan.jsx` but super-admin-gated instead of NODE_ENV-gated. Big warning label: *does NOT create/cancel the real Shopify subscription; billing unchanged.* Audit-logged.
+- **No plan override.** Console cannot change any shop's plan — plan writes stay limited to the three existing paths (billing callback, dev switcher in dev, `syncSubscriptionToPlan`). Console renders plan state only.
 
 **Tab 2: Performance**
 Read-only mirror of what the merchant sees, computed from DB (no metafield reads needed for v1):
@@ -121,9 +121,11 @@ Merchant-facing surface area touched: only the settings-write extraction. Storef
 1. Migration (`AdminAuditLog`).
 2. `fly secrets set ADMIN_PASSWORD=… ADMIN_SESSION_SECRET=…`
 3. Deploy; verify `/admin` 302s to login when logged out, rejects wrong password, and that unset secrets = hard reject.
-4. Smoke test plan override + settings edit against dev shop (`exit-intent-test-2.myshopify.com`).
+4. Smoke test settings edit against dev shop (`exit-intent-test-2.myshopify.com`).
+
+## Decisions log
+- 2026-07-07: Plan tab is read-only — console must NOT be able to change a customer's plan.
 
 ## Open questions (answer before build)
-1. Plan override: DB+metafield only (proposed), or should it also cancel/replace the real Shopify subscription? Proposed: no — billing changes stay merchant-initiated; override is for support/comping.
-2. Single shared `ADMIN_PASSWORD` OK for solo dev? (Proposed: yes; revisit if a second admin ever exists.)
-3. Should admin settings edits fire the same side effects as merchant saves (e.g. variant re-init)? Proposed: yes, by reusing the same code path.
+1. Single shared `ADMIN_PASSWORD` OK for solo dev? (Proposed: yes; revisit if a second admin ever exists.)
+2. Should admin settings edits fire the same side effects as merchant saves (e.g. variant re-init)? Proposed: yes, by reusing the same code path.

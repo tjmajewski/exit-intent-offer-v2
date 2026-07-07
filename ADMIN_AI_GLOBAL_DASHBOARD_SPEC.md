@@ -65,6 +65,12 @@ Plan/vertical/shop filters resolve to a `shopId[]` list first (one cheap `Shop` 
 **5. Engine health strip**
 - Shops with AI on · variants alive/champion counts · shops with stale `lastEvolutionCycle` (>7d) · MetaLearning insight count + last update.
 
+**6. Trending summary (decided 2026-07-07 — replaces CSV export idea)**
+Auto-generated plain-language summary at top of dashboard for the selected filter set, e.g.:
+> "Last 30d vs prior 30d: profit +18% ($4.2k → $5.0k). CVR 6.1% (+0.4pt), holdout lift +2.3pt. Biggest gain: mobile/paid (+31% profit). Watch: acme-store.myshopify.com — 4 of 10 threshold buckets now skip, CVR down 22%."
+- **v1 = deterministic, zero cost:** `admin-metrics.server.js` already computes current vs previous period for every KPI/breakdown; a `buildTrendSummary()` ranks movers (by absolute profit impact, min sample size guard) and renders sentence templates. No API keys, instant, never hallucinates.
+- **v2 (optional, later):** pipe the same computed stats through Claude API for freer prose. Deferred — adds a key, latency, and cost for mostly cosmetic gain.
+
 ---
 
 ## Aggregation layer
@@ -113,7 +119,16 @@ Merchant-facing surface: untouched (new route + additive indexes only).
 2. Migration (indexes) → deploy → verify against dev-shop data with dev-shops toggle ON.
 3. Sanity-check numbers against a single shop's `app.analytics` page for the same window.
 
+## Decisions log
+- 2026-07-07: No CSV export. Trending summary (section 6) is required; deterministic v1.
+
+## Why numbers differ slightly from the merchant analytics page
+Merchant `app.analytics` reads the `exit_intent.analytics` Shopify **metafield counters**, incremented live by the storefront track endpoint. This dashboard reads the **Postgres learning tables**. Three known gaps:
+1. **Skip-arm revenue:** `InterventionOutcome` credits natural conversions when the AI chose NOT to show (that's the point — measuring the skip decision). Merchant analytics never counts those.
+2. **Holdout group:** 5% holdout conversions are tracked here for lift math, excluded from merchant-facing attribution.
+3. **Write-path timing:** metafield counters increment at impression time; DB rows land via a separate write (and webhook order matching for conversions) — small drift at window edges, plus dev/preview traffic is skipped in learning tables by design (`dev-shop-guard`).
+Same underlying events, two lenses. Dashboard footnotes the source per column.
+
 ## Open questions (answer before build)
-1. Revenue attribution: use `InterventionOutcome.profit` (decision-engine view, includes skip-arm natural conversions) as headline, `VariantImpression` for variant-level — OK? Numbers will differ slightly from merchant analytics page; leaderboard will footnote which source each column uses.
-2. Any interest in CSV export of the leaderboard (exceljs already installed)? Cheap to add, skipped for v1 unless wanted.
-3. `AIDecision.decision` is a JSON string — for the "decision type" breakdown, v1 parses last-N in memory rather than Postgres JSON ops. Fine?
+1. `AIDecision.decision` is a JSON string — for the "decision type" breakdown, v1 parses last-N in memory rather than Postgres JSON ops. Fine?
+2. Trending summary v1 deterministic (proposed) — confirm Claude-generated prose not needed at launch.
