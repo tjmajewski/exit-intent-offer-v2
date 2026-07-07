@@ -50,8 +50,11 @@ Plan/vertical/shop filters resolve to a `shopId[]` list first (one cheap `Shop` 
 - AI decisions made · Show rate (`wasShown` %) · Impressions · CVR (shown→converted) · Revenue recovered · Profit (revenue − discount) · Profit per impression
 - **Holdout lift**: shown-group CVR vs 5% holdout CVR (`isHoldout`) — the single best "is the AI worth it" number.
 
-**2. Time-series charts** (day buckets; hour when range ≤ 48h)
-- Decisions: shown vs skipped (stacked area)
+**2. Time-series charts** (auto-bucketed: hour when range ≤ 48h, day up to 90d, week beyond — with a manual day/week/month toggle)
+- **Modal impressions over time (added 2026-07-07 — troubleshooting requirement).** Primary chart, top of section. Count of `VariantImpression` rows (+ `StarterImpression` for manual-mode shops) per bucket. Purpose: instantly see "modals stopped showing." Supporting features:
+  - Per-shop overlay when ≤5 shops selected in filter (spot which customer flatlined).
+  - Companion **zero-impression flags** in the health strip: any shop with impressions in the prior 7d but 0 in the last 24h gets a red badge + link to its console page → checks whether cause is threshold learning (all buckets skip), budget exhausted, modal disabled, or extension broken.
+- Decisions: shown vs skipped (stacked area) — pairs with the impressions chart: decisions flowing but impressions flat = storefront/render problem; decisions flat too = traffic or tracking problem upstream
 - CVR line + holdout CVR line (lift visible as the gap)
 - Revenue & profit (dual line)
 - Profit per impression trend
