@@ -3067,11 +3067,19 @@
 
       // Merge: Liquid settings (metafields) are user's current config
       // API provides plan tier (billing truth)
-      return {
+      const merged = {
         ...data,
         ...liquidSettings,
         plan: data.plan || liquidSettings.plan || 'starter'
       };
+      // Brand colors/font: the API sends the DB truth (Enterprise only, see
+      // shop-settings loader). Liquid always emits a value because of its
+      // `| default:` filters, so a stale/default metafield would otherwise
+      // clobber the real brand here — let the API win when it has a value.
+      ['brandPrimaryColor', 'brandSecondaryColor', 'brandAccentColor', 'brandFont'].forEach((k) => {
+        if (data[k]) merged[k] = data[k];
+      });
+      return merged;
     } catch (error) {
       console.error('[Exit Intent] Failed to fetch settings:', error);
       return liquidSettings;

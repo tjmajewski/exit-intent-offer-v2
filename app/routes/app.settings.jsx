@@ -211,10 +211,13 @@ export async function action({ request }) {
       minCartValue: parseFloat(formData.get("cartValueMin") || "0"),
       maxCartValue: parseFloat(formData.get("cartValueMax") || "1000")
     },
-    brandPrimaryColor: formData.get("brandPrimaryColor") || "#000000",
-    brandSecondaryColor: formData.get("brandSecondaryColor") || "#ffffff",
-    brandAccentColor: formData.get("brandAccentColor") || "#f59e0b",
-    brandFont: formData.get("brandFont") || "system",
+    // Brand fields are only present in the form when the Branding tab is
+    // mounted. Placeholder here — resolved below against the existing DB
+    // values so a save from another tab can't reset the metafield to defaults.
+    brandPrimaryColor: formData.get("brandPrimaryColor"),
+    brandSecondaryColor: formData.get("brandSecondaryColor"),
+    brandAccentColor: formData.get("brandAccentColor"),
+    brandFont: formData.get("brandFont"),
     customCSS: formData.get("customCSS") || ""
   };
 
@@ -231,11 +234,26 @@ export async function action({ request }) {
     // Get shop domain
     const shopDomain = session.shop;
 
-    // Fetch existing shop to get plan tier for validation
+    // Fetch existing shop to get plan tier for validation and current brand
+    // values (fallback when the Branding tab wasn't mounted during this save)
     const existingShop = await db.shop.findUnique({
       where: { shopifyDomain: shopDomain },
-      select: { plan: true }
+      select: {
+        plan: true,
+        brandPrimaryColor: true,
+        brandSecondaryColor: true,
+        brandAccentColor: true,
+        brandFont: true
+      }
     });
+
+    // Resolve brand fields: form value → existing DB value → default. The
+    // storefront reads these from the settings metafield, so a save from the
+    // Quick/Advanced tab (no brand inputs in the form) must not wipe them.
+    settings.brandPrimaryColor = settings.brandPrimaryColor || existingShop?.brandPrimaryColor || "#000000";
+    settings.brandSecondaryColor = settings.brandSecondaryColor || existingShop?.brandSecondaryColor || "#ffffff";
+    settings.brandAccentColor = settings.brandAccentColor || existingShop?.brandAccentColor || "#f59e0b";
+    settings.brandFont = settings.brandFont || existingShop?.brandFont || "system";
 
     // Apply tier-based population size limits
     let populationSize = parseInt(formData.get("populationSize")) || 10;
@@ -320,10 +338,10 @@ export async function action({ request }) {
         crossoverRate: parseInt(formData.get("crossoverRate")) || 70,
         selectionPressure: parseInt(formData.get("selectionPressure")) || 5,
         populationSize: populationSize,
-        brandPrimaryColor: formData.get("brandPrimaryColor") || undefined,
-        brandSecondaryColor: formData.get("brandSecondaryColor") || undefined,
-        brandAccentColor: formData.get("brandAccentColor") || undefined,
-        brandFont: formData.get("brandFont") || undefined,
+        brandPrimaryColor: settings.brandPrimaryColor,
+        brandSecondaryColor: settings.brandSecondaryColor,
+        brandAccentColor: settings.brandAccentColor,
+        brandFont: settings.brandFont,
         customCSS: formData.get("customCSS") || undefined,
         exitIntentEnabled: settings.exitIntentEnabled,
         timeDelayEnabled: settings.timeDelayEnabled,
@@ -361,10 +379,10 @@ export async function action({ request }) {
         crossoverRate: parseInt(formData.get("crossoverRate")) || 70,
         selectionPressure: parseInt(formData.get("selectionPressure")) || 5,
         populationSize: populationSize,
-        brandPrimaryColor: formData.get("brandPrimaryColor") || "#000000",
-        brandSecondaryColor: formData.get("brandSecondaryColor") || "#ffffff",
-        brandAccentColor: formData.get("brandAccentColor") || "#f59e0b",
-        brandFont: formData.get("brandFont") || "system",
+        brandPrimaryColor: settings.brandPrimaryColor,
+        brandSecondaryColor: settings.brandSecondaryColor,
+        brandAccentColor: settings.brandAccentColor,
+        brandFont: settings.brandFont,
         customCSS: formData.get("customCSS") || "",
         exitIntentEnabled: settings.exitIntentEnabled,
         timeDelayEnabled: settings.timeDelayEnabled,
