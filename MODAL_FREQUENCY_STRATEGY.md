@@ -196,3 +196,57 @@ advance timestamps and assert show/no-show per rule.
 | Settings save action (writes `exit_intent.settings` metafield) | Persist new fields. |
 
 No DB migration required — state lives client-side in `localStorage`.
+
+---
+
+## 9. As implemented (deviations from the plan above)
+
+Shipped 2026-07. Where the implementation differs from §2–§6, the implementation
+is correct and this section wins:
+
+1. **Conversion ≠ checkout redirect.** §6's "stamp convertedAt at redirect" was
+   wrong: a CTA click is not a purchase, and it would 30-day-suppress the
+   highest-intent recovery targets (checkout abandoners). Instead the client
+   stamps `checkoutStartedAt` on any checkout-bound engagement (primary CTA,
+   navigating secondary CTA, offer-pill redeem). On a later page load,
+   `detectPostCheckoutConversion()` checks the cart: empty → Shopify cleared it
+   at purchase → `convertedAt` set; still full after 24h → they bailed, flag
+   dropped, visitor stays eligible.
+2. **Backoff is one knob, not three.** `cooldownDays × 2^ignoreStreak`, capped
+   at 30d (3 → 6 → 12 → 24 → 30). No `backoff7`/`backoff14` fields.
+3. **True rolling ceiling.** The record stores the actual show timestamps
+   (`shownAt: []`, pruned past 30d) instead of `windowStart`/`shownCount`, so
+   the 5-per-30d cap is genuinely rolling.
+4. **Dismiss counting is centralized.** All close paths (X, overlay, ESC,
+   swipe) funnel through `closeModal()`; the existing `ctaClicked` flag
+   distinguishes engaged closes. No per-handler hooks.
+5. **Offer pill counts.** Pill redeem resets the ignore streak and arms
+   purchase detection — a dismisser who redeems via the pill is engaged.
+6. **Analytics added (was missing from the plan).**
+   - `collectCustomerSignals()` now includes `modalShowCount`,
+     `modalIgnoreStreak`, `daysSinceLastShow` → flows into AI-decision
+     `signalsJson` + starter-learning storage automatically, so the bandit can
+     learn first-show vs. re-show conversion.
+   - Impression events to `/apps/exit-intent/track` carry sanitized
+     `showNumber` / `daysSinceLastShow` / `ignoreStreak`, stored on the
+     analytics + modal-library event records for first-vs-repeat reporting.
+7. **QA exemptions.** `?resparqPreview=` and `resparq_test=1` bypass both gates
+   and never write frequency state (a merchant self-testing doesn't burn their
+   own cooldown).
+8. **Config surface:** three fields in Advanced tab → `exit_intent.settings`
+   metafield → liquid `frequency` block: `cooldownDays` (0 allowed = every
+   visit), `maxShowsPer30d` (min 1), `postPurchaseDays`.
+9. `scripts/dev/sim-traffic-qa.mjs` (§7) does not exist; manual test plan still
+   applies.
+
+localStorage record shape as shipped:
+
+```json
+{
+  "shownAt": [1712345678000],      // render timestamps, rolling 30d window
+  "lastShownAt": 1712345678000,
+  "ignoreStreak": 0,               // consecutive dismiss-without-engage
+  "convertedAt": null,             // set by cart-emptied detection
+  "checkoutStartedAt": null        // armed on checkout-bound engagement
+}
+```

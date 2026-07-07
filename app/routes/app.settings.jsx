@@ -71,6 +71,9 @@ export async function loader({ request }) {
       cartValueEnabled: false,
       cartValueMin: 0,
       cartValueMax: 1000,
+      cooldownDays: 3,
+      maxShowsPer30d: 5,
+      postPurchaseDays: 30,
       discountEnabled: false,
       offerType: "percentage", // "percentage" or "fixed"
       discountPercentage: 10,
@@ -167,6 +170,13 @@ export async function action({ request }) {
 
   const mode = formData.get("mode") || "manual";
 
+  // Frequency thresholds: fall back to the default on missing/garbage input
+  // instead of silently collapsing to 0 (which would mean "show every session").
+  const freqNumber = (raw, fallback, min) => {
+    const n = parseFloat(raw);
+    return Number.isFinite(n) && n >= min ? n : fallback;
+  };
+
   const settings = {
     modalHeadline: formData.get("modalHeadline"),
     modalBody: formData.get("modalBody"),
@@ -179,6 +189,11 @@ export async function action({ request }) {
     cartValueEnabled: formData.get("cartValueEnabled") === "on",
     cartValueMin: parseFloat(formData.get("cartValueMin") || "0"),
     cartValueMax: parseFloat(formData.get("cartValueMax") || "999999"),
+    // Cross-session frequency cadence (MODAL_FREQUENCY_STRATEGY.md).
+    // cooldownDays 0 = re-show every session; maxShowsPer30d floor of 1.
+    cooldownDays: freqNumber(formData.get("cooldownDays"), 3, 0),
+    maxShowsPer30d: Math.floor(freqNumber(formData.get("maxShowsPer30d"), 5, 1)),
+    postPurchaseDays: freqNumber(formData.get("postPurchaseDays"), 30, 0),
     discountEnabled: formData.get("discountEnabled") === "on",
     offerType: formData.get("offerType") || "percentage",
     // Discount amounts are whole-number only (UI is locked to integers).

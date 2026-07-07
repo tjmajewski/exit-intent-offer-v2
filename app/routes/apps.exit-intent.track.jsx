@@ -14,8 +14,8 @@ export async function action({ request }) {
       });
     }
 
-    const { event } = await request.json();
-    
+    const { event, showNumber, daysSinceLastShow, ignoreStreak } = await request.json();
+
     console.log(" Analytics event received:", event);
     
     if (!event || !["impression", "click", "closeout", "conversion"].includes(event)) {
@@ -102,11 +102,23 @@ export async function action({ request }) {
     const metricKey = event + "s";
     currentAnalytics[metricKey] = (currentAnalytics[metricKey] || 0) + 1;
 
+    // Frequency context (impressions only): which show this was for the
+    // visitor, so first-show vs. re-show performance can be compared.
+    // Sanitized — values come from the visitor's browser.
+    const sanitizeNum = (v, max) =>
+      typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= max ? v : undefined;
+    const freqMeta = event === "impression" ? {
+      ...(sanitizeNum(showNumber, 1000) !== undefined && { showNumber: Math.floor(showNumber) }),
+      ...(sanitizeNum(daysSinceLastShow, 365) !== undefined && { daysSinceLastShow }),
+      ...(sanitizeNum(ignoreStreak, 100) !== undefined && { ignoreStreak: Math.floor(ignoreStreak) })
+    } : {};
+
     // Add timestamped event, then prune to the shared rolling window + cap.
     if (!currentAnalytics.events) currentAnalytics.events = [];
     currentAnalytics.events.push({
       type: event,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      ...freqMeta
     });
     currentAnalytics.events = pruneAnalyticsEvents(currentAnalytics.events);
 
@@ -164,7 +176,8 @@ export async function action({ request }) {
         if (!currentModal.stats.events) currentModal.stats.events = [];
         currentModal.stats.events.push({
           type: event,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          ...freqMeta
         });
         
         // Keep only last 90 days of events per modal

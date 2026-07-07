@@ -238,6 +238,9 @@
         }).catch(() => {});
       } catch (_) {}
       try { sessionStorage.setItem('exitIntentDiscount', offer.code); } catch (_) {}
+      // Pill redeem is strong engagement: reset ignore backoff (the dismissal
+      // that mounted the pill already incremented it) and arm purchase detection.
+      recordModalEngaged({ checkout: true });
       window.location.replace(`/discount/${encodeURIComponent(offer.code)}?redirect=/checkout`);
     };
 
@@ -278,6 +281,149 @@
 
   bootPersistedPill();
 
+  // ============================================================
+  // CROSS-SESSION FREQUENCY GATE — cooldown + backoff + ceiling +
+  // post-purchase suppression (see MODAL_FREQUENCY_STRATEGY.md).
+  // State lives in one localStorage JSON record. All reads/writes
+  // fail open: blocked storage (incognito/preview) never suppresses.
+  // ============================================================
+
+  const FREQ_KEY = 'exitIntentFrequency';
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const CEILING_WINDOW_MS = 30 * DAY_MS;
+  const MAX_COOLDOWN_DAYS = 30;
+
+  function readFreqRecord() {
+    try { return JSON.parse(localStorage.getItem(FREQ_KEY)) || {}; }
+    catch (_) { return {}; }
+  }
+
+  function writeFreqRecord(rec) {
+    try { localStorage.setItem(FREQ_KEY, JSON.stringify(rec)); } catch (_) {}
+  }
+
+  // True rolling 30d ceiling: keep the actual show timestamps, prune stale.
+  // Negative deltas (clock moved back) are dropped rather than blocking forever.
+  function pruneShownAt(rec, now) {
+    rec.shownAt = (Array.isArray(rec.shownAt) ? rec.shownAt : [])
+      .filter((ts) => typeof ts === 'number' && now - ts >= 0 && now - ts < CEILING_WINDOW_MS);
+    return rec;
+  }
+
+  function frequencyConfig(settings) {
+    const f = (settings && settings.frequency) || {};
+    const num = (v, fallback, min) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n >= min ? n : fallback;
+    };
+    return {
+      cooldownDays: num(f.cooldownDays, 3, 0),
+      maxShowsPer30d: num(f.maxShowsPer30d, 5, 1),
+      postPurchaseDays: num(f.postPurchaseDays, 30, 0)
+    };
+  }
+
+  // Cooldown escalates exponentially per consecutive ignore:
+  // cooldown × 2^streak, capped at 30d (3 → 6 → 12 → 24 → 30).
+  function currentCooldownMs(cfg, ignoreStreak) {
+    const streak = Math.min(Number(ignoreStreak) > 0 ? Number(ignoreStreak) : 0, 5);
+    return Math.min(cfg.cooldownDays * Math.pow(2, streak), MAX_COOLDOWN_DAYS) * DAY_MS;
+  }
+
+  function shouldShowCrossSession(settings) {
+    try {
+      const cfg = frequencyConfig(settings);
+      const now = Date.now();
+      const rec = pruneShownAt(readFreqRecord(), now);
+
+      // Post-purchase quiet period
+      if (rec.convertedAt && now - rec.convertedAt >= 0 &&
+          now - rec.convertedAt < cfg.postPurchaseDays * DAY_MS) {
+        return false;
+      }
+
+      // Rolling 30d hard ceiling
+      if (rec.shownAt.length >= cfg.maxShowsPer30d) return false;
+
+      // Cooldown with escalating backoff on ignores
+      if (rec.lastShownAt && now - rec.lastShownAt >= 0 &&
+          now - rec.lastShownAt < currentCooldownMs(cfg, rec.ignoreStreak)) {
+        return false;
+      }
+
+      return true;
+    } catch (_) {
+      return true; // fail open, matching the session-gate fallback
+    }
+  }
+
+  // Stamp a render. Returns analytics metadata about this show so the
+  // impression event can record first-vs-repeat context.
+  function stampModalShown() {
+    const now = Date.now();
+    const rec = pruneShownAt(readFreqRecord(), now);
+    const daysSinceLastShow = (rec.lastShownAt && now - rec.lastShownAt >= 0)
+      ? Math.round(((now - rec.lastShownAt) / DAY_MS) * 10) / 10
+      : null;
+    rec.shownAt.push(now);
+    rec.lastShownAt = now;
+    writeFreqRecord(rec);
+    return {
+      showNumber: rec.shownAt.length,          // nth show in the rolling 30d window
+      daysSinceLastShow,
+      ignoreStreak: Number(rec.ignoreStreak) || 0
+    };
+  }
+
+  // Dismissed without engaging → lengthen the next gap.
+  function recordModalIgnored() {
+    const rec = readFreqRecord();
+    rec.ignoreStreak = (Number(rec.ignoreStreak) || 0) + 1;
+    writeFreqRecord(rec);
+  }
+
+  // Engaged (CTA / pill redeem / secondary that navigates) → reset backoff.
+  // checkout:true also stamps checkoutStartedAt; a later visit with an empty
+  // cart confirms the purchase (Shopify clears the cart on checkout complete).
+  function recordModalEngaged(opts) {
+    const rec = readFreqRecord();
+    rec.ignoreStreak = 0;
+    if (opts && opts.checkout) rec.checkoutStartedAt = Date.now();
+    writeFreqRecord(rec);
+  }
+
+  function recordConversionDetected() {
+    const rec = readFreqRecord();
+    rec.convertedAt = Date.now();
+    rec.ignoreStreak = 0;
+    delete rec.checkoutStartedAt;
+    writeFreqRecord(rec);
+  }
+
+  // Purchase detection: we stamped checkoutStartedAt when they left for
+  // checkout. If they come back and the cart is empty, Shopify emptied it at
+  // purchase → converted (client-side gate only; the order webhook stays the
+  // analytics source of truth). Cart still full within 24h → still deciding,
+  // keep the flag. Older than 24h with items → they bailed, drop the flag.
+  async function detectPostCheckoutConversion() {
+    let rec = readFreqRecord();
+    if (!rec.checkoutStartedAt) return;
+    const age = Date.now() - rec.checkoutStartedAt;
+    if (age < 0) { delete rec.checkoutStartedAt; writeFreqRecord(rec); return; }
+    try {
+      const cart = await fetch('/cart.js').then((r) => r.json());
+      rec = readFreqRecord(); // re-read: fetch is async, avoid clobbering
+      if (!rec.checkoutStartedAt) return;
+      if (cart.item_count === 0) {
+        recordConversionDetected();
+        console.log('[Exit Intent] Purchase detected (cart emptied) — entering post-purchase quiet period');
+      } else if (age > DAY_MS) {
+        delete rec.checkoutStartedAt;
+        writeFreqRecord(rec);
+      }
+    } catch (_) {}
+  }
+
   // Fetch custom CSS from shop settings
   async function fetchCustomCSS(shopDomain) {
     try {
@@ -313,16 +459,31 @@
         return;
       }
       
-      // Check if already shown in this session (with fallback for blocked storage)
+      // QA bypass: ?resparqPreview= and test mode must never be suppressed by
+      // frequency state — the localStorage gate persists for days and would
+      // otherwise brick preview after one real show.
+      let frequencyExempt = isResparqTestMode();
       try {
-        if (sessionStorage.getItem(this.sessionKey)) {
+        frequencyExempt = frequencyExempt ||
+          !!new URLSearchParams(window.location.search).get('resparqPreview');
+      } catch (_) {}
+
+      // Gate 1: once per session (with fallback for blocked storage)
+      try {
+        if (!frequencyExempt && sessionStorage.getItem(this.sessionKey)) {
           console.log('Exit intent modal already shown this session');
           return;
         }
       } catch (e) {
         console.log('[Exit Intent] SessionStorage blocked (preview mode), proceeding anyway');
       }
-      
+
+      // Gate 2: cross-session cadence — cooldown/backoff/ceiling/post-purchase
+      if (!frequencyExempt && !shouldShowCrossSession(this.settings)) {
+        console.log('[Exit Intent] Suppressed by cross-session frequency gate');
+        return;
+      }
+
       // Initialize
       this.init();
     }
@@ -338,6 +499,10 @@
         this.renderPreviewTemplate(previewId);
         return;
       }
+
+      // Best-effort purchase detection from a prior checkout redirect
+      // (fire-and-forget; only fetches the cart when a flag is pending)
+      detectPostCheckoutConversion();
 
       // Create modal HTML
       this.createModal();
@@ -491,8 +656,20 @@
         }
       } catch (_) { /* storage blocked — server falls back to random holdout */ }
 
+      // 18. Cross-session frequency state — lets the bandit/meta-learning
+      // learn how first shows vs. cooled-down re-shows convert.
+      const freqRec = pruneShownAt(readFreqRecord(), Date.now());
+      const modalShowCount = freqRec.shownAt.length;           // shows in rolling 30d, before this one
+      const modalIgnoreStreak = Number(freqRec.ignoreStreak) || 0;
+      const daysSinceLastShow = (freqRec.lastShownAt && Date.now() - freqRec.lastShownAt >= 0)
+        ? Math.round(((Date.now() - freqRec.lastShownAt) / DAY_MS) * 10) / 10
+        : null;
+
       return {
         visitorId,
+        modalShowCount,
+        modalIgnoreStreak,
+        daysSinceLastShow,
         visitFrequency: visits,
         cartValue,
         itemCount,
@@ -1752,9 +1929,13 @@
 } catch (e) {
   console.log('[Exit Intent] Could not set sessionStorage (preview mode)');
 }
-      
-      // Track impression
-      this.trackEvent('impression');
+
+      // Stamp the cross-session frequency record. Test mode is exempt so a
+      // merchant self-testing doesn't burn their own cooldown/ceiling.
+      const freqMeta = isResparqTestMode() ? null : stampModalShown();
+
+      // Track impression (with first-vs-repeat show context)
+      this.trackEvent('impression', freqMeta || undefined);
 
       // Stamp exit intent on the Shopify cart so the order webhook can attribute
       // any order placed this session as a conversion — even if the customer
@@ -2452,6 +2633,12 @@
       // Track close
       this.trackEvent('closeout');
 
+      // Frequency backoff: every close path (X, overlay, ESC, swipe) funnels
+      // through here; ctaClicked distinguishes engaged closes from ignores.
+      if (!this.isPreview && !isResparqTestMode() && !this.ctaClicked) {
+        recordModalIgnored();
+      }
+
       // Immediately mount the persistent offer pill (replaces the old 60s toast).
       // The pill persists across page navigation via sessionStorage so the
       // customer can still redeem the offer even if they navigate elsewhere.
@@ -2636,6 +2823,16 @@
       // QA preview: close without tracking or redirecting
       if (this.isPreview) { this.closeModal(); return; }
 
+      // Frequency: engagement resets the ignore backoff. Checkout-bound CTAs
+      // also stamp checkoutStartedAt for post-purchase suppression detection.
+      if (!isResparqTestMode()) {
+        const dest = this.settings.redirectDestination || 'checkout';
+        const offerType = this.settings.offerType || 'percentage';
+        const goesToCheckout = offerType !== 'threshold' &&
+          (offerType !== 'no-discount' || dest === 'checkout');
+        recordModalEngaged({ checkout: goesToCheckout });
+      }
+
       // Track button click
       this.trackEvent('click');
 
@@ -2792,11 +2989,23 @@
         }
       }
 
+      // THRESHOLD/NO-DISCOUNT secondaries navigate — that's engagement, not an
+      // ignore. Flag before closeModal so the dismiss counter skips this close.
+      const offerType = this.settings.offerType || 'percentage';
+      const secondaryNavigates = offerType === 'threshold' || offerType === 'no-discount';
+      if (secondaryNavigates) {
+        this.ctaClicked = true;
+        if (!isResparqTestMode()) {
+          const goesToCheckout = offerType === 'threshold' ||
+            (this.settings.redirectDestination || 'checkout') !== 'checkout';
+          recordModalEngaged({ checkout: goesToCheckout });
+        }
+      }
+
       // Close modal
       this.closeModal();
 
       // THRESHOLD OFFER: Secondary CTA should go to checkout
-      const offerType = this.settings.offerType || 'percentage';
       if (offerType === 'threshold') {
         const discountCode = this.settings.discountCode;
         const redirectUrl = discountCode
@@ -2823,7 +3032,7 @@
       // For other offers, just close the modal (current behavior)
     }
     
-    async trackEvent(eventType) {
+    async trackEvent(eventType, meta) {
       if (this.isPreview) return;
       // Send analytics to your app via app proxy
       try {
@@ -2834,7 +3043,8 @@
           },
           body: JSON.stringify({
             event: eventType,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            ...(meta || {})
           })
         });
       } catch (error) {

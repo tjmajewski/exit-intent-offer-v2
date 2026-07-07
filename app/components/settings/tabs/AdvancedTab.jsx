@@ -205,13 +205,105 @@ export default function AdvancedTab({
         )}
       </div>
       
-      {/* Cart Value Conditions Section */}
-      <div style={{ 
-        background: "white", 
-        padding: 24, 
-        borderRadius: 8, 
+      {/* Display Frequency Section */}
+      <div style={{
+        background: "white",
+        padding: 24,
+        borderRadius: 8,
         border: "1px solid #e5e7eb",
-        marginBottom: 24 
+        marginBottom: 24
+      }}>
+        <h2 style={{ fontSize: 20, marginBottom: 8 }}>Display Frequency</h2>
+        <p style={{ fontSize: 14, color: "#6b7280", marginBottom: 20 }}>
+          The modal shows at most once per visit. These controls decide how soon a returning
+          visitor can see it again. If a visitor keeps dismissing it without clicking, the wait
+          automatically doubles each time (e.g. 3 → 6 → 12 days).
+        </p>
+
+        <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+          <div>
+            <label style={{ display: "block", marginBottom: 4, fontSize: 14 }}>
+              Days between shows:
+            </label>
+            <input
+              type="number"
+              name="cooldownDays"
+              defaultValue={settings.cooldownDays ?? 3}
+              min="0"
+              step="0.5"
+              onChange={() => setFormChanged(true)}
+              style={{
+                padding: "8px 12px",
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                width: 120
+              }}
+            />
+            <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>0 = every visit</div>
+          </div>
+          <div>
+            <label style={{ display: "block", marginBottom: 4, fontSize: 14 }}>
+              Max shows per 30 days:
+            </label>
+            <input
+              type="number"
+              name="maxShowsPer30d"
+              defaultValue={settings.maxShowsPer30d ?? 5}
+              min="1"
+              step="1"
+              onChange={() => setFormChanged(true)}
+              style={{
+                padding: "8px 12px",
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                width: 120
+              }}
+            />
+            <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>Hard ceiling per visitor</div>
+          </div>
+          <div>
+            <label style={{ display: "block", marginBottom: 4, fontSize: 14 }}>
+              Quiet days after purchase:
+            </label>
+            <input
+              type="number"
+              name="postPurchaseDays"
+              defaultValue={settings.postPurchaseDays ?? 30}
+              min="0"
+              step="1"
+              onChange={() => setFormChanged(true)}
+              style={{
+                padding: "8px 12px",
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                width: 120
+              }}
+            />
+            <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>No offers after they buy</div>
+          </div>
+        </div>
+
+        <div style={{
+          padding: 12,
+          background: "#f0f9ff",
+          border: "1px solid #bae6fd",
+          borderRadius: 6,
+          fontSize: 14,
+          color: "#0c4a6e",
+          marginTop: 16
+        }}>
+          <strong>Tip:</strong> Each re-show automatically rotates to a fresh design and offer,
+          so returning visitors never see the same popup twice in a row.
+        </div>
+      </div>
+
+      {/* Cart Value Conditions Section */}
+      <div style={{
+        background: "white",
+        padding: 24,
+        borderRadius: 8,
+        border: "1px solid #e5e7eb",
+        marginBottom: 24
       }}>
         <h2 style={{ fontSize: 20, marginBottom: 20 }}>Additional Conditions <span style={{ fontSize: 14, fontWeight: 400, color: "#6b7280" }}>(Optional)</span></h2>
 

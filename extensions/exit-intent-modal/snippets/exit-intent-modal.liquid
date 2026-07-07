@@ -24,6 +24,11 @@
     discountPercentage: {{ shop.metafields.exit_intent.settings.value.discountPercentage | default: 10 | json }},
     discountAmount: {{ shop.metafields.exit_intent.settings.value.discountAmount | default: 10 | json }},
     redirectDestination: {{ shop.metafields.exit_intent.settings.value.redirectDestination | default: "checkout" | json }},
+    frequency: {
+      cooldownDays: {{ shop.metafields.exit_intent.settings.value.cooldownDays | default: 3 | json }},
+      maxShowsPer30d: {{ shop.metafields.exit_intent.settings.value.maxShowsPer30d | default: 5 | json }},
+      postPurchaseDays: {{ shop.metafields.exit_intent.settings.value.postPurchaseDays | default: 30 | json }}
+    },
     triggers: {
       exitIntent: {{ shop.metafields.exit_intent.settings.value.exitIntentEnabled | default: true | json }},
       timeDelay: {{ shop.metafields.exit_intent.settings.value.timeDelayEnabled | default: false | json }},
