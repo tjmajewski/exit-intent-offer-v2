@@ -60,6 +60,21 @@ Cross-customer view of the decision engine. Top nav → **AI Dashboard**.
 3. Settings tab: check `exitIntentEnabled`, budget not exhausted, mode as expected.
 4. Still stuck → `TROUBLESHOOTING.md`.
 
+## Password reset / lost password
+
+There is no in-app reset flow — the password lives only in Fly secrets, so resetting = setting a new one:
+
+```bash
+ADMIN_PW=$(openssl rand -base64 24) && echo "New admin password: $ADMIN_PW" && \
+fly secrets set ADMIN_PASSWORD="$ADMIN_PW" ADMIN_SESSION_SECRET="$(openssl rand -base64 32)"
+```
+
+- Save the printed password in your password manager.
+- `fly secrets set` restarts the app automatically — no deploy needed. Wait ~30s, then log in at `/admin` with the new password.
+- Rotating `ADMIN_SESSION_SECRET` in the same command kills every existing admin session instantly (do this if you suspect the old password leaked). To reset the password but keep current sessions alive, set only `ADMIN_PASSWORD`.
+- Nothing else is affected: merchants, storefront modals, and all data are untouched.
+- Locked out by the rate limiter (5 wrong attempts)? Just wait 15 minutes — no reset needed.
+
 ## Security notes
 - Fails closed: no secrets set → console unreachable.
 - Cookie is HttpOnly/Secure/SameSite=Lax, HMAC-signed, 12h expiry.
