@@ -6,6 +6,7 @@ import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
 import { composeSegmentKey } from "../utils/segment-key.js";
 import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
 import { recordTouch } from "../utils/journey.server.js";
+import { loadPropensityModel, scorePropensity } from "../utils/propensity-model.server.js";
 import { computePropensity } from "../utils/propensity.server.js";
 import { enforceRateLimit } from "../utils/rate-limit.server.js";
 import { getEnabledLayoutIds } from "../utils/templates.js";
@@ -324,10 +325,31 @@ export async function action({ request }) {
     // ONE scale. SECURITY: always recompute server-side, overwriting any
     // client-supplied value — signals come from the visitor's browser, and a
     // forced propensityScore of 0 would unlock the max discount while a
-    // forced 100 poisons threshold learning. Same engine as enrich-signals,
-    // so recomputing from the same signals yields the same score.
-    signals.propensityScore = computePropensity(signals);
-    console.log(`[AI Decision] Propensity P=${signals.propensityScore} (${shopRecord.plan || 'pro'})`);
+    // forced 100 poisons threshold learning.
+    //
+    // CALIBRATED MODEL (shadow-first): when a fresh trained model exists,
+    // score it alongside the legacy curve and stamp BOTH into signals (which
+    // persist on AIDecision — that's the shadow-comparison dataset). The
+    // served score only switches to the model when the shop's
+    // usePropensityModel flag is on; flag off = legacy-identical behavior.
+    const legacyPropensity = computePropensity(signals);
+    signals.propensityScoreLegacy = legacyPropensity;
+    signals.propensityScore = legacyPropensity;
+    try {
+      const propensityModel = await loadPropensityModel(db);
+      if (propensityModel) {
+        const modelPropensity = scorePropensity(propensityModel, signals, shopRecord.id);
+        if (modelPropensity !== null) {
+          signals.propensityScoreModel = modelPropensity;
+          if (shopRecord.usePropensityModel) {
+            signals.propensityScore = modelPropensity;
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[AI Decision] Propensity model scoring failed (legacy served):', e.message);
+    }
+    console.log(`[AI Decision] Propensity P=${signals.propensityScore} (legacy=${legacyPropensity}${signals.propensityScoreModel !== undefined ? `, model=${signals.propensityScoreModel}${shopRecord.usePropensityModel ? ' SERVED' : ' shadow'}` : ''}, ${shopRecord.plan || 'pro'})`);
 
     // PRE-CHECK: the unified decideOffer engine determines whether intervention
     // is warranted (enables "no_intervention" as a learned outcome). Both tiers

@@ -130,6 +130,13 @@ model Shop {
   // Adaptive Threshold System
   lastThresholdUpdate DateTime?
 
+  // Propensity calibration (build plan phase 3). When true, the served
+  // propensity comes from the trained logistic model instead of the hand-set
+  // curve. Default false = shadow mode: both scores are computed and stamped
+  // into AIDecision.signals, legacy is served. Flip per shop once the model's
+  // AUC beats legacy on fresh outcomes.
+  usePropensityModel Boolean @default(false)
+
   discountOffers         DiscountOffer[]
   aiDecisions            AIDecision[]
   promotions             Promotion[]

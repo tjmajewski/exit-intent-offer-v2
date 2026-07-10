@@ -18,6 +18,7 @@ manually invoke each job.
 | `app/cron/threshold-learning-cycle.js` | hourly | Per-shop intervention threshold recalc (50+ new outcomes) |
 | `app/cron/aggregate-gene-performance.js` | daily | Cross-store gene + archetype meta-learning; also cleans expired offers / old rows |
 | `app/cron/track-seasonal-patterns.js` | weekly | Seasonal performance snapshot |
+| `app/cron/calibrate-propensity.js` | weekly | Train calibrated propensity model from no-show outcomes (300+ rows gate; shadow-served until per-shop flag) |
 
 All four are plain Node entry points invoked via the deployed image:
 `node app/cron/<name>.js`. They read the same `DATABASE_URL` /
@@ -36,6 +37,7 @@ flyctl m run -a resparq --schedule hourly  registry.fly.io/resparq:latest node a
 flyctl m run -a resparq --schedule hourly  registry.fly.io/resparq:latest node app/cron/threshold-learning-cycle.js
 flyctl m run -a resparq --schedule daily   registry.fly.io/resparq:latest node app/cron/aggregate-gene-performance.js
 flyctl m run -a resparq --schedule weekly  registry.fly.io/resparq:latest node app/cron/track-seasonal-patterns.js
+flyctl m run -a resparq --schedule weekly  registry.fly.io/resparq:latest node app/cron/calibrate-propensity.js
 ```
 
 Confirm with:
@@ -76,6 +78,7 @@ fly ssh console -a resparq -C "node app/cron/evolution-cycle.js"
 fly ssh console -a resparq -C "node app/cron/threshold-learning-cycle.js"
 fly ssh console -a resparq -C "node app/cron/aggregate-gene-performance.js"
 fly ssh console -a resparq -C "node app/cron/track-seasonal-patterns.js"
+fly ssh console -a resparq -C "node app/cron/calibrate-propensity.js"
 ```
 
 For the cleanup endpoint specifically:
@@ -92,6 +95,7 @@ fly ssh console -a resparq -C "curl -X POST -H \"Authorization: Bearer $CRON_SEC
 npm run evolution         # node app/cron/evolution-cycle.js
 npm run aggregate-genes   # node app/cron/aggregate-gene-performance.js
 npm run track-seasonal    # node app/cron/track-seasonal-patterns.js
+npm run calibrate-propensity  # node app/cron/calibrate-propensity.js
 ```
 
 (There is no npm script for `threshold-learning-cycle.js` — invoke it directly
