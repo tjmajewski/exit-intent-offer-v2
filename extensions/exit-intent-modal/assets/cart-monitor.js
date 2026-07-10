@@ -88,6 +88,30 @@
     if (pill) pill.remove();
   }
 
+  // Journey log reporter (mirrors exit-intent-modal.js). Fire-and-forget;
+  // test mode and preview never report. Once-per-key dedup via sessionStorage
+  // so re-mounting surfaces on navigation doesn't flood the journal.
+  function sendJourneyEvent(payload, onceKey) {
+    try {
+      if (sessionStorage.getItem('resparqTestMode') === '1') return;
+      if (new URLSearchParams(window.location.search).get('resparqPreview')) return;
+      let visitorId = null;
+      try { visitorId = localStorage.getItem('resparqVisitorId'); } catch (_) {}
+      if (!visitorId) return;
+      if (onceKey) {
+        const k = 'exitIntentJourney_' + onceKey;
+        if (sessionStorage.getItem(k)) return;
+        sessionStorage.setItem(k, '1');
+      }
+      fetch('/apps/exit-intent/api/journey', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({ visitorId, ...payload })
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   console.log('[Cart Monitor] Script loaded');
 
   class CartMonitor {
@@ -125,6 +149,10 @@
           const isCartPage = window.location.pathname.includes('/cart');
           const hasMiniCart = this.detectMiniCart();
           if (isCartPage || hasMiniCart) {
+            sendJourneyEvent(
+              { surface: 'cart_banner', response: 'shown', offerType: 'threshold', offerAmount: thresholdOffer.discount },
+              'threshold_' + thresholdOffer.code
+            );
             this.startMonitoring(thresholdOffer, isCartPage, hasMiniCart);
           }
         }
@@ -145,6 +173,15 @@
 
       // One-surface rule: kill the pill while cart shows the offer
       hideOfferPill();
+
+      sendJourneyEvent(
+        {
+          surface: 'cart_banner', response: 'shown',
+          impressionId: flatOffer.impressionId || null,
+          aiDecisionId: flatOffer.aiDecisionId || null
+        },
+        'flat_' + flatOffer.code
+      );
 
       if (isCartPage) {
         this.mountFlatCartPageSurface(flatOffer);
@@ -462,6 +499,10 @@
     applyDiscountCode(code) {
       // Store code for checkout redirect
       sessionStorage.setItem('exitIntentDiscount', code);
+      sendJourneyEvent(
+        { surface: 'cart_banner', response: 'apply', discountCode: code },
+        'apply_' + code
+      );
       console.log(`[Cart Monitor] Discount code ${code} stored and ready for checkout from any page`);
     }
 
@@ -553,6 +594,12 @@
         }).catch(() => {});
       } catch (_) {}
       try { sessionStorage.setItem('exitIntentDiscount', offer.code); } catch (_) {}
+      sendJourneyEvent({
+        surface: 'cart_banner', response: 'apply',
+        impressionId: offer.impressionId || null,
+        aiDecisionId: offer.aiDecisionId || null,
+        discountCode: offer.code
+      });
       window.location.replace(`/discount/${encodeURIComponent(offer.code)}?redirect=/checkout`);
     }
 

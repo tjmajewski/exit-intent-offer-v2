@@ -566,6 +566,38 @@ model InterventionThreshold {
   @@index([shopId, segment])
 }
 
+// Server-side journey log: one row per touchpoint interaction per visitor.
+// The client's localStorage frequency record is a summary that dies with
+// cleared storage; this table is the queryable, joinable journal that
+// sequential learning (surface arms, escalation ladder) trains on.
+// visitorId is the random client-generated resparqVisitorId — no PII.
+// Written from the decision endpoint (shown/skipped/holdout), track-click,
+// the journey endpoint (dismiss/pill/banner events), and the order webhook.
+model VisitorTouch {
+  id              String   @id @default(uuid())
+  shopId          String
+  visitorId       String
+  surface         String // modal | pill | cart_banner | none | order
+  response        String // shown | skipped | holdout | dismissed | cta_click | redeem | apply | converted
+  variantId       String? // Variant.id when a variant was rendered
+  impressionId    String? // VariantImpression.id
+  aiDecisionId    String? // AIDecision.id
+  offerType       String? // percentage | threshold | fixed | no-discount
+  offerAmount     Float?
+  discountCode    String?
+  triggerReason   String? // failedCoupon | checkoutExit | cartHesitation | staleCart | general
+  propensityScore Int?
+  segmentKey      String?
+  showNumber      Int? // nth show in the rolling 30d window (client-reported, sanitized)
+  ignoreStreak    Int?
+  timestamp       DateTime @default(now())
+
+  @@index([shopId, visitorId, timestamp])
+  @@index([shopId, timestamp])
+  @@index([visitorId, timestamp])
+  @@index([impressionId])
+}
+
 // Per-(shop, baseline, segment) evolution trigger cursor. The cron previously
 // gated on shop-level lastEvolutionCycle, so one baseline's cycle reset the
 // impression counter for every other baseline (and mobile/desktop segments

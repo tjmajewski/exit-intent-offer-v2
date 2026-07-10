@@ -119,6 +119,31 @@
   }
 
   // ============================================================
+  // JOURNEY EVENTS — client-observable touches (modal dismissals,
+  // pill mount/redeem/dismiss) reported to the server-side journey
+  // log. Fire-and-forget; test mode and preview never report.
+  // ============================================================
+
+  function getVisitorId() {
+    try { return localStorage.getItem('resparqVisitorId'); } catch (_) { return null; }
+  }
+
+  function sendJourneyEvent(payload) {
+    try {
+      if (isResparqTestMode()) return;
+      if (new URLSearchParams(window.location.search).get('resparqPreview')) return;
+      const visitorId = getVisitorId();
+      if (!visitorId) return; // unjoinable without an id
+      fetch('/apps/exit-intent/api/journey', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({ visitorId, ...payload })
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
+  // ============================================================
   // OFFER PILL — persistent "your discount is ready" chip
   // Replaces the old 60s-delayed reminder toast. Mounts immediately
   // on modal dismissal, persists across page navigation via
@@ -228,6 +253,11 @@
     closeBtn.onclick = (e) => {
       e.stopPropagation();
       try { sessionStorage.setItem(PILL_DISMISSED_KEY, 'true'); } catch (_) {}
+      sendJourneyEvent({
+        surface: 'pill', response: 'dismissed',
+        impressionId: offer.impressionId || null,
+        aiDecisionId: offer.aiDecisionId || null
+      });
       pill.style.transform = 'translateY(140%)';
       pill.style.opacity = '0';
       setTimeout(() => pill.remove(), 350);
@@ -258,6 +288,12 @@
       // Pill redeem is strong engagement: reset ignore backoff (the dismissal
       // that mounted the pill already incremented it) and arm purchase detection.
       recordModalEngaged({ checkout: true });
+      sendJourneyEvent({
+        surface: 'pill', response: 'redeem',
+        impressionId: offer.impressionId || null,
+        aiDecisionId: offer.aiDecisionId || null,
+        discountCode: offer.code
+      });
       window.location.replace(`/discount/${encodeURIComponent(offer.code)}?redirect=/checkout`);
     };
 
@@ -274,6 +310,19 @@
       pill.style.transform = 'translateY(0)';
       pill.style.opacity = '1';
     });
+
+    // Journey log: pill shown — once per offer, not per page navigation
+    // (the pill re-mounts on every page load while the offer is pending).
+    try {
+      if (sessionStorage.getItem('exitIntentPillTrackedFor') !== offer.code) {
+        sessionStorage.setItem('exitIntentPillTrackedFor', offer.code);
+        sendJourneyEvent({
+          surface: 'pill', response: 'shown',
+          impressionId: offer.impressionId || null,
+          aiDecisionId: offer.aiDecisionId || null
+        });
+      }
+    } catch (_) {}
   }
 
   // On every page load: re-mount the pill if there's a pending offer.
@@ -2659,6 +2708,11 @@
       // through here; ctaClicked distinguishes engaged closes from ignores.
       if (!this.isPreview && !isResparqTestMode() && !this.ctaClicked) {
         recordModalIgnored();
+        sendJourneyEvent({
+          surface: 'modal', response: 'dismissed',
+          impressionId: this.currentImpressionId || null,
+          aiDecisionId: this.currentAiDecisionId || null
+        });
       }
 
       // Immediately mount the persistent offer pill (replaces the old 60s toast).
@@ -2875,7 +2929,8 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               impressionId: this.currentImpressionId,
-              buttonType: 'primary'
+              buttonType: 'primary',
+              visitorId: getVisitorId()
             })
           });
           console.log('[Click Tracking] Primary button click recorded');
@@ -3003,7 +3058,8 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               impressionId: this.currentImpressionId,
-              buttonType: 'secondary'
+              buttonType: 'secondary',
+              visitorId: getVisitorId()
             })
           });
           console.log('[Click Tracking] Secondary button click recorded');

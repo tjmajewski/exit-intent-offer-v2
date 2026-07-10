@@ -5,6 +5,7 @@ import { getMetaInsight, shouldUseMetaLearning } from "../utils/meta-learning.js
 import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
 import { composeSegmentKey } from "../utils/segment-key.js";
 import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
+import { recordTouch } from "../utils/journey.server.js";
 import { computePropensity } from "../utils/propensity.server.js";
 import { enforceRateLimit } from "../utils/rate-limit.server.js";
 import { getEnabledLayoutIds } from "../utils/templates.js";
@@ -257,6 +258,17 @@ export async function action({ request }) {
         aiDecisionId: aiDecisionRecord.id
       }).catch(e => console.error('[Holdout] Failed to record holdout outcome:', e));
 
+      // Journey log: holdout suppression is a touch too — the visitor's
+      // journey record must show "we chose to show nothing" for sequencing.
+      if (!devWriteSkip) recordTouch(db, {
+        shopId: shopRecord.id,
+        visitorId: signals.visitorId,
+        surface: 'none',
+        response: 'holdout',
+        aiDecisionId: aiDecisionRecord.id,
+        propensityScore: signals.propensityScore ?? null
+      });
+
       console.log(`[AI Decision] Holdout group for ${shop} — no intervention (incrementality measurement)`);
 
       return json({
@@ -448,6 +460,16 @@ export async function action({ request }) {
       trackAnalyticsEvent(admin, 'no_intervention').catch(e =>
         console.error('[Analytics] Failed to track no_intervention event:', e)
       );
+
+      // Journey log: learned/forced skip
+      if (!devWriteSkip) recordTouch(db, {
+        shopId: shopRecord.id,
+        visitorId: signals.visitorId,
+        surface: 'none',
+        response: 'skipped',
+        aiDecisionId: aiDecisionRecord.id,
+        propensityScore: signals.propensityScore ?? null
+      });
 
       console.log(`[AI Decision] No intervention for ${shop}: ${noInterventionDecision.reasoning}`);
 
@@ -715,6 +737,24 @@ export async function action({ request }) {
         impressionId
       }).catch(e => console.error('[Threshold] Failed to record shown outcome:', e));
 
+      // Journey log: announce-only modal shown
+      if (!isTestMode && !devWriteSkip) recordTouch(db, {
+        shopId: shopRecord.id,
+        visitorId: signals.visitorId,
+        surface: 'modal',
+        response: 'shown',
+        variantId: selectedVariant.id,
+        impressionId,
+        aiDecisionId: noDiscAiDec.id,
+        offerType: 'no-discount',
+        offerAmount: 0,
+        triggerReason,
+        propensityScore: signals.propensityScore ?? null,
+        segmentKey,
+        showNumber: typeof signals.modalShowCount === 'number' ? signals.modalShowCount + 1 : null,
+        ignoreStreak: signals.modalIgnoreStreak ?? null
+      });
+
       return json({
         shouldShow: true,
         aiDecisionId: noDiscAiDec.id,
@@ -907,6 +947,25 @@ export async function action({ request }) {
       aiDecisionId: discountAiDec.id,
       impressionId
     }).catch(e => console.error('[Threshold] Failed to record shown outcome:', e));
+
+    // Journey log: discount modal shown
+    if (!isTestMode && !devWriteSkip) recordTouch(db, {
+      shopId: shopRecord.id,
+      visitorId: signals.visitorId,
+      surface: 'modal',
+      response: 'shown',
+      variantId: selectedVariant.id,
+      impressionId,
+      aiDecisionId: discountAiDec.id,
+      offerType: decision.type,
+      offerAmount: decision.amount,
+      discountCode: discountResult.code,
+      triggerReason,
+      propensityScore: signals.propensityScore ?? null,
+      segmentKey,
+      showNumber: typeof signals.modalShowCount === 'number' ? signals.modalShowCount + 1 : null,
+      ignoreStreak: signals.modalIgnoreStreak ?? null
+    });
 
     return json(response);
     

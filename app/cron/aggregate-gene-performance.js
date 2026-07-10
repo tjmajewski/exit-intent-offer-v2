@@ -11,7 +11,22 @@ import db from '../db.server.js';
 export async function aggregateGenePerformance() {
   console.log('\n [Gene Aggregation] Starting gene performance aggregation...');
   console.log('='.repeat(80));
-  
+
+  // Journey-log retention: prune VisitorTouch rows older than 180 days.
+  // Runs before the min-shop early-return below so retention holds even
+  // while the network is too small to aggregate.
+  try {
+    const cutoff = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
+    const pruned = await db.visitorTouch.deleteMany({
+      where: { timestamp: { lt: cutoff } }
+    });
+    if (pruned.count > 0) {
+      console.log(`[Journey] Pruned ${pruned.count} VisitorTouch rows older than 180d`);
+    }
+  } catch (e) {
+    console.error('[Journey] Retention prune failed:', e.message);
+  }
+
   // Get all shops that contribute to meta-learning (opted in, have variants)
   const shops = await db.shop.findMany({
     where: {

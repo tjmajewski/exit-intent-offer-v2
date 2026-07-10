@@ -339,6 +339,45 @@ export const action = async ({ request }) => {
       } catch (err) {
         console.error('[Webhook] Error recording intervention conversion:', err.message);
       }
+
+      // Journey log: conversion touch. The webhook has no visitorId of its
+      // own — resolve it from the stamped impression's shown-touch, falling
+      // back to the AI decision's recorded signals.
+      if (!devWriteSkip) {
+        try {
+          let touchVisitorId = null;
+          if (impressionAttr?.value) {
+            const priorTouch = await db.visitorTouch.findFirst({
+              where: { shopId: shopRecord.id, impressionId: impressionAttr.value },
+              select: { visitorId: true }
+            });
+            touchVisitorId = priorTouch?.visitorId || null;
+          }
+          if (!touchVisitorId && aiDecisionAttr?.value) {
+            const dec = await db.aIDecision.findUnique({
+              where: { id: aiDecisionAttr.value },
+              select: { signals: true }
+            });
+            if (dec?.signals) {
+              try { touchVisitorId = JSON.parse(dec.signals).visitorId || null; } catch { /* ignore */ }
+            }
+          }
+          if (touchVisitorId) {
+            const { recordTouch } = await import('../utils/journey.server.js');
+            await recordTouch(db, {
+              shopId: shopRecord.id,
+              visitorId: touchVisitorId,
+              surface: 'order',
+              response: 'converted',
+              impressionId: impressionAttr?.value || null,
+              aiDecisionId: aiDecisionAttr?.value || null,
+              discountCode: exitDiscountUsed?.code || exitIntentDiscount?.code || configuredDiscountUsed?.code || null
+            });
+          }
+        } catch (err) {
+          console.error('[Webhook] Error recording conversion touch:', err.message);
+        }
+      }
     }
 
     // If no exit intent signal at all, skip

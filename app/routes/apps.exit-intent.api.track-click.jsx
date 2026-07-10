@@ -13,8 +13,8 @@ export async function action({ request }) {
   if (limited) return limited;
 
   try {
-    const { admin } = await authenticate.public.appProxy(request);
-    const { impressionId, buttonType } = await request.json();
+    const { admin, session } = await authenticate.public.appProxy(request);
+    const { impressionId, buttonType, visitorId } = await request.json();
 
     if (!impressionId) {
       return json({ error: "Missing impressionId" }, { status: 400 });
@@ -25,9 +25,27 @@ export async function action({ request }) {
 
     // Record the click in the evolution DB (idempotent per impression).
     // Note: buttonType is logged below but not persisted — no schema field.
-    await recordClick(impressionId);
+    const impression = await recordClick(impressionId);
 
     console.log(`[Click Tracking] Recorded ${buttonType} click for impression ${impressionId}`);
+
+    // Journey log: CTA click. Written here (authenticated, impression-backed)
+    // rather than the public journey endpoint so a browser can't forge clicks.
+    if (visitorId && impression) {
+      const { isLearningWriteSkipped } = await import('../utils/dev-shop-guard.server.js');
+      if (!isLearningWriteSkipped({ shopDomain: session.shop })) {
+        const { recordTouch } = await import('../utils/journey.server.js');
+        const { default: db } = await import('../db.server.js');
+        recordTouch(db, {
+          shopId: impression.shopId,
+          visitorId,
+          surface: 'modal',
+          response: 'cta_click',
+          variantId: impression.variantId,
+          impressionId
+        });
+      }
+    }
 
     // Update analytics metafield for dashboard metrics (fire-and-forget to avoid blocking)
     trackAnalyticsEvent(admin, 'click').catch(e =>
