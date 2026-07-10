@@ -545,6 +545,7 @@
         sessionStorage.removeItem('exitIntentPendingOffer');
         const attrs = { exit_intent: 'true' };
         if (offer.aiDecisionId) attrs.exit_intent_ai_decision = offer.aiDecisionId;
+        if (offer.impressionId) attrs.exit_intent_impression = offer.impressionId;
         fetch('/cart/update.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

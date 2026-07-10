@@ -33,31 +33,61 @@ export async function runEvolutionCycle() {
   
   for (const shop of shops) {
     console.log(`\n Checking shop: ${shop.shopifyDomain}`);
-    
+
     for (const baseline of baselines) {
-      // Count impressions since last evolution cycle
-      const lastCycle = shop.lastEvolutionCycle || new Date(0); // Epoch if never run
-      
-      const impressionsSinceLastCycle = await db.variantImpression.count({
+      // Evolve every segment with a live population. The endpoint seeds
+      // per-device populations (mobile/desktop/all); the old hardcoded 'all'
+      // meant device segments never got kills, breeding, or champions.
+      const segmentRows = await db.variant.findMany({
         where: {
           shopId: shop.id,
-          variant: { baseline: baseline },
-          timestamp: { gte: lastCycle }
-        }
+          baseline: baseline,
+          status: { in: ['alive', 'champion'] }
+        },
+        distinct: ['segment'],
+        select: { segment: true }
       });
-      
-      console.log(`  ${baseline}: ${impressionsSinceLastCycle} impressions since last cycle`);
-      
-      // Trigger evolution if 100+ new impressions
-      if (impressionsSinceLastCycle >= 100) {
-        console.log(`   Triggering evolution cycle for ${baseline}!`);
-        
-        try {
-          const result = await evolutionCycle(shop.id, baseline, 'all');
-          console.log(`   Cycle complete: ${result.killed} killed, ${result.bred} bred`);
-          totalCycles++;
-        } catch (error) {
-          console.error(`   Evolution failed for ${baseline}:`, error.message);
+
+      for (const { segment } of segmentRows) {
+        // Per-cell cursor. The old gate (shop-level lastEvolutionCycle) was
+        // shared, so one baseline's cycle reset every other baseline's count.
+        const cursor = await db.evolutionCursor.findUnique({
+          where: {
+            shopId_baseline_segment: { shopId: shop.id, baseline, segment }
+          }
+        });
+        const since = cursor?.lastCycleAt || new Date(0); // Epoch if never run
+
+        const impressionsSinceLastCycle = await db.variantImpression.count({
+          where: {
+            shopId: shop.id,
+            segment: segment,
+            variant: { baseline: baseline },
+            timestamp: { gte: since }
+          }
+        });
+
+        console.log(`  ${baseline}/${segment}: ${impressionsSinceLastCycle} impressions since last cycle`);
+
+        // Trigger evolution if 100+ new impressions in this cell
+        if (impressionsSinceLastCycle >= 100) {
+          console.log(`   Triggering evolution cycle for ${baseline}/${segment}!`);
+
+          try {
+            const result = await evolutionCycle(shop.id, baseline, segment);
+            console.log(`   Cycle complete: ${result.killed} killed, ${result.bred} bred`);
+            totalCycles++;
+
+            await db.evolutionCursor.upsert({
+              where: {
+                shopId_baseline_segment: { shopId: shop.id, baseline, segment }
+              },
+              create: { shopId: shop.id, baseline, segment },
+              update: { lastCycleAt: new Date() }
+            });
+          } catch (error) {
+            console.error(`   Evolution failed for ${baseline}/${segment}:`, error.message);
+          }
         }
       }
     }

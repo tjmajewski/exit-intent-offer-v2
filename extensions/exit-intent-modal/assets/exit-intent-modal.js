@@ -45,6 +45,22 @@
     }
   }
 
+  // Entry-source capture. Ad-click params (gclid/fbclid/utm) live on the
+  // LANDING URL, not document.referrer — classifying off the referrer alone
+  // meant paid traffic landed in 'organic'/'social' and the 'paid' class
+  // never fired. Capture once per session on whichever page the visitor
+  // entered on; getTrafficSource() reads this first.
+  try {
+    if (!sessionStorage.getItem('resparqEntrySource')) {
+      const q = window.location.search;
+      const entrySource =
+        (/[?&](gclid|fbclid|ttclid|msclkid|wbraid|gbraid)=/.test(q) || /utm_medium=(cpc|ppc|paid|paid_social)/i.test(q)) ? 'paid'
+        : /utm_medium=email/i.test(q) ? 'email'
+        : '';
+      if (entrySource) sessionStorage.setItem('resparqEntrySource', entrySource);
+    }
+  } catch (_) { /* storage blocked — referrer fallback still applies */ }
+
   // Currency formatting helper - uses shop's active currency + buyer locale.
   // Symbol position (€10 vs 10 €, R$ 10, ¥10, 10 zł) is locale-driven via
   // Intl.NumberFormat, so each market sees their native convention.
@@ -231,6 +247,7 @@
       try {
         const attrs = { exit_intent: 'true' };
         if (offer.aiDecisionId) attrs.exit_intent_ai_decision = offer.aiDecisionId;
+        if (offer.impressionId) attrs.exit_intent_impression = offer.impressionId;
         fetch('/cart/update.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -697,11 +714,16 @@
     }
     
     getTrafficSource() {
+      // Session entry params (gclid/utm on the landing URL) trump referrer
+      // classification — see the capture block at script init.
+      try {
+        const entrySource = sessionStorage.getItem('resparqEntrySource');
+        if (entrySource) return entrySource;
+      } catch (_) {}
       const ref = document.referrer;
       if (!ref || ref.includes(window.location.hostname)) return 'direct';
       if (ref.match(/google|bing|yahoo/i)) return 'organic';
       if (ref.match(/facebook|instagram|twitter|linkedin|tiktok/i)) return 'social';
-      if (ref.match(/gclid|fbclid|utm_source=paid/i)) return 'paid';
       return 'referral';
     }
     
@@ -1943,7 +1965,7 @@
       fetch('/cart/update.js', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}) } })
+        body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}), ...(this.currentImpressionId ? { exit_intent_impression: this.currentImpressionId } : {}) } })
       }).catch(() => {}); // fire-and-forget, non-fatal
 
       // Track variant impression (both Pro and Enterprise)
@@ -2672,6 +2694,7 @@
         accentColor: this.settings.brandAccentColor,
         brandFont: this.settings.brandFont,
         aiDecisionId: this.currentAiDecisionId || null,
+        impressionId: this.currentImpressionId || null,
         savingsText,
         timestamp: Date.now()
       };
@@ -2876,7 +2899,7 @@
           await fetch('/cart/update.js', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}) } })
+            body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}), ...(this.currentImpressionId ? { exit_intent_impression: this.currentImpressionId } : {}) } })
           });
         } catch (e) { /* non-fatal */ }
 
@@ -2958,7 +2981,7 @@
         await fetch('/cart/update.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}) } })
+          body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}), ...(this.currentImpressionId ? { exit_intent_impression: this.currentImpressionId } : {}) } })
         });
         console.log('[Exit Intent] Cart attribute stamped for conversion tracking');
       } catch (e) {

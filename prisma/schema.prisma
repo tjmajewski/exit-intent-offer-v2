@@ -566,6 +566,20 @@ model InterventionThreshold {
   @@index([shopId, segment])
 }
 
+// Per-(shop, baseline, segment) evolution trigger cursor. The cron previously
+// gated on shop-level lastEvolutionCycle, so one baseline's cycle reset the
+// impression counter for every other baseline (and mobile/desktop segments
+// were never cycled at all). Each cell now advances independently.
+model EvolutionCursor {
+  id          String   @id @default(uuid())
+  shopId      String
+  baseline    String
+  segment     String
+  lastCycleAt DateTime @default(now())
+
+  @@unique([shopId, baseline, segment])
+}
+
 // Super admin console audit trail. Every write performed through /admin/*
 // (settings edits on a customer's behalf, logins) lands here so there is a
 // permanent record of "who changed what, when" — required because admin edits

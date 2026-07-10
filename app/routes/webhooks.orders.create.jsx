@@ -81,6 +81,13 @@ export const action = async ({ request }) => {
       }
     }
 
+    // Exact impression attribution: modal/pill/cart-banner CTA clicks stamp
+    // exit_intent_impression on the cart. The fuzzy "latest clicked impression
+    // in 24h" match misattributes as soon as two shoppers overlap.
+    const impressionAttr = noteAttributes.find(
+      attr => attr.name === 'exit_intent_impression'
+    );
+
     if (exitIntentDiscount) {
       console.log(`[Evolution] Exit intent discount found: ${exitIntentDiscount.code}`);
 
@@ -89,18 +96,38 @@ export const action = async ({ request }) => {
       });
 
       if (shopRecord) {
-        // Find the most recent impression that hasn't been converted yet.
-        // 24h window matches the discount-code expiry — without it an order
-        // could credit a weeks-old impression from a different visitor.
-        const impression = await db.variantImpression.findFirst({
-          where: {
-            shopId: shopRecord.id,
-            converted: false,
-            clicked: true, // Only count if they clicked the modal
-            timestamp: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-          },
-          orderBy: { timestamp: 'desc' }
-        });
+        // Prefer the exact impression stamped on the cart; validate it belongs
+        // to this shop and hasn't already converted (webhook retries are
+        // handled upstream, but a shared device could replay an old id).
+        let impression = null;
+        if (impressionAttr?.value) {
+          impression = await db.variantImpression.findFirst({
+            where: {
+              id: impressionAttr.value,
+              shopId: shopRecord.id,
+              converted: false
+            }
+          });
+          if (!impression) {
+            console.log(`[Evolution] Stamped impression ${impressionAttr.value} not usable — falling back to fuzzy match`);
+          }
+        }
+
+        // Fallback (legacy orders without the stamp): most recent clicked,
+        // unconverted impression. 24h window matches the discount-code expiry —
+        // without it an order could credit a weeks-old impression from a
+        // different visitor.
+        if (!impression) {
+          impression = await db.variantImpression.findFirst({
+            where: {
+              shopId: shopRecord.id,
+              converted: false,
+              clicked: true, // Only count if they clicked the modal
+              timestamp: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+            },
+            orderBy: { timestamp: 'desc' }
+          });
+        }
 
         if (impression) {
           const { recordConversion } = await import('../utils/variant-engine.js');
