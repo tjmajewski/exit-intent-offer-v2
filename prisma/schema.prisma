@@ -143,6 +143,12 @@ model Shop {
   // AUC beats legacy on fresh outcomes.
   usePropensityModel Boolean @default(false)
 
+  // Opening-surface arm (build plan phase 7a, Enterprise). When true, the
+  // decision engine may open with the low-intrusiveness offer pill instead
+  // of the modal, chosen per device by a two-arm bandit scored on journey
+  // outcomes. An ignored pill escalates to the modal on the next exit signal.
+  enableSurfaceArm Boolean @default(false)
+
   discountOffers         DiscountOffer[]
   aiDecisions            AIDecision[]
   promotions             Promotion[]

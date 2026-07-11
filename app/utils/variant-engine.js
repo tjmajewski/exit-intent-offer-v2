@@ -9,6 +9,7 @@ import { computeArchetypePriors, getArchetypeMultiplier } from './archetype-prio
 import { computeTemplatePriors, getTemplateMultiplier } from './template-priors.js';
 import { blendWithPrior } from './cluster-priors.server.js';
 import { deviceKeyFromSegmentKey } from './segment-key.js';
+import { maybeGeneratedGene } from './generated-copy.server.js';
 
 // ---------------------------------------------------------------------------
 // Per-cell variant stats (phase 5). Every impression/click/conversion bumps
@@ -1063,6 +1064,23 @@ async function breedNewVariant(parents, baseline, segment = 'all', shopId = null
   
   if (mutations.length > 0) {
     console.log(`   Mutations in: ${mutations.join(', ')}`);
+  }
+
+  // Phase 7c: a bounded share of copy-gene mutations draw from the
+  // AI-generated candidate pool (validated at generation time) instead of
+  // the static pool. No-op unless GENERATED_COPY_ENABLED=1 and a fresh
+  // candidate pool exists for this baseline.
+  for (const gene of mutations) {
+    if (gene !== 'headline' && gene !== 'subhead' && gene !== 'cta') continue;
+    try {
+      const candidate = await maybeGeneratedGene(await getDb(), baseline, gene);
+      if (candidate) {
+        childGenes[gene] = candidate;
+        console.log(`   Generated-copy mutation: ${gene} -> "${candidate.slice(0, 40)}..."`);
+      }
+    } catch (e) {
+      // static pool pick stands
+    }
   }
 
   // Layout policy: crossover can inherit a disabled layout from a parent and

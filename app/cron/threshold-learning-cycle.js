@@ -66,6 +66,16 @@ export async function runThresholdLearningCycle() {
       } catch (error) {
         console.error(`   Discount-arm rebuild failed:`, error.message);
       }
+
+      // Phase 7a: rebuild opening-surface arm stats (modal vs pill opener)
+      // from the journey log.
+      try {
+        const { rebuildSurfaceArmStats } = await import('../utils/surface-arm.server.js');
+        const surfaceCells = await rebuildSurfaceArmStats(db, shop.id);
+        console.log(`   Rebuilt surface-arm stats for ${surfaceCells} device cells`);
+      } catch (error) {
+        console.error(`   Surface-arm rebuild failed:`, error.message);
+      }
     }
   }
 

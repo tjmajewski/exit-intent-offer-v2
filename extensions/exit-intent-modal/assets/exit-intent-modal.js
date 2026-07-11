@@ -1971,6 +1971,43 @@
         await this.trackStarterImpression();
       }
 
+      // PHASE 7a — OPENING-SURFACE ARM: when the AI chose the pill as the
+      // opener, mount the persistent offer pill instead of interrupting with
+      // the modal. The pill counts as this session's show (frequency-stamped
+      // + session-gated). Escalation (7b): if the pill is ignored and another
+      // exit signal fires 60s+ later, fall through and show the modal — once.
+      const openerDecision = this.enterpriseOffer || this.preloadedDecision;
+      if (openerDecision?.openingSurface === 'pill' && this.settings.discountCode) {
+        if (!this.pillOpenerShown) {
+          this.pillOpenerShown = true;
+          this.pillOpenerAt = Date.now();
+          if (!this.isPreview && !isResparqTestMode()) {
+            stampModalShown(); // pill opener consumes the session's show budget
+            this.pillOpenerStamped = true;
+          }
+          try { sessionStorage.setItem(this.sessionKey, 'true'); } catch (_) {}
+          const offer = this.buildPendingOfferData();
+          try {
+            sessionStorage.setItem(PILL_OFFER_KEY, JSON.stringify(offer));
+            sessionStorage.removeItem(PILL_DISMISSED_KEY);
+          } catch (_) {}
+          mountOfferPill(offer);
+          console.log('[Surface Arm] Opened with pill — modal held in reserve');
+          return;
+        }
+        // Respect an explicit pill dismissal — no escalation over a "no".
+        try {
+          if (sessionStorage.getItem(PILL_DISMISSED_KEY) === 'true') return;
+        } catch (_) {}
+        // Min gap before escalating; then escalate exactly once.
+        if (Date.now() - this.pillOpenerAt < 60 * 1000) return;
+        if (this.pillEscalated) return;
+        this.pillEscalated = true;
+        const openerPill = document.getElementById(OFFER_PILL_ID);
+        if (openerPill) openerPill.remove();
+        console.log('[Surface Arm] Pill ignored — escalating to modal');
+      }
+
       // NOW show the modal after content is ready
       // Prevent body scroll on mobile
       if (isMobileDevice()) {
@@ -2003,7 +2040,9 @@
 
       // Stamp the cross-session frequency record. Test mode is exempt so a
       // merchant self-testing doesn't burn their own cooldown/ceiling.
-      const freqMeta = isResparqTestMode() ? null : stampModalShown();
+      // A pill-opener escalation already stamped at pill-open — one show
+      // budget per session, not two.
+      const freqMeta = (isResparqTestMode() || this.pillOpenerStamped) ? null : stampModalShown();
 
       // Track impression (with first-vs-repeat show context)
       this.trackEvent('impression', freqMeta || undefined);

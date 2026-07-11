@@ -712,22 +712,32 @@ export async function action({ request }) {
       effectiveTemplateId = remapped;
     }
 
+    // Phase 7c: generated candidates aren't in the static pools — the guard
+    // accepts copy that's either in-pool OR a known generated candidate for
+    // this baseline. Banned-claim regexes apply to BOTH (belt and
+    // suspenders; generated copy was already validated at generation time).
+    const { isGeneratedCopy } = await import('../utils/generated-copy.server.js');
+
     let effectiveHeadline = selectedVariant.headline;
-    if (!isValidHeadline(baseline, effectiveHeadline) || hasBannedClaim(baseline, effectiveHeadline)) {
+    if (hasBannedClaim(baseline, effectiveHeadline) ||
+        (!isValidHeadline(baseline, effectiveHeadline) && !(await isGeneratedCopy(db, baseline, 'headline', effectiveHeadline)))) {
       const fallback = pickFallbackHeadline(baseline);
       console.warn(`[Brand Safety] Unsafe headline on variant ${selectedVariant.id} — swapping to fallback. was="${effectiveHeadline}" now="${fallback}"`);
       effectiveHeadline = fallback;
     }
 
     let effectiveCta = selectedVariant.cta;
-    if (!isValidCta(baseline, effectiveCta) || hasBannedClaim(baseline, effectiveCta)) {
+    if (hasBannedClaim(baseline, effectiveCta) ||
+        (!isValidCta(baseline, effectiveCta) && !(await isGeneratedCopy(db, baseline, 'cta', effectiveCta)))) {
       const fallback = pickFallbackCta(baseline);
       console.warn(`[Brand Safety] Unsafe CTA on variant ${selectedVariant.id} — swapping to fallback. was="${effectiveCta}" now="${fallback}"`);
       effectiveCta = fallback;
     }
 
     let effectiveShowSubhead = selectedVariant.showSubhead ?? true;
-    if (effectiveShowSubhead && (!isValidSubhead(baseline, selectedVariant.subhead) || hasBannedClaim(baseline, selectedVariant.subhead))) {
+    if (effectiveShowSubhead &&
+        (hasBannedClaim(baseline, selectedVariant.subhead) ||
+         (!isValidSubhead(baseline, selectedVariant.subhead) && !(await isGeneratedCopy(db, baseline, 'subhead', selectedVariant.subhead))))) {
       console.warn(`[Brand Safety] Unsafe subhead on variant ${selectedVariant.id} — hiding. subhead="${selectedVariant.subhead}"`);
       effectiveShowSubhead = false;
     }
@@ -958,6 +968,22 @@ export async function action({ request }) {
     });
     
     console.log(` AI offer created: ${discountResult.code} (${decision.type}, $${offerAmount})`);
+
+    // Phase 7a: opening-surface arm (Enterprise, flag-gated). Only discount
+    // offers can open as a pill — the pill's whole interface is "redeem this
+    // code". The arm is chosen per device from journey-scored stats; an
+    // ignored pill escalates to the modal client-side (min 60s gap, once).
+    let openingSurface = 'modal';
+    if (shopRecord.plan === 'enterprise' && shopRecord.enableSurfaceArm && !isTestMode && decision.amount > 0) {
+      try {
+        const { getSurfaceArmStats, chooseOpeningSurface } = await import('../utils/surface-arm.server.js');
+        const surfaceStats = await getSurfaceArmStats(db, shopRecord.id, signals.deviceType);
+        openingSurface = chooseOpeningSurface(surfaceStats);
+        console.log(`[Surface Arm] Opening surface: ${openingSurface}${surfaceStats ? '' : ' (cold start)'}`);
+      } catch (e) {
+        console.error('[Surface Arm] Selection failed (modal default):', e.message);
+      }
+    }
     
     // Variant copy is already in decision object from variant genes
     // No need for separate copy variant selection
@@ -998,6 +1024,7 @@ export async function action({ request }) {
     response.decision.variantId = decision.variantId;
     response.decision.variantPublicId = decision.variantPublicId;
     response.decision.impressionId = impressionId; // For tracking clicks/conversions
+    response.decision.openingSurface = openingSurface; // 'modal' | 'pill' (phase 7a)
     
     console.log(`[Variant Engine] Returning variant ${decision.variantPublicId} (Gen ${selectedVariant.generation})`);
 
@@ -1017,11 +1044,12 @@ export async function action({ request }) {
       impressionId
     }).catch(e => console.error('[Threshold] Failed to record shown outcome:', e));
 
-    // Journey log: discount modal shown
+    // Journey log: discount offer shown — surface reflects the opener the
+    // arm chose (pill openers must score as pill pulls, not modal pulls).
     if (!isTestMode && !devWriteSkip) recordTouch(db, {
       shopId: shopRecord.id,
       visitorId: signals.visitorId,
-      surface: 'modal',
+      surface: openingSurface,
       response: 'shown',
       variantId: selectedVariant.id,
       impressionId,

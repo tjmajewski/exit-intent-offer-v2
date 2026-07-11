@@ -120,6 +120,22 @@ SCOPES="read_products,write_discounts,read_orders,read_customers,read_script_tag
 
 These variables are optional but recommended for production.
 
+### GENERATED_COPY_ENABLED
+
+**Description:** Kill switch for the generative copy refresh (build plan phase 7c). When `1`, the monthly `generate-copy` cron calls the Claude API for candidate modal copy AND the variant engine's mutation operator may draw from the validated candidate pool. Any other value (or unset) disables both; already-bred generated copy keeps serving.
+
+**Required:** No
+
+**Default:** unset (disabled)
+
+### ANTHROPIC_API_KEY
+
+**Description:** Claude API key used only by `app/cron/generate-copy.js`. Without it the cron exits without generating.
+
+**Required:** No (required only when GENERATED_COPY_ENABLED=1)
+
+**Default:** unset
+
 ### NODE_ENV
 
 **Description:** Deployment environment
