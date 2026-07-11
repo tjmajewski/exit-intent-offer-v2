@@ -1,5 +1,5 @@
 # Pro vs Enterprise - Feature Comparison
-**Last Updated:** April 21, 2026
+**Last Updated:** July 11, 2026
 
 ---
 
@@ -8,22 +8,34 @@
 | Feature | Pro | Enterprise |
 |---------|-----|------------|
 | **Price** | $79/mo | $299/mo |
-| **AI Evolution** | ✅ Full system | ✅ Full system |
+| **AI Evolution** | ✅ Full system (2-variant population) | ✅ Full system (up to 20 variants) |
 | **Thompson Sampling** | ✅ | ✅ |
-| **Champion Detection** | ✅ | ✅ |
+| **Per-Segment Cell Stats (device × source × visitor)** | ✅ | ✅ |
+| **Device-Specific Populations + Evolution** | ✅ | ✅ |
+| **Champion Detection (cell-aware)** | ✅ | ✅ |
+| **Calibrated Propensity (shadow → per-shop flag)** | ✅ | ✅ |
+| **Evidence-Gated Discounting (aggression = confidence bar)** | ✅ | ✅ |
+| **Margin Guard (always-on offer ceiling)** | ✅ | ✅ |
 | **Budget Caps** | ✅ | ✅ |
 | **Social Proof** | ✅ | ✅ |
-| **Revenue/Conversion Modes** | ✅ | ✅ |
-| **Network Meta-Learning** | ✅ | ✅ |
+| **Revenue/Conversion Modes (auto funnel-stage)** | ✅ | ✅ |
+| **Network Meta-Learning (vertical × AOV clusters)** | ✅ | ✅ |
 | **Archetype Priors (segment-aware bias)** | ✅ Limited (2 variants) | ✅ Full per-segment routing |
-| **Adaptive Intervention Thresholds** | ✅ | ✅ |
-| **5% Holdout / Incrementality** | ✅ | ✅ |
+| **Template (Layout) Priors — cross-store** | ❌ | ✅ |
+| **Adaptive Intervention Thresholds (+ cluster cold-start)** | ✅ | ✅ |
+| **5% Sticky Holdout / Incremental Revenue Card** | ✅ | ✅ |
+| **Frequency Gates + Offer Pill + Cart Surfaces** | ✅ | ✅ |
+| **Visitor Journey Log** | ✅ | ✅ |
 | **Manual Variant Controls** | ❌ | ✅ |
 | **Evolution Settings Control** | ❌ | ✅ |
-| **Device-Specific Evolution** | ❌ | ✅ |
 | **Brand Safety Validation** | ❌ | ✅ |
+| **Custom CSS** | ❌ | ✅ |
 | **Promotional Intelligence (Active)** | ❌ Detect Only | ✅ Auto-Adjust |
 | **Advanced Analytics** | ❌ | ✅ |
+
+**The honest framing:** the learning engine is identical on both tiers. Pro
+differs in scale (2-variant populations vs up to 20), control (no manual
+overrides or evolution dials), and analytics depth — not in intelligence.
 
 ---
 
@@ -87,10 +99,11 @@
 ### Limitations
 
 - **No manual variant controls** - Can't kill/protect/champion specific variants
-- **Standard evolution settings** - Mutation 15%, Crossover 70%, Pressure 5/10, Pop 10
+- **Standard evolution settings** - Mutation 15%, Crossover 70%, Pressure 5/10; population capped at 2
 - **Promo detection only** - Shows warning but doesn't auto-adjust strategy
-- **Single evolution pool** - Mobile and desktop variants evolve together
+- **Small population** - 2 variants per baseline × device segment (statistically right-sized for trial traffic, but explores the gene space slowly)
 - **No brand safety** - AI can create any copy from gene pools
+- **No cross-store template priors** - layout learning is store-local
 - **Archetype routing is binary** - With only 2 active variants, the AI can route between *at most* two archetypes. Enterprise stores running 10–20 variants get genuine per-segment routing across many archetypes simultaneously.
 
 ---
@@ -142,19 +155,17 @@
 - Large (20): More exploration, slower convergence
 - What it controls: How many variants alive simultaneously
 
-### 3. Device-Specific Evolution
+### 3. Bigger Populations + Cross-Store Template Priors
 
-**Separate pools for mobile vs desktop:**
-- Mobile visitors see mobile-optimized variants
-- Desktop visitors see desktop-optimized variants
-- Different Champions for each device
-- Accounts for different behavior patterns
+**Note:** device-specific populations and per-segment cell stats are now BOTH
+tiers (July 2026) — every shop's mobile and desktop visitors get separately
+evolved variants and separately conditioned selection. What Enterprise adds:
 
-**Why it matters:**
-- Mobile users scroll differently
-- Desktop users read more copy
-- Different conversion rates by device
-- Optimizes for each experience separately
+- **Population up to 20 variants** per baseline × segment (Pro: 2) — explores
+  the ~55k-combination gene space an order of magnitude faster
+- **Cross-store template (layout) priors** — layout selection is informed by
+  which of the 8 modal designs win across the network, per archetype; Pro's
+  layout learning is store-local only
 
 ### 4. Brand Safety Validation
 
@@ -369,7 +380,6 @@ Scenario 3: **Device Optimization**
 ## Feature Request Roadmap
 
 **Coming to Pro Soon:**
-- Visual gene evolution (colors, layouts)
 - Multi-language support
 - Threshold offer optimization
 
@@ -378,4 +388,38 @@ Scenario 3: **Device Optimization**
 - Video modal support
 - Advanced segmentation (repeat buyers, VIPs)
 - Predictive LTV-based strategies
+- Escalation ladder (opening-surface arm + offer escalation on evidence — build plan phase 7)
+- Generative copy refresh in the merchant's brand voice (phase 7)
+
+---
+
+## Investor Summary
+
+**The tiering logic in one paragraph:** both tiers run the identical decision
+engine — the same real-time propensity scoring, the same evolutionary
+optimization, the same margin protection, the same holdout-measured honesty.
+Pro ($79/mo) runs it at a scale statistically appropriate for smaller stores
+(two competing variants per audience, full automation, no knobs). Enterprise
+($299/mo) runs the same engine wide open: up to ten times the variant
+population, cross-store design intelligence, manual override controls,
+brand-safety validation on machine-written copy, and automatic strategy
+adjustment during the merchant's own sitewide sales.
+
+**Why this matters commercially:**
+- **No crippled tier.** A Pro merchant gets the real product — meaning trial
+  conversion doesn't depend on artificially withholding the intelligence, and
+  word-of-mouth from small merchants describes the same product big merchants
+  buy.
+- **The upgrade motion is organic.** As a store's traffic grows, the
+  2-variant cap becomes the visible constraint (the dashboard shows what
+  larger populations discover for comparable stores), and promotional
+  intelligence becomes relevant the moment a merchant runs their first big
+  sale. The product itself generates the upgrade conversation.
+- **Every tier feeds the network.** Pro stores contribute the same learning
+  data as Enterprise stores, so the cross-store intelligence — the moat —
+  compounds with total installs, not just premium installs.
+- **Costs scale with value.** The expensive machinery (large populations,
+  per-segment routing, cross-store priors) runs where there's traffic to
+  justify it; margin on the entry tier stays healthy because the entry tier
+  is deliberately small, not deliberately dumb.
 

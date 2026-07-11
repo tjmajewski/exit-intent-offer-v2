@@ -1,6 +1,6 @@
 # Resparq AI System - Complete Guide
-**Last Updated:** April 21, 2026
-**Version:** 2.4 (archetype meta-layer + segment-aware Thompson Sampling)
+**Last Updated:** July 11, 2026
+**Version:** 3.0 (hierarchical pooling, per-cell Thompson Sampling, calibrated propensity, evidence-gated discounting, visitor journey log)
 
 ---
 
@@ -30,18 +30,24 @@ Resparq uses a **genetic algorithm** + **Bayesian statistics** to automatically 
 
 ### The Flow
 ```
-Page Load (or Add-to-Cart) → AI Activates → Signals Collected
-→ Holdout Check (5% random → never show, stamp cart for incrementality measurement)
-→ Should We Show? (Adaptive Threshold per score bucket)
+Page Load (or Add-to-Cart) → Client Frequency Gates
+  (once/session; cross-session cooldown 3d×2^ignores; max 5 shows/30d; 30d post-purchase quiet)
+→ AI Activates → Signals Collected (~26 incl. time-of-day + re-show history)
+→ Holdout Check (5% STICKY per visitor → never show, stamp cart for incrementality)
+→ Propensity Scored (hand-set curve + calibrated model in shadow; served per-shop flag)
+→ Should We Show? (Adaptive Threshold per score bucket × device; cluster prior on cold start)
   → NO: stamp cart with decision ID, track natural conversion if purchase happens
-  → YES: Baseline Selected → Variant Selected (Thompson Sampling)
-    → Trigger Set (exit_intent/idle/immediate) → Trigger Fires
-    → Social Proof Applied → Modal Shown → Impression Recorded
-    → User Interacts → Evolution Cycle (every 100 impressions) → Champion Detection
-    → Threshold Learning Cycle (every 50 outcomes) → Per-bucket show/skip refinement
-    → If Dismissed (not CTA click): 60s later → Reminder Toast (discount offers only)
-      → Click toast → checkout with discount (attributed as conversion)
-      → Auto-dismiss after 30s or manual close
+  → YES: Baseline Selected → Discount or No-Discount (evidence-gated by arm stats;
+    coin-flip exploration only until arms mature)
+    → Variant Selected (Thompson Sampling: segment cell → device → pooled → cluster prior;
+      trigger-specific stats; archetype + template priors; cell-aware champion)
+    → Margin Guard clamps the offer → Trigger Set (evolved genes: exit_intent/idle/immediate)
+    → Social Proof Applied → Modal Shown → Impression + Journey Touch Recorded
+    → User Interacts → Evolution Cycle (every 100 impressions per baseline × segment)
+    → Threshold Learning + Discount-Arm Rebuild (every 50 outcomes)
+    → If Dismissed (not CTA click): persistent Offer Pill mounts immediately
+      (survives navigation; cart pages get a native banner via cart-monitor instead)
+      → Redeem from pill/banner → checkout with discount (exact impression attribution)
 ```
 
 **Activation**: AI pre-fetches its decision as soon as the cart has items. If the
@@ -73,19 +79,23 @@ polling fallback).
 - Champion gets 70% traffic
 - 30% continues exploring
 
-### Evolution Cycle (Every 100 Impressions)
+### Evolution Cycle (Every 100 Impressions per Baseline × Segment)
 
-1. **Calculate Fitness**: Profit Per Impression = (Revenue - Discount) / Impressions
-2. **Identify Dying**: Bayesian test - if 95% confident variant is worse than top performer
+Each (baseline, device segment) population evolves independently — mobile and
+desktop populations each have their own `EvolutionCursor`, so one cell's cycle
+never resets another's impression counter.
+
+1. **Calculate Fitness**: Profit Per Impression = (Revenue - actual recorded Discount cost) / Impressions
+2. **Identify Dying**: Bayesian test vs top performer — confidence bar scales with merchant `selectionPressure` (0.80–0.99, default ≈0.92); variants under 50 impressions are never killed
 3. **Kill**: Status → 'dead', removed from pool
-4. **Breed Replacements**: Select parents by fitness, crossover genes, mutate
-5. **Detect Champion**: Check if any variant beats all others with 95% confidence
+4. **Breed Replacements**: Select parents by fitness, crossover genes, mutate (population tier-capped: Pro 2, default 10, Enterprise ≤20)
+5. **Detect Champion**: Check if any variant beats all others with 95% confidence (500+ impressions, 7+ days)
 
 ---
 
 ## Gene System
 
-### Six Genes Per Variant
+### Ten Genes Per Variant
 
 | Gene | Controls | Options |
 |------|----------|---------|
@@ -95,6 +105,17 @@ polling fallback).
 | cta | Button text | 3-4 per baseline |
 | redirect | Destination | cart, checkout |
 | urgency | Expiry presentation | true, false |
+| showSubhead | Render subhead at all | true, false |
+| triggerType | WHEN to fire | exit_intent, idle, exit_intent_or_idle |
+| idleSeconds | Idle-trigger delay | 15, 30, 45, 60 |
+| templateId | Modal layout design | 8 layout templates (merchant can disable any) |
+
+Trigger timing and layout are learned the same way copy is — the evolution
+system discovers not just what to say but when to interrupt and what the
+modal should look like. Every served offer is additionally clamped by the
+always-on margin guard (`offerCeilingPercent`): high-propensity visitors get
+announce-only at zero discount, and no single offer can push post-discount
+gross margin below 20%.
 
 ### Gene Pools Structure
 
@@ -131,7 +152,7 @@ The `urgency` gene controls how unique discount code expiry (24 hours) is shown 
 
 No timer or urgency copy for generic codes (no expiry) or no-discount offers. The variant engine selects the urgency gene first, then picks the appropriate headline/subhead pool. Thompson Sampling converges on whichever approach (timer vs. copy) drives more profit.
 
-**Possible Combinations:** 4 × 6 × 6 × 3 × 2 × 2 = **864 variants per baseline**
+**Possible Combinations:** with trigger, layout, and showSubhead genes the space is **~55,000+ variants per baseline** (4 offers × 6 headlines × 6 subheads × 3 CTAs × 2 redirects × 2 urgency × 2 showSubhead × 3 triggers × 4 idle delays × 8 layouts)
 
 ---
 
@@ -180,14 +201,14 @@ The AI automatically selects between revenue (upsell/threshold) and conversion (
 // Conversion signals: on cart/checkout page, cart hesitation, failed coupon, stale cart, abandoner
 // Higher score wins → determines baseline selection
 
-// Then: adaptive threshold decides whether to show at all
-// If show:
+// Then: adaptive threshold decides whether to show at all.
+// If show, discount-vs-no-discount is EVIDENCE-GATED (phase 6):
 if (aggression === 0) return 'pure_reminder';
-if (funnelGoal === 'revenue') {
-  return propensityScore < 70 ? 'revenue_with_discount' : 'revenue_no_discount';
-} else {
-  return propensityScore < 70 ? 'conversion_with_discount' : 'conversion_no_discount';
-}
+// Mature arm stats for this propensity bucket (>= 50 outcomes per arm):
+//   discount only when P(discount wins on profit) >= 0.95 - aggression * 0.045
+//   (aggression 1 demands ~90% confidence; aggression 10 takes any edge)
+// Immature arms: legacy aggression-probability coin flip = the exploration
+// that populates the arms. Either way the margin guard caps the amount.
 ```
 
 **Funnel-Stage Signals:**
@@ -254,11 +275,35 @@ if (funnelGoal === 'revenue') {
 
 **Over time**: Good variants get more traffic automatically
 
-### Champion Override
+### The Shrinkage Chain (Phase 4-5): cell → store → cluster → flat
+
+The Beta parameters above are no longer flat. Each variant's sampling
+distribution is built through a hierarchy of pseudo-count priors:
+
+1. **Segment cell** (`VariantSegmentStat`): if this visitor's exact composite
+   segment (or its device-coarsened form) has ≥30 impressions for the
+   variant, those counts lead — shrunk toward the store posterior with 20
+   pseudo-impressions. "Headline A wins on mobile-paid, headline B wins on
+   desktop-email" is learnable per cell.
+2. **Store posterior**: the variant's pooled counts.
+3. **Cluster prior**: the store's vertical × AOV-band cluster contributes its
+   baseline CVR as 100 pseudo-impressions — a brand-new jewelry store samples
+   around jewelry-reality on day one instead of uniform randomness.
+4. **Flat Beta(1,1)**: only when nothing above exists.
+
+Own data continuously displaces each prior — there are no cliffs or mode
+switches, just weights shifting as impressions accumulate.
+
+### Champion Override (Cell-Aware)
 
 - Champion exists → 70% traffic to Champion
 - Remaining 30% → Thompson Sampling among others
 - Balance: Exploit winner (70%) + Explore alternatives (30%)
+- **Cell suspension (phase 5)**: the champion earned its crown on pooled
+  stats. If the current visitor's cell (≥30 impressions) shows a challenger
+  with a higher conversion posterior, the 70% shortcut is suspended and the
+  champion must defend its traffic inside the sampling tournament for that
+  cell. A single global champion can no longer flatten per-device winners.
 
 ### Segment-Aware Bias (Archetype Priors)
 
@@ -397,36 +442,47 @@ Proves the causal revenue lift from Resparq. Without a holdout, the system can o
 
 ---
 
-## Post-Dismissal Reminder Toast
+## Multi-Touchpoint Recovery (Offer Pill + Cart Surfaces + Frequency Gates)
 
-### Purpose
+### Touchpoint Inventory
 
-Recovers value from customers who dismissed the main modal but are still browsing. Instead of giving up after one attempt, a small non-intrusive reminder appears 60 seconds after dismissal.
+The modal is touch 1. Dismissal-recovery surfaces carry the SAME offer (never
+a re-decision, never stacking):
 
-### Design
+1. **Offer Pill** — persistent bottom-corner chip ("Still want your 15% off?"
+   + Apply) that mounts **immediately** on dismissal (replaced the old
+   60s-delayed toast) and persists across page navigation via sessionStorage.
+   Chat-widget collision detection (Tidio, Intercom, Gorgias, etc.) flips it
+   to the opposite corner. Redeem = strong engagement: resets the ignore
+   backoff and arms purchase detection.
+2. **Cart surfaces** (cart-monitor.js) — on cart pages/drawers: a threshold
+   progress banner ("add $X more to save $Y") or a native-styled apply row
+   for a dismissed flat offer. Downgrades to text-only when competing promo
+   bars are detected in the theme.
+3. **One-surface rule** — the pill never mounts on /cart; cart-monitor
+   removes the pill when its surface mounts. Never two offer surfaces at once.
 
-- **Small floating pill** in the bottom corner (not a full-width bar that blocks content)
-- Dark background (#1f2937) with white text — minimal, unobtrusive
-- Shows "Your offer is still available" + the discount code
-- Matches store's `brandFont` for consistency
-- Click → applies discount and redirects to checkout
-- Close button (×) to dismiss manually
-- Auto-dismisses after 30 seconds
+### Cross-Session Frequency Gates (client, before any server call)
 
-### When It Shows
-
-- Only for offers with a discount code (percentage, fixed, threshold)
-- Only when the customer **dismissed** the modal (not when they clicked the CTA)
-- 60-second delay after dismissal — gives the customer time to continue browsing
-- Does NOT show for no-discount offers (nothing to remind about)
-
-### Chat Widget Detection
-
-Detects common chat widgets (Tidio, HubSpot, Intercom, Drift, Gorgias, Shopify Chat, Crisp, Tawk, Zendesk) in the bottom-right corner. If found, the toast appears in the bottom-left instead to avoid overlap.
+- Once per browser session
+- Cooldown between shows: `cooldownDays × 2^ignoreStreak`, capped at 30d
+  (default 3 → 6 → 12 → 24 → 30) — repeat dismissers are backed off
+  automatically
+- Hard ceiling: 5 shows per TRUE rolling 30 days (actual timestamps, pruned)
+- Post-purchase quiet period: 30 days (purchase inferred client-side from the
+  cart emptying after a checkout-bound click; the order webhook stays the
+  analytics source of truth)
+- All three thresholds merchant-tunable in Advanced settings
+- Re-show history (`modalShowCount`, `modalIgnoreStreak`, `daysSinceLastShow`)
+  is collected into signals so first-show vs re-show performance is learnable
 
 ### Attribution
 
-Toast clicks stamp the same cart attributes (`exit_intent: true`, `exit_intent_ai_decision: {id}`) as CTA clicks, so conversions are attributed correctly through the existing webhook pipeline.
+Every redemption path (modal CTA, pill redeem, cart-banner apply) stamps
+`exit_intent: true`, `exit_intent_ai_decision: {id}`, and
+`exit_intent_impression: {id}` on the cart — the webhook resolves the EXACT
+impression (no fuzzy time-window matching), and every touch lands in the
+server-side journey log (`VisitorTouch`) keyed by an anonymous visitor id.
 
 ---
 
@@ -485,33 +541,45 @@ Once crowned:
 
 ---
 
-## Network Meta-Learning
+## Network Meta-Learning (Hierarchical: Store ← Vertical × AOV ← Global)
 
-### For New Stores (<100 impressions)
+### Store Clustering (Phase 4)
 
-**Problem**: New stores start with random variants, slow to converge
+Every AI-mode shop is auto-assigned to a cluster weekly:
+- **Vertical** — derived from the shop's 50 best-selling product types via
+  the Admin API (keyword-mapped majority vote: jewelry, fashion, beauty,
+  electronics, home, food, health, sports, toys, pets, other). Falls back to
+  the merchant's self-reported vertical.
+- **AOV band** — from real conversions: low (<$50) / mid ($50–150) / high
+  (>$150).
 
-**Solution**: Inherit proven genes from network
+A $2,000-AOV jeweler pools with luxury behavior; a $30-AOV jeweler pools with
+impulse-buy behavior. Price point matters as much as category.
 
-### How It Works
+### Three Layers of Cross-Store Learning
 
-1. **Check if store is new** (<100 total impressions)
-2. **Query top genes from network**:
-   - Must be used by 3+ stores
-   - Must have 70%+ confidence
-   - Must have positive profit
-
-3. **Create hybrid population**:
-   - 5 variants with proven genes
-   - 5 random exploration variants
-
-4. **Result**: Faster convergence, better initial performance
+1. **Cold-start gene inheritance** (<100 impressions): proven genes are
+   queried cluster-first — vertical × AOV band → vertical only → global —
+   first level with ≥3 qualifying genes wins (3+ stores, 70%+ confidence,
+   positive profit). Half the seed population carries proven genes, half
+   explores randomly.
+2. **Live cluster priors**: the cluster's baseline conversion rate enters
+   every Thompson sample as 100 pseudo-impressions, and the cluster's pooled
+   show/skip arms seed the adaptive threshold's cold start (50
+   pseudo-outcomes per arm). New stores make cluster-informed decisions from
+   visitor #1 and their own data takes over continuously.
+3. **Archetype + template priors**: per-segment archetype leaderboards and
+   hierarchical layout posteriors pool across the cluster/network (see
+   sections above).
 
 ### Privacy
 
-- Store data never leaves your database
-- Aggregate genes only (no PII)
-- Opt-out available in settings
+- Aggregate statistics only — no copy text tied to a store, no PII, no
+  revenue figures exposed across stores
+- `contributeToMetaLearning` opt-out is enforced at aggregation time
+  (opted-out stores still RECEIVE network priors)
+- Every store's own data always outweighs the network once it accumulates
+  (~100 impressions per context)
 
 ---
 
@@ -721,4 +789,127 @@ Use this page to answer:
 - Cannot analyze component-level performance
 
 ---
+
+## Propensity Engine (Unified + Calibrated)
+
+### The score
+
+One continuous 0–100 score for both tiers: **P(this visitor converts WITHOUT
+an offer)**. High P → announce-only or nothing (discounting would burn margin
+on a sure buyer); low P → the modal is actually causal and a discount is
+justified. ~26 signals feed it: purchase history and lifetime value
+(server-enriched from the logged-in customer), engagement depth (time,
+pages, scroll, product dwell), discount-seeking behavior (failed coupon
+attempts, cart hesitation, prior abandonment), cart shape, traffic source,
+device, local time-of-day and day-of-week. Log-scaled curves, recomputed
+server-side on every request (client values are never trusted).
+
+### Calibration (Phase 3, shadow-first)
+
+The hand-set curves are being replaced by a logistic-regression model trained
+weekly on real outcomes — specifically the no-show outcomes (holdout +
+learned skips) where "converted without an offer" is directly observable.
+Pooled across stores with per-store intercepts. Every decision currently
+scores BOTH (legacy served, model in shadow, both persisted for comparison);
+each shop flips to the model via `usePropensityModel` once its held-out AUC
+beats the legacy curve on fresh data.
+
+---
+
+## Journey Log (VisitorTouch)
+
+Every touchpoint interaction is journaled server-side, keyed by an anonymous
+visitor id: modal shown / dismissed / CTA-clicked, pill shown / redeemed /
+dismissed, cart-banner shown / applied, AI-skipped, holdout-suppressed, and
+converted — with the variant, offer, trigger, propensity, and segment on each
+row. This is the training substrate for sequential learning (phase 7's
+escalation ladder): "given this visitor's history, what's the next-best
+touch — including nothing?" Client browsers can only report the event types
+they can observe (dismissals, pill/banner interactions); decision and
+conversion rows are written server-side and cannot be forged. 180-day
+retention.
+
+---
+
+## Honest Revenue (Engaged vs Incremental)
+
+The analytics page reports two numbers:
+
+- **Engaged revenue** — gross: total value of orders where the customer
+  interacted with a Resparq offer. Includes people who would have bought
+  anyway.
+- **Incremental revenue** — measured: the shown-group conversion rate vs the
+  5% holdout control's conversion rate, converted into the share of engaged
+  revenue Resparq actually CAUSED. Displayed only after 30 control visitors
+  have been observed; before that the card says "Measuring — n of 30" rather
+  than showing an invented number.
+
+No competitor in the category reports causally-measured lift; most report
+gross attribution only.
+
+---
+
+## Investor Summary
+
+**What Resparq does, in one sentence:** when an online shopper is about to
+abandon a full cart, Resparq decides — in real time, per shopper — whether to
+intervene, what message to show, and the smallest incentive that will
+actually change their mind, then proves the revenue it created against a
+control group.
+
+**How it works, in plain terms:**
+
+1. **It watches for the moment that matters.** A shopper with items in their
+   cart moves to leave. In that instant Resparq reads ~26 signals — are they
+   a repeat customer, did they just try a coupon code that failed, how long
+   have they hesitated, what device, what time of day — and estimates one
+   number: how likely is this person to buy anyway?
+
+2. **It spends the merchant's margin like it's their own money.** Likely
+   buyers get nothing, or a gentle reminder at zero discount. Only genuinely
+   at-risk shoppers get an incentive, sized by a margin guard so no offer can
+   ever make the sale unprofitable. The system runs a permanent experiment on
+   whether discounts are even needed for each customer type, and stops
+   offering them where the data says a reminder converts just as well.
+
+3. **It rewrites itself continuously.** Every message, layout, offer size,
+   and even the timing of the popup is a "gene." Winning combinations breed;
+   losers are killed on statistical evidence. This runs separately for mobile
+   and desktop shoppers, for paid-ad visitors versus loyal returners — so the
+   store learns "first-time mobile visitors need reassurance, returning
+   desktop customers respond to free-shipping thresholds" automatically, with
+   no one configuring anything.
+
+4. **Every new merchant makes every other merchant smarter.** Stores are
+   grouped by what they sell and their price point. A brand-new jewelry store
+   opens with the accumulated learning of other jewelry stores at its price
+   level — then its own data takes over as it accumulates. This is a network
+   effect: store #100 will start materially smarter than store #10 did, and
+   the advantage compounds with scale in a way a copycat app cannot replicate
+   without the network.
+
+5. **It never nags.** Hard frequency caps (max 5 shows per 30 days, escalating
+   cool-downs for shoppers who dismiss, 30-day quiet after purchase) are
+   rules the AI operates inside, not behaviors it has to learn. A dismissed
+   offer gracefully downgrades to a small pill the shopper can redeem on
+   their own terms.
+
+6. **It proves its own value honestly.** 5% of eligible shoppers are held
+   back and never see an offer. Merchants see two numbers: gross "engaged
+   revenue" and control-measured "incremental revenue" — the dollars Resparq
+   actually caused. Until the control sample is statistically meaningful, the
+   dashboard says "measuring" instead of showing a flattering estimate.
+
+**Why merchants win:** recovered checkouts they would otherwise have lost,
+without the margin erosion of blanket discounting, without weeks of A/B-test
+configuration, and with an ROI number they can audit rather than take on
+faith.
+
+**Why this is defensible:** the moat is not the popup — it's (a) the
+cross-store learning network that improves with every install, (b) the
+causal measurement infrastructure (holdout, exact attribution, journey log)
+that competitors' gross-attribution reporting can't match, and (c) an
+optimization objective — profit after discount cost, measured incrementally —
+that is aligned with the merchant's P&L rather than with vanity conversion
+metrics.
 

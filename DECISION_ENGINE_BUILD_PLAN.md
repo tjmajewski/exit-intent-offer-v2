@@ -1,5 +1,5 @@
 # Decision Engine Build Plan
-**Version:** July 10, 2026
+**Version:** July 10, 2026 — **STATUS July 11: phases 1–6 SHIPPED** (commits `7e4c42b`, `15dc26c`, `7f634c1`, `6d71c12`, `f0c7d47`, `b372430`); phase 7 remaining
 **Companion to:** [AI_LEARNING_AUDIT.md](AI_LEARNING_AUDIT.md) (ground-truth audit this plan is derived from)
 **Goal:** right message, right customer, right time, smallest needed promotion — with every decision measurable against a holdout control.
 

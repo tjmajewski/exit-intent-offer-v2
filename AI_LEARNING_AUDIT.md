@@ -1,6 +1,20 @@
 # Resparq AI Decision Engine — How It Learns Today, and Where It Doesn't
 **Version:** July 10, 2026 — FINALIZED against repo (was: handoff draft written without repo access)
-**Status:** Ground truth. Every ⚠️ VERIFY tag resolved. The draft was reconstructed from ~January 2026 docs; the codebase has moved far past it — a full rewrite of the verdict was required. See Appendix A (Corrections), Appendix B (Recommendation re-check), Appendix C (Priority re-check).
+**Status:** Ground truth as of July 10. Every ⚠️ VERIFY tag resolved. The draft was reconstructed from ~January 2026 docs; the codebase has moved far past it — a full rewrite of the verdict was required. See Appendix A (Corrections), Appendix B (Recommendation re-check), Appendix C (Priority re-check).
+
+> **BUILD STATUS UPDATE (July 11, 2026):** phases 1–6 of
+> [DECISION_ENGINE_BUILD_PLAN.md](./DECISION_ENGINE_BUILD_PLAN.md) shipped the
+> day after this audit. Now RESOLVED: all four Appendix-A-12 bugs (evolution
+> segment/cursor, paid-source detection, exact attribution); server-side
+> journey logging (`VisitorTouch`); propensity calibration (shadow-first,
+> per-shop flag); hierarchical pooling (vertical × AOV clusters feeding gene
+> inheritance, variant Betas, and threshold cold starts); per-segmentKey cell
+> stats with cell-aware champions (closes R1′); the aggression coin flip is
+> now evidence-gated (closes R8); and the merchant dashboard shows
+> holdout-measured incremental revenue alongside relabeled "engaged revenue"
+> (closes the V12 follow-through). Remaining open: phase 7 (escalation
+> ladder, opening-surface arm, generative copy) and the isolation-vs-network
+> positioning decision.
 
 **Mission statement this doc is graded against:** *Give the right message to the right customer at the right time with the minimum promotion required to convert someone with items in their cart.*
 
@@ -229,3 +243,42 @@ The ladder's rungs mostly exist as mechanisms: L0 suppression (learned, adaptive
 
 ## Appendix C — Priority re-check
 The draft's #1 (journey logging) drops to #2 — still the foundation gap, but the newly-found evolution-cron bugs are live correctness defects affecting served traffic and cost hours, not weeks. Draft #2 (holdout) and half of #5 (suppression R5, timing R4) are **done** and removed. Draft #3 (evolution stats) survives only as the bug fixes. Draft #4 (segment TS) moves later *in effort* but earlier in leverage — it's now an aggregation change, not an infrastructure project. The isolation-vs-network positioning question is upgraded from "decide before building" to "decide now" — the network features are shipped and merchant-visible in onboarding copy risk terms.
+
+## Investor Summary
+
+**What this document is:** a no-spin engineering audit of how Resparq's
+decision engine actually learns — written by verifying every claim against
+the code, correcting the marketing-friendly version wherever the two
+disagreed, and then used as the blueprint for the build sprint that followed
+(phases 1–6 shipped within a day of finalization; see the status note at
+the top).
+
+**What the engine does, in simple terms:** when a shopper is about to
+abandon a cart, Resparq decides whether to intervene at all, what message
+and design to show, when to show it, and the smallest discount — often
+zero — that will actually change the outcome. It learns all four decisions
+from real shopper behavior: messages and layouts evolve like organisms
+(winners breed, losers are culled on statistical evidence), the
+show-or-stay-silent choice is a learned policy per shopper type, and
+discounts are only spent where a controlled comparison proves a plain
+reminder wouldn't have converted.
+
+**How customers benefit:**
+- **More recovered sales, less margin given away.** The optimization target
+  is profit after discount cost — the system is explicitly penalized for
+  handing coupons to shoppers who would have bought anyway.
+- **Zero setup.** Merchants set a risk dial and a budget; everything else —
+  copy, design, timing, audience segmentation, discount sizing — is learned.
+- **A number they can trust.** A permanent 5% control group means the
+  dashboard reports the revenue Resparq *caused*, verified against shoppers
+  who saw nothing, and says "measuring" until the sample is real.
+- **Instant competence for new stores.** Learning pools across stores by
+  category and price band, so a new merchant starts from their peer group's
+  accumulated knowledge instead of from zero — and every new merchant
+  deepens that pool for everyone else.
+
+**Why the audit itself matters to investors:** it demonstrates the
+operating discipline behind the product — claims are verified against code,
+gaps are named and prioritized by measured impact, and the honest-attribution
+principle applied to merchants (measured lift, no invented numbers) is the
+same principle applied internally.

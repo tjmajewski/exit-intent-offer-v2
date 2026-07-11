@@ -1,11 +1,12 @@
 # Resparq AI - Technical Architecture
-**Last Updated:** June 5, 2026
+**Last Updated:** July 11, 2026
 **Audience:** Developers
 
 ---
 
 ## Table of Contents
 
+0. [July 2026 Additions](#july-2026-additions-decision-engine-build-phases-1-6) ← read this first if you knew the June system
 1. [AI Philosophy](#ai-philosophy)
 2. [Customer Signals](#customer-signals)
 3. [Tier Comparison](#tier-comparison)
@@ -18,6 +19,64 @@
 10. [Thompson Sampling Implementation](#thompson-sampling-implementation)
 11. [Social Proof Integration](#social-proof-integration)
 12. [Adaptive Intervention Thresholds](#adaptive-intervention-thresholds)
+
+---
+
+## July 2026 Additions (Decision Engine Build, Phases 1-6)
+
+Everything below this section describes the June system, which still holds
+EXCEPT where superseded here. Full audit: [AI_LEARNING_AUDIT.md](./AI_LEARNING_AUDIT.md);
+full plan: [DECISION_ENGINE_BUILD_PLAN.md](./DECISION_ENGINE_BUILD_PLAN.md).
+
+### New modules
+
+| File | What it does |
+|---|---|
+| `app/utils/journey.server.js` | Single write path for `VisitorTouch` rows; `CLIENT_ALLOWED_TOUCHES` allowlist stops browsers forging decision/conversion rows |
+| `app/routes/apps.exit-intent.api.journey.jsx` | Public app-proxy endpoint for client-only events (dismissals, pill/banner interactions); rate-limited, dev/test/preview-gated |
+| `app/utils/propensity-model.server.js` | Calibrated propensity: 32-feature extractor (shared train/serve), plain-JS L2 logistic regression, per-store intercepts, AUC, cached loader (14d freshness, feature-version guard) |
+| `app/cron/calibrate-propensity.js` | Weekly training on no-show outcomes (holdout + natural conversions); gates 300 rows / 30 conversions; stores model as `MetaLearningInsights` `propensity_model` |
+| `app/utils/store-cluster.server.js` | Vertical derivation (offline-token Admin API, keyword majority vote) + AOV band from Conversions; `clusterKeysFor()` fallback chain |
+| `app/utils/cluster-priors.server.js` | Cluster prior IO (`baseline_cvr_prior`, `threshold_prior` insights) + `blendWithPrior()` pseudo-count math used by both bandits |
+| `app/utils/discount-arm.server.js` | Evidence-gated discounting: per-(shop, bucket) discount/no-discount arms, Monte-Carlo P(win), `requiredConfidence = 0.95 − aggression × 0.045` |
+| `app/utils/incrementality.server.js` | Shown-vs-holdout CVR → lift factor for the merchant "Incremental revenue" card (gated behind 30 control visitors) |
+
+### New tables / columns
+
+| Schema | Purpose |
+|---|---|
+| `VisitorTouch` | Journey log: one row per touch (surface × response) per anonymous visitorId; 180d retention |
+| `VariantSegmentStat` | Per-(variant, segmentKey) counters at two granularities (exact composite + `d:{device}` coarse) |
+| `EvolutionCursor` | Per-(shop, baseline, segment) cycle cursor — replaces shop-level `lastEvolutionCycle` gating |
+| `Shop.usePropensityModel` | Serves the calibrated model instead of the hand-set curve (default false = shadow) |
+| `Shop.derivedVertical`, `Shop.aovBand` | Auto-derived cluster dims (weekly); trump self-reported `storeVertical` |
+
+### Decision-flow changes (apps.exit-intent.api.ai-decision.jsx)
+
+1. **Propensity**: legacy + calibrated model both scored every request; both stamped into `signals` (`propensityScoreLegacy` / `propensityScoreModel`) for shadow comparison; served score flips per shop flag.
+2. **Threshold check**: `shouldIntervene()` takes a cluster prior — cold-start show/skip Thompson-samples cluster-mates' pooled arms instead of always-show.
+3. **Discount vs no-discount**: evidence-gated when the propensity bucket's arms have ≥50 outcomes each (deterministic; the aggression dial sets the confidence bar). Coin flip remains ONLY as cold-start exploration.
+4. **Variant selection**: shrinkage chain cell → store → cluster → flat (see `VariantSegmentStat` + `blendWithPrior`); cell-aware champion suspension.
+5. **Journey touches** written on shown / skipped / holdout (plus cta_click via track-click, converted via webhook).
+
+### Evolution / cron changes
+
+- Evolution cron iterates **every (baseline, segment) cell with live variants** and gates on that cell's `EvolutionCursor` — mobile/desktop populations evolve (they previously never did), and one baseline's cycle no longer resets siblings' counters.
+- Threshold-learning cron also rebuilds discount-arm stats (same 50-outcome trigger).
+- Gene aggregation cron: derives shop clusters, writes cluster-scoped `MetaLearningGene` rows (`industry`/`avgOrderValue` now populated), publishes cluster CVR + threshold priors, enforces the `contributeToMetaLearning` opt-out (previously unfiltered), prunes `VisitorTouch` >180d.
+- New weekly cron: `calibrate-propensity` (registered in PRODUCTION-CRON-SETUP.md).
+
+### Storefront changes (theme extension)
+
+- Cross-session frequency gates (cooldown × 2^ignoreStreak capped 30d, true rolling 5-shows/30d ceiling, 30d post-purchase quiet) run before any server call; state in `localStorage.exitIntentFrequency`.
+- Dismissal recovery: immediate persistent offer pill + cart-monitor surfaces (one-surface rule); the old 60s toast is gone.
+- Entry-param capture fixes `paid`/`email` traffic classification (gclid/fbclid/utm live on the landing URL, not the referrer).
+- Every redemption path stamps `exit_intent_impression` for exact webhook attribution (fuzzy 24h match is legacy fallback only).
+
+### Attribution changes (webhooks.orders.create.jsx)
+
+- Exact impression lookup from the stamped `exit_intent_impression` attribute.
+- `converted` journey touch written with visitorId resolved via the impression's prior touch or the decision's signals.
 
 ---
 
@@ -1911,8 +1970,53 @@ For new stores with no `InterventionOutcome` data:
 
 ---
 
+## Investor Summary
+
+**The architecture in one paragraph:** a lightweight script on the
+merchant's storefront watches for the moment a shopper with a full cart
+starts to leave, gathers ~26 behavioral signals, and asks Resparq's decision
+engine one question: what is the cheapest action that saves this sale?
+The engine answers in real time by combining four learning systems — a
+propensity model that estimates whether the shopper would buy anyway
+(being recalibrated weekly from real outcomes), a show/skip bandit that has
+learned when silence outperforms interruption, an evolutionary optimizer
+that breeds winning messages/designs/timings per audience segment, and an
+evidence gate that only spends discount margin where the data proves it's
+needed. Every decision, touch, and order is journaled, and 5% of shoppers
+are held back as a permanent control group so the system's impact is
+measured causally, not asserted.
+
+**What the engineering buys the business:**
+
+1. **Compounding data advantage.** Stores are clustered by category and
+   price point; every store's outcomes strengthen the priors that new stores
+   in that cluster start from. Install #100 opens smarter than install #10
+   did. This network layer is architecture, not a feature toggle — a
+   competitor would need both the code and the accumulated cross-store data
+   to match it.
+2. **Trustworthy numbers.** Exact per-impression attribution, a sticky
+   holdout control, and a dashboard that distinguishes "revenue we touched"
+   from "revenue we caused" — with an explicit 'measuring' state instead of
+   invented estimates. In a category notorious for inflated attribution,
+   honesty is the differentiator merchants can verify.
+3. **Margin alignment.** The objective function everywhere is profit after
+   discount cost, bounded by a hard margin guard. The system's incentives
+   are the merchant's incentives, which is what makes commission-on-recovery
+   pricing viable.
+4. **Low operating cost.** The intelligence is Bayesian statistics and a
+   genetic algorithm in plain JavaScript — no GPU inference, no per-decision
+   LLM calls — so unit economics stay flat as decision volume scales.
+
+**Customer benefit, plainly:** more completed checkouts, smaller discounts
+given away to get them, zero configuration effort, and a lift number they
+can audit.
+
+---
+
 **Related Docs:**
 - [Complete AI Guide](./AI_SYSTEM_COMPLETE_GUIDE.md)
 - [Pro vs Enterprise](./AI_PRO_VS_ENTERPRISE.md)
 - [Social Proof Docs](./SOCIAL_PROOF_TECHNICAL_DOCS.md)
+- [Learning Audit (ground truth)](./AI_LEARNING_AUDIT.md)
+- [Decision Engine Build Plan](./DECISION_ENGINE_BUILD_PLAN.md)
 
