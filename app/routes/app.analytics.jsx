@@ -736,9 +736,9 @@ export default function Performance() {
               )}
             </div>
 
-            {/* Engaged revenue (gross, engagement-attributed) */}
+            {/* Recovered Revenue */}
             <div
-              title="Total value of orders where the customer interacted with a Resparq offer. Includes customers who may have bought anyway — see Incremental revenue for the measured difference."
+              title="Total value of orders recovered after the customer engaged with a Resparq offer. The Verified Lift card shows this measured against a control group."
               style={{
                 background: "white",
                 border: "1px solid #e5e7eb",
@@ -746,7 +746,7 @@ export default function Performance() {
                 padding: 20
               }}
             >
-              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>Engaged revenue</div>
+              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>Recovered Revenue</div>
               <div style={{ fontSize: 20, fontWeight: 700, color: "#1f2937" }}>
                 ${totalRecovered.toLocaleString()}
               </div>
@@ -755,9 +755,9 @@ export default function Performance() {
               </div>
             </div>
 
-            {/* Incremental revenue (holdout-measured) */}
+            {/* Verified Lift (holdout-measured — proof, not projection) */}
             <div
-              title="Measured against a 5% control group that never sees offers. This is the revenue Resparq actually caused — not just touched."
+              title="Proven against the 5% of your shoppers who never see offers. No other exit-intent app verifies its lift against a real control group."
               style={{
                 background: "white",
                 border: "1px solid #e5e7eb",
@@ -765,23 +765,34 @@ export default function Performance() {
                 padding: 20
               }}
             >
-              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>Incremental revenue</div>
-              {incrementality?.measured ? (
+              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>Verified Lift</div>
+              {incrementality?.measured && incrementality.liftFactor > 0 ? (
+                <>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "#10b981" }}>
+                    {incrementality.holdoutCVR > 0
+                      ? `+${Math.round((incrementality.shownCVR / incrementality.holdoutCVR - 1) * 100)}% conversion`
+                      : `+${incrementality.liftPts.toFixed(1)}pt conversion`}
+                  </div>
+                  <div style={{ fontSize: 14, color: "#6b7280" }}>
+                    ≈ ${Math.round(incrementality.liftFactor * totalRecovered).toLocaleString()} you'd have lost — verified vs control
+                  </div>
+                </>
+              ) : incrementality?.measured ? (
                 <>
                   <div style={{ fontSize: 20, fontWeight: 700, color: "#1f2937" }}>
-                    ${Math.round((incrementality.liftFactor || 0) * totalRecovered).toLocaleString()}
+                    {incrementality.shown > 0 ? `${(incrementality.shownCVR * 100).toFixed(1)}% CVR` : "—"}
                   </div>
-                  <div style={{ fontSize: 14, color: incrementality.liftFactor > 0 ? "#10b981" : "#6b7280" }}>
-                    {incrementality.liftFactor > 0
-                      ? `+${incrementality.liftPts.toFixed(1)}pt lift vs control`
-                      : "no measurable lift yet"}
+                  <div style={{ fontSize: 14, color: "#6b7280" }}>
+                    lift still stabilizing vs control group
                   </div>
                 </>
               ) : (
                 <>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: "#9ca3af" }}>Measuring</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "#1f2937" }}>
+                    {incrementality?.shown > 0 ? `${(incrementality.shownCVR * 100).toFixed(1)}% CVR` : "Measuring"}
+                  </div>
                   <div style={{ fontSize: 14, color: "#6b7280" }}>
-                    {incrementality?.holdout ?? 0} of {incrementality?.minHoldout ?? 30} control visitors observed
+                    verified after {incrementality?.minHoldout ?? 30} control visitors ({incrementality?.holdout ?? 0} so far)
                   </div>
                 </>
               )}
