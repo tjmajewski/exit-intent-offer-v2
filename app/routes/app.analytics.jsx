@@ -774,7 +774,7 @@ export default function Performance() {
                       : `+${incrementality.liftPts.toFixed(1)}pt conversion`}
                   </div>
                   <div style={{ fontSize: 14, color: "#6b7280" }}>
-                    ≈ ${Math.round(incrementality.liftFactor * totalRecovered).toLocaleString()} you'd have lost — verified vs control
+                    ≈ ${Math.round(incrementality.liftFactor * totalRecovered).toLocaleString()} you&rsquo;d have lost — verified vs control
                   </div>
                 </>
               ) : incrementality?.measured ? (
