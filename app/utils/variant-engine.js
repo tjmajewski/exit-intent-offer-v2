@@ -7,6 +7,7 @@ import { hasSocialProof, replaceSocialProofPlaceholders } from './social-proof.j
 import { getSocialProofFromCache, setSocialProofCache } from './social-proof-cache.js';
 import { computeArchetypePriors, getArchetypeMultiplier } from './archetype-priors.js';
 import { computeTemplatePriors, getTemplateMultiplier } from './template-priors.js';
+import { blendWithPrior } from './cluster-priors.server.js';
 import { getEnabledLayoutIds } from './templates.js';
 
 // ---------------------------------------------------------------------------
@@ -276,19 +277,37 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
   // NEW STORE: Inherit proven genes from network
   if (totalImpressions < 100 && shop.contributeToMetaLearning) {
     console.log('🆕 New store detected - checking for proven genes from network...');
-    
-    // Query top-performing genes from meta-learning
-    const provenGenes = await (await getDb()).metaLearningGene.findMany({
-      where: {
-        baseline: baseline,
-        sampleSize: { gte: 3 }, // At least 3 stores used this gene
-        confidenceLevel: { gte: 0.7 }, // 70%+ confidence
-        avgProfitPerImpression: { gt: 0 }
-      },
-      orderBy: { avgProfitPerImpression: 'desc' },
-      take: 10,
-      distinct: ['geneType'] // Get one top gene per type
-    });
+
+    // Cluster-aware fallback chain (phase 4b): prefer genes proven in this
+    // shop's vertical × AOV band, then vertical-only, then the global pool.
+    // First level that returns >= 3 genes wins — a new jeweler inherits what
+    // works for jewelry, not an average over phone-case stores.
+    const { shopClusterDims } = await import('./store-cluster.server.js');
+    const { vertical, aovBand } = shopClusterDims(shop);
+    const baseGeneWhere = {
+      baseline: baseline,
+      sampleSize: { gte: 3 }, // At least 3 stores used this gene
+      confidenceLevel: { gte: 0.7 }, // 70%+ confidence
+      avgProfitPerImpression: { gt: 0 }
+    };
+    const clusterLevels = [];
+    if (vertical && aovBand) clusterLevels.push({ industry: vertical, avgOrderValue: aovBand });
+    if (vertical) clusterLevels.push({ industry: vertical, avgOrderValue: null });
+    clusterLevels.push({ industry: null }); // global rows
+
+    let provenGenes = [];
+    for (const level of clusterLevels) {
+      provenGenes = await (await getDb()).metaLearningGene.findMany({
+        where: { ...baseGeneWhere, ...level },
+        orderBy: { avgProfitPerImpression: 'desc' },
+        take: 10,
+        distinct: ['geneType'] // Get one top gene per type
+      });
+      if (provenGenes.length >= 3) {
+        console.log(` Gene inheritance level: ${level.industry ? `${level.industry}${level.avgOrderValue ? ` × ${level.avgOrderValue}` : ''}` : 'global'} (${provenGenes.length} genes)`);
+        break;
+      }
+    }
     
     if (provenGenes.length >= 3) {
       console.log(` Found ${provenGenes.length} proven genes from network`);
@@ -439,7 +458,7 @@ function betaSample(alpha, beta) {
 const MIN_TRIGGER_IMPRESSIONS = 20;
 
 export async function selectVariantForImpression(shopId, baseline, segment = 'all', triggerReason = null, opts = {}) {
-  const { segmentKey = null, storeVertical = null, enableArchetypePriors = false, enableTemplatePriors = false } = opts;
+  const { segmentKey = null, storeVertical = null, enableArchetypePriors = false, enableTemplatePriors = false, clusterPrior = null } = opts;
   // Get all live variants
   const liveVariants = await getLiveVariants(shopId, baseline, segment);
 
@@ -579,11 +598,17 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
       conversions = triggerStats[variant.id].conversions;
     }
 
-    // Beta distribution parameters
-    // alpha = successes + 1 (prior of 1)
-    // beta = failures + 1 (prior of 1)
-    const alpha = conversions + 1;
-    const beta_param = (impressions - conversions) + 1;
+    // Beta distribution parameters. Without a cluster prior this is the
+    // classic flat Beta(conv+1, fail+1). With one (phase 4c), the cluster's
+    // baseline CVR contributes clusterPrior.weight pseudo-impressions —
+    // cold variants sample around the cluster's reality instead of uniform
+    // [0,1], and the prior washes out as real impressions accumulate.
+    const { alpha, beta: beta_param } = blendWithPrior(
+      conversions,
+      impressions - conversions,
+      clusterPrior?.cvr,
+      clusterPrior?.weight
+    );
 
     // Sample from beta(alpha, beta)
     let sample = betaSample(alpha, beta_param);
@@ -611,7 +636,7 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
 
   const winner = samples[0].variant;
   const winnerArchetype = getArchetype(winner.baseline)?.archetypeName || 'none';
-  console.log(` Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)}${triggerStats ? `, trigger: ${triggerReason}` : ''}${archetypePriors ? `, priors=${priorsSource}, archetype=${winnerArchetype}` : ''}${templatePriors ? `, templatePriors=${templatePriorsSource}, template=${winner.templateId}` : ''})`);
+  console.log(` Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)}${triggerStats ? `, trigger: ${triggerReason}` : ''}${archetypePriors ? `, priors=${priorsSource}, archetype=${winnerArchetype}` : ''}${templatePriors ? `, templatePriors=${templatePriorsSource}, template=${winner.templateId}` : ''}${clusterPrior ? `, clusterPrior=${clusterPrior.source} cvr=${clusterPrior.cvr.toFixed(3)}` : ''})`);
 
   return winner;
 }

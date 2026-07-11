@@ -68,6 +68,12 @@ model Shop {
   // Nullable: null = include in all-verticals pool. Values: fashion | electronics |
   // beauty | home | food | health | other (free-form; clients normalize to lowercase).
   storeVertical            String?
+  // Derived cluster (build plan phase 4) — auto-computed weekly by the
+  // aggregation cron; trumps the self-reported storeVertical when present.
+  // derivedVertical from Shopify product types (store-cluster.server.js vocab);
+  // aovBand from Conversion AOV: low (<$50) | mid ($50-150) | high (>$150).
+  derivedVertical          String?
+  aovBand                  String?
 
   // Evolution System
   lastEvolutionCycle DateTime?

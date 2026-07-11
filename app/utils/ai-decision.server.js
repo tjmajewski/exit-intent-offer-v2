@@ -164,7 +164,10 @@ export async function decideOffer(signals, ctx = {}) {
     cartValue: ctxCartValue,
     shopId = null,
     testMode = false,
-    assumedGrossMargin = 0.40
+    assumedGrossMargin = 0.40,
+    // Phase 4: cluster keys (store-cluster.server.js clusterKeysFor) for
+    // cross-store threshold priors. Empty/absent = no pooling, legacy behavior.
+    clusterKeys = null
   } = ctx;
 
   const cartValue = ctxCartValue ?? signals.cartValue ?? 0;
@@ -218,11 +221,23 @@ export async function decideOffer(signals, ctx = {}) {
     // scale for both tiers (was: Pro additive score vs Enterprise propensity).
     if (shopId) {
       const { default: db } = await import('../db.server.js');
-      const { shouldIntervene } = await import('./intervention-threshold.server.js');
+      const { shouldIntervene, scoreToBucket } = await import('./intervention-threshold.server.js');
       const segment = signals.deviceType === 'mobile' ? 'mobile'
                     : signals.deviceType === 'desktop' ? 'desktop' : 'all';
 
-      const decision = await shouldIntervene(db, shopId, P, segment);
+      // Cluster prior (phase 4c): cold-start show/skip behavior inherited
+      // from cluster-mates until this shop's own bucket has real data.
+      let thresholdPrior = null;
+      if (Array.isArray(clusterKeys) && clusterKeys.length > 0) {
+        try {
+          const { getThresholdPrior } = await import('./cluster-priors.server.js');
+          thresholdPrior = await getThresholdPrior(db, clusterKeys, scoreToBucket(P), segment);
+        } catch (e) {
+          console.error('[Offer Engine] Threshold prior load failed (ignored):', e.message);
+        }
+      }
+
+      const decision = await shouldIntervene(db, shopId, P, segment, thresholdPrior);
       if (!decision.shouldShow) {
         console.log(`[Offer Engine] Adaptive threshold: skip for P=${P} bucket ${decision.bucket} trigger=${triggerReason}${decision.isExploring ? ' (exploring)' : ''}`);
         return null;

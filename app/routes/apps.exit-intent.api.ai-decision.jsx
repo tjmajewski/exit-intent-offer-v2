@@ -7,6 +7,8 @@ import { composeSegmentKey } from "../utils/segment-key.js";
 import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
 import { recordTouch } from "../utils/journey.server.js";
 import { loadPropensityModel, scorePropensity } from "../utils/propensity-model.server.js";
+import { clusterKeysFor } from "../utils/store-cluster.server.js";
+import { getBaselineCvrPrior } from "../utils/cluster-priors.server.js";
 import { computePropensity } from "../utils/propensity.server.js";
 import { enforceRateLimit } from "../utils/rate-limit.server.js";
 import { getEnabledLayoutIds } from "../utils/templates.js";
@@ -429,13 +431,18 @@ export async function action({ request }) {
     // Unified decision engine for BOTH tiers. Tier-specific behavior lives in
     // the variant engine (Layer 1) and ctx config below — the show/skip + offer
     // ceiling are now one code path.
+    // Phase 4: this shop's cluster keys (vertical × AOV band), most-specific
+    // first. Empty for unclustered shops — every prior lookup then no-ops.
+    const shopClusterKeys = clusterKeysFor(shopRecord);
+
     const preScore = await decideOffer(signals, {
       plan: shopRecord.plan || 'pro',
       aggression: effectiveAggression,
       cartValue: signals.cartValue || 0,
       shopId: shopRecord.id,
       testMode: isTestMode,
-      assumedGrossMargin: settings.assumedGrossMargin
+      assumedGrossMargin: settings.assumedGrossMargin,
+      clusterKeys: shopClusterKeys
     });
 
     if (preScore === null) {
@@ -574,6 +581,17 @@ export async function action({ request }) {
     // Sampling runs uniformly.
     const planTierForPriors = shopRecord.plan || 'pro';
     const prioriEnabled = planTierForPriors === 'enterprise' || planTierForPriors === 'pro';
+
+    // Phase 4c: cluster CVR prior for this baseline — pseudo-counts that
+    // anchor cold variants' Beta sampling to the cluster's reality. Cached
+    // in-process; null for unclustered shops or missing insights.
+    let clusterPrior = null;
+    try {
+      clusterPrior = await getBaselineCvrPrior(db, shopClusterKeys, baseline);
+    } catch (e) {
+      console.error('[Variant Selection] Cluster prior load failed (ignored):', e.message);
+    }
+
     const selectedVariant = await selectVariantForImpression(
       shopRecord.id,
       baseline,
@@ -586,7 +604,8 @@ export async function action({ request }) {
         // Sprint 3: hierarchical template posterior. Enterprise only — Pro's
         // 2-variant cap barely spans the layout space, so template pooling adds
         // little; the device-conditional lift is surfaced to Pro as an upsell.
-        enableTemplatePriors: planTierForPriors === 'enterprise'
+        enableTemplatePriors: planTierForPriors === 'enterprise',
+        clusterPrior
       }
     );
     console.log(`[Variant Selection] Selected ${selectedVariant.variantId} (Gen ${selectedVariant.generation}, trigger: ${triggerReason}, segmentKey: ${segmentKey}, priors: ${prioriEnabled ? planTierForPriors : 'off'})`);

@@ -50,15 +50,18 @@ function betaSample(alpha, beta) {
 /**
  * Determine whether to intervene (show modal) for a customer in a given score
  * bucket. Uses Thompson Sampling over the show/skip arms when enough data
- * exists; falls through to hardcoded defaults for cold-start.
+ * exists; falls through to the cluster prior (phase 4c), then hardcoded
+ * defaults, for cold-start.
  *
  * @param {Object} db - Prisma client
  * @param {string} shopId - Shop UUID
  * @param {number} score - Propensity score (0-100) or Pro intent score
  * @param {string} segment - 'mobile', 'desktop', or 'all'
+ * @param {Object|null} clusterPrior - getThresholdPrior() output: pre-scaled
+ *   pseudo-counts from cluster-mates' show/skip arms for this bucket/segment
  * @returns {{ shouldShow: boolean, isExploring: boolean, bucket: string }}
  */
-export async function shouldIntervene(db, shopId, score, segment = 'all') {
+export async function shouldIntervene(db, shopId, score, segment = 'all', clusterPrior = null) {
   const bucket = scoreToBucket(score);
 
   // Try to find a learned threshold for this bucket + segment
@@ -85,15 +88,33 @@ export async function shouldIntervene(db, shopId, score, segment = 'all') {
     });
   }
 
-  // Cold start: no threshold record yet — use defaults
-  if (!threshold) {
-    return { shouldShow: true, isExploring: false, bucket };
-  }
+  const ownOutcomes = threshold
+    ? threshold.showImpressions + threshold.skipImpressions
+    : 0;
 
-  const totalOutcomes = threshold.showImpressions + threshold.skipImpressions;
-
-  // Not enough data yet — use defaults but start recording
-  if (totalOutcomes < MIN_OUTCOMES_FOR_LEARNING) {
+  // Cold start (no row, or too thin to learn from alone): with a cluster
+  // prior, Thompson-sample the two arms from the cluster-mates' blended
+  // counts plus whatever thin own-data exists — a new jewelry store starts
+  // from jewelry's learned show/skip behavior instead of "always show".
+  // CVR-only comparison (the prior carries no profit info). Without a
+  // prior, keep the legacy always-show default.
+  if (ownOutcomes < MIN_OUTCOMES_FOR_LEARNING) {
+    if (clusterPrior) {
+      const own = threshold || { showImpressions: 0, showConversions: 0, skipImpressions: 0, skipConversions: 0 };
+      const showSample = betaSample(
+        own.showConversions + clusterPrior.showAlphaAdd + 1,
+        (own.showImpressions - own.showConversions) + clusterPrior.showBetaAdd + 1
+      );
+      const skipSample = betaSample(
+        own.skipConversions + clusterPrior.skipAlphaAdd + 1,
+        (own.skipImpressions - own.skipConversions) + clusterPrior.skipBetaAdd + 1
+      );
+      let shouldShow = showSample > skipSample;
+      if (Math.random() < EXPLORATION_FLOOR) {
+        return { shouldShow: !shouldShow, isExploring: true, bucket };
+      }
+      return { shouldShow, isExploring: false, bucket };
+    }
     return { shouldShow: true, isExploring: false, bucket };
   }
 

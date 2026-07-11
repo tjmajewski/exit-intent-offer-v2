@@ -27,21 +27,32 @@ export async function aggregateGenePerformance() {
     console.error('[Journey] Retention prune failed:', e.message);
   }
 
-  // Get all shops that contribute to meta-learning (opted in, have variants)
-  const shops = await db.shop.findMany({
-    where: {
-      mode: 'ai',
-      // Add contributeToMetaLearning field later if needed
-    }
+  // All AI-mode shops get their cluster derived (receiving priors is open to
+  // everyone, including meta-learning opt-outs)...
+  const allAiShops = await db.shop.findMany({
+    where: { mode: 'ai' }
   });
-  
-  console.log(`Found ${shops.length} shops to aggregate`);
-  
+
+  console.log(` Deriving clusters for ${allAiShops.length} AI-mode shops...`);
+  const { updateShopCluster, shopClusterDims } = await import('../utils/store-cluster.server.js');
+  for (const shop of allAiShops) {
+    const updated = await updateShopCluster(db, shop);
+    if (updated) {
+      Object.assign(shop, updated); // keep the in-memory row current for grouping below
+      console.log(`  ${shop.shopifyDomain}: ${shop.derivedVertical || '?'} × ${shop.aovBand || '?'}`);
+    }
+  }
+
+  // ...but only opted-in shops CONTRIBUTE to the aggregates.
+  const shops = allAiShops.filter(s => s.contributeToMetaLearning !== false);
+
+  console.log(`Found ${shops.length} contributing shops to aggregate`);
+
   if (shops.length < 3) {
     console.log(' Need at least 3 shops for meaningful aggregation. Skipping.');
     return;
   }
-  
+
   // Get all variants from these shops
   const allVariants = await db.variant.findMany({
     where: {
@@ -51,120 +62,216 @@ export async function aggregateGenePerformance() {
   });
   
   console.log(`Found ${allVariants.length} variants with 10+ impressions\n`);
-  
-  // Aggregate by gene type
-  const geneAggregates = {
-    offerAmount: {},
-    headline: {},
-    subhead: {},
-    cta: {},
-    redirect: {},
-    urgency: {},
-    templateId: {}
-  };
-  
-  // Aggregate performance for each gene
-  allVariants.forEach(v => {
-    const genes = {
-      offerAmount: v.offerAmount?.toString(),
-      headline: v.headline,
-      subhead: v.subhead,
-      cta: v.cta,
-      redirect: v.redirect,
-      urgency: v.urgency?.toString(),
-      templateId: v.templateId
+
+  const shopsById = new Map(shops.map(s => [s.id, s]));
+
+  // Aggregate a set of variants by gene type -> { geneType: { geneValue: agg } }
+  function aggregateGenes(variants) {
+    const geneAggregates = {
+      offerAmount: {}, headline: {}, subhead: {}, cta: {},
+      redirect: {}, urgency: {}, templateId: {}
     };
-    
-    Object.keys(genes).forEach(geneType => {
-      const geneValue = genes[geneType];
-      if (!geneValue) return;
-      
-      if (!geneAggregates[geneType][geneValue]) {
-        geneAggregates[geneType][geneValue] = {
-          totalImpressions: 0,
-          totalConversions: 0,
-          totalRevenue: 0,
-          variantCount: 0,
-          storeCount: new Set()
-        };
-      }
-      
-      const agg = geneAggregates[geneType][geneValue];
-      agg.totalImpressions += v.impressions;
-      agg.totalConversions += v.conversions;
-      agg.totalRevenue += v.revenue;
-      agg.variantCount += 1;
-      agg.storeCount.add(v.shopId);
-    });
-  });
-  
-  // Calculate metrics and save to database
-  let savedCount = 0;
-  
-  for (const [geneType, genes] of Object.entries(geneAggregates)) {
-    for (const [geneValue, agg] of Object.entries(genes)) {
-      const storeCount = agg.storeCount.size;
-      
-      // Only save if seen in 3+ stores OR 100+ impressions
-      if (storeCount < 3 && agg.totalImpressions < 100) continue;
-      
-      const avgCVR = agg.totalImpressions > 0 ? agg.totalConversions / agg.totalImpressions : 0;
-      const avgProfit = agg.totalImpressions > 0 ? agg.totalRevenue / agg.totalImpressions : 0;
-      
-      // Calculate confidence (0-1)
-      const confidence = calculateConfidence(agg.totalImpressions, storeCount);
-      
-      // Determine baseline (use most common baseline from variants with this gene)
-      const baseline = await determineBaseline(db, geneType, geneValue);
-      
-      // Check if exists
-      const existing = await db.metaLearningGene.findFirst({
-        where: {
-          baseline: baseline,
-          geneType: geneType,
-          geneValue: geneValue
+    variants.forEach(v => {
+      const genes = {
+        offerAmount: v.offerAmount?.toString(),
+        headline: v.headline,
+        subhead: v.subhead,
+        cta: v.cta,
+        redirect: v.redirect,
+        urgency: v.urgency?.toString(),
+        templateId: v.templateId
+      };
+      Object.keys(genes).forEach(geneType => {
+        const geneValue = genes[geneType];
+        if (!geneValue) return;
+        if (!geneAggregates[geneType][geneValue]) {
+          geneAggregates[geneType][geneValue] = {
+            totalImpressions: 0, totalConversions: 0, totalRevenue: 0,
+            variantCount: 0, storeCount: new Set()
+          };
         }
+        const agg = geneAggregates[geneType][geneValue];
+        agg.totalImpressions += v.impressions;
+        agg.totalConversions += v.conversions;
+        agg.totalRevenue += v.revenue;
+        agg.variantCount += 1;
+        agg.storeCount.add(v.shopId);
       });
-      
-      if (existing) {
-        // Update
-        await db.metaLearningGene.update({
-          where: { id: existing.id },
-          data: {
-            totalImpressions: agg.totalImpressions,
-            totalConversions: agg.totalConversions,
-            avgCVR: avgCVR,
-            avgProfitPerImpression: avgProfit,
-            sampleSize: storeCount,
-            confidenceLevel: confidence
+    });
+    return geneAggregates;
+  }
+
+  // Upsert MetaLearningGene rows for one scope. Global rows carry
+  // industry/avgOrderValue = null; cluster rows carry their dims — the
+  // findFirst MUST match on scope so cluster rows never clobber global ones
+  // (and vice versa). minStores: global keeps the historic 3-store gate,
+  // cluster rows accept 2 (they only get INHERITED at sampleSize >= 3, so
+  // thin rows are staged, not served).
+  async function saveGeneAggregates(geneAggregates, scope, minStores) {
+    let saved = 0;
+    for (const [geneType, genes] of Object.entries(geneAggregates)) {
+      for (const [geneValue, agg] of Object.entries(genes)) {
+        const storeCount = agg.storeCount.size;
+        if (storeCount < minStores && agg.totalImpressions < 100) continue;
+
+        const avgCVR = agg.totalImpressions > 0 ? agg.totalConversions / agg.totalImpressions : 0;
+        const avgProfit = agg.totalImpressions > 0 ? agg.totalRevenue / agg.totalImpressions : 0;
+        const confidence = calculateConfidence(agg.totalImpressions, storeCount);
+        const baseline = await determineBaseline(db, geneType, geneValue);
+
+        const existing = await db.metaLearningGene.findFirst({
+          where: {
+            baseline, geneType, geneValue,
+            industry: scope.industry,
+            avgOrderValue: scope.avgOrderValue
           }
         });
-      } else {
-        // Create
-        await db.metaLearningGene.create({
-          data: {
-            baseline: baseline,
-            geneType: geneType,
-            geneValue: geneValue,
-            totalImpressions: agg.totalImpressions,
-            totalConversions: agg.totalConversions,
-            totalRevenue: agg.totalRevenue,
-            avgCVR: avgCVR,
-            avgProfitPerImpression: avgProfit,
-            sampleSize: storeCount,
-            confidenceLevel: confidence
-          }
-        });
+
+        if (existing) {
+          await db.metaLearningGene.update({
+            where: { id: existing.id },
+            data: {
+              totalImpressions: agg.totalImpressions,
+              totalConversions: agg.totalConversions,
+              totalRevenue: agg.totalRevenue,
+              avgCVR, avgProfitPerImpression: avgProfit,
+              sampleSize: storeCount,
+              confidenceLevel: confidence
+            }
+          });
+        } else {
+          await db.metaLearningGene.create({
+            data: {
+              baseline, geneType, geneValue,
+              industry: scope.industry,
+              avgOrderValue: scope.avgOrderValue,
+              totalImpressions: agg.totalImpressions,
+              totalConversions: agg.totalConversions,
+              totalRevenue: agg.totalRevenue,
+              avgCVR, avgProfitPerImpression: avgProfit,
+              sampleSize: storeCount,
+              confidenceLevel: confidence
+            }
+          });
+        }
+        saved++;
       }
-      
-      savedCount++;
+    }
+    return saved;
+  }
+
+  // ---- Global rows (legacy behavior, now explicitly scoped to null dims) ----
+  let savedCount = await saveGeneAggregates(
+    aggregateGenes(allVariants),
+    { industry: null, avgOrderValue: null },
+    3
+  );
+
+  // ---- Cluster rows (phase 4b): vertical × band, then vertical-only ----
+  // Group contributing variants by their shop's cluster dims.
+  const clusterGroups = new Map(); // groupKey -> { scope, variants: [] }
+  for (const v of allVariants) {
+    const dims = shopClusterDims(shopsById.get(v.shopId));
+    if (!dims.vertical) continue;
+    const levels = [{ industry: dims.vertical, avgOrderValue: null }];
+    if (dims.aovBand) levels.unshift({ industry: dims.vertical, avgOrderValue: dims.aovBand });
+    for (const scope of levels) {
+      const groupKey = `${scope.industry}||${scope.avgOrderValue ?? ''}`;
+      if (!clusterGroups.has(groupKey)) clusterGroups.set(groupKey, { scope, variants: [] });
+      clusterGroups.get(groupKey).variants.push(v);
     }
   }
-  
-  console.log(`\n Saved ${savedCount} gene performance records`);
+
+  const { clusterKey } = await import('../utils/store-cluster.server.js');
+  const {
+    writeClusterInsight, BASELINE_CVR_PRIOR_TYPE, THRESHOLD_PRIOR_TYPE,
+    MIN_PRIOR_IMPRESSIONS, MIN_PRIOR_OUTCOMES, MIN_PRIOR_STORES
+  } = await import('../utils/cluster-priors.server.js');
+
+  let priorCount = 0;
+  for (const { scope, variants } of clusterGroups.values()) {
+    const storeSet = new Set(variants.map(v => v.shopId));
+    if (storeSet.size < MIN_PRIOR_STORES) continue;
+
+    savedCount += await saveGeneAggregates(aggregateGenes(variants), scope, MIN_PRIOR_STORES);
+
+    // Baseline CVR priors (phase 4c) — what the variant bandit blends in.
+    const key = clusterKey(scope.industry, scope.avgOrderValue);
+    const byBaseline = new Map();
+    for (const v of variants) {
+      if (!byBaseline.has(v.baseline)) {
+        byBaseline.set(v.baseline, { impressions: 0, conversions: 0, stores: new Set() });
+      }
+      const b = byBaseline.get(v.baseline);
+      b.impressions += v.impressions;
+      b.conversions += v.conversions;
+      b.stores.add(v.shopId);
+    }
+    for (const [baseline, b] of byBaseline) {
+      if (b.impressions < MIN_PRIOR_IMPRESSIONS || b.stores.size < MIN_PRIOR_STORES) continue;
+      await writeClusterInsight(
+        db, BASELINE_CVR_PRIOR_TYPE, `${key}::${baseline}`,
+        {
+          cvr: b.conversions / b.impressions,
+          impressions: b.impressions,
+          conversions: b.conversions,
+          storeCount: b.stores.size
+        },
+        b.impressions,
+        calculateConfidence(b.impressions, b.stores.size)
+      );
+      priorCount++;
+    }
+  }
+
+  // ---- Threshold priors (phase 4c): pooled show/skip arms per cluster ----
+  const allThresholds = await db.interventionThreshold.findMany({
+    where: { shopId: { in: shops.map(s => s.id) } }
+  });
+  const thresholdGroups = new Map(); // `${key}::${bucket}::${segment}` -> agg
+  for (const t of allThresholds) {
+    const dims = shopClusterDims(shopsById.get(t.shopId));
+    if (!dims.vertical) continue;
+    const keys = [clusterKey(dims.vertical, null)];
+    if (dims.aovBand) keys.unshift(clusterKey(dims.vertical, dims.aovBand));
+    for (const key of keys) {
+      const groupKey = `${key}::${t.scoreBucket}::${t.segment}`;
+      if (!thresholdGroups.has(groupKey)) {
+        thresholdGroups.set(groupKey, {
+          showImpressions: 0, showConversions: 0,
+          skipImpressions: 0, skipConversions: 0, stores: new Set()
+        });
+      }
+      const g = thresholdGroups.get(groupKey);
+      g.showImpressions += t.showImpressions;
+      g.showConversions += t.showConversions;
+      g.skipImpressions += t.skipImpressions;
+      g.skipConversions += t.skipConversions;
+      g.stores.add(t.shopId);
+    }
+  }
+  for (const [groupKey, g] of thresholdGroups) {
+    const total = g.showImpressions + g.skipImpressions;
+    if (total < MIN_PRIOR_OUTCOMES || g.stores.size < MIN_PRIOR_STORES) continue;
+    await writeClusterInsight(
+      db, THRESHOLD_PRIOR_TYPE, groupKey,
+      {
+        showImpressions: g.showImpressions,
+        showConversions: g.showConversions,
+        skipImpressions: g.skipImpressions,
+        skipConversions: g.skipConversions,
+        storeCount: g.stores.size
+      },
+      total,
+      calculateConfidence(total, g.stores.size)
+    );
+    priorCount++;
+  }
+
+  console.log(`\n Saved ${savedCount} gene performance records, ${priorCount} cluster priors`);
   console.log('='.repeat(80) + '\n');
-  
-  return { aggregated: savedCount };
+
+  return { aggregated: savedCount, priors: priorCount };
 }
 
 /**
