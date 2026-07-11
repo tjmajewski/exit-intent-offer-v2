@@ -529,15 +529,43 @@ export async function action({ request }) {
       baseline = 'pure_reminder';
       console.log(`[Variant Selection] Aggression = 0 → forcing pure_reminder baseline`);
     } else if (baseline.includes('with_discount')) {
-      // Roll against aggression to decide if this visitor gets a discount
-      const discountRoll = Math.random();
-      if (discountRoll > aggressionNormalized) {
-        // Downgrade to no-discount version of the same goal
-        const noDiscountBaseline = baseline.replace('with_discount', 'no_discount');
-        console.log(`[Variant Selection] Aggression ${effectiveAggression}/10 — roll ${discountRoll.toFixed(2)} > ${aggressionNormalized.toFixed(2)} → downgrading to ${noDiscountBaseline}`);
-        baseline = noDiscountBaseline;
+      // Phase 6a: evidence-gated discount decision. When this shop's
+      // propensity bucket has mature discount/no-discount arm stats (>= 50
+      // outcomes each), the choice is deterministic: discount only when
+      // P(discount arm wins on profit) clears the aggression-set confidence
+      // bar. Identical visitors get identical treatment; the dial now means
+      // "how much evidence before I spend margin", not an RNG seed.
+      let evidence = { evidenceBased: false };
+      if (!isTestMode) {
+        try {
+          const { getDiscountArmStats, decideDiscountBaseline } = await import('../utils/discount-arm.server.js');
+          const arms = await getDiscountArmStats(db, shopRecord.id, signals.propensityScore);
+          evidence = decideDiscountBaseline(arms, effectiveAggression);
+        } catch (e) {
+          console.error('[Variant Selection] Discount-arm evidence load failed (coin flip fallback):', e.message);
+        }
+      }
+
+      if (evidence.evidenceBased) {
+        if (!evidence.useDiscount) {
+          const noDiscountBaseline = baseline.replace('with_discount', 'no_discount');
+          console.log(`[Variant Selection] Evidence: P(discount wins)=${evidence.pWin.toFixed(2)} < bar ${evidence.bar.toFixed(2)} (aggression ${effectiveAggression}/10) → ${noDiscountBaseline}`);
+          baseline = noDiscountBaseline;
+        } else {
+          console.log(`[Variant Selection] Evidence: P(discount wins)=${evidence.pWin.toFixed(2)} ≥ bar ${evidence.bar.toFixed(2)} (aggression ${effectiveAggression}/10) → keeping discount baseline`);
+        }
       } else {
-        console.log(`[Variant Selection] Aggression ${effectiveAggression}/10 — roll ${discountRoll.toFixed(2)} ≤ ${aggressionNormalized.toFixed(2)} → keeping discount baseline`);
+        // Cold start: keep the legacy coin flip — it IS the exploration that
+        // populates both arms so the evidence path can take over.
+        const discountRoll = Math.random();
+        if (discountRoll > aggressionNormalized) {
+          // Downgrade to no-discount version of the same goal
+          const noDiscountBaseline = baseline.replace('with_discount', 'no_discount');
+          console.log(`[Variant Selection] Aggression ${effectiveAggression}/10 — roll ${discountRoll.toFixed(2)} > ${aggressionNormalized.toFixed(2)} → downgrading to ${noDiscountBaseline} (exploration, arms not mature)`);
+          baseline = noDiscountBaseline;
+        } else {
+          console.log(`[Variant Selection] Aggression ${effectiveAggression}/10 — roll ${discountRoll.toFixed(2)} ≤ ${aggressionNormalized.toFixed(2)} → keeping discount baseline (exploration, arms not mature)`);
+        }
       }
     }
 

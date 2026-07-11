@@ -55,6 +55,17 @@ export async function runThresholdLearningCycle() {
       } catch (error) {
         console.error(`   Threshold recalculation failed:`, error.message);
       }
+
+      // Phase 6a: rebuild the per-bucket discount-vs-no-discount arm stats
+      // that gate the evidence-based discount decision (same 50-outcome
+      // trigger — both learn from the same outcome stream).
+      try {
+        const { rebuildDiscountArmStats } = await import('../utils/discount-arm.server.js');
+        const armBuckets = await rebuildDiscountArmStats(db, shop.id);
+        console.log(`   Rebuilt discount-arm stats for ${armBuckets} buckets`);
+      } catch (error) {
+        console.error(`   Discount-arm rebuild failed:`, error.message);
+      }
     }
   }
 

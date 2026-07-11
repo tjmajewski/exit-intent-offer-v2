@@ -379,21 +379,39 @@ export async function loader({ request }) {
       }
     }
 
+    // Phase 6b: holdout-measured incrementality for the honest revenue card.
+    // Null until the shop exists in the DB or on any failure — the UI then
+    // shows the "measuring" state.
+    let incrementality = null;
+    try {
+      const shopRow = await db.shop.findUnique({
+        where: { shopifyDomain: session.shop },
+        select: { id: true }
+      });
+      if (shopRow) {
+        const { getIncrementality } = await import('../utils/incrementality.server.js');
+        incrementality = await getIncrementality(db, shopRow.id);
+      }
+    } catch (error) {
+      console.error("Error loading incrementality:", error);
+    }
+
     console.log('Loader returning variants:', liveVariants?.length || 0);
-    return { plan, modalLibrary, dateRange, liveVariants };
+    return { plan, modalLibrary, dateRange, liveVariants, incrementality };
   } catch (error) {
     console.error("Error loading analytics:", error);
-    return { 
+    return {
       plan: { tier: "starter" },
       modalLibrary: getDefaultModalLibrary(),
-      liveVariants: []
+      liveVariants: [],
+      incrementality: null
     };
   }
 }
 
 
 export default function Performance() {
-  const { plan, modalLibrary, dateRange: loaderDateRange, liveVariants } = useLoaderData();
+  const { plan, modalLibrary, dateRange: loaderDateRange, liveVariants, incrementality } = useLoaderData();
   const fetcher = useFetcher();
   const navigate = useNavigate();
   const canAccessPerformance = plan && (plan.tier === 'pro' || plan.tier === 'enterprise');
@@ -695,7 +713,7 @@ export default function Performance() {
         if (allModals.length === 0) return null;
 
         return (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 }}>
             {/* Best Performer */}
             <div style={{
               background: "white",
@@ -718,20 +736,55 @@ export default function Performance() {
               )}
             </div>
 
-            {/* Total Recovered */}
-            <div style={{
-              background: "white",
-              border: "1px solid #e5e7eb",
-              borderRadius: 12,
-              padding: 20
-            }}>
-              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>Total Recovered</div>
+            {/* Engaged revenue (gross, engagement-attributed) */}
+            <div
+              title="Total value of orders where the customer interacted with a Resparq offer. Includes customers who may have bought anyway — see Incremental revenue for the measured difference."
+              style={{
+                background: "white",
+                border: "1px solid #e5e7eb",
+                borderRadius: 12,
+                padding: 20
+              }}
+            >
+              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>Engaged revenue</div>
               <div style={{ fontSize: 20, fontWeight: 700, color: "#1f2937" }}>
                 ${totalRecovered.toLocaleString()}
               </div>
               <div style={{ fontSize: 14, color: "#6b7280" }}>
                 across {allModals.length} modal{allModals.length !== 1 ? 's' : ''}
               </div>
+            </div>
+
+            {/* Incremental revenue (holdout-measured) */}
+            <div
+              title="Measured against a 5% control group that never sees offers. This is the revenue Resparq actually caused — not just touched."
+              style={{
+                background: "white",
+                border: "1px solid #e5e7eb",
+                borderRadius: 12,
+                padding: 20
+              }}
+            >
+              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>Incremental revenue</div>
+              {incrementality?.measured ? (
+                <>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "#1f2937" }}>
+                    ${Math.round((incrementality.liftFactor || 0) * totalRecovered).toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: 14, color: incrementality.liftFactor > 0 ? "#10b981" : "#6b7280" }}>
+                    {incrementality.liftFactor > 0
+                      ? `+${incrementality.liftPts.toFixed(1)}pt lift vs control`
+                      : "no measurable lift yet"}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "#9ca3af" }}>Measuring</div>
+                  <div style={{ fontSize: 14, color: "#6b7280" }}>
+                    {incrementality?.holdout ?? 0} of {incrementality?.minHoldout ?? 30} control visitors observed
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Quick Insight */}
