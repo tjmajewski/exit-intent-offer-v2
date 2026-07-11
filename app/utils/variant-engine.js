@@ -8,6 +8,49 @@ import { getSocialProofFromCache, setSocialProofCache } from './social-proof-cac
 import { computeArchetypePriors, getArchetypeMultiplier } from './archetype-priors.js';
 import { computeTemplatePriors, getTemplateMultiplier } from './template-priors.js';
 import { blendWithPrior } from './cluster-priors.server.js';
+import { deviceKeyFromSegmentKey } from './segment-key.js';
+
+// ---------------------------------------------------------------------------
+// Per-cell variant stats (phase 5). Every impression/click/conversion bumps
+// TWO VariantSegmentStat rows: the exact composite segmentKey and its
+// device-coarsened form, so selection can fall back cell -> device -> pooled
+// with plain lookups. Fire-and-forget: a lost counter must never fail the
+// serving path that triggered it.
+// ---------------------------------------------------------------------------
+const MIN_CELL_IMPRESSIONS = 30; // below this a cell is too thin to trust alone
+const CELL_PRIOR_WEIGHT = 20;    // pseudo-impressions shrinking a cell to the pooled posterior
+
+async function bumpSegmentStats(shopId, variantId, segmentKey, increments) {
+  if (!segmentKey || typeof segmentKey !== 'string' || !segmentKey.includes('|')) return;
+  const keys = [segmentKey];
+  const deviceKey = deviceKeyFromSegmentKey(segmentKey);
+  if (deviceKey && deviceKey !== segmentKey) keys.push(deviceKey);
+  const db = await getDb();
+  for (const key of keys) {
+    try {
+      await db.variantSegmentStat.upsert({
+        where: { variantId_segmentKey: { variantId, segmentKey: key } },
+        create: {
+          shopId,
+          variantId,
+          segmentKey: key,
+          impressions: increments.impressions || 0,
+          clicks: increments.clicks || 0,
+          conversions: increments.conversions || 0,
+          revenue: increments.revenue || 0
+        },
+        update: {
+          ...(increments.impressions ? { impressions: { increment: increments.impressions } } : {}),
+          ...(increments.clicks ? { clicks: { increment: increments.clicks } } : {}),
+          ...(increments.conversions ? { conversions: { increment: increments.conversions } } : {}),
+          ...(increments.revenue ? { revenue: { increment: increments.revenue } } : {})
+        }
+      });
+    } catch (e) {
+      console.error(`[Segment Stats] Bump failed for ${variantId}/${key}:`, e.message);
+    }
+  }
+}
 import { getEnabledLayoutIds } from './templates.js';
 
 // ---------------------------------------------------------------------------
@@ -520,17 +563,79 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
     }
   }
 
+  // Phase 5: per-cell stats for this visitor's segmentKey (exact + device
+  // coarsened). Loaded once for all live variants; cells below
+  // MIN_CELL_IMPRESSIONS are ignored by the resolver.
+  let cellStatsByVariant = null;
+  if (segmentKey) {
+    try {
+      const db = await getDb();
+      const deviceKey = deviceKeyFromSegmentKey(segmentKey);
+      const cellKeys = deviceKey && deviceKey !== segmentKey ? [segmentKey, deviceKey] : [segmentKey];
+      const rows = await db.variantSegmentStat.findMany({
+        where: {
+          variantId: { in: liveVariants.map(v => v.id) },
+          segmentKey: { in: cellKeys }
+        }
+      });
+      if (rows.length > 0) {
+        cellStatsByVariant = {};
+        for (const r of rows) {
+          const slot = cellStatsByVariant[r.variantId] || (cellStatsByVariant[r.variantId] = {});
+          if (r.segmentKey === segmentKey) slot.exact = r;
+          else slot.coarse = r;
+        }
+      }
+    } catch (err) {
+      console.error(' [Segment Stats] Cell load failed (pooled stats used):', err.message);
+    }
+  }
+
+  // Cell resolution: exact cell -> device cell -> null (pooled). A cell only
+  // counts once it has MIN_CELL_IMPRESSIONS of its own.
+  const resolveCell = (variantId) => {
+    const slot = cellStatsByVariant?.[variantId];
+    if (!slot) return null;
+    if (slot.exact && slot.exact.impressions >= MIN_CELL_IMPRESSIONS) return slot.exact;
+    if (slot.coarse && slot.coarse.impressions >= MIN_CELL_IMPRESSIONS) return slot.coarse;
+    return null;
+  };
+
   // Check if there's a champion
   const champion = liveVariants.find(v => v.status === 'champion');
 
+  // Phase 5: cell-aware champion. The champion earned its 70% on pooled
+  // stats; if this cell's own data shows a live challenger with a higher
+  // conversion posterior, suspend the shortcut and make the champion defend
+  // its traffic inside the sampling tournament ("mobile wants a different
+  // message than desktop" can finally win).
+  let championSuspended = false;
+  if (champion && cellStatsByVariant) {
+    const champCell = resolveCell(champion.id);
+    if (champCell) {
+      const champMean = (champCell.conversions + 1) / (champCell.impressions + 2);
+      championSuspended = liveVariants.some(v => {
+        if (v.id === champion.id) return false;
+        const cell = resolveCell(v.id);
+        return cell && (cell.conversions + 1) / (cell.impressions + 2) > champMean;
+      });
+      if (championSuspended) {
+        console.log(` [Segment Stats] Champion ${champion.variantId} losing this cell — 70% override suspended`);
+      }
+    }
+  }
+
   // Champion gets 70% of traffic
-  if (champion && Math.random() < 0.7) {
+  if (champion && !championSuspended && Math.random() < 0.7) {
     console.log(` Champion ${champion.variantId} selected (70% traffic)`);
     return champion;
   }
 
-  // Remaining 30% (or 100% if no champion): Thompson Sampling
-  const contenders = liveVariants.filter(v => v.status !== 'champion');
+  // Remaining 30% (or 100% if no champion): Thompson Sampling. A suspended
+  // champion competes like any other variant.
+  const contenders = (champion && championSuspended)
+    ? liveVariants
+    : liveVariants.filter(v => v.status !== 'champion');
 
   if (contenders.length === 0) {
     // Edge case: champion is the only variant
@@ -603,12 +708,28 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
     // baseline CVR contributes clusterPrior.weight pseudo-impressions —
     // cold variants sample around the cluster's reality instead of uniform
     // [0,1], and the prior washes out as real impressions accumulate.
-    const { alpha, beta: beta_param } = blendWithPrior(
+    let { alpha, beta: beta_param } = blendWithPrior(
       conversions,
       impressions - conversions,
       clusterPrior?.cvr,
       clusterPrior?.weight
     );
+
+    // Phase 5: cell stats take precedence over the pooled/trigger numbers.
+    // The cell's counts are shrunk toward the pooled posterior mean with
+    // CELL_PRIOR_WEIGHT pseudo-impressions — a 35-impression mobile-paid
+    // cell nudges the sample, a 500-impression one dominates it. Chain:
+    // cell -> store posterior -> cluster prior (phase 4) -> flat.
+    const cell = resolveCell(variant.id);
+    if (cell) {
+      const pooledMean = alpha / (alpha + beta_param);
+      ({ alpha, beta: beta_param } = blendWithPrior(
+        cell.conversions,
+        cell.impressions - cell.conversions,
+        pooledMean,
+        CELL_PRIOR_WEIGHT
+      ));
+    }
 
     // Sample from beta(alpha, beta)
     let sample = betaSample(alpha, beta_param);
@@ -636,7 +757,8 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
 
   const winner = samples[0].variant;
   const winnerArchetype = getArchetype(winner.baseline)?.archetypeName || 'none';
-  console.log(` Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)}${triggerStats ? `, trigger: ${triggerReason}` : ''}${archetypePriors ? `, priors=${priorsSource}, archetype=${winnerArchetype}` : ''}${templatePriors ? `, templatePriors=${templatePriorsSource}, template=${winner.templateId}` : ''}${clusterPrior ? `, clusterPrior=${clusterPrior.source} cvr=${clusterPrior.cvr.toFixed(3)}` : ''})`);
+  const cellsResolved = contenders.filter(v => resolveCell(v.id)).length;
+  console.log(` Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)}${triggerStats ? `, trigger: ${triggerReason}` : ''}${archetypePriors ? `, priors=${priorsSource}, archetype=${winnerArchetype}` : ''}${templatePriors ? `, templatePriors=${templatePriorsSource}, template=${winner.templateId}` : ''}${clusterPrior ? `, clusterPrior=${clusterPrior.source} cvr=${clusterPrior.cvr.toFixed(3)}` : ''}${cellsResolved > 0 ? `, cellStats=${cellsResolved}/${contenders.length}` : ''})`);
 
   return winner;
 }
@@ -686,6 +808,10 @@ export async function recordImpression(variantId, shopId, context = {}) {
 
   console.log(` Recorded impression for variant ${variantId}${activePromo ? ' (during promo)' : ''}`);
 
+  // Phase 5: per-cell counters (fire-and-forget)
+  bumpSegmentStats(shopId, variantId, context.segmentKey, { impressions: 1 })
+    .catch(() => {});
+
   return impression;
 }
 
@@ -722,6 +848,10 @@ export async function recordClick(impressionId) {
       }
     });
     console.log(` Recorded click for impression ${impressionId}`);
+
+    // Phase 5: per-cell counters (idempotent via the first-click gate above)
+    bumpSegmentStats(impression.shopId, impression.variantId, impression.segmentKey, { clicks: 1 })
+      .catch(() => {});
   } else {
     console.log(` Duplicate click ignored for impression ${impressionId}`);
   }
@@ -797,6 +927,10 @@ export async function recordConversion(impressionId, revenue, discountAmount = 0
     `$${revenue} revenue, $${discountAmount} discount, ` +
     `$${profitPerImpression.toFixed(2)}/impression profit`
   );
+
+  // Phase 5: per-cell counters (fire-and-forget)
+  bumpSegmentStats(impression.shopId, impression.variantId, impression.segmentKey, { conversions: 1, revenue })
+    .catch(() => {});
 
   return impression;
 }

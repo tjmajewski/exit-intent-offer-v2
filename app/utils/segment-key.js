@@ -72,6 +72,21 @@ export function composeSegmentKey(signals = {}) {
 }
 
 /**
+ * Device-coarsened form of a composite key: `d:mobile|t:paid|...` -> `d:mobile`.
+ * The coarse cell pools all traffic for one device, giving per-segment stats
+ * a middle fallback level between the exact cell and fully-pooled variant
+ * stats. Returns null for non-composite input or an unknown device (pooling
+ * unknowns would blend unrelated traffic).
+ */
+export function deviceKeyFromSegmentKey(key) {
+  if (typeof key !== 'string' || !key.startsWith('d:')) return null;
+  const token = key.split('|')[0];
+  const device = token.slice(2);
+  if (!DEVICES.has(device)) return null;
+  return token;
+}
+
+/**
  * Parse a composite segment key back into its dimensions. Returns null if
  * the string is not a valid composite key (e.g. legacy "mobile_paid" value).
  */

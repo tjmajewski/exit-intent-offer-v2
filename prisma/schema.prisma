@@ -579,6 +579,27 @@ model InterventionThreshold {
   @@index([shopId, segment])
 }
 
+// Per-cell variant performance counters (build plan phase 5). Two rows per
+// event: the full composite segmentKey (see segment-key.js) and its
+// device-coarsened form (`d:mobile`), so selection can fall back
+// cell -> device -> pooled without runtime groupBy. Maintained inline by
+// recordImpression/recordClick/recordConversion; backfillable from
+// VariantImpression (scripts/dev/backfill-variant-segment-stats.mjs).
+model VariantSegmentStat {
+  id          String @id @default(uuid())
+  shopId      String
+  variantId   String
+  segmentKey  String
+  impressions Int    @default(0)
+  clicks      Int    @default(0)
+  conversions Int    @default(0)
+  revenue     Float  @default(0)
+
+  @@unique([variantId, segmentKey])
+  @@index([segmentKey])
+  @@index([shopId])
+}
+
 // Server-side journey log: one row per touchpoint interaction per visitor.
 // The client's localStorage frequency record is a summary that dies with
 // cleared storage; this table is the queryable, joinable journal that
