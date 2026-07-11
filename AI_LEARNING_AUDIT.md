@@ -12,9 +12,10 @@
 > stats with cell-aware champions (closes R1′); the aggression coin flip is
 > now evidence-gated (closes R8); and the merchant dashboard shows
 > holdout-measured incremental revenue alongside relabeled "engaged revenue"
-> (closes the V12 follow-through). Remaining open: phase 7 (escalation
-> ladder, opening-surface arm, generative copy) and the isolation-vs-network
-> positioning decision.
+> (closes the V12 follow-through). Phase 7 shipped July 11 (`c956a6f`): opening-surface
+> arm (Enterprise flag), pill-to-modal escalation, and kill-switched
+> generative copy. Remaining open: the isolation-vs-network positioning
+> decision, and turning on the phase-7 flags once traffic exists.
 
 **Mission statement this doc is graded against:** *Give the right message to the right customer at the right time with the minimum promotion required to convert someone with items in their cart.*
 
