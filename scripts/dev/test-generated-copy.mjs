@@ -3,7 +3,7 @@
 //   node scripts/dev/test-generated-copy.mjs
 
 import { validateCandidate } from '../../app/utils/generated-copy.server.js';
-import { chooseOpeningSurface, scoreVisitorTouches, MIN_ARM_OUTCOMES } from '../../app/utils/surface-arm.server.js';
+import { chooseOpeningSurface, scoreVisitorTouches } from '../../app/utils/surface-arm.server.js';
 
 let failures = 0;
 const assert = (cond, msg) => {
@@ -46,25 +46,28 @@ assert(pills > 100 && pills < 320,
   `cold start opens pill ~10% of the time (${(pills / 20).toFixed(1)}%)`);
 
 // --- surface arm: mature stats route to the winner ---
+// Thresholds leave room for Thompson uncertainty + the 10% exploration
+// floor: a "clear" winner should take ~85-90% of tournaments, so assert
+// >75% over 2000 draws (sd of the estimate ≈ 0.8pt — not flake territory).
 const pillWins = {
-  modal: { shown: 200, converted: 6 },   // 3%
-  pill: { shown: 200, converted: 20 }    // 10%
+  modal: { shown: 400, converted: 12 },  // 3%
+  pill: { shown: 400, converted: 40 }    // 10%
 };
 let pillPicks = 0;
-for (let i = 0; i < 500; i++) {
+for (let i = 0; i < 2000; i++) {
   if (chooseOpeningSurface(pillWins) === 'pill') pillPicks++;
 }
-assert(pillPicks > 400, `clear pill winner gets most traffic (${pillPicks}/500)`);
+assert(pillPicks > 1500, `clear pill winner gets most traffic (${pillPicks}/2000)`);
 
 const modalWins = {
-  modal: { shown: 200, converted: 20 },
-  pill: { shown: MIN_ARM_OUTCOMES, converted: 0 }
+  modal: { shown: 400, converted: 40 },  // 10%
+  pill: { shown: 400, converted: 12 }    // 3%
 };
 let modalPicks = 0;
-for (let i = 0; i < 500; i++) {
+for (let i = 0; i < 2000; i++) {
   if (chooseOpeningSurface(modalWins) === 'modal') modalPicks++;
 }
-assert(modalPicks > 400, `clear modal winner keeps most traffic (${modalPicks}/500)`);
+assert(modalPicks > 1500, `clear modal winner keeps most traffic (${modalPicks}/2000)`);
 
 // --- journey sessionization: opener pulls + 24h conversion window ---
 const t0 = Date.now();

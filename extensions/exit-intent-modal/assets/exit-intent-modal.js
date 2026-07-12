@@ -154,6 +154,26 @@
   const OFFER_PILL_ID = 'exit-intent-offer-pill';
   const PILL_OFFER_KEY = 'exitIntentPendingOffer';
   const PILL_DISMISSED_KEY = 'exitIntentPillDismissed';
+  // Opening-surface arm (phase 7a/7b): marker for a pill that opened the
+  // session ({ at, escalated, aiDecisionId }) plus the full decision it
+  // carried — lets pill→modal escalation survive page navigation.
+  const PILL_OPENER_KEY = 'exitIntentPillOpener';
+  const PILL_OPENER_DECISION_KEY = 'exitIntentPillOpenerDecision';
+
+  // True while a pill opener is pending escalation: marker exists, not yet
+  // escalated, pill not dismissed, offer still live.
+  function pillOpenerPending() {
+    try {
+      const marker = JSON.parse(sessionStorage.getItem(PILL_OPENER_KEY));
+      if (!marker || marker.escalated) return false;
+      if (sessionStorage.getItem(PILL_DISMISSED_KEY) === 'true') return false;
+      if (!sessionStorage.getItem(PILL_OFFER_KEY)) return false; // redeemed/expired
+      if (!sessionStorage.getItem(PILL_OPENER_DECISION_KEY)) return false;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   function buildPillHeadline(offer) {
     if (offer.savingsText) return `Still want your ${offer.savingsText}?`;
@@ -253,6 +273,15 @@
     closeBtn.onclick = (e) => {
       e.stopPropagation();
       try { sessionStorage.setItem(PILL_DISMISSED_KEY, 'true'); } catch (_) {}
+      // When this pill OPENED the session (surface arm), dismissing it is the
+      // session's "no" — bump the frequency backoff like a modal dismissal.
+      // Recovery pills (mounted after a modal dismissal) skip this: the modal
+      // close already counted the ignore.
+      try {
+        if (sessionStorage.getItem(PILL_OPENER_KEY) && !isResparqTestMode()) {
+          recordModalIgnored();
+        }
+      } catch (_) {}
       sendJourneyEvent({
         surface: 'pill', response: 'dismissed',
         impressionId: offer.impressionId || null,
@@ -534,6 +563,17 @@
           !!new URLSearchParams(window.location.search).get('resparqPreview');
       } catch (_) {}
 
+      // ESCALATION WATCH (phase 7b): a pill opener from earlier in this
+      // session is still pending. Both gates below would (correctly) block a
+      // NEW show — but escalation isn't a new show, it's the reserved second
+      // half of the one already stamped. Re-arm with the persisted decision
+      // instead of exiting.
+      if (pillOpenerPending()) {
+        console.log('[Surface Arm] Pill opener pending — arming escalation watch');
+        this.init({ pillEscalationWatch: true });
+        return;
+      }
+
       // Gate 1: once per session (with fallback for blocked storage)
       try {
         if (!frequencyExempt && sessionStorage.getItem(this.sessionKey)) {
@@ -554,7 +594,7 @@
       this.init();
     }
     
-    async init() {
+    async init(opts = {}) {
       // Dev/QA preview harness: ?resparqPreview=<templateId> renders that
       // template with representative AI-style copy and shows it immediately,
       // bypassing the bandit, the (dev-poisoned) intervention threshold, and
@@ -563,6 +603,41 @@
       const previewId = this.getPreviewTemplateId();
       if (previewId) {
         this.renderPreviewTemplate(previewId);
+        return;
+      }
+
+      // ESCALATION WATCH (phase 7b): re-arm a pending pill opener on a new
+      // page. No fresh AI decision (that would mint a second impression and
+      // possibly a different offer than the pill is holding) — rehydrate the
+      // persisted decision and wire exit/idle triggers so showModal()'s
+      // escalation branch can take over. The pill itself re-mounts via
+      // bootPersistedPill().
+      if (opts.pillEscalationWatch) {
+        try {
+          const marker = JSON.parse(sessionStorage.getItem(PILL_OPENER_KEY)) || {};
+          const decision = JSON.parse(sessionStorage.getItem(PILL_OPENER_DECISION_KEY));
+          if (!decision) return;
+          this.createModal();
+          this.pillOpenerShown = true;
+          this.pillOpenerAt = marker.at || Date.now();
+          this.pillOpenerStamped = true; // opener already consumed the show budget
+          this.currentAiDecisionId = marker.aiDecisionId || null;
+          this.preloadedDecision = decision;
+          await this.updateModalWithAI(decision);
+          // Triggers: desktop exit-intent + the decision's idle gene (mobile
+          // relies on idle alone, same fallback shape as setupAITriggers)
+          if (!isMobileDevice()) {
+            document.addEventListener('mouseout', (e) => {
+              if (e.clientY < 0 && !this.modalShown) this.showModal();
+            });
+          }
+          this.setupIdleTrigger(isMobileDevice()
+            ? Math.min(decision.idleSeconds || 30, 15)
+            : (decision.idleSeconds || 30));
+          this.setupEventListeners();
+        } catch (err) {
+          console.error('[Surface Arm] Escalation watch failed to arm:', err);
+        }
         return;
       }
 
@@ -1976,6 +2051,9 @@
       // the modal. The pill counts as this session's show (frequency-stamped
       // + session-gated). Escalation (7b): if the pill is ignored and another
       // exit signal fires 60s+ later, fall through and show the modal — once.
+      // The opener marker + full decision persist in sessionStorage so
+      // escalation survives page navigation (the constructor re-arms in
+      // escalation-watch mode on later pages).
       const openerDecision = this.enterpriseOffer || this.preloadedDecision;
       if (openerDecision?.openingSurface === 'pill' && this.settings.discountCode) {
         if (!this.pillOpenerShown) {
@@ -1990,6 +2068,12 @@
           try {
             sessionStorage.setItem(PILL_OFFER_KEY, JSON.stringify(offer));
             sessionStorage.removeItem(PILL_DISMISSED_KEY);
+            sessionStorage.setItem(PILL_OPENER_KEY, JSON.stringify({
+              at: this.pillOpenerAt,
+              escalated: false,
+              aiDecisionId: this.currentAiDecisionId || null
+            }));
+            sessionStorage.setItem(PILL_OPENER_DECISION_KEY, JSON.stringify(openerDecision));
           } catch (_) {}
           mountOfferPill(offer);
           console.log('[Surface Arm] Opened with pill — modal held in reserve');
@@ -1999,12 +2083,25 @@
         try {
           if (sessionStorage.getItem(PILL_DISMISSED_KEY) === 'true') return;
         } catch (_) {}
-        // Min gap before escalating; then escalate exactly once.
+        // Min gap before escalating; then escalate exactly once per session.
         if (Date.now() - this.pillOpenerAt < 60 * 1000) return;
         if (this.pillEscalated) return;
         this.pillEscalated = true;
+        try {
+          const marker = JSON.parse(sessionStorage.getItem(PILL_OPENER_KEY)) || {};
+          marker.escalated = true;
+          sessionStorage.setItem(PILL_OPENER_KEY, JSON.stringify(marker));
+        } catch (_) {}
         const openerPill = document.getElementById(OFFER_PILL_ID);
         if (openerPill) openerPill.remove();
+        // Journey log: the modal is now the active surface — without this,
+        // the surface arm would credit post-escalation conversions to the
+        // pill and learn the wrong lesson.
+        sendJourneyEvent({
+          surface: 'modal', response: 'escalated',
+          impressionId: this.currentImpressionId || null,
+          aiDecisionId: this.currentAiDecisionId || null
+        });
         console.log('[Surface Arm] Pill ignored — escalating to modal');
       }
 

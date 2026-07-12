@@ -101,19 +101,56 @@ export async function getSurfaceArmStats(db, shopId, deviceType) {
  * Given one visitor's touches (ordered by timestamp), return arm pulls:
  * every server-written opening (surface modal|pill, response shown) paired
  * with whether a converted touch followed within 24h.
+ *
+ * Escalation correction: when a pill opener escalates to the modal
+ * ('modal:escalated' touch), the pill's conversion window is CAPPED at the
+ * escalation, and the escalation itself becomes a modal pull. Without this,
+ * post-escalation conversions credit the pill and the arm learns that
+ * annoying-then-converting equals a quiet win.
  */
 export function scoreVisitorTouches(touches) {
   const pulls = [];
   const conversions = touches.filter(t => t.response === 'converted');
+  const escalations = touches.filter(t => t.response === 'escalated' && t.surface === 'modal');
+
+  const convertedIn = (startMs, endMs) => conversions.some(c => {
+    const cts = new Date(c.timestamp).getTime();
+    return cts >= startMs && cts <= endMs;
+  });
+
   for (const t of touches) {
+    const ts = new Date(t.timestamp).getTime();
+    const device = deviceKeyFromSegmentKey(t.segmentKey || '')?.slice(2) || 'all';
+
+    // Escalated modal = a modal pull (the modal is now doing the converting).
+    // Client-reported escalations carry no segmentKey — inherit the device
+    // from the pill opener that preceded them.
+    if (t.response === 'escalated' && t.surface === 'modal') {
+      const openerPill = [...touches].reverse().find(p => {
+        return p.response === 'shown' && p.surface === 'pill' &&
+          new Date(p.timestamp).getTime() <= ts;
+      });
+      const escDevice = openerPill
+        ? (deviceKeyFromSegmentKey(openerPill.segmentKey || '')?.slice(2) || 'all')
+        : device;
+      pulls.push({ surface: 'modal', device: escDevice, converted: convertedIn(ts, ts + CONVERSION_WINDOW_MS) });
+      continue;
+    }
+
     if (t.response !== 'shown') continue;
     if (t.surface !== 'modal' && t.surface !== 'pill') continue;
-    const ts = new Date(t.timestamp).getTime();
-    const converted = conversions.some(c => {
-      const cts = new Date(c.timestamp).getTime();
-      return cts >= ts && cts - ts <= CONVERSION_WINDOW_MS;
-    });
-    pulls.push({ surface: t.surface, device: deviceKeyFromSegmentKey(t.segmentKey || '')?.slice(2) || 'all', converted });
+
+    // Pill pulls stop earning credit at the moment they escalated
+    let windowEnd = ts + CONVERSION_WINDOW_MS;
+    if (t.surface === 'pill') {
+      const esc = escalations.find(e => {
+        const ets = new Date(e.timestamp).getTime();
+        return ets >= ts && ets <= windowEnd;
+      });
+      if (esc) windowEnd = new Date(esc.timestamp).getTime();
+    }
+
+    pulls.push({ surface: t.surface, device, converted: convertedIn(ts, windowEnd) });
   }
   return pulls;
 }
@@ -124,7 +161,7 @@ export async function rebuildSurfaceArmStats(db, shopId) {
     where: {
       shopId,
       timestamp: { gte: since },
-      response: { in: ['shown', 'converted'] }
+      response: { in: ['shown', 'converted', 'escalated'] }
     },
     orderBy: { timestamp: 'asc' },
     select: { visitorId: true, surface: true, response: true, segmentKey: true, timestamp: true }

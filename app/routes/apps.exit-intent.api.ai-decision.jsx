@@ -763,13 +763,35 @@ export async function action({ request }) {
     };
     
     console.log('[Variant Engine] Decision:', decision);
-    
+
+    // Phase 7a: opening-surface arm (Enterprise, flag-gated) — chosen BEFORE
+    // the impression is recorded, because pill openers must not create a
+    // VariantImpression: the pill shows only "Still want your 15% off?", so
+    // logging a copy exposure would pollute headline/CTA evolution stats with
+    // sessions that never saw the copy. Pill-opener sessions train the
+    // surface arm (journey log) instead; conversions still attribute via the
+    // stamped aiDecisionId. If the pill later escalates to the modal, the
+    // client reports a 'modal:escalated' journey touch.
+    let openingSurface = 'modal';
+    if (shopRecord.plan === 'enterprise' && shopRecord.enableSurfaceArm && !isTestMode &&
+        decision.amount > 0 && decision.type !== 'no-discount') {
+      try {
+        const { getSurfaceArmStats, chooseOpeningSurface } = await import('../utils/surface-arm.server.js');
+        const surfaceStats = await getSurfaceArmStats(db, shopRecord.id, signals.deviceType);
+        openingSurface = chooseOpeningSurface(surfaceStats);
+        console.log(`[Surface Arm] Opening surface: ${openingSurface}${surfaceStats ? '' : ' (cold start)'}`);
+      } catch (e) {
+        console.error('[Surface Arm] Selection failed (modal default):', e.message);
+      }
+    }
+
     // Step 5: Record impression (for evolution tracking + meta-learning).
     // Phase 2A: also persist scenario signals (pageType, promoInCart) and the
     // resolved archetype so cross-store meta-learning can aggregate on these
     // dimensions without joining back through Variant -> baseline -> gene-pools.
     // Dev/preview: skip the VariantImpression write (no learning contribution).
-    const impressionRecord = devWriteSkip ? null : await recordImpression(selectedVariant.id, shopRecord.id, {
+    // Pill openers: skip too (see surface-arm block above).
+    const impressionRecord = (devWriteSkip || openingSurface === 'pill') ? null : await recordImpression(selectedVariant.id, shopRecord.id, {
       segment: segment,
       deviceType: signals.deviceType || 'unknown',
       trafficSource: signals.trafficSource || 'unknown',
@@ -969,22 +991,15 @@ export async function action({ request }) {
     
     console.log(` AI offer created: ${discountResult.code} (${decision.type}, $${offerAmount})`);
 
-    // Phase 7a: opening-surface arm (Enterprise, flag-gated). Only discount
-    // offers can open as a pill — the pill's whole interface is "redeem this
-    // code". The arm is chosen per device from journey-scored stats; an
-    // ignored pill escalates to the modal client-side (min 60s gap, once).
-    let openingSurface = 'modal';
-    if (shopRecord.plan === 'enterprise' && shopRecord.enableSurfaceArm && !isTestMode && decision.amount > 0) {
-      try {
-        const { getSurfaceArmStats, chooseOpeningSurface } = await import('../utils/surface-arm.server.js');
-        const surfaceStats = await getSurfaceArmStats(db, shopRecord.id, signals.deviceType);
-        openingSurface = chooseOpeningSurface(surfaceStats);
-        console.log(`[Surface Arm] Opening surface: ${openingSurface}${surfaceStats ? '' : ' (cold start)'}`);
-      } catch (e) {
-        console.error('[Surface Arm] Selection failed (modal default):', e.message);
-      }
+    // Generic-mode reconciliation can strip the discount after the surface
+    // was chosen — a pill can't present a no-discount offer, so fall back to
+    // the modal (the skipped impression stays skipped: rare, and conversions
+    // still attribute via aiDecisionId).
+    if (openingSurface === 'pill' && (decision.amount === 0 || decision.type === 'no-discount')) {
+      console.log('[Surface Arm] Discount stripped by generic-code reconciliation — reverting opener to modal');
+      openingSurface = 'modal';
     }
-    
+
     // Variant copy is already in decision object from variant genes
     // No need for separate copy variant selection
     

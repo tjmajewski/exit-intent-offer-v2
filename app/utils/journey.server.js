@@ -17,7 +17,10 @@ export const TOUCH_SURFACES = new Set([
 ]);
 
 export const TOUCH_RESPONSES = new Set([
-  'shown', 'skipped', 'holdout', 'dismissed', 'cta_click', 'redeem', 'apply', 'converted'
+  'shown', 'skipped', 'holdout', 'dismissed', 'cta_click', 'redeem', 'apply', 'converted',
+  // Surface arm (7b): a pill opener escalated to the modal. Client-reportable
+  // — it can't forge value (it only REDUCES what the pill arm gets credited).
+  'escalated'
 ]);
 
 // (surface, response) pairs a storefront browser may report directly via the
@@ -25,7 +28,7 @@ export const TOUCH_RESPONSES = new Set([
 // converted) is written server-side from authenticated paths — a client must
 // not be able to forge decision or conversion rows.
 export const CLIENT_ALLOWED_TOUCHES = new Set([
-  'modal:dismissed',
+  'modal:dismissed', 'modal:escalated',
   'pill:shown', 'pill:redeem', 'pill:dismissed',
   'cart_banner:shown', 'cart_banner:apply'
 ]);

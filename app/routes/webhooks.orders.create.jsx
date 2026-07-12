@@ -440,7 +440,24 @@ export const action = async ({ request }) => {
     console.log(" Analytics updated with conversion and revenue");
 
     // CONVERSIONS TABLE: Store order-level data for reporting
-    await storeConversion(shop, payload, exitDiscountUsed, admin);
+    // Resolve the winning variant from the stamped impression so the
+    // conversions table links order -> variant (was always null in AI mode).
+    let attributedVariantId = null;
+    if (impressionAttr?.value) {
+      try {
+        const attributedImpression = await db.variantImpression.findUnique({
+          where: { id: impressionAttr.value },
+          select: { variantId: true, shopId: true }
+        });
+        if (attributedImpression && shopRecord && attributedImpression.shopId === shopRecord.id) {
+          attributedVariantId = attributedImpression.variantId;
+        }
+      } catch (err) {
+        console.error('[Webhook] Variant resolution for conversion failed:', err.message);
+      }
+    }
+
+    await storeConversion(shop, payload, exitDiscountUsed, admin, attributedVariantId);
     console.log(" Conversion stored in conversions table");
 
     return new Response(null, { status: 200 });
@@ -632,7 +649,7 @@ async function classifyPromotion(promoId) {
   console.log(` Promotion classified: ${promo.code} → ${classification} (${aiStrategy})`);
 }
 
-async function storeConversion(shop, orderPayload, discountUsed, admin) {
+async function storeConversion(shop, orderPayload, discountUsed, admin, attributedVariantId = null) {
   try {
     // Find shop record
     const shopRecord = await db.shop.findUnique({
@@ -683,7 +700,7 @@ async function storeConversion(shop, orderPayload, discountUsed, admin) {
         orderedAt: new Date(orderPayload.created_at),
         modalId: modalLibrary.currentModalId || 'unknown',
         modalName: currentModal?.modalName || 'Unknown Modal',
-        variantId: null, // Only tracked in AI mode via variant impressions
+        variantId: attributedVariantId, // Resolved from the stamped impression (AI mode)
         modalHadDiscount: modalHadDiscount,
         discountCode: discountUsed?.code || null,
         discountRedeemed: !!discountUsed,
