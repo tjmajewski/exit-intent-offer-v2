@@ -69,6 +69,7 @@ export async function loader({ request }) {
       modalBody: shopRecord.modalBody || "Complete your purchase now and get an exclusive discount!",
       ctaButton: shopRecord.ctaButton || "Complete My Order",
       redirectDestination: shopRecord.redirectDestination || "checkout",
+      showProductImages: shopRecord.showProductImages || false,
       discountCode: shopRecord.discountCode,
       discountEnabled: shopRecord.discountEnabled || false,
       discountCodeMode: discountCodeMode || "unique",

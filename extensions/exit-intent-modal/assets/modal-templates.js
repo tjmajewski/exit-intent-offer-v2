@@ -1271,14 +1271,28 @@
     const out = entry.render(props || {});
     out.templateId = entry.id;
 
-    // showProductImages gene: inject the thumbnail row above the primary CTA.
-    // Single injection point — templates stay unaware of the gene.
-    if (props && props.productImages && out.primaryCta && out.primaryCta.parentNode &&
-        !NO_IMAGE_ROW_TEMPLATES.includes(entry.id)) {
-      const row = makeProductImageRow(props.productImages, tokensFor(props.themeOverrides));
-      if (row) out.primaryCta.parentNode.insertBefore(row, out.primaryCta);
+    // showProductImages: inject the thumbnail row above the primary CTA.
+    // Single injection point — templates stay unaware of the feature.
+    if (props && props.productImages) {
+      injectProductImages(out, props.productImages, props.themeOverrides);
     }
     return out;
+  }
+
+  /**
+   * Insert the cart-thumbnail row above a rendered modal's primary CTA.
+   * Exposed for callers that fetch cart data AFTER render (manual mode renders
+   * synchronously, then injects when /cart.js resolves). No-op on layouts in
+   * the skip list, missing handles, or an already-injected modal.
+   */
+  function injectProductImages(handles, images, themeOverrides) {
+    if (!handles || !handles.primaryCta || !handles.primaryCta.parentNode) return false;
+    if (NO_IMAGE_ROW_TEMPLATES.includes(handles.templateId)) return false;
+    if (handles.primaryCta.parentNode.querySelector('.resparq-product-images')) return false;
+    const row = makeProductImageRow(images, tokensFor(themeOverrides));
+    if (!row) return false;
+    handles.primaryCta.parentNode.insertBefore(row, handles.primaryCta);
+    return true;
   }
 
   function list() {
@@ -1293,6 +1307,7 @@
   window.ResparqTemplates = {
     render,
     list,
+    injectProductImages,
     getThemeTokens,
     setThemeTokens,
     DEFAULT_TEMPLATE_ID

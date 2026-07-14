@@ -279,6 +279,20 @@ function buildPreviewSrcDoc({ layoutId, brand, showPoweredBy }) {
         // Resparq brand palette — the on-brand fallback when the shop hasn't
         // configured its own brand colors. Purple matches the app UI + logo.
         var RQ = { primary: '#8B5CF6', primaryText: '#ffffff', background: '#ffffff', foreground: '#1a1a1a' };
+        // Sample cart thumbnails: the AI's showProductImages gene (and the
+        // manual-mode toggle) can add this row to any non-skipped layout, so
+        // the QA preview shows the fullest render the shopper could see.
+        // Data URIs pass through makeProductImageRow untouched (no CDN param).
+        function ph(n) {
+          return 'data:image/svg+xml;utf8,' + encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128">' +
+            '<rect width="128" height="128" fill="#e3e7ec"/>' +
+            '<rect x="34" y="30" width="60" height="52" rx="6" fill="#c7cdd6"/>' +
+            '<circle cx="50" cy="46" r="7" fill="#eef1f5"/>' +
+            '<path d="M40 76 L60 56 L74 70 L84 60 L94 76 Z" fill="#eef1f5"/>' +
+            '<text x="64" y="112" font-size="16" text-anchor="middle" fill="#8b93a1" font-family="sans-serif">Item ' + n + '</text>' +
+            '</svg>');
+        }
         var props = {
           headline: 'Wait, your 15% off is still here',
           subhead: 'Finish checkout and your discount applies automatically.',
@@ -288,6 +302,11 @@ function buildPreviewSrcDoc({ layoutId, brand, showPoweredBy }) {
           code: 'PREVIEW15',
           amountText: '15%',
           timerEndsAt: c.layoutId === 'timer-front' ? Date.now() + 86400000 : null,
+          productImages: [
+            { image: ph(1), title: 'Sample item 1' },
+            { image: ph(2), title: 'Sample item 2' },
+            { image: ph(3), title: 'Sample item 3' }
+          ],
           showPoweredBy: c.showPoweredBy,
           themeOverrides: {
             // Use the merchant's configured brand colors when set — that's the

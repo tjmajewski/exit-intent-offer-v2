@@ -113,6 +113,7 @@ model Shop {
   modalBody           String? @default("Complete your purchase now and get an exclusive discount!")
   ctaButton           String? @default("Complete My Order")
   redirectDestination String? @default("checkout")
+  showProductImages   Boolean @default(false) // Manual mode: render cart-item thumbnails in the modal (AI mode learns this per-variant)
 
   discountCode    String?
   discountEnabled Boolean @default(false)

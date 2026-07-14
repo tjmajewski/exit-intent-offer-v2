@@ -1555,8 +1555,19 @@
         brand: this.brandFromSettings()
       });
 
-      this.renderTemplate(s.templateId, props);
+      const handles = this.renderTemplate(s.templateId, props);
       console.log(`[Modal] Rendered template: ${s.templateId}`);
+
+      // Manual-mode merchant toggle: render stays synchronous, thumbnails
+      // arrive when /cart.js resolves (modal is still hidden at this point in
+      // the normal flow, so the row is in place before the shopper sees it).
+      if (s.showProductImages) {
+        this.getCartSnapshot().then(({ productImages }) => {
+          if (this.modalElement && productImages.length > 0) {
+            window.ResparqTemplates.injectProductImages(handles, productImages, props.themeOverrides);
+          }
+        });
+      }
     }
 
     /**
@@ -1692,7 +1703,14 @@
         showPoweredBy: s.plan !== 'enterprise',
         brand: this.brandFromSettings()
       });
-      this.renderTemplate(templateId, props);
+      const handles = this.renderTemplate(templateId, props);
+      // Preview shows the thumbnail row from the shopper's real cart so the
+      // merchant can QA it on their live theme (empty cart = row absent).
+      this.getCartSnapshot().then(({ productImages }) => {
+        if (this.modalElement && productImages.length > 0) {
+          window.ResparqTemplates.injectProductImages(handles, productImages, props.themeOverrides);
+        }
+      });
       this.modalElement.style.display = 'flex';
       requestAnimationFrame(() => {
         const modal = this.modalElement.querySelector('#exit-intent-modal');

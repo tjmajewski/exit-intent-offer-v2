@@ -319,15 +319,38 @@ export default function QuickSetupTab({
                 name="ctaButton"
                 value={ctaButton}
                 onChange={(e) => { setCtaButton(e.target.value); setFormChanged(true); }}
-                style={{ 
-                  width: "100%", 
-                  padding: "10px 12px", 
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
                   border: "1px solid #d1d5db",
                   borderRadius: 6,
                   fontSize: 16
                 }}
                 required
               />
+            </div>
+
+            <div>
+              <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  name="showProductImages"
+                  defaultChecked={settings.showProductImages}
+                  onChange={() => setFormChanged(true)}
+                  style={{ marginRight: 12, width: 20, height: 20 }}
+                />
+                <div>
+                  <div style={{ fontWeight: 500 }}>Show Product Images</div>
+                  <div style={{ fontSize: 14, color: "#666" }}>
+                    Display up to 3 items from the customer's cart inside the pop-up
+                    (skipped on the Top Banner and Scratch Reveal layouts)
+                  </div>
+                </div>
+              </label>
+              {/* Presence marker: this checkbox only exists on the Quick Setup tab.
+                  Unchecked and unmounted are indistinguishable in FormData, so the
+                  action keys off this marker to avoid wiping the saved value. */}
+              <input type="hidden" name="showProductImagesPresent" value="1" />
             </div>
 
           </div>

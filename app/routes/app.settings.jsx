@@ -112,6 +112,7 @@ export async function loader({ request }) {
       settings.brandSecondaryColor = shopRecord.brandSecondaryColor;
       settings.brandAccentColor = shopRecord.brandAccentColor;
       settings.brandFont = shopRecord.brandFont;
+      settings.showProductImages = shopRecord.showProductImages;
       settings.socialProofEnabled = shopRecord.socialProofEnabled;
       settings.socialProofType = shopRecord.socialProofType;
       settings.socialProofMinimum = shopRecord.socialProofMinimum;
@@ -195,6 +196,12 @@ export async function action({ request }) {
     maxShowsPer30d: Math.floor(freqNumber(formData.get("maxShowsPer30d"), 5, 1)),
     postPurchaseDays: freqNumber(formData.get("postPurchaseDays"), 30, 0),
     discountEnabled: formData.get("discountEnabled") === "on",
+    // Checkbox lives on the Quick Setup tab only — without its presence marker
+    // a save from another tab would wipe the stored value (resolved against
+    // the existing DB row below, same pattern as the brand fields).
+    showProductImages: formData.get("showProductImagesPresent")
+      ? formData.get("showProductImages") === "on"
+      : undefined,
     offerType: formData.get("offerType") || "percentage",
     // Discount amounts are whole-number only (UI is locked to integers).
     // Floor any decimal that slips through and clamp to a sensible minimum.
@@ -258,7 +265,8 @@ export async function action({ request }) {
         brandPrimaryColor: true,
         brandSecondaryColor: true,
         brandAccentColor: true,
-        brandFont: true
+        brandFont: true,
+        showProductImages: true
       }
     });
 
@@ -269,6 +277,7 @@ export async function action({ request }) {
     settings.brandSecondaryColor = settings.brandSecondaryColor || existingShop?.brandSecondaryColor || "#ffffff";
     settings.brandAccentColor = settings.brandAccentColor || existingShop?.brandAccentColor || "#f59e0b";
     settings.brandFont = settings.brandFont || existingShop?.brandFont || "system";
+    settings.showProductImages = settings.showProductImages ?? existingShop?.showProductImages ?? false;
 
     // Apply tier-based population size limits
     let populationSize = parseInt(formData.get("populationSize")) || 10;
@@ -368,6 +377,7 @@ export async function action({ request }) {
         modalBody: settings.modalBody,
         ctaButton: settings.ctaButton,
         redirectDestination: settings.redirectDestination,
+        showProductImages: settings.showProductImages,
         discountCode: settings.discountCode,
         discountEnabled: settings.discountEnabled,
         offerType: settings.offerType,
@@ -409,6 +419,7 @@ export async function action({ request }) {
         modalBody: settings.modalBody,
         ctaButton: settings.ctaButton,
         redirectDestination: settings.redirectDestination,
+        showProductImages: settings.showProductImages,
         discountCode: settings.discountCode,
         discountEnabled: settings.discountEnabled,
         offerType: settings.offerType,
