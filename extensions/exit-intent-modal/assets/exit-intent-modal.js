@@ -879,6 +879,32 @@
       }
     }
 
+    /**
+     * One cart fetch for the render path: total value + thumbnail data for the
+     * showProductImages gene. Highest-priced items first (what the customer
+     * cares most about losing); items without an image are skipped, so the
+     * gene degrades to a no-op on carts with no imagery.
+     */
+    async getCartSnapshot() {
+      try {
+        const response = await fetch('/cart.js');
+        const cart = await response.json();
+        const items = Array.isArray(cart.items) ? cart.items : [];
+        const productImages = [...items]
+          .sort((a, b) => b.price - a.price)
+          .map((i) => ({
+            image: i.image || (i.featured_image && i.featured_image.url) || null,
+            title: i.product_title || i.title || ''
+          }))
+          .filter((i) => !!i.image)
+          .slice(0, 3);
+        return { value: (cart.total_price || 0) / 100, productImages };
+      } catch (error) {
+        console.error('[Cart Snapshot] Error fetching cart:', error);
+        return { value: 0, productImages: [] };
+      }
+    }
+
     getCartHesitation() {
       // Track add/remove events in session
       // Returns number of times items were added then removed
@@ -1581,6 +1607,7 @@
         amount: null,
         amountText: content.amountText || null,
         timerEndsAt: content.timerEndsAt || null,
+        productImages: (content.productImages && content.productImages.length) ? content.productImages : null,
         themeOverrides,
         showPoweredBy: content.showPoweredBy !== false
       };
@@ -2701,6 +2728,7 @@
 
         return {
           headline, subhead, cta, showSubhead, showSecondary, secondaryCta,
+          showProductImages: decision.variant.showProductImages === true,
           code: discountCode, amountText: amountTextFor(decision),
           offerType, discountCode, redirectDestination, thresholdOffer
         };
@@ -2763,7 +2791,7 @@
      * evolved templateId through the registry (replaces the legacy modal).
      */
     async renderResolvedAIDecision(decision) {
-      const cartValue = await this.getCartValue();
+      const { value: cartValue, productImages } = await this.getCartSnapshot();
       const content = this.resolveModalContent(decision, cartValue);
 
       // Side-effects, split out of the pure resolver
@@ -2792,6 +2820,9 @@
         code: content.code,
         amountText: content.amountText,
         timerEndsAt,
+        // showProductImages gene: pass thumbnails only when the variant's gene
+        // is on AND the cart actually has imagery (empty array = row not drawn)
+        productImages: content.showProductImages ? productImages : null,
         showPoweredBy: this.settings.plan !== 'enterprise',
         brand: this.brandFromSettings()
       });

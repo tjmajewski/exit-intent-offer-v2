@@ -752,6 +752,7 @@ export async function action({ request }) {
       redirect: selectedVariant.redirect,
       urgency: selectedVariant.urgency,
       showSubhead: effectiveShowSubhead,
+      showProductImages: selectedVariant.showProductImages === true,
       triggerType: selectedVariant.triggerType || 'exit_intent',
       idleSeconds: selectedVariant.idleSeconds || 30,
       templateId: effectiveTemplateId,
@@ -871,7 +872,8 @@ export async function action({ request }) {
             cta: decision.cta,
             redirect: decision.redirect,
             urgency: decision.urgency,
-            showSubhead: decision.showSubhead
+            showSubhead: decision.showSubhead,
+            showProductImages: decision.showProductImages
           },
           triggerType: decision.triggerType,
           idleSeconds: decision.idleSeconds,
@@ -1031,7 +1033,8 @@ export async function action({ request }) {
       cta: decision.cta,
       redirect: decision.redirect,
       urgency: decision.urgency,
-      showSubhead: decision.showSubhead
+      showSubhead: decision.showSubhead,
+      showProductImages: decision.showProductImages
     };
     response.decision.triggerType = decision.triggerType;
     response.decision.idleSeconds = decision.idleSeconds;

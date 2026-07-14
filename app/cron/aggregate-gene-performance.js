@@ -69,7 +69,8 @@ export async function aggregateGenePerformance() {
   function aggregateGenes(variants) {
     const geneAggregates = {
       offerAmount: {}, headline: {}, subhead: {}, cta: {},
-      redirect: {}, urgency: {}, templateId: {}
+      redirect: {}, urgency: {}, showSubhead: {}, showProductImages: {},
+      triggerType: {}, idleSeconds: {}, templateId: {}
     };
     variants.forEach(v => {
       const genes = {
@@ -79,6 +80,10 @@ export async function aggregateGenePerformance() {
         cta: v.cta,
         redirect: v.redirect,
         urgency: v.urgency?.toString(),
+        showSubhead: v.showSubhead?.toString(),
+        showProductImages: v.showProductImages?.toString(),
+        triggerType: v.triggerType,
+        idleSeconds: v.idleSeconds?.toString(),
         templateId: v.templateId
       };
       Object.keys(genes).forEach(geneType => {
@@ -303,9 +308,9 @@ async function determineBaseline(db, geneType, geneValue) {
   const whereClause = {};
   
   // Convert geneValue back to proper type
-  if (geneType === 'offerAmount') {
+  if (geneType === 'offerAmount' || geneType === 'idleSeconds') {
     whereClause[geneType] = parseInt(geneValue);
-  } else if (geneType === 'urgency') {
+  } else if (geneType === 'urgency' || geneType === 'showSubhead' || geneType === 'showProductImages') {
     whereClause[geneType] = geneValue === 'true';
   } else {
     whereClause[geneType] = geneValue;

@@ -254,6 +254,51 @@
     return el;
   }
 
+  /**
+   * Cart-item thumbnail row (showProductImages gene). Renders up to 3 images;
+   * returns null when there's nothing to draw. Injected by the dispatcher so
+   * every template gets it without per-template wiring.
+   */
+  function makeProductImageRow(images, t) {
+    if (!Array.isArray(images) || images.length === 0) return null;
+    const row = document.createElement('div');
+    row.className = 'resparq-product-images';
+    row.style.cssText = `
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin: 0 0 18px;
+    `;
+    images.slice(0, 3).forEach((item) => {
+      if (!item || !item.image) return;
+      const img = document.createElement('img');
+      // Shopify CDN image API: request a small rendition, not the full asset.
+      // Only http(s)/protocol-relative URLs take the width param — anything
+      // else (data URIs in QA harnesses) passes through untouched.
+      img.src = /^(https?:)?\/\//.test(item.image)
+        ? item.image + (item.image.includes('?') ? '&' : '?') + 'width=128'
+        : item.image;
+      img.alt = item.title || '';
+      img.loading = 'lazy';
+      img.onerror = () => { img.style.display = 'none'; };
+      img.style.cssText = `
+        width: 64px;
+        height: 64px;
+        object-fit: cover;
+        border-radius: ${t.borderRadius};
+        border: 1px solid rgba(0,0,0,0.08);
+        background: #ffffff;
+        flex: 0 0 auto;
+      `;
+      row.appendChild(img);
+    });
+    return row.children.length > 0 ? row : null;
+  }
+
+  // Layouts where a thumbnail row doesn't fit: top-banner is a slim strip,
+  // scratch-reveal's canvas interaction leaves no room above the CTA.
+  const NO_IMAGE_ROW_TEMPLATES = ['top-banner', 'scratch-reveal'];
+
   function makePoweredBy(show) {
     const el = document.createElement('div');
     if (!show) { el.style.display = 'none'; return el; }
@@ -1225,6 +1270,14 @@
     const entry = TEMPLATES[templateId] || TEMPLATES[DEFAULT_TEMPLATE_ID];
     const out = entry.render(props || {});
     out.templateId = entry.id;
+
+    // showProductImages gene: inject the thumbnail row above the primary CTA.
+    // Single injection point — templates stay unaware of the gene.
+    if (props && props.productImages && out.primaryCta && out.primaryCta.parentNode &&
+        !NO_IMAGE_ROW_TEMPLATES.includes(entry.id)) {
+      const row = makeProductImageRow(props.productImages, tokensFor(props.themeOverrides));
+      if (row) out.primaryCta.parentNode.insertBefore(row, out.primaryCta);
+    }
     return out;
   }
 

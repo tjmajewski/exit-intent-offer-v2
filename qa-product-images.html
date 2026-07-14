@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QA: showProductImages gene</title>
+<style>body{margin:0;font-family:sans-serif;background:#f3f4f6}h3{margin:16px}</style>
+</head>
+<body>
+<h3>showProductImages QA — pick template:</h3>
+<div id="controls" style="margin:0 16px 16px"></div>
+<script src="extensions/exit-intent-modal/assets/modal-templates.js"></script>
+<script>
+  // 64x64 SVG placeholders standing in for Shopify CDN cart images
+  const ph = (label, bg) => 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128"><rect width="128" height="128" fill="${bg}"/><text x="64" y="72" font-size="28" text-anchor="middle" fill="#fff" font-family="sans-serif">${label}</text></svg>`);
+  const productImages = [
+    { image: ph('A', '#6366f1'), title: 'Product A' },
+    { image: ph('B', '#10b981'), title: 'Product B' },
+    { image: ph('C', '#f59e0b'), title: 'Product C' }
+  ];
+  function show(templateId) {
+    document.querySelectorAll('.resparq-overlay').forEach(el => el.remove());
+    const out = window.ResparqTemplates.render(templateId, {
+      headline: 'Wait — your 15% off is still here',
+      subhead: 'Finish checkout and your discount applies automatically.',
+      cta: 'Claim My Discount',
+      secondaryCta: 'No thanks',
+      showSecondary: true,
+      code: 'QA15',
+      amountText: '15%',
+      timerEndsAt: templateId === 'timer-front' ? Date.now() + 86400000 : null,
+      showPoweredBy: true,
+      productImages
+    });
+    out.overlay.style.display = 'flex';
+    out.closeBtn && (out.closeBtn.onclick = () => out.overlay.remove());
+    document.body.appendChild(out.overlay);
+  }
+  const controls = document.getElementById('controls');
+  window.ResparqTemplates.list().forEach(t => {
+    const b = document.createElement('button');
+    b.textContent = t.id;
+    b.style.cssText = 'margin:4px;padding:8px 12px;cursor:pointer';
+    b.onclick = () => show(t.id);
+    controls.appendChild(b);
+  });
+  show('classic-card');
+</script>
+</body>
+</html>

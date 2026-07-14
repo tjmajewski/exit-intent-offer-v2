@@ -141,6 +141,7 @@ function createRandomVariant(baseline, segment = 'all', useSocialProof = false, 
     redirect: pool.redirects[Math.floor(Math.random() * pool.redirects.length)],
     urgency: urgencyValue,
     showSubhead: pool.showSubhead[Math.floor(Math.random() * pool.showSubhead.length)],
+    showProductImages: pool.showProductImages[Math.floor(Math.random() * pool.showProductImages.length)],
     triggerType: pool.triggerTypes[Math.floor(Math.random() * pool.triggerTypes.length)],
     idleSeconds: pool.idleSeconds[Math.floor(Math.random() * pool.idleSeconds.length)],
     templateId: pickTemplateId(pool.templateIds, enabledLayouts),
@@ -249,6 +250,8 @@ function generateDiverseVariants(count, baseline, segment = 'all', enabledLayout
       urgency: urgencyValue,
       // Alternate showSubhead to give the gene 50/50 coverage across the diverse population
       showSubhead: i % 2 === 0,
+      // Offset phase from showSubhead so the two genes don't correlate in the seed population
+      showProductImages: Math.floor(i / 2) % 2 === 0,
       triggerType: pool.triggerTypes[triggerIndex],
       idleSeconds: pool.idleSeconds[idleIndex],
       // Spread templates evenly across the seed population for fast gene coverage
@@ -384,6 +387,8 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
             variant.idleSeconds = parseInt(gene.geneValue);
           } else if (gene.geneType === 'showSubhead') {
             variant.showSubhead = gene.geneValue === 'true';
+          } else if (gene.geneType === 'showProductImages') {
+            variant.showProductImages = gene.geneValue === 'true';
           } else if (gene.geneType === 'templateId') {
             // Only inherit a network-proven layout if the merchant hasn't
             // disabled it; otherwise keep the variant's already-enabled pick.
@@ -1033,6 +1038,7 @@ async function breedNewVariant(parents, baseline, segment = 'all', shopId = null
     redirect: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.redirect : parent2.redirect) : parent1.redirect,
     urgency: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.urgency : parent2.urgency) : parent1.urgency,
     showSubhead: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.showSubhead : parent2.showSubhead) : parent1.showSubhead,
+    showProductImages: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.showProductImages : parent2.showProductImages) : parent1.showProductImages,
     triggerType: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.triggerType : parent2.triggerType) : parent1.triggerType,
     idleSeconds: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.idleSeconds : parent2.idleSeconds) : parent1.idleSeconds,
     templateId: Math.random() < crossoverRate ? (Math.random() < 0.5 ? parent1.templateId : parent2.templateId) : parent1.templateId
@@ -1049,6 +1055,7 @@ async function breedNewVariant(parents, baseline, segment = 'all', shopId = null
     redirect: 'redirects',
     urgency: 'urgency',
     showSubhead: 'showSubhead',
+    showProductImages: 'showProductImages',
     triggerType: 'triggerTypes',
     idleSeconds: 'idleSeconds',
     templateId: 'templateIds'

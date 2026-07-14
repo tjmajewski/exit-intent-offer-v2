@@ -102,6 +102,7 @@ export const genePools = {
     redirects: ['cart', 'checkout'],
     urgency: [true, false],
     showSubhead: [true, false],  // Whether to render subhead text at all (true = show, false = headline+CTA only)
+    showProductImages: [true, false],  // Render cart-item thumbnails inside the modal (degrades to hidden when cart has no images)
 
     // Trigger strategy: how to fire the modal
     // exit_intent = mouse leave (desktop) / back-button (mobile fallback)
@@ -160,6 +161,7 @@ export const genePools = {
     redirects: ['cart', 'checkout'],
     urgency: [false],  // No urgency without incentive
     showSubhead: [true, false],
+    showProductImages: [true, false],
     triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
     idleSeconds: [15, 30, 45, 60],
     templateIds: TEMPLATE_IDS
@@ -221,6 +223,7 @@ export const genePools = {
     redirects: ['cart', 'checkout'],
     urgency: [true, false],
     showSubhead: [true, false],
+    showProductImages: [true, false],
     triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
     idleSeconds: [15, 30, 45, 60],
     templateIds: TEMPLATE_IDS
@@ -270,6 +273,7 @@ export const genePools = {
     redirects: ['cart', 'checkout'],
     urgency: [false],  // No urgency without incentive
     showSubhead: [true, false],
+    showProductImages: [true, false],
     triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
     idleSeconds: [15, 30, 45, 60],
     templateIds: TEMPLATE_IDS
@@ -323,6 +327,7 @@ export const genePools = {
     redirects: ['cart', 'checkout'],
     urgency: [false],  // No urgency for reminders
     showSubhead: [true, false],
+    showProductImages: [true, false],
     triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
     idleSeconds: [15, 30, 45, 60],
     templateIds: TEMPLATE_IDS
