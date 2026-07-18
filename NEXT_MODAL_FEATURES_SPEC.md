@@ -7,7 +7,7 @@ in ship order. `showProductImages` (gene + manual toggle + QA) already shipped
 
 Contents:
 1. [Gene wiring checklist (shared)](#1-gene-wiring-checklist-shared)
-2. [Dollar-framed savings math](#2-dollar-framed-savings-math)
+2. [Currency-framed savings math](#2-currency-framed-savings-math-dollar-framing)
 3. [Product-aware copy](#3-product-aware-copy)
 4. [Mobile back-button trigger](#4-mobile-back-button-trigger)
 5. [Free-shipping threshold archetype](#5-free-shipping-threshold-archetype) ← includes no-free-shipping behavior
@@ -49,10 +49,12 @@ but not slower convergence.
 
 ---
 
-## 2. Dollar-framed savings math
+## 2. Currency-framed savings math ("dollar framing")
 
 **Hypothesis:** "Save $12.60 on your $84 order" beats "Save 15%". Concrete
-dollars > abstract percentages, especially at higher cart values.
+amounts > abstract percentages, especially at higher cart values. "Dollar" is
+shorthand — the feature is **currency-framed** and must work identically for
+€, £, ¥, kr, etc.
 
 ### Design
 Not a copy-pool fork — a **placeholder + gene** so every existing headline
@@ -61,22 +63,48 @@ keeps working:
 - New placeholders resolved client-side in `resolveModalContent` (which already
   resolves `{{amount}}`, `{{threshold}}`, `{{threshold_remaining}}`,
   `{{percent_to_goal}}` against live cart value):
-  - `{{savings_dollars}}` → `formatCurrency(cartValue * amount / 100)` for
-    percentage offers; `formatCurrency(amount)` for fixed.
+  - `{{savings_amount}}` → `formatCurrency(cartValue * amount / 100)` for
+    percentage offers.
   - `{{cart_total}}` → `formatCurrency(cartValue)`
-- New gene `amountFraming: ['percent', 'dollars']` on the two `*_with_discount`
-  pools only (no-discount archetypes have nothing to frame).
-- When `amountFraming === 'dollars'` AND offer type is percentage AND
-  `cartValue > 0`: the client rewrites `{{amount}}%`-style copy is NOT
-  attempted (too fragile). Instead the pools gain 2–3 dollar-framed
+- New gene `amountFraming: ['percent', 'currency']` on the two
+  `*_with_discount` pools only (no-discount archetypes have nothing to frame).
+- When `amountFraming === 'currency'` AND offer type is percentage AND
+  `cartValue > 0`: the client does NOT attempt to rewrite `{{amount}}%`-style
+  copy (too fragile). Instead the pools gain 2–3 currency-framed
   headline/subhead entries using the new placeholders, and the gene selects
   which sub-pool the variant draws from at creation time (same pattern as
   `urgency` selecting `headlinesWithUrgency`).
 
+### Currency handling (multi-currency / Shopify Markets)
+- **All money strings are produced client-side by `formatCurrency`**
+  (`exit-intent-modal.js:67`), which already resolves
+  `window.Shopify.currency.active` + buyer locale via `Intl.NumberFormat`.
+  A German shopper on a Markets store sees `12 €`, a Japanese shopper `¥1,200`
+  (zero-decimal currencies are handled by Intl; the helper already forces
+  0 fraction digits). **No copy-pool entry may ever contain a literal
+  currency symbol** — placeholders only. Add a startup assertion in
+  `gene-pools.js` (dev-time, mirrors the banned-pattern philosophy):
+  reject pool entries matching `/[$€£¥]\s?\d|\d\s?(USD|EUR|GBP)/`.
+- **Why the gene is percentage-offers-only:** the savings math
+  `cartValue × pct / 100` is currency-closed — `/cart.js` returns cart totals
+  in the buyer's presentment currency, so the computed savings is
+  automatically in the same currency the buyer pays in. Fixed-amount and
+  threshold offers are NOT currency-closed: `decision.amount` is denominated
+  in the shop's base currency, and formatting it with the buyer's presentment
+  symbol would show the wrong number on Markets stores (pre-existing issue on
+  the `{{amount}}` placeholder for fixed/threshold; tracked separately, not
+  made worse here). So: `amountFraming = 'currency'` renders percent framing
+  whenever `decision.type !== 'percentage'` — the resolver checks type, not
+  just the gene.
+- **Meta-learning is currency-agnostic for free:** headline gene values
+  aggregate cross-store as the raw template string (placeholder unfilled), so
+  a currency-framed headline proven on EUR stores transfers to USD stores
+  without conversion.
+
 ### Guards
-- `cartValue === 0` at render → dollar copy would say "Save $0.00": client
-  falls back to the percent variant of the same slot (resolver already has
-  cartValue; add the branch where placeholders are filled).
+- `cartValue === 0` at render → savings copy would say "Save $0" (or `0 €`):
+  client falls back to the percent variant of the same slot (resolver already
+  has cartValue; add the branch where placeholders are filled).
 - Brand-safety validator (`isValidHeadline` etc.) must accept the new pool
   entries — they're in-pool so this is automatic; generated-copy prompt
   (phase 7c) should be told about the new placeholders so it can emit them.
@@ -278,9 +306,17 @@ free_shipping: {
 ```
 
 New placeholder `{{shipping_remaining}}` =
-`formatCurrency(freeShippingThreshold - cartValue)` (server computes and ships
-it on the decision; client fills like `{{threshold_remaining}}`).
-`freeShippingThreshold` joins the shop-settings API payload.
+`formatCurrency(freeShippingThreshold - cartValue)`, computed **client-side**
+like `{{threshold_remaining}}` — the server ships the raw
+`freeShippingThreshold` on the decision, the client does the subtraction and
+formatting. Currency caveat: the merchant enters the threshold in the shop's
+base currency, and on Shopify Markets stores `cartValue` is presentment
+currency — same class of mismatch as fixed-amount offers. v1: threshold mode
+is limited to shops whose presentment currency equals the base currency
+(check `cart.currency` vs a `shopCurrency` field shipped on settings; on
+mismatch, treat the visitor as mode-`offer`-or-skip). Offer mode is unaffected
+(free shipping is free in any currency). `freeShippingThreshold` joins the
+shop-settings API payload.
 
 ### 5.4 Learning integration
 - New baseline string `free_shipping` flows through: variant seeding,
@@ -407,7 +443,7 @@ pooled `Variant` totals, plus serve-time gene biasing to consume the rows.
 
 | Release | Contents | Why together |
 |---|---|---|
-| 1 | Dollar framing + product-aware copy | Both are copy-pool work on existing genes/placeholders; one resolver PR; no new learning surface beyond one gene |
+| 1 | Currency framing + product-aware copy | Both are copy-pool work on existing genes/placeholders; one resolver PR; no new learning surface beyond one gene |
 | 2 | Free-shipping archetype | Isolated: new baseline, no interaction with release 1 genes |
 | 3 | Back-button trigger + reminder bar | Both are session-flow features; test interaction between them explicitly (bar must not mount in a back-trapped session that never engaged) |
 | 4 | Scarcity + trust row | Scarcity carries the release; trust row rides along |
