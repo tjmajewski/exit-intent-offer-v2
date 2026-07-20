@@ -137,8 +137,13 @@ export async function createGenericDiscountCode(admin, code, type, amount) {
         ,
         items: {
           all: true
-        }
-      }
+        },
+        appliesOnOneTimePurchase: true,
+        appliesOnSubscription: true
+      },
+      // Subscription (selling plan) items: discount first billing cycle only —
+      // renewals bill at full price.
+      recurringCycleLimit: 1
       // No usage limit for generic codes - can be reused
     }
   };
@@ -314,8 +319,13 @@ export async function createPercentageDiscount(admin, percentage, prefix = 'SAVE
         },
         items: {
           all: true
-        }
+        },
+        appliesOnOneTimePurchase: true,
+        appliesOnSubscription: true
       },
+      // Subscription (selling plan) items: discount first billing cycle only —
+      // renewals bill at full price.
+      recurringCycleLimit: 1,
       appliesOncePerCustomer: true,
       usageLimit: 1
     }
@@ -393,8 +403,13 @@ export async function createFixedDiscount(admin, amount, prefix = 'SAVE') {
         },
         items: {
           all: true
-        }
+        },
+        appliesOnOneTimePurchase: true,
+        appliesOnSubscription: true
       },
+      // Subscription (selling plan) items: discount first billing cycle only —
+      // renewals bill at full price.
+      recurringCycleLimit: 1,
       appliesOncePerCustomer: true,
       usageLimit: 1
     }
@@ -477,8 +492,13 @@ export async function createThresholdDiscount(admin, threshold, discountAmount, 
         },
         items: {
           all: true
-        }
+        },
+        appliesOnOneTimePurchase: true,
+        appliesOnSubscription: true
       },
+      // Subscription (selling plan) items: discount first billing cycle only —
+      // renewals bill at full price.
+      recurringCycleLimit: 1,
       appliesOncePerCustomer: true,
       usageLimit: 1
     }

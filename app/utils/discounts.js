@@ -60,8 +60,13 @@ export async function createDiscountCode(admin, discountPercentage) {
         },
         items: {
           all: true
-        }
+        },
+        appliesOnOneTimePurchase: true,
+        appliesOnSubscription: true
       },
+      // Subscription (selling plan) items: discount first billing cycle only —
+      // renewals bill at full price.
+      recurringCycleLimit: 1,
       appliesOncePerCustomer: false,
       usageLimit: null
     }
@@ -149,8 +154,13 @@ export async function createFixedAmountDiscountCode(admin, discountAmount, curre
         },
         items: {
           all: true
-        }
+        },
+        appliesOnOneTimePurchase: true,
+        appliesOnSubscription: true
       },
+      // Subscription (selling plan) items: discount first billing cycle only —
+      // renewals bill at full price.
+      recurringCycleLimit: 1,
       appliesOncePerCustomer: false,
       usageLimit: null
     }
