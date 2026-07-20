@@ -519,6 +519,91 @@
     } catch (_) {}
   }
 
+  // ============================================================
+  // COMPETING POPUP GATE — never render on top of a third-party
+  // popup (email capture, spin-to-win, cookie wall). showModal()
+  // checks this and defers; all checks fail open (never suppress
+  // on error, only on a positive detection).
+  // ============================================================
+
+  // Popup-specific containers for vendors that render in cross-origin
+  // iframes, where the generic email-input scan can't see inside.
+  // Selectors that never match are harmless; anything ambiguous (e.g.
+  // `.klaviyo-form`, which also matches embedded footer forms) is left
+  // to the generic heuristic instead.
+  const COMPETING_VENDOR_SELECTORS = [
+    '#attentive_overlay', '#attentive_creative',   // Attentive
+    '.privy-popup-container', '.privy-popup',      // Privy
+    'iframe[id^="ju_iframe"]',                     // Justuno
+    '.mailmunch-forms-popover',                    // MailMunch
+    '#wisepops-root [role="dialog"]'               // Wisepops
+  ];
+
+  // Resparq's own surfaces — never treat ourselves as a competitor.
+  const OWN_SURFACE_SELECTOR = '#exit-intent-modal-overlay, #exit-intent-offer-pill';
+
+  // minSize 50 filters decorative slivers when judging popup containers;
+  // pass a smaller value for inherently short elements (text inputs ~38px).
+  function isElementShowing(el, minSize = 50) {
+    try {
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) === 0) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > minSize && r.height > minSize;
+    } catch (_) { return false; }
+  }
+
+  // Walks up from el looking for a visible position:fixed ancestor covering
+  // ≥25% of the viewport — the shape of every overlay popup. Sticky bars and
+  // embedded forms fail the coverage test; footer signups have no fixed
+  // ancestor at all.
+  function insideLargeFixedOverlay(el) {
+    const viewport = window.innerWidth * window.innerHeight;
+    if (!viewport) return false;
+    let node = el, depth = 0;
+    while (node && node !== document.documentElement && depth < 15) {
+      try {
+        if (getComputedStyle(node).position === 'fixed' && isElementShowing(node)) {
+          const r = node.getBoundingClientRect();
+          if ((r.width * r.height) / viewport >= 0.25) return true;
+        }
+      } catch (_) {}
+      node = node.parentElement;
+      depth++;
+    }
+    return false;
+  }
+
+  function isCompetingPopupVisible() {
+    try {
+      // 1. Known iframe-based vendor popups
+      for (const sel of COMPETING_VENDOR_SELECTORS) {
+        let el = null;
+        try { el = document.querySelector(sel); } catch (_) { continue; }
+        if (el && isElementShowing(el)) return true;
+      }
+
+      // 2. Generic same-origin vendors (Klaviyo et al.): a visible email
+      // input inside a large fixed overlay.
+      const inputs = document.querySelectorAll('input[type="email"], input[name*="email" i]');
+      for (const input of inputs) {
+        if (input.closest(OWN_SURFACE_SELECTOR)) continue;
+        if (!isElementShowing(input, 10)) continue;
+        if (insideLargeFixedOverlay(input)) return true;
+      }
+
+      // 3. Generic iframe vendors not in the known list: any large fixed
+      // iframe overlay. Also defers behind a fullscreen chat window on
+      // mobile — desirable; closed chat bubbles are far below 25% coverage.
+      for (const frame of document.querySelectorAll('iframe')) {
+        if (frame.closest(OWN_SURFACE_SELECTOR)) continue;
+        if (!isElementShowing(frame)) continue;
+        if (insideLargeFixedOverlay(frame)) return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   // Fetch custom CSS from shop settings
   async function fetchCustomCSS(shopDomain) {
     try {
@@ -2055,6 +2140,34 @@
     
     async showModal() {
       if (this.modalShown || !this.modalElement) return;
+
+      // COMPETING POPUP GATE: a third-party popup (email capture etc.) is on
+      // screen — never stack on top of it. Poll until it clears, then re-enter.
+      // If it's still up after ~60s, drop this attempt; triggers stay armed and
+      // a later exit/idle signal re-checks. Nothing is stamped or tracked yet
+      // at this point, so deferring costs no impression or frequency budget.
+      // Preview bypasses (admin iframe chrome would false-positive).
+      if (!this.isPreview && isCompetingPopupVisible()) {
+        if (this.competingPopupWait) return; // one poll at a time across triggers
+        this.competingPopupWait = true;
+        console.log('[Competing Popup] Third-party popup on screen — deferring Resparq');
+        let attempts = 0;
+        const poll = setInterval(() => {
+          if (this.modalShown) { clearInterval(poll); this.competingPopupWait = false; return; }
+          attempts++;
+          if (!isCompetingPopupVisible()) {
+            clearInterval(poll);
+            this.competingPopupWait = false;
+            console.log('[Competing Popup] Cleared — showing Resparq');
+            this.showModal();
+          } else if (attempts >= 40) {
+            clearInterval(poll);
+            this.competingPopupWait = false;
+            console.log('[Competing Popup] Still up after 60s — dropping this attempt');
+          }
+        }, 1500);
+        return;
+      }
 
       // IMPORTANT: Get AI decision BEFORE showing modal to prevent flash of manual content
       // If we have an enterprise offer stored, use it

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>QA — Competing Popup Gate</title>
+<style>
+  body { font-family: -apple-system, sans-serif; padding: 24px; }
+  button { padding: 8px 14px; margin-right: 8px; font-size: 14px; cursor: pointer; }
+  #log { margin-top: 16px; padding: 12px; background: #111; color: #0f0; font: 12px monospace; height: 260px; overflow: auto; white-space: pre-wrap; }
+  .fake-email-overlay { position: fixed; inset: 0; z-index: 99999; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; }
+  .fake-email-box { background: #fff; padding: 40px; width: 420px; border-radius: 8px; text-align: center; }
+  .fake-email-box input { width: 90%; padding: 10px; margin-top: 12px; border: 1px solid #ccc; }
+</style>
+<script>
+  // ── QA stubs: fake storefront environment ──────────────────────
+  sessionStorage.clear();
+  localStorage.clear();
+  window.Shopify = { shop: 'qa-competing.myshopify.com' };
+  window.exitIntentSettings = {
+    enabled: true,
+    mode: 'manual',
+    plan: 'starter',
+    discountEnabled: false,
+    modalHeadline: 'Wait! Do not go',
+    modalBody: 'QA harness modal',
+    ctaButton: 'Stay',
+    triggers: { exitIntent: true }
+  };
+  window.fetch = (url) => {
+    const u = String(url);
+    if (u.includes('/cart.js')) {
+      return Promise.resolve(new Response(JSON.stringify({ item_count: 1, total_price: 4500, items: [{ title: 'QA Item', quantity: 1 }] }), { headers: { 'Content-Type': 'application/json' } }));
+    }
+    // shop-settings 404s → script falls back to window.exitIntentSettings
+    return Promise.resolve(new Response('{}', { status: u.includes('shop-settings') ? 404 : 200, headers: { 'Content-Type': 'application/json' } }));
+  };
+</script>
+</head>
+<body>
+<h2>Competing Popup Gate — QA</h2>
+<button id="show-fake">1. Show fake email popup</button>
+<button id="fire-exit">2. Fire exit intent</button>
+<button id="hide-fake">3. Close fake popup</button>
+<div id="log"></div>
+
+<script>
+  // Mirror console into the page so preview_snapshot can read it
+  const logEl = document.getElementById('log');
+  const orig = console.log.bind(console);
+  console.log = (...args) => {
+    orig(...args);
+    logEl.textContent += args.filter(a => !(typeof a === 'string' && a.startsWith('color:'))).map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ').replace(/%c/g, '') + '\n';
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  document.getElementById('show-fake').onclick = () => {
+    const ov = document.createElement('div');
+    ov.className = 'fake-email-overlay';
+    ov.id = 'fake-email-overlay';
+    ov.innerHTML = '<div class="fake-email-box"><h3>Get 15% off</h3><p>Join our list</p><input type="email" placeholder="Email address"><br><br><button>Sign up</button></div>';
+    document.body.appendChild(ov);
+    console.log('[QA] Fake email popup mounted');
+  };
+  document.getElementById('hide-fake').onclick = () => {
+    const ov = document.getElementById('fake-email-overlay');
+    if (ov) ov.remove();
+    console.log('[QA] Fake email popup removed');
+  };
+  document.getElementById('fire-exit').onclick = () => {
+    document.dispatchEvent(new MouseEvent('mouseout', { clientY: -10, bubbles: true }));
+    console.log('[QA] Exit intent dispatched');
+  };
+</script>
+<script src="extensions/exit-intent-modal/assets/modal-templates.js"></script>
+<script src="extensions/exit-intent-modal/assets/exit-intent-modal.js"></script>
+</body>
+</html>
