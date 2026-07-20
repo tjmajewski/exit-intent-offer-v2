@@ -14,7 +14,8 @@ Contents:
 6. [Claimed-code reminder bar](#6-claimed-code-reminder-bar)
 7. [Real inventory scarcity](#7-real-inventory-scarcity)
 8. [Trust row](#8-trust-row)
-9. [Cross-store device priors (deferred)](#9-cross-store-device-priors-deferred)
+9. [Held-code signal + margin-aware response](#9-held-code-signal--margin-aware-response)
+10. [Cross-store device priors (deferred)](#10-cross-store-device-priors-deferred)
 
 ---
 
@@ -426,7 +427,73 @@ Payment-method icons + guarantee line above the CTA.
 
 ---
 
-## 9. Cross-store device priors (deferred)
+## 9. Held-code signal + margin-aware response
+
+**Hypothesis:** a customer who just redeemed an email-capture popup (15% off
+for their email) already holds a discount. Minting a second one burns margin
+and trains discount-hunting. The profitable plays are (a) non-discount
+interventions, or (b) reminding them to *use the code they already have* —
+recovery at zero incremental margin cost.
+
+### Detection (client)
+
+Builds on the competing-popup gate (commit `75b83a5`), which already locates
+vendor popups in the DOM. Three sources, descending confidence:
+
+1. **Shopify `discount_code` cookie** — vendors that apply codes via
+   `/discount/CODE` redirect set it; readable from JS. Exact code, highest
+   confidence. Nearly free to check.
+2. **Same-origin popups (Klaviyo, Privy):** capture-phase `submit` listener
+   scoped to the detected popup subtree → `engaged`. Best-effort success-state
+   scrape for a code-shaped token → `heldCode`. Fragile per vendor; fail to
+   `engaged` when the scrape misses.
+3. **Iframe vendors (Attentive etc.):** cross-origin, interaction invisible.
+   Can only mark `shown`.
+
+Signal shape in `collectCustomerSignals()`:
+`emailPopup: { confidence: 'redeemed' | 'engaged' | 'shown' | 'none', heldCode: string | null }`.
+Persist in sessionStorage — redemption often happens pages before the decision.
+
+**PII rule:** never read or store the email input's value. Code only. (Email
+capture is permanently out of scope; this signal must not creep toward it.)
+
+### Decision engine (server)
+
+Deterministic prior, **not a gene** — zero stores means nothing for the bandit
+to learn from yet; hard-code the sensible prior, promote to learned weighting
+once volume exists (same path as the adaptive intervention threshold).
+
+- `redeemed` / `engaged` → down-weight discount archetypes, up-weight
+  no-discount pools and `no_intervention` scoring.
+- `heldCode` known → new response mode **held-code reminder**: copy reminds
+  them the code they claimed still works ("Your welcome code is waiting — it
+  applies at checkout"), CTA → `/discount/{heldCode}?redirect=/checkout`.
+  **Never mint a Resparq code in the same session** — the double-discount ban
+  is absolute regardless of what the AI scores.
+- Log the signal + chosen response on `AIDecision` so the prior can be
+  audited and later learned.
+
+### Guards
+
+- Foreign code validity/amount is unknown unless the cookie/scrape provided
+  it — reminder copy stays generic ("your welcome code"), never asserts "15%"
+  it can't verify. No fabricated claims, same rule as timers/scarcity.
+- Scrape false positives: require the token to appear *after* a submit inside
+  the popup subtree, not on first render (pre-filled "WELCOME15" teaser copy
+  would otherwise mark every visitor `redeemed`).
+- `confidence: 'shown'` alone changes nothing — seeing a popup isn't holding
+  a code.
+
+### Effort
+
+Detection Low-Med (~80 lines riding on the gate). Engine prior Med (scoring
+adjustment + reminder response mode). The reminder *surface* reuses the
+claimed-code bar component (section 6) — sequence this after release 3 so the
+component exists.
+
+---
+
+## 10. Cross-store device priors (deferred)
 
 Known gap, out of scope for this cycle: `MetaLearningGene.deviceType` column
 exists but aggregation only writes vertical × AOV scopes, and proven-gene
@@ -447,6 +514,7 @@ pooled `Variant` totals, plus serve-time gene biasing to consume the rows.
 | 2 | Free-shipping archetype | Isolated: new baseline, no interaction with release 1 genes |
 | 3 | Back-button trigger + reminder bar | Both are session-flow features; test interaction between them explicitly (bar must not mount in a back-trapped session that never engaged) |
 | 4 | Scarcity + trust row | Scarcity carries the release; trust row rides along |
+| 5 | Held-code signal + margin-aware response | Needs the reminder-bar component (release 3) and the competing-popup gate (shipped `75b83a5`); detection + engine prior land together |
 
 Each release: run the aggregator dry (`npm run aggregate-genes`) against dev
 data before deploy; QA every template × mobile/desktop via
