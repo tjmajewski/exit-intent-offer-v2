@@ -285,7 +285,8 @@ export async function aggregateArchetypePerformance(prisma, segment, opts = {}) 
   // ignore the coarse legacy `segment` field. Otherwise fall back to segment.
   const impressionWhere = {
     variantId: { in: Array.from(variantInfo.keys()) },
-    timestamp: { gte: since }
+    timestamp: { gte: since },
+    rendered: true
   };
   if (segmentKey) {
     impressionWhere.segmentKey = segmentKey;

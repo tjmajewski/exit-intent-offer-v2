@@ -457,6 +457,30 @@ Persist in sessionStorage — redemption often happens pages before the decision
 **PII rule:** never read or store the email input's value. Code only. (Email
 capture is permanently out of scope; this signal must not creep toward it.)
 
+### Telemetry first (build this slice before the response mode)
+
+Highest-priority slice of this feature — with zero stores, collision and
+held-code rates are unmeasured guesses. Ship the measurement, then decide:
+
+- Journey events for the shipped competing-popup gate (`75b83a5`):
+  `gate:deferred / gate:resumed / gate:dropped` via the existing
+  `sendJourneyEvent` plumbing. Gives the dashboard an answer to "why didn't
+  the modal show" and quantifies real vendor-collision rates per shop.
+- Log the `emailPopup` signal (confidence tier + whether a code was
+  captured) on `AIDecision` from day one, before any engine behavior changes.
+- The response mode below gets built — or cut — on these measured rates.
+
+Effort: Low (~30 lines client, journey plumbing exists).
+
+### Sibling signal: automatic discounts
+
+A sitewide automatic discount means every cart is already discounted — same
+margin logic as a held code, no popup involved. The `promoInCart` signal
+(cart-level/item-level discount from `/cart.js`) already exists on
+`VariantImpression` — it is collected-not-conditioned today. Feed it into the
+same deterministic prior: discount archetypes down-weighted when the cart is
+already in a promo. No new detection work, just the engine hook.
+
 ### Decision engine (server)
 
 Deterministic prior, **not a gene** — zero stores means nothing for the bandit
@@ -483,6 +507,20 @@ once volume exists (same path as the adaptive intervention threshold).
   would otherwise mark every visitor `redeemed`).
 - `confidence: 'shown'` alone changes nothing — seeing a popup isn't holding
   a code.
+- **Resparq's own codes are not "held codes."** The `discount_code` cookie is
+  also set by Resparq's own `/discount/CODE?redirect=/checkout` CTA. Detection
+  must exclude self-issued codes via the existing `getIssuedCodes()` +
+  prefix-match mechanics (`findAppliedIssuedCode`) — otherwise the signal
+  fires on our own offer and suppresses the follow-up it was meant to enable.
+- **Reverse stacking is accepted.** The gate yields to vendors, but nothing
+  stops a vendor's exit popup from landing on top of an already-open Resparq
+  modal. Mitigation: max z-index on our overlay; no further engineering.
+
+### Positioning
+
+The gate is invisible unless told: "Resparq automatically detects and yields
+to your email capture popup" goes on the app listing and landing page — it
+directly defuses the "will this fight my Klaviyo popup?" objection.
 
 ### Effort
 
@@ -514,7 +552,7 @@ pooled `Variant` totals, plus serve-time gene biasing to consume the rows.
 | 2 | Free-shipping archetype | Isolated: new baseline, no interaction with release 1 genes |
 | 3 | Back-button trigger + reminder bar | Both are session-flow features; test interaction between them explicitly (bar must not mount in a back-trapped session that never engaged) |
 | 4 | Scarcity + trust row | Scarcity carries the release; trust row rides along |
-| 5 | Held-code signal + margin-aware response | Needs the reminder-bar component (release 3) and the competing-popup gate (shipped `75b83a5`); detection + engine prior land together |
+| 5 | Held-code signal + margin-aware response | Needs the reminder-bar component (release 3) and the competing-popup gate (shipped `75b83a5`); detection + engine prior land together. The telemetry slice (gate journey events + signal logging) is release-independent — ship it with whichever release goes out next |
 
 Each release: run the aggregator dry (`npm run aggregate-genes`) against dev
 data before deploy; QA every template × mobile/desktop via

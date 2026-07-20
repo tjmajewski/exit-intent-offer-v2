@@ -2234,6 +2234,10 @@
             sessionStorage.setItem(PILL_OPENER_DECISION_KEY, JSON.stringify(openerDecision));
           } catch (_) {}
           mountOfferPill(offer);
+          // Pill mount is a render too — confirms the shown outcome (pill
+          // openers have no VariantImpression by design, so only the
+          // aiDecisionId side applies server-side).
+          this.confirmRenderServed();
           console.log('[Surface Arm] Opened with pill — modal held in reserve');
           return;
         }
@@ -2313,6 +2317,31 @@
 
       // Track variant impression (both Pro and Enterprise)
       this.trackVariant('impression');
+
+      // Second phase of impression accounting: the server minted the
+      // impression/outcome rows at decision prefetch — learning counters
+      // only move once we confirm the modal actually rendered.
+      this.confirmRenderServed();
+    }
+
+    /**
+     * Tell the server the decision's surface actually displayed. Prefetched
+     * decisions that never render (no trigger, competing-popup gate dropped
+     * the attempt, customer left) must not count as shows in any learning
+     * loop. Idempotent server-side; fire-and-forget.
+     */
+    confirmRenderServed() {
+      if (this.isPreview) return;
+      if (!this.currentImpressionId && !this.currentAiDecisionId) return;
+      fetch('/apps/exit-intent/api/confirm-render', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shop: window.Shopify.shop,
+          impressionId: this.currentImpressionId || null,
+          aiDecisionId: this.currentAiDecisionId || null
+        })
+      }).catch(() => {});
     }
     
     /**

@@ -306,9 +306,10 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
   // creation path below so the seed population never lands on a disabled layout.
   const enabledLayouts = getEnabledLayoutIds(shop.disabledLayouts);
 
-  // Count total impressions across all variants
+  // Count total impressions across all variants (rendered only — prefetched
+  // decisions that never displayed carry no learning weight)
   const totalImpressions = await (await getDb()).variantImpression.count({
-    where: { shopId: shopId }
+    where: { shopId: shopId, rendered: true }
   });
 
   // Tier population cap (mirrors evolutionCycle): Pro = 2 variants,
@@ -531,7 +532,8 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
       by: ['variantId'],
       where: {
         variantId: { in: variantIds },
-        triggerReason: triggerReason
+        triggerReason: triggerReason,
+        rendered: true
       },
       _count: { id: true }
     });
@@ -773,13 +775,12 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
  * Record an impression for a variant
  */
 export async function recordImpression(variantId, shopId, context = {}) {
-  // Update variant impression count
-  await (await getDb()).variant.update({
-    where: { id: variantId },
-    data: {
-      impressions: { increment: 1 }
-    }
-  });
+  // NOTE: Variant.impressions and the segment-stat cells are NOT bumped here.
+  // This runs at decision prefetch (cart activation), which can be long before
+  // — or entirely without — an actual render (no trigger fired, competing-popup
+  // gate dropped the attempt, customer left). Counters move in
+  // confirmImpressionRender() when the client reports the surface displayed;
+  // until then the row sits with rendered=false and no learning weight.
 
   // Check if there's an active promotion
   const activePromo = await (await getDb()).promotion.findFirst({
@@ -807,17 +808,47 @@ export async function recordImpression(variantId, shopId, context = {}) {
       promoInCart: context.promoInCart ?? false,
       archetype: context.archetype || null,
       segmentKey: context.segmentKey || null,
+      rendered: false,
       clicked: false,
       converted: false
     }
   });
 
-  console.log(` Recorded impression for variant ${variantId}${activePromo ? ' (during promo)' : ''}`);
+  console.log(` Recorded impression for variant ${variantId}${activePromo ? ' (during promo)' : ''} (awaiting render confirm)`);
+
+  return impression;
+}
+
+/**
+ * Confirm a prefetched impression actually rendered. Called from the
+ * confirm-render endpoint when the client displays the modal. Flips
+ * rendered false→true atomically (idempotent — replayed confirms are
+ * no-ops) and only then bumps Variant.impressions + segment-stat cells,
+ * so evolution fitness denominators count real shows only.
+ */
+export async function confirmImpressionRender(impressionId, shopId) {
+  const db = await getDb();
+  const flipped = await db.variantImpression.updateMany({
+    where: { id: impressionId, shopId, rendered: false },
+    data: { rendered: true }
+  });
+  if (flipped.count !== 1) return null; // already confirmed or unknown id
+
+  const impression = await db.variantImpression.findUnique({
+    where: { id: impressionId }
+  });
+  if (!impression) return null;
+
+  await db.variant.update({
+    where: { id: impression.variantId },
+    data: { impressions: { increment: 1 } }
+  });
 
   // Phase 5: per-cell counters (fire-and-forget)
-  bumpSegmentStats(shopId, variantId, context.segmentKey, { impressions: 1 })
+  bumpSegmentStats(shopId, impression.variantId, impression.segmentKey, { impressions: 1 })
     .catch(() => {});
 
+  console.log(` Render confirmed for impression ${impressionId}`);
   return impression;
 }
 
@@ -844,6 +875,12 @@ export async function recordClick(impressionId) {
   });
   if (!impression) {
     throw new Error(`Impression ${impressionId} not found`);
+  }
+
+  // A click proves the modal rendered — safety net for a lost confirm-render
+  // request, so click/conversion counts can never exceed impression counts.
+  if (!impression.rendered) {
+    await confirmImpressionRender(impressionId, impression.shopId);
   }
 
   if (firstClick.count === 1) {

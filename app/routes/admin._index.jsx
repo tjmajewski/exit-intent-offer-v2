@@ -42,7 +42,7 @@ export async function loader({ request }) {
     }),
     db.variantImpression.groupBy({
       by: ["shopId"],
-      where: { timestamp: { gte: since } },
+      where: { timestamp: { gte: since }, rendered: true },
       _count: { _all: true },
     }),
     db.starterImpression.groupBy({

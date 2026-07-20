@@ -85,7 +85,8 @@ async function tryOwnShopPriors(prisma, shopId, segmentKey) {
       shopId,
       segmentKey,
       archetype: { not: null },
-      timestamp: { gte: since }
+      timestamp: { gte: since },
+      rendered: true
     },
     select: { archetype: true, converted: true }
   });

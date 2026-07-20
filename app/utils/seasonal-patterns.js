@@ -55,7 +55,8 @@ export async function recordSeasonalPerformance(shopId) {
   const impressions = await db.variantImpression.findMany({
     where: {
       shopId: shopId,
-      timestamp: { gte: thirtyDaysAgo }
+      timestamp: { gte: thirtyDaysAgo },
+      rendered: true
     }
   });
   

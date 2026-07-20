@@ -425,7 +425,8 @@ export async function loader({ request }) {
       const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
       const [treatmentTotal, treatmentConverted, holdoutTotal, holdoutConverted, treatmentRevenue, holdoutRevenue] = await Promise.all([
         db.interventionOutcome.count({
-          where: { shopId: shopRecord.id, isHoldout: false, wasShown: true, timestamp: { gte: new Date(thirtyDaysAgoISO) } }
+          // rendered: prefetched-never-displayed decisions must not deflate treatment CVR
+          where: { shopId: shopRecord.id, isHoldout: false, wasShown: true, rendered: true, timestamp: { gte: new Date(thirtyDaysAgoISO) } }
         }),
         db.interventionOutcome.count({
           where: { shopId: shopRecord.id, isHoldout: false, wasShown: true, converted: true, timestamp: { gte: new Date(thirtyDaysAgoISO) } }

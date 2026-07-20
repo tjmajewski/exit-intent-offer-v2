@@ -15,7 +15,8 @@ export const MIN_HOLDOUT_FOR_LIFT = 30;
 
 export async function getIncrementality(db, shopId) {
   const [shown, shownConverted, holdout, holdoutConverted] = await Promise.all([
-    db.interventionOutcome.count({ where: { shopId, wasShown: true, isHoldout: false } }),
+    // rendered: prefetched-never-displayed decisions must not deflate shown-CVR
+    db.interventionOutcome.count({ where: { shopId, wasShown: true, rendered: true, isHoldout: false } }),
     db.interventionOutcome.count({ where: { shopId, wasShown: true, isHoldout: false, converted: true } }),
     db.interventionOutcome.count({ where: { shopId, isHoldout: true } }),
     db.interventionOutcome.count({ where: { shopId, isHoldout: true, converted: true } })

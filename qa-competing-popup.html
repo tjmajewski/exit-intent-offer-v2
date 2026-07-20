@@ -18,21 +18,41 @@
   window.Shopify = { shop: 'qa-competing.myshopify.com' };
   window.exitIntentSettings = {
     enabled: true,
-    mode: 'manual',
-    plan: 'starter',
-    discountEnabled: false,
+    mode: 'ai',
+    plan: 'pro',
+    discountEnabled: true,
     modalHeadline: 'Wait! Do not go',
     modalBody: 'QA harness modal',
     ctaButton: 'Stay',
     triggers: { exitIntent: true }
   };
-  window.fetch = (url) => {
+  window.fetch = (url, opts) => {
     const u = String(url);
+    const respond = (obj, status = 200) => Promise.resolve(new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } }));
     if (u.includes('/cart.js')) {
-      return Promise.resolve(new Response(JSON.stringify({ item_count: 1, total_price: 4500, items: [{ title: 'QA Item', quantity: 1 }] }), { headers: { 'Content-Type': 'application/json' } }));
+      return respond({ item_count: 1, total_price: 4500, items: [{ title: 'QA Item', quantity: 1 }], discount_codes: [] });
+    }
+    if (u.includes('/api/ai-decision')) {
+      return respond({
+        aiDecisionId: 'dec_test_1',
+        shouldShow: true,
+        decision: {
+          type: 'percentage', amount: 10,
+          headline: 'AI Test Offer', message: 'Stub decision from QA harness',
+          ctaText: 'Claim 10% Off', discountCode: 'TEST10',
+          triggerType: 'exit_intent', idleSeconds: 30,
+          impressionId: 'imp_test_1', variantId: 'var_1'
+        }
+      });
+    }
+    if (u.includes('/api/confirm-render')) {
+      let body = {};
+      try { body = JSON.parse(opts && opts.body || '{}'); } catch (_) {}
+      console.log('[QA] confirm-render POST:', JSON.stringify(body));
+      return respond({ success: true });
     }
     // shop-settings 404s → script falls back to window.exitIntentSettings
-    return Promise.resolve(new Response('{}', { status: u.includes('shop-settings') ? 404 : 200, headers: { 'Content-Type': 'application/json' } }));
+    return respond({}, u.includes('shop-settings') ? 404 : 200);
   };
 </script>
 </head>

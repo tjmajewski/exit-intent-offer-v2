@@ -267,6 +267,7 @@ model VariantImpression {
   shopId    String
 
   // Outcome
+  rendered       Boolean @default(false) // client confirmed the modal actually rendered — rows are minted at decision prefetch (before any trigger fires), so unrendered rows must not count as shows
   clicked        Boolean @default(false)
   converted      Boolean @default(false)
   revenue        Float?
@@ -527,6 +528,7 @@ model InterventionOutcome {
 
   // What happened
   wasShown       Boolean // true = modal shown, false = no_intervention
+  rendered       Boolean @default(false) // wasShown rows: client confirmed the surface actually rendered (decisions are minted at prefetch, before any trigger fires). wasShown=false rows are created rendered=true (nothing to render).
   isHoldout      Boolean @default(false) // true = 5% holdout group (excluded from learning)
   converted      Boolean @default(false)
   revenue        Float?

@@ -62,7 +62,7 @@ export async function computeTemplatePriors(prisma, shopId, ctx = {}) {
 
   // ---- Levels 1 + 2: own-shop impressions, joined to variant.templateId ----
   const rows = await prisma.variantImpression.findMany({
-    where: { shopId, timestamp: { gte: since } },
+    where: { shopId, timestamp: { gte: since }, rendered: true },
     select: {
       converted: true,
       archetype: true,

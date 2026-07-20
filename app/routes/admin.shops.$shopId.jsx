@@ -155,7 +155,7 @@ export async function loader({ request, params }) {
       },
     }),
     db.interventionOutcome.aggregate({
-      where: { shopId: shop.id, wasShown: true, timestamp: { gte: since } },
+      where: { shopId: shop.id, wasShown: true, rendered: true, timestamp: { gte: since } },
       _count: { _all: true },
     }),
     db.interventionOutcome.aggregate({

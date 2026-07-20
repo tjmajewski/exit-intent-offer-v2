@@ -34,7 +34,9 @@ export async function resolveShops({ plans = [], verticals = [], shopIds = [], i
 }
 
 function impressionWhere({ shopIds, from, to, deviceType, trafficSource }) {
-  const where = { shopId: { in: shopIds }, timestamp: { gte: from, lt: to } };
+  // rendered: impressions are minted at decision prefetch; only rows the
+  // client confirmed as displayed count as shows anywhere in the console.
+  const where = { shopId: { in: shopIds }, timestamp: { gte: from, lt: to }, rendered: true };
   if (deviceType) where.deviceType = deviceType;
   if (trafficSource) where.trafficSource = trafficSource;
   return where;
@@ -67,10 +69,10 @@ export async function getKpis(filter) {
       db.variantImpression.count({ where: { ...impressionWhere(filter), converted: true } }),
       db.variantImpression.count({ where: { ...impressionWhere(filter), clicked: true } }),
       db.interventionOutcome.count({
-        where: { ...outcomeWhere(filter), wasShown: true, isHoldout: false },
+        where: { ...outcomeWhere(filter), wasShown: true, rendered: true, isHoldout: false },
       }),
       db.interventionOutcome.count({
-        where: { ...outcomeWhere(filter), wasShown: true, isHoldout: false, converted: true },
+        where: { ...outcomeWhere(filter), wasShown: true, rendered: true, isHoldout: false, converted: true },
       }),
       db.interventionOutcome.count({ where: { ...outcomeWhere(filter), isHoldout: true } }),
       db.interventionOutcome.count({
@@ -248,7 +250,9 @@ export async function getBreakdowns(filter, shops) {
     groupOn("archetype"),
     db.interventionOutcome.groupBy({
       by: ["scoreBucket", "wasShown"],
-      where: outcomeWhere(filter),
+      // rendered: true excludes prefetched-never-displayed shown rows;
+      // wasShown=false rows are created rendered=true, so they all pass.
+      where: { ...outcomeWhere(filter), rendered: true },
       _count: { _all: true },
       _sum: { profit: true },
     }),
@@ -321,7 +325,7 @@ export async function getLeaderboard(filter, shops) {
         by: ["shopId"], where: { ...where, converted: true }, _count: { _all: true },
       }),
       db.interventionOutcome.groupBy({
-        by: ["shopId"], where: { ...oWhere, wasShown: true, isHoldout: false }, _count: { _all: true },
+        by: ["shopId"], where: { ...oWhere, wasShown: true, rendered: true, isHoldout: false }, _count: { _all: true },
       }),
       db.interventionOutcome.groupBy({
         by: ["shopId"],
@@ -396,12 +400,12 @@ export async function getHealth(shops) {
     db.variant.count({ where: { shopId: { in: shopIds }, status: "champion" } }),
     db.variantImpression.groupBy({
       by: ["shopId"],
-      where: { shopId: { in: shopIds }, timestamp: { gte: dayAgo } },
+      where: { shopId: { in: shopIds }, timestamp: { gte: dayAgo }, rendered: true },
       _count: { _all: true },
     }),
     db.variantImpression.groupBy({
       by: ["shopId"],
-      where: { shopId: { in: shopIds }, timestamp: { gte: weekAgo, lt: dayAgo } },
+      where: { shopId: { in: shopIds }, timestamp: { gte: weekAgo, lt: dayAgo }, rendered: true },
       _count: { _all: true },
     }),
     db.metaLearningInsights.count(),

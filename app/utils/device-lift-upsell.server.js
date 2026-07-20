@@ -34,7 +34,7 @@ export async function computeDeviceLiftUpsell(prisma, shopId, layoutNameOf = (id
   const since = new Date(Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
   const rows = await prisma.variantImpression.findMany({
-    where: { shopId, timestamp: { gte: since }, deviceType: { not: null } },
+    where: { shopId, timestamp: { gte: since }, deviceType: { not: null }, rendered: true },
     select: {
       converted: true,
       deviceType: true,

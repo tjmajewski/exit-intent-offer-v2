@@ -836,7 +836,8 @@ export async function action({ request }) {
         trafficSource: signals.trafficSource,
         segment: noDiscSegment,
         aiDecisionId: noDiscAiDec.id,
-        impressionId
+        impressionId,
+        pendingRender: true // decision prefetch ≠ render; client confirms via confirm-render
       }).catch(e => console.error('[Threshold] Failed to record shown outcome:', e));
 
       // Journey log: announce-only modal shown
@@ -1059,7 +1060,8 @@ export async function action({ request }) {
       trafficSource: signals.trafficSource,
       segment: shownSegment,
       aiDecisionId: discountAiDec.id,
-      impressionId
+      impressionId,
+      pendingRender: true // decision prefetch ≠ render; client confirms via confirm-render
     }).catch(e => console.error('[Threshold] Failed to record shown outcome:', e));
 
     // Journey log: discount offer shown — surface reflects the opener the
