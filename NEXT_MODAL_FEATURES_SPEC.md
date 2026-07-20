@@ -7,15 +7,16 @@ in ship order. `showProductImages` (gene + manual toggle + QA) already shipped
 
 Contents:
 1. [Gene wiring checklist (shared)](#1-gene-wiring-checklist-shared)
-2. [Currency-framed savings math](#2-currency-framed-savings-math-dollar-framing)
-3. [Product-aware copy](#3-product-aware-copy)
-4. [Mobile back-button trigger](#4-mobile-back-button-trigger)
-5. [Free-shipping threshold archetype](#5-free-shipping-threshold-archetype) ← includes no-free-shipping behavior
-6. [Claimed-code reminder bar](#6-claimed-code-reminder-bar)
-7. [Real inventory scarcity](#7-real-inventory-scarcity)
-8. [Trust row](#8-trust-row)
-9. [Held-code signal + margin-aware response](#9-held-code-signal--margin-aware-response)
-10. [Cross-store device priors (deferred)](#10-cross-store-device-priors-deferred)
+2. [Subscription & mixed-cart support (TOP PRIORITY)](#2-subscription--mixed-cart-support-top-priority)
+3. [Currency-framed savings math](#3-currency-framed-savings-math-dollar-framing)
+4. [Product-aware copy](#4-product-aware-copy)
+5. [Mobile back-button trigger](#5-mobile-back-button-trigger)
+6. [Free-shipping threshold archetype](#6-free-shipping-threshold-archetype) ← includes no-free-shipping behavior
+7. [Claimed-code reminder bar](#7-claimed-code-reminder-bar)
+8. [Real inventory scarcity](#8-real-inventory-scarcity)
+9. [Trust row](#9-trust-row)
+10. [Held-code signal + margin-aware response](#10-held-code-signal--margin-aware-response)
+11. [Cross-store device priors (deferred)](#11-cross-store-device-priors-deferred)
 
 ---
 
@@ -50,7 +51,292 @@ but not slower convergence.
 
 ---
 
-## 2. Currency-framed savings math ("dollar framing")
+## 2. Subscription & mixed-cart support (TOP PRIORITY)
+
+Resparq is subscription-blind today: every cart is treated as one-time D2C.
+Subscription (selling-plan) stores and mixed stores are a growing share of
+Shopify and the app either breaks (codes rejected at checkout — now fixed) or
+leaves its biggest levers unused (LTV-aware sizing, subscribe-and-save as the
+exit offer). This section is the new top of the ship order.
+
+**Policy decision (locked):** a Resparq discount applies to the FIRST purchase
+only. Subsequent subscription billing cycles are never discounted.
+
+### 2.0 Shipped foundation
+
+Commit `1276574`: all 6 `discountCodeBasicCreate` sites in
+`app/utils/discounts.js` + `app/utils/discount-codes.js` now set
+`customerGets.appliesOnSubscription: true`, `appliesOnOneTimePurchase: true`,
+and top-level `recurringCycleLimit: 1` (schema-verified field names). New codes
+apply to subscription line items, first billing cycle only.
+
+**Open gap:** code-reuse paths return pre-existing Shopify codes untouched —
+`createDiscountCode` / `createFixedAmountDiscountCode` early-return on the
+`codeDiscountNodeByCode` hit, and `createGenericDiscountCode` early-returns via
+`checkDiscountCodeExists`. Codes minted before `1276574` stay
+one-time-purchase-only. Fix: on the reuse path, fire a
+`discountCodeBasicUpdate` setting the same three fields (idempotent, cheap —
+one extra mutation per reuse until the fleet is backfilled; or a one-time
+backfill script over codes matching our title patterns).
+
+### 2.1 Cart subscription signal (foundation — everything below depends on it)
+
+**Data source:** `/cart.js` line items carry `selling_plan_allocation` —
+`null` for one-time items, an object (`selling_plan.id`, `selling_plan.name`,
+per-cycle `price`) for subscription items. Already fetched twice per session;
+zero new requests.
+
+**Client** (`exit-intent-modal.js`):
+- `getCartSnapshot()` (~line 973) computes alongside `productImages`:
+  ```js
+  const subLines = items.filter(i => i.selling_plan_allocation);
+  const hasSubscriptionItems = subLines.length > 0;
+  const subscriptionOnly    = hasSubscriptionItems && subLines.length === items.length;
+  const subscriptionValue   = subLines.reduce((s, i) => s + i.final_line_price, 0) / 100;
+  ```
+  Return them from the snapshot next to `value` / `productImages`.
+- `collectCustomerSignals()` (~line 894 return) adds:
+  `cartSubscription: 'none' | 'mixed' | 'all'` and `subscriptionValue`
+  (share computation server-side: `subscriptionValue / cartValue`).
+
+**Server:**
+- `AIDecision.signals` is a JSON string — the signal logs for free once the
+  client sends it. No migration for decision logging.
+- `VariantImpression` gains `cartSubscription String @default("none")`
+  (mirror the `promoInCart` column + plumbing exactly: decision route stamps
+  it at impression mint, aggregator can segment on it later).
+- ai-decision route: thread `signals.cartSubscription` into the `decision`
+  object so the client resolver can branch on it (both response payload paths,
+  per checklist step 9).
+
+**Effort:** Low. ~15 lines client, 1 column, 1 plumb-through. Ship first —
+every other subsection reads this signal.
+
+### 2.2 First-order copy honesty
+
+**Rule:** when the cart contains subscription lines AND the decision mints a
+discount, the modal must not imply the discount recurs.
+
+- **Deterministic disclosure line, not a gene** (compliance, like the trust
+  row's fixed "Secure checkout" line — merchants and shoppers must be able to
+  rely on it 100% of the time, so it never enters a learning pool):
+  `resolveModalContent` renders a fixed fine-print line under the offer when
+  `decision.variant` carries a discount and `cartSubscription !== 'none'`:
+  "Discount applies to your first order." Shared primitive in
+  `modal-templates.js` (same dispatcher-injection pattern as
+  `makeProductImageRow`; same skip list: top-banner, scratch-reveal get a
+  shortened inline variant).
+- **Savings math is already correct:** `{{savings_amount}}` (section 3)
+  computes off `/cart.js` totals = first-cycle price. Note it, change nothing.
+- **Banned-pattern guard:** add `/every\s+(order|month|delivery)/i` +
+  `/forever/i` to `UNIVERSAL_BANNED_PATTERNS` for discount archetypes so
+  generated copy (phase 7c) can never promise a recurring discount. The
+  subscription-upsell archetype (2.4) is the one pool that legitimately says
+  "every order" — its `copyBannedPatterns` omits these, exactly the
+  free-shipping firewall pattern (section 6.2 mode `none`).
+
+**Effort:** Low. One resolver branch + one primitive + 2 banned patterns.
+
+### 2.3 LTV-aware offer sizing (margin engine)
+
+**Hypothesis:** a subscription conversion is worth `expectedCycles × margin`,
+not one order. The margin ceiling should therefore tolerate deeper first-cycle
+discounts on subscription carts — payback arrives in renewals that Resparq
+never discounts (2.0 guarantees this).
+
+- **New Shop column:** `subscriptionExpectedCycles Float @default(3)` —
+  merchant-editable in the settings Free Shipping/margin card cluster.
+  Conservative default; merchants with real retention data can raise it.
+- **Engine change** (deterministic, NOT a gene — zero stores, nothing to
+  learn from yet; same promote-to-learned path as the intervention
+  threshold): in the margin clamp
+  (`getMaxDiscountForMargin(price, cost, minimumMarginPercent)`,
+  MARGIN_PROTECTION_SPEC), the *effective* margin cost of a discount on
+  subscription value is amortized:
+  ```
+  subShare       = subscriptionValue / cartValue          // 0..1
+  effectiveCost  = discount × (1 - subShare) + discount × subShare / expectedCycles
+  ```
+  The ceiling check runs against `effectiveCost`, not raw `discount`. Pure
+  one-time carts: `subShare = 0`, formula degenerates to today's behavior —
+  regression-safe by construction (extend
+  `scripts/dev/verify-margin-invariant.mjs` with a `subShare = 0` identity
+  case).
+- **Hard clamp unchanged:** the offer can only move within the archetype's
+  existing `offerAmounts` pool. Amortization unlocks deeper *pool values*
+  previously vetoed by margin; it never invents amounts.
+- Log `subShare` + amortized cost on the decision for auditability.
+
+**Effort:** Med. One formula + column + settings field + invariant test case.
+
+### 2.4 Subscribe-and-save exit offer (mixed stores) — new archetype
+
+**Hypothesis:** for a one-time cart at a store that sells selling plans, the
+best exit offer is the merchant's OWN subscription discount ("Save 15% on
+every order — subscribe"). The selling-plan discount funds the save, Resparq
+mints nothing, the merchant gains recurring revenue. No competitor runs
+subscription upsell as an exit-intent play — this is the differentiator.
+
+New archetype `subscription_upsell`, following the free-shipping archetype
+contract (section 6) exactly: capability-gated, structurally unreachable when
+ineligible.
+
+**Capability model** — client-detected, zero scope changes:
+- The storefront AJAX product endpoint `/products/{handle}.js` includes
+  `selling_plan_groups[]` (`selling_plans[].id`, `.name`,
+  `.price_adjustments[]` with `value_type: percentage | fixed_amount | price`
+  and `value`). No auth, no Admin API.
+- Shop column `subscriptionUpsellMode String @default("off")` (`off` | `on`)
+  — merchant opt-in in settings (Quick Setup card, presence-marker pattern).
+  Default off: switching a line to a subscription is a contract-shaped action;
+  merchants must opt in.
+
+**Eligibility (client resolves, server gates):**
+- `subscriptionUpsellMode === 'on'`
+- Cart non-empty, `cartSubscription === 'none'` (never pitch subscribing to
+  someone already subscribing)
+- Top cart item (existing `getCartSnapshot()` price-desc ordering) has ≥1
+  selling plan whose price adjustment is `percentage` or `fixed_amount` with
+  value > 0. Plans with `value_type: 'price'` or zero savings → ineligible
+  (no honest savings claim possible — same no-fabrication rule as
+  scarcity/timers).
+- Client fetches `/products/{handle}.js` for the top item lazily at decision
+  prefetch (parallel with the decision call; cache per handle in
+  sessionStorage) and ships
+  `topItemSellingPlan: { id, name, savingsType, savingsValue } | null` in
+  signals.
+
+**Offer mechanics:**
+- `decision.type: 'subscription_upsell'` — no discount code minted, rides the
+  existing no-code render path (like mode-`threshold` free shipping).
+- New placeholders: `{{plan_savings}}` (client-formatted: `15%` or
+  `formatCurrency(x)` — percentage plans are currency-closed like section 3;
+  fixed-amount plans inherit the same base-vs-presentment caveat as fixed
+  offers, so v1 restricts fixed-amount plan claims to shops where presentment
+  = base currency) and `{{plan_name}}`.
+- CTA action: `POST /cart/change.js` with
+  `{ id: <line key>, quantity, selling_plan: <planId> }` — switches the line
+  to the subscription in place — then redirect per the variant's `redirects`
+  gene (`cart` | `checkout`). On AJAX failure: fall back to redirecting to the
+  product page (never dead-end the click).
+- Post-switch, re-fetch `/cart.js` and confirm `selling_plan_allocation` on
+  the line before claiming success in the UI (two-phase confirm, same
+  philosophy as render confirmation in `b28956e`).
+
+**Archetype definition (gene-pools.js):**
+```js
+subscription_upsell: {
+  archetypeName: 'SUBSCRIPTION_UPSELL',
+  archetypeDescription: 'Convert a one-time cart to the merchant\'s own selling plan; savings funded by the plan, no code minted',
+  slots: ['headline', 'subhead', 'cta'],          // no discount_code slot
+  requiredSlots: ['headline', 'cta'],
+  requires: { cartItemsMin: 1, subscriptionUpsellCapability: true }, // new require key, enforced in selectBaseline
+  copyBannedPatterns: UNIVERSAL_BANNED_PATTERNS   // minus the recurring-language patterns added in 2.2
+    .filter(p => !RECURRING_LANGUAGE_PATTERNS.includes(p)),
+  offerAmounts: [0],                              // value comes from the plan, margin ceiling n/a
+  headlines: ['Save {{plan_savings}} on every order', 'Never run out — {{plan_savings}} off when you subscribe', ...],
+  ctas: ['Subscribe & save {{plan_savings}}', ...],
+  redirects: ['cart', 'checkout'],
+  urgency: [false],                               // nothing expires — honest-urgency rule
+  showSubhead: [true, false],
+  showProductImages: [true, false],
+  triggerTypes / idleSeconds / templateIds: same as siblings
+}
+```
+
+**Firewall (mode `off`):** identical 4-layer pattern as free-shipping mode
+`none` (section 6.2): selection gate on `subscriptionUpsellMode`, seeding
+skip, recurring-language banned patterns stay universal for all other pools,
+render-time clamp with fallback to `conversion_no_discount` + nightly orphan
+sweep on mode transitions.
+
+**Learning:** new baseline through the standard pipeline — neutral 1.0
+archetype prior, variant seeding, Thompson selection, meta-learning via
+`determineBaseline` (no change needed). Zero-discount conversions will
+structurally beat discount archetypes on profit-per-impression — correct, but
+let evidence, not priors, move share (same note as free-shipping 6.4).
+
+**Effort:** High. New pool + 1 Shop column + settings card + client plan fetch
++ cart/change CTA path + two-phase confirm + firewall. Ship after 2.1–2.3.
+
+### 2.5 Active-subscriber suppression
+
+**Hypothesis:** a logged-in customer with a live subscription buying a refill
+or add-on converts anyway; discounting them is pure margin burn.
+
+- **Detection:** the ai-decision route already enriches logged-in visitors via
+  Admin GraphQL (`apps.exit-intent.api.ai-decision.jsx` ~lines 294–321,
+  `numberOfOrders` + `amountSpent`). Add `tags` to that same query — zero new
+  scope, zero new round-trips. Subscription apps tag customers
+  (Recharge: "Active Subscriber"; Appstle/Skio similar). Signal:
+  `isActiveSubscriber = tags.some(t => /active.?subscri|subscription/i.test(t))`.
+  (Direct `subscriptionContracts` reads are NOT available — that field is
+  scoped to the app that owns the contracts; tags are the practical proxy.)
+- **Engine:** deterministic prior, same hook as `promoInCart` /
+  held-code (section 10): down-weight discount archetypes, up-weight
+  no-discount pools + `no_intervention` scoring. NOT a hard block — gift and
+  one-time-item purchases are real; the prior nudges, the bandit keeps
+  exploring.
+- **Known limitation:** guest subscribers are invisible. Accept it —
+  subscription customers are disproportionately logged in (account required
+  to manage the subscription).
+- Log the signal in `AIDecision.signals` (free) from day one, condition later
+  — telemetry-first, same sequencing rule as section 10.
+
+**Effort:** Low. One GraphQL field + regex + one scoring adjustment.
+
+### 2.6 Subscription-aware attribution
+
+Two correctness rules and one reporting upgrade:
+
+- **Exclude renewals from attribution.** Recurring billing orders arrive on
+  the same `orders/create` webhook with `source_name: 'subscription_contract'`.
+  `webhooks.orders.create.jsx` currently doesn't check `source_name` — a
+  renewal landing inside an attribution window would count as a recovered
+  order Resparq had nothing to do with, silently inflating measured lift.
+  Guard at the top of the handler: `source_name === 'subscription_contract'`
+  → log + return before any attribution matching. (Holdout lift integrity
+  depends on this — it's the highest-priority line in 2.6.)
+- **Tag subscription conversions.** `Conversion` gains
+  `subscriptionConversion Boolean @default(false)` — set when the matched
+  decision's logged `cartSubscription !== 'none'` (join at conversion time via
+  the existing decision linkage; no order-payload parsing needed, the REST
+  webhook payload doesn't reliably expose selling plans).
+- **Report LTV-adjusted value, clearly labeled.** Dashboard/analytics add
+  "Subscriptions started: N" and an *estimated* LTV column
+  (`orderValue × subscriptionExpectedCycles`, subscription share only),
+  explicitly labeled as merchant-configured estimate. First-order revenue
+  stays the headline number. (Consistent with the no-invented-metrics rule:
+  per-store measurement + labeled estimates only, no fabricated uplift.)
+
+**Effort:** Low-Med. One webhook guard + one column + two dashboard fields.
+
+### 2.7 Interactions with existing planned features
+
+- **Free-shipping archetype (section 6):** subscription items usually ship
+  free per plan terms. Add to its selection gate: ineligible when
+  `cartSubscription === 'all'`. Mixed carts stay eligible (threshold applies
+  to whole cart).
+- **Currency framing (section 3):** no change — savings compute off first-cycle
+  cart totals, correct by construction. The disclosure line (2.2) carries the
+  recurrence honesty.
+- **Held-code signal (section 10):** an active-subscriber signal and a
+  held-code signal can co-occur; both are down-weight priors on the same
+  scoring hook — they compose additively, no special-casing.
+- **Reminder bar (section 7):** inherits the disclosure line (2.2) when the
+  offer it reminds about was minted against a subscription cart.
+
+### 2.8 Ship order within this section
+
+| Slice | Contents | Why |
+|---|---|---|
+| A | 2.1 signal + 2.2 disclosure + 2.6 webhook guard & column | Correctness + telemetry; tiny, zero learning surface |
+| B | 2.0 legacy-code backfill + 2.3 margin amortization + 2.5 suppression | Engine wins on the new signal |
+| C | 2.4 subscription-upsell archetype | The differentiator; needs A's signal and 2.2's banned-pattern split |
+
+---
+
+## 3. Currency-framed savings math ("dollar framing")
 
 **Hypothesis:** "Save $12.60 on your $84 order" beats "Save 15%". Concrete
 amounts > abstract percentages, especially at higher cart values. "Dollar" is
@@ -119,7 +405,7 @@ No schema change beyond the gene column (`amountFraming String @default("percent
 
 ---
 
-## 3. Product-aware copy
+## 4. Product-aware copy
 
 **Hypothesis:** "Your Blue Hoodie is still here" beats generic copy. The item
 name creates ownership.
@@ -152,7 +438,7 @@ Low-Med. Pool entries + resolver + fallback pairing. No migration.
 
 ---
 
-## 4. Mobile back-button trigger
+## 5. Mobile back-button trigger
 
 **Hypothesis:** Mobile has no mouse-leave; idle is the only trigger today.
 Back-button interception fires at true exit moment on the majority device.
@@ -200,7 +486,7 @@ toggle. Gene/meta wiring is free (existing `triggerType` pipes).
 
 ---
 
-## 5. Free-shipping threshold archetype
+## 6. Free-shipping threshold archetype
 
 **Hypothesis:** "You're $12 from free shipping" converts without eating product
 margin. Shipping-cost aversion is the #1 stated abandonment reason in every
@@ -210,7 +496,7 @@ This is a **new archetype** (new gene pool + baseline), not a gene — it change
 what the modal promises, so it must obey the archetype contract in
 `gene-pools.js` (slots / requiredSlots / requires / copyBannedPatterns).
 
-### 5.1 Capability model — the core design question
+### 6.1 Capability model — the core design question
 
 The app cannot see shipping rates without the `read_shipping` scope (we hold
 `write_products, write_discounts, read_orders` — a scope addition forces a
@@ -229,7 +515,7 @@ from `showProductImages`):
 - "Let Resparq offer free shipping as an incentive" → mode `offer`
 - Neither → mode `none` (default)
 
-### 5.2 The three modes
+### 6.2 The three modes
 
 **Mode `threshold` — NUDGE.** Store has a standing threshold; the modal just
 surfaces proximity. No discount code minted; the store's own rates apply at
@@ -283,7 +569,7 @@ Mode transitions: `threshold → none` and `offer → none` trigger the same
 orphan-kill sweep. No data loss — dead variants keep their stats for
 meta-learning.
 
-### 5.3 Archetype definition
+### 6.3 Archetype definition
 
 ```js
 // gene-pools.js
@@ -319,7 +605,7 @@ mismatch, treat the visitor as mode-`offer`-or-skip). Offer mode is unaffected
 (free shipping is free in any currency). `freeShippingThreshold` joins the
 shop-settings API payload.
 
-### 5.4 Learning integration
+### 6.4 Learning integration
 - New baseline string `free_shipping` flows through: variant seeding,
   Thompson selection, archetype priors (`archetype-priors.js` map gets a
   neutral 1.0 entry until data exists), meta-learning aggregation
@@ -332,7 +618,7 @@ shop-settings API payload.
   but cold-start priors should not let it cannibalize before data: neutral
   archetype prior, let evidence move it.
 
-### 5.5 Effort
+### 6.5 Effort
 Med-High. New pool + 2 Shop columns + settings card + selection/seeding gates +
 mint util + render branches + orphan sweep. The mode-`none` firewall is mostly
 free because it reuses existing patterns (aggression-0 gate, generic-code
@@ -340,7 +626,7 @@ fallback, banned-pattern per-pool arrays).
 
 ---
 
-## 6. Claimed-code reminder bar
+## 7. Claimed-code reminder bar
 
 **Hypothesis:** Shopper clicks CTA / copies code, then doesn't check out. A
 persistent slim bar ("SAVE15 applied — expires in 3:59:12 → Checkout")
@@ -377,7 +663,7 @@ events. No schema change beyond the shop flag.
 
 ---
 
-## 7. Real inventory scarcity
+## 8. Real inventory scarcity
 
 **Hypothesis:** "Only 3 left" moves fence-sitters — but only honest counts
 (hard rule: no fabricated urgency, consistent with the timer/urgency policy).
@@ -408,7 +694,7 @@ mint to avoid latency regression.
 
 ---
 
-## 8. Trust row
+## 9. Trust row
 
 Payment-method icons + guarantee line above the CTA.
 
@@ -427,7 +713,7 @@ Payment-method icons + guarantee line above the CTA.
 
 ---
 
-## 9. Held-code signal + margin-aware response
+## 10. Held-code signal + margin-aware response
 
 **Hypothesis:** a customer who just redeemed an email-capture popup (15% off
 for their email) already holds a discount. Minting a second one burns margin
@@ -526,12 +812,12 @@ directly defuses the "will this fight my Klaviyo popup?" objection.
 
 Detection Low-Med (~80 lines riding on the gate). Engine prior Med (scoring
 adjustment + reminder response mode). The reminder *surface* reuses the
-claimed-code bar component (section 6) — sequence this after release 3 so the
+claimed-code bar component (section 7) — sequence this after release 4 so the
 component exists.
 
 ---
 
-## 10. Cross-store device priors (deferred)
+## 11. Cross-store device priors (deferred)
 
 Known gap, out of scope for this cycle: `MetaLearningGene.deviceType` column
 exists but aggregation only writes vertical × AOV scopes, and proven-gene
@@ -548,11 +834,12 @@ pooled `Variant` totals, plus serve-time gene biasing to consume the rows.
 
 | Release | Contents | Why together |
 |---|---|---|
-| 1 | Currency framing + product-aware copy | Both are copy-pool work on existing genes/placeholders; one resolver PR; no new learning surface beyond one gene |
-| 2 | Free-shipping archetype | Isolated: new baseline, no interaction with release 1 genes |
-| 3 | Back-button trigger + reminder bar | Both are session-flow features; test interaction between them explicitly (bar must not mount in a back-trapped session that never engaged) |
-| 4 | Scarcity + trust row | Scarcity carries the release; trust row rides along |
-| 5 | Held-code signal + margin-aware response | Needs the reminder-bar component (release 3) and the competing-popup gate (shipped `75b83a5`); detection + engine prior land together. The telemetry slice (gate journey events + signal logging) is release-independent — ship it with whichever release goes out next |
+| 1 | **Subscription slices A + B (section 2.8)**: cart signal, disclosure line, renewal-attribution guard, legacy-code backfill, margin amortization, subscriber suppression | Top priority. Correctness + telemetry first, engine wins in the same release; no new learning surface (deterministic priors + one impression column) |
+| 2 | Currency framing + product-aware copy | Both are copy-pool work on existing genes/placeholders; one resolver PR; no new learning surface beyond one gene. Disclosure line (2.2) must already be live so currency-framed savings on subscription carts stay honest |
+| 3 | **Subscription-upsell archetype (2.4)** + free-shipping archetype | Both are capability-gated archetypes sharing the same firewall pattern; one selection-gate PR; free-shipping gains its `cartSubscription === 'all'` ineligibility rule (2.7) here |
+| 4 | Back-button trigger + reminder bar | Both are session-flow features; test interaction between them explicitly (bar must not mount in a back-trapped session that never engaged) |
+| 5 | Scarcity + trust row | Scarcity carries the release; trust row rides along |
+| 6 | Held-code signal + margin-aware response | Needs the reminder-bar component (release 4) and the competing-popup gate (shipped `75b83a5`); detection + engine prior land together. The telemetry slice (gate journey events + signal logging) is release-independent — ship it with whichever release goes out next |
 
 Each release: run the aggregator dry (`npm run aggregate-genes`) against dev
 data before deploy; QA every template × mobile/desktop via
