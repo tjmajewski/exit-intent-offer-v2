@@ -2905,23 +2905,35 @@
         }
 
         if (decision.type === 'threshold') {
-          // ENFORCE offer-mentioning copy (generic gene copy says nothing about the deal)
-          const headlineLC = headline.toLowerCase();
-          const mentionsOffer = headlineLC.includes('off') || headlineLC.includes('save') ||
-            headlineLC.includes('away') || headlineLC.includes('unlock');
-          if (!mentionsOffer) {
-            if (cartValue >= decision.threshold) {
-              headline = `You unlocked ${formatCurrency(decision.amount)} off!`;
-              subhead = `Your cart qualifies — this discount is applied at checkout.`;
-            } else {
-              headline = `You're ${formatCurrency(thresholdRemaining)} away from ${formatCurrency(decision.amount)} off`;
-              subhead = `Add a little more to your cart and save on your entire order.`;
-            }
+          // ENFORCE condition-stating copy. A threshold offer is only honest if
+          // the visible copy names BOTH the reward and the requirement. The
+          // previous guard tested only for the reward ('off'/'save'/'unlock'),
+          // so any gene naming a dollar amount without the qualifying spend —
+          // every urgency headline did — passed and rendered what looked like
+          // an unconditional discount. Test the requirement explicitly instead.
+          //
+          // `threshold != null` first: `cartValue >= null` coerces to
+          // `cartValue >= 0`, which is true for any non-empty cart and would
+          // declare an unqualified customer qualified.
+          const qualified = decision.threshold != null && cartValue >= decision.threshold;
+          const remainingText = formatCurrency(thresholdRemaining);
+          const thresholdText = decision.threshold != null ? formatCurrency(decision.threshold) : null;
+          const visible = showSubhead ? `${headline} ${subhead}` : headline;
+          const statesCondition = visible.includes(remainingText) ||
+            (thresholdText !== null && visible.includes(thresholdText));
+
+          if (qualified) {
+            // Evolved copy still frames this as a goal to reach; it isn't one.
+            headline = `You unlocked ${formatCurrency(decision.amount)} off!`;
+            subhead = `Your cart qualifies — this discount is applied at checkout.`;
+          } else if (!statesCondition) {
+            headline = `You're ${remainingText} away from ${formatCurrency(decision.amount)} off`;
+            subhead = `Add a little more to your cart and save on your entire order.`;
           }
           showSecondary = true;
           secondaryCta = 'Checkout Now';
           // Primary CTA must encourage shopping, never checkout
-          cta = cartValue >= decision.threshold ? 'Keep Shopping' : 'Add Items & Save';
+          cta = qualified ? 'Keep Shopping' : 'Add Items & Save';
           thresholdOffer = { code: decision.code, threshold: decision.threshold, discount: decision.amount, timestamp: Date.now() };
         }
 
@@ -2962,8 +2974,11 @@
         offerType = 'fixed';
         amountText = formatCurrency(decision.amount);
       } else if (decision.type === 'threshold') {
-        const remaining = Math.ceil((decision.threshold - cartValue) / 5) * 5;
-        if (cartValue >= decision.threshold) {
+        // `threshold != null` first: `cartValue >= null` coerces to
+        // `cartValue >= 0` and would qualify any non-empty cart.
+        const qualified = decision.threshold != null && cartValue >= decision.threshold;
+        const remaining = Math.ceil(((decision.threshold || 0) - cartValue) / 5) * 5;
+        if (qualified) {
           headline = `You unlocked ${formatCurrency(decision.amount)} off!`;
           subhead = `Your cart qualifies — this discount is applied at checkout.`;
         } else {
@@ -2974,7 +2989,7 @@
         offerType = 'threshold';
         showSecondary = true;
         secondaryCta = 'Checkout Now';
-        cta = cartValue >= decision.threshold ? 'Keep Shopping' : 'Add Items & Save';
+        cta = qualified ? 'Keep Shopping' : 'Add Items & Save';
         thresholdOffer = { code: decision.code, threshold: decision.threshold, discount: decision.amount, timestamp: Date.now() };
         amountText = formatCurrency(decision.amount);
       }

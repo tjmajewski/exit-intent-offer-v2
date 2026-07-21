@@ -96,16 +96,22 @@ export const genePools = {
       '{{rating}}-star rated products at a price you\'ll love'
     ],
 
+    // THRESHOLD ARCHETYPE: urgency copy must ALSO state the qualifying
+    // condition. The previous lines here ('Save {{amount}}, expires in 24
+    // hours') were written for a flat-discount frame: they name the reward but
+    // never the requirement, so an urgency variant rendered a modal that said
+    // "save $8" while silently requiring several hundred dollars more in the
+    // cart. Every line below carries {{threshold_remaining}} or {{threshold}}.
     headlinesWithUrgency: [
-      'Save {{amount}} — this offer expires in 24 hours',
-      '{{amount}} off is yours, but not for long',
-      'Unlock {{amount}} off before this deal disappears'
+      'Add {{threshold_remaining}} for {{amount}} off, expires in 24 hours',
+      '{{threshold_remaining}} from {{amount}} off, and time is running out',
+      'Unlock {{amount}} off by adding {{threshold_remaining}}, today only'
     ],
 
     subheadsWithUrgency: [
-      'This exclusive offer expires soon — act now',
-      'Your personal discount code is only valid for 24 hours',
-      'Once the timer runs out, this deal is gone'
+      'Add {{threshold_remaining}} to your cart to save {{amount}}. This offer expires in 24 hours.',
+      'Your {{amount}} discount unlocks at {{threshold}} and is only valid for 24 hours.',
+      'Reach {{threshold}} to save {{amount}}. Once the timer runs out, this deal is gone.'
     ],
 
     ctas: [
