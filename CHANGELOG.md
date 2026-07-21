@@ -1,5 +1,47 @@
 # @shopify/shopify-app-template-react-router
 
+## Resparq AI - July 21, 2026 (Threshold offer coherence)
+
+Found in QA: a modal offered "$8 off" with CTA "Keep Shopping" and never
+mentioned that the cart needed $895 more to qualify. Three independent defects
+stacked into one incoherent modal.
+
+### Fixed
+- **Urgency copy on `THRESHOLD_DISCOUNT` never stated the condition.** All six
+  `headlinesWithUrgency` / `subheadsWithUrgency` lines in
+  `revenue_with_discount` were written for a flat-discount frame: they name the
+  reward ("Save {{amount}}, expires in 24 hours") but not the qualifying spend.
+  Because `urgency: true` swaps the copy pools wholesale
+  (`variant-engine.js`), every urgency impression on a threshold offer rendered
+  what read as an unconditional discount. Rewritten to carry
+  `{{threshold_remaining}}` or `{{threshold}}`.
+- **The renderer's guard tested for the reward, not the requirement.** The
+  threshold branch of `resolveModalContent` checked whether the headline
+  contained "off"/"save"/"away"/"unlock" and rewrote it if not — so the urgency
+  lines above passed and the corrective rewrite never fired. It now tests
+  whether the visible copy states the qualifying amount.
+- **`cartValue >= decision.threshold` qualified any non-empty cart when
+  `threshold` was `null`** (`>= null` coerces to `>= 0`), flipping the primary
+  CTA to "Keep Shopping" for customers who did not qualify. Both the variant
+  and Pro-default paths now null-check first.
+
+### Changed
+- **Threshold ask is now proportionate to the discount.**
+  `recommendedThreshold` scales the requirement with cart value (1.3x) while the
+  discount comes from a flat `$10-$25` pool and is then cut further by the
+  margin guard — the two were never coupled, so the deal decayed as carts grew
+  (a $2,983 cart asked $892 more to earn $8 off, a 0.9% return). New
+  `capThresholdByDiscount()` bounds the gap at `MAX_GAP_MULTIPLE` (5) times the
+  final discount, a 20% floor on the customer's return. Applied after the
+  margin guard, so a cut discount shrinks the ask with it. **No-op at typical
+  cart sizes** — the proportional threshold is already inside the cap at $300
+  and below; it engages above that and on margin-capped discounts.
+- `scripts/dev/verify-threshold-copy.mjs` asserts both invariants. Also repaired
+  the import path in `test-no-false-advertising.js`, broken since the script
+  relocation in `b4d55d6`. That suite reports 2 pre-existing failures in
+  `pure_reminder` where a substring check flags "cart is **save**d" as an offer
+  promise; unrelated to this change and left alone.
+
 ## Resparq AI - July 21, 2026 (Subscription & mixed-cart support — Release 1, Slice B)
 
 Engine slice: the margin ceiling now understands subscription LTV, active

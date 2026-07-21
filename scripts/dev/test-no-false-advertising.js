@@ -1,7 +1,7 @@
 // Test: Verify no false advertising in modal copy
 // Ensures modals never promise offers/discounts that aren't actually given
 
-import { genePools } from './app/utils/gene-pools.js';
+import { genePools } from '../../app/utils/gene-pools.js';
 
 console.log('🧪 Testing: No False Advertising in Modal Copy');
 console.log('='.repeat(60));
