@@ -1,3 +1,5 @@
+import { ensureSubscriptionEligibility } from "./discount-subscription.js";
+
 export async function createDiscountCode(admin, discountPercentage) {
   const discountCode = `${discountPercentage}OFF`;
 
@@ -19,9 +21,12 @@ export async function createDiscountCode(admin, discountPercentage) {
 
   if (checkResult.data?.codeDiscountNodeByCode?.id) {
     console.log(` Using existing discount code: ${discountCode}`);
+    // Spec 2.0: codes minted before subscription support are one-time-purchase
+    // only and get rejected on a subscription cart. Repair on reuse.
+    await ensureSubscriptionEligibility(admin, discountCode, checkResult.data.codeDiscountNodeByCode.id);
     return discountCode;
   }
-  
+
   // Create new discount code with percentage in title
   const mutation = `
     mutation discountCodeBasicCreate($basicCodeDiscount: DiscountCodeBasicInput!) {
@@ -110,9 +115,11 @@ export async function createFixedAmountDiscountCode(admin, discountAmount, curre
 
   if (checkResult.data?.codeDiscountNodeByCode?.id) {
     console.log(` Using existing discount code: ${discountCode}`);
+    // Spec 2.0: repair pre-subscription codes on the reuse path.
+    await ensureSubscriptionEligibility(admin, discountCode, checkResult.data.codeDiscountNodeByCode.id);
     return discountCode;
   }
-  
+
   // Create new fixed amount discount code
   const mutation = `
     mutation discountCodeBasicCreate($basicCodeDiscount: DiscountCodeBasicInput!) {

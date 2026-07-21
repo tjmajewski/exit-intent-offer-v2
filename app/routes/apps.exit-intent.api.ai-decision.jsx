@@ -13,6 +13,11 @@ import { computePropensity } from "../utils/propensity.server.js";
 import { enforceRateLimit } from "../utils/rate-limit.server.js";
 import { getEnabledLayoutIds } from "../utils/templates.js";
 
+// Spec 2.5: customer tags written by the major subscription apps —
+// Recharge ("Active Subscriber"), Appstle, Skio and friends all tag the
+// customer record. Matched case-insensitively against the joined tag list.
+const ACTIVE_SUBSCRIBER_TAG = /active.?subscri|subscription/i;
+
 // FNV-1a 32-bit hash — deterministic holdout bucketing per visitor.
 function fnv1a(str) {
   let h = 0x811c9dc5;
@@ -34,7 +39,7 @@ export async function action({ request }) {
   if (limited) return limited;
 
   const { default: db } = await import("../db.server.js");
-  const { decideOffer, checkBudget, offerCeilingPercent, recommendedThreshold } = await import("../utils/ai-decision.server.js");
+  const { decideOffer, checkBudget, offerCeilingPercent, recommendedThreshold, subShareFromSignals } = await import("../utils/ai-decision.server.js");
   try{
     const { admin } = await authenticate.public.appProxy(request);
     const { shop, signals, testMode } = await request.json();
@@ -291,6 +296,11 @@ export async function action({ request }) {
     // storefront round-trip. Guests (no customer id) correctly contribute 0.
     // Uses numberOfOrders (ordersCount was removed in API 2026-01).
     // ---------------------------------------------------------------------
+    // Server-derived only: signals arrive from the visitor's browser, so never
+    // honor a client-supplied subscriber claim (it's a down-weight, but the
+    // rule is the same as propensityScore — trust nothing from the storefront).
+    signals.isActiveSubscriber = false;
+
     if (signals.purchaseHistoryCount === undefined || signals.purchaseHistoryCount === null) {
       try {
         const loggedInCustomerId = new URL(request.url).searchParams.get('logged_in_customer_id');
@@ -300,6 +310,7 @@ export async function action({ request }) {
               customer(id: $id) {
                 numberOfOrders
                 amountSpent { amount }
+                tags
               }
             }
           `, { variables: { id: `gid://shopify/Customer/${loggedInCustomerId}` } });
@@ -308,17 +319,28 @@ export async function action({ request }) {
           if (customer) {
             signals.purchaseHistoryCount = parseInt(customer.numberOfOrders ?? 0, 10) || 0;
             signals.customerLifetimeValue = parseFloat(customer.amountSpent?.amount ?? 0) || 0;
-            console.log(`[AI Decision] Enriched purchaseHistoryCount=${signals.purchaseHistoryCount} for customer ${loggedInCustomerId}`);
+            // Spec 2.5: subscription apps (Recharge, Appstle, Skio) tag active
+            // subscribers. Direct subscriptionContracts reads are scoped to the
+            // app that owns the contract, so tags are the practical proxy —
+            // free on this existing query, no new scope, no extra round-trip.
+            signals.isActiveSubscriber = ACTIVE_SUBSCRIBER_TAG
+              .test((customer.tags || []).join(' '));
+            console.log(`[AI Decision] Enriched purchaseHistoryCount=${signals.purchaseHistoryCount}${signals.isActiveSubscriber ? ' activeSubscriber=true' : ''} for customer ${loggedInCustomerId}`);
           } else {
             signals.purchaseHistoryCount = 0;
+            signals.isActiveSubscriber = false;
           }
         } else {
-          // No logged-in customer → guest → no purchase history.
+          // No logged-in customer → guest → no purchase history. Guest
+          // subscribers are invisible (accepted limitation: managing a
+          // subscription requires an account, so most are logged in).
           signals.purchaseHistoryCount = 0;
+          signals.isActiveSubscriber = false;
         }
       } catch (err) {
         console.error('[AI Decision] purchaseHistoryCount enrichment failed:', err);
         signals.purchaseHistoryCount = signals.purchaseHistoryCount ?? 0;
+        signals.isActiveSubscriber = signals.isActiveSubscriber ?? false;
       }
     }
 
@@ -442,6 +464,9 @@ export async function action({ request }) {
       shopId: shopRecord.id,
       testMode: isTestMode,
       assumedGrossMargin: settings.assumedGrossMargin,
+      // Spec 2.3: subscription share is read off signals inside the engine;
+      // the merchant's expected billing cycles comes from the shop record.
+      subscriptionExpectedCycles: shopRecord.subscriptionExpectedCycles,
       clusterKeys: shopClusterKeys
     });
 
@@ -662,10 +687,17 @@ export async function action({ request }) {
       // can turn the order unprofitable, and high-propensity carts get little or
       // nothing (announce-only). This is the guard the old engines computed but
       // never actually applied to the served offer.
+      // Spec 2.3: same amortized ceiling the engine used above — a first-cycle
+      // discount on a subscription line costs margin once but earns
+      // expectedCycles of full-price renewals. Pure one-time carts: subShare 0,
+      // formula degenerates to the previous behavior.
+      const marginSubShare = subShareFromSignals(signals, signals.cartValue || 0);
       const ceilingPct = offerCeilingPercent({
         propensity: signals.propensityScore,
         aggression: effectiveAggression,
-        assumedGrossMargin: settings.assumedGrossMargin
+        assumedGrossMargin: settings.assumedGrossMargin,
+        subShare: marginSubShare,
+        expectedCycles: shopRecord.subscriptionExpectedCycles
       });
       const isRevenueBaseline = baseline.includes('revenue');
       if (ceilingPct === 0) {

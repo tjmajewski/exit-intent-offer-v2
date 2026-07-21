@@ -1,3 +1,5 @@
+import { ensureSubscriptionEligibility } from "./discount-subscription.js";
+
 /**
  * Derive a branded code prefix from the shop's myshopify domain.
  * acme-cycling.myshopify.com → "ACMECYCLI" (capped at 8 chars, alphanumeric only).
@@ -80,6 +82,9 @@ export async function createGenericDiscountCode(admin, code, type, amount) {
 
   if (existingCode) {
     console.log(`Generic code ${code} already exists, reusing it`);
+    // Spec 2.0: a generic code minted before subscription support would be
+    // rejected on every subscription cart, forever (generic codes never rotate).
+    await ensureSubscriptionEligibility(admin, code);
     return { code, exists: true };
   }
 

@@ -120,6 +120,7 @@ model Shop {
   budgetAmount        Float    @default(1000)
   budgetPeriod        String   @default("month")
   metaLearningEnabled Boolean  @default(true)
+  subscriptionExpectedCycles Float @default(3) // expected billing cycles per subscription conversion; amortizes the margin ceiling (spec 2.3)
 
   // Evolution System (Enterprise)
   mutationRate        Float    @default(0.1)
@@ -168,6 +169,10 @@ model Shop {
 - `mode`: `"manual"` or `"ai"`
 - `aiAggression`: 0-10 (0 = reminder only, 10 = max discounts)
 - `aiGoal`: `"revenue"` (maximize total) or `"conversions"` (maximize count)
+- `subscriptionExpectedCycles`: merchant-set LTV assumption (default 3, clamped
+  to 1-24 by the engine). A Resparq discount hits the first cycle only, so the
+  margin ceiling charges only `1/cycles` of it against the subscription share of
+  the cart. One-time carts are unaffected (`subShare = 0` → identity).
 
 ---
 
@@ -767,6 +772,7 @@ npx prisma migrate reset
 - `add_modal_content` - Added modal content fields to Shop
 - `add_discount_code` - Added discount code tracking
 - `add_cart_value_max_default` - Updated cart value max default to 999999
+- `20260721140000_add_subscription_expected_cycles` - `Shop.subscriptionExpectedCycles` (spec 2.3)
 
 ---
 

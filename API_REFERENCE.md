@@ -451,6 +451,22 @@ first-order disclosure line ("Discount applies to your first order.") when a
 discount is minted against a cart carrying subscription lines. The value is also
 stamped on the `VariantImpression` (`cartSubscription` column) for later segmentation.
 
+**Subscription margin amortization (spec 2.3):** on a cart with subscription
+lines the engine amortizes the discount's margin cost over
+`Shop.subscriptionExpectedCycles` (default 3) for the subscription share only —
+Resparq discounts the first cycle, renewals bill at full price. The share and
+floor caps in `offerCeilingPercent` are tested against that amortized cost, so
+subscription carts can clear a deeper offer from the same gene pool. The
+merchant's aggression ceiling and the absolute 25% cap are unchanged, and a
+pure one-time cart is byte-identical to the previous behavior. The resolved
+`subShare` rides on the decision object.
+
+**`isActiveSubscriber` (spec 2.5):** server-derived only — read from the
+logged-in customer's Shopify `tags` (the proxy subscription apps write) during
+the existing enrichment query. Any client-supplied value is overwritten. It
+nudges baseline selection toward the no-discount pools (propensity bar 70 → 60);
+it never hard-blocks a discount. Guest subscribers are invisible by design.
+
 **Response (Offer):**
 ```json
 {

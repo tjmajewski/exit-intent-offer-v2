@@ -93,8 +93,18 @@ export function selectBaseline(signals, _aiGoal) {
   const hasPromoActive = signals.hasPromoActive || false;
   const goal = detectFunnelGoal(signals);
 
+  // Spec 2.5: an active subscriber buying a refill or add-on converts anyway —
+  // discounting them is margin burn on revenue the merchant already has. This
+  // is a NUDGE, not a block: it lowers the bar for the no-discount baselines
+  // (gift and one-time purchases by subscribers are real), and the bandit keeps
+  // exploring within whichever pool is selected.
+  const highPropensityBar = signals.isActiveSubscriber === true ? 60 : 70;
+  if (signals.isActiveSubscriber === true) {
+    console.log(' Active subscriber — no-discount bar lowered to 60');
+  }
+
   // High propensity threshold (doesn't need incentive)
-  const highPropensity = propensityScore >= 70;
+  const highPropensity = propensityScore >= highPropensityBar;
 
   // If site-wide promo is active, avoid discount baselines
   if (hasPromoActive) {

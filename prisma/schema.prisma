@@ -134,6 +134,13 @@ model Shop {
   genericDiscountCode String?
   discountCodePrefix  String?
 
+  // Subscription LTV (spec 2.3). A subscription conversion earns
+  // expectedCycles × margin while Resparq only ever discounts the first cycle,
+  // so the margin ceiling amortizes the discount cost over this many billings.
+  // Conservative default; merchants with real retention data can raise it.
+  // Only applies to the subscription share of a cart — one-time carts unaffected.
+  subscriptionExpectedCycles Float @default(3)
+
   // Adaptive Threshold System
   lastThresholdUpdate DateTime?
 

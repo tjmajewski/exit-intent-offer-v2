@@ -1,5 +1,64 @@
 # @shopify/shopify-app-template-react-router
 
+## Resparq AI - July 21, 2026 (Subscription & mixed-cart support — Release 1, Slice B)
+
+Engine slice: the margin ceiling now understands subscription LTV, active
+subscribers get nudged off discounts, and legacy discount codes repair
+themselves so they stop being rejected on subscription carts. Spec:
+[`NEXT_MODAL_FEATURES_SPEC.md`](NEXT_MODAL_FEATURES_SPEC.md) §2 (2.0, 2.3, 2.5).
+
+### Added
+- **Subscription margin amortization** (spec 2.3): `subscriptionAmortization()`
+  + `subShareFromSignals()` in `ai-decision.server.js`. A first-cycle discount on
+  a subscription line costs margin once but earns `expectedCycles` of full-price
+  renewals, so `offerCeilingPercent` divides its two MARGIN caps (share cap,
+  20% margin-floor cap) by the amortization factor. The propensity curve, the
+  merchant's aggression ceiling and the absolute 25% cap are untouched — they
+  aren't margin caps. Applied on both the engine path and the decision route's
+  Stage-4 clamp on the served variant amount.
+- **`Shop.subscriptionExpectedCycles`** (`Float @default(3)`, migration
+  `20260721140000`): merchant LTV assumption, clamped to [1, 24] by the engine so
+  a runaway value can't unlock an unbounded discount. Settings UI still pending.
+- **`signals.isActiveSubscriber`** (spec 2.5): derived from the logged-in
+  customer's `tags` (added to the existing enrichment query — no new scope, no
+  extra round-trip) against the tags Recharge/Appstle/Skio write. Server-derived
+  only; any client-supplied value is overwritten, same rule as `propensityScore`.
+  Persists in `AIDecision.signals` from day one (telemetry-first).
+- **`ensureSubscriptionEligibility()`** (`app/utils/discount-subscription.js`,
+  spec 2.0): closes the code-reuse gap left by `1276574`. All three reuse paths
+  (`createDiscountCode`, `createFixedAmountDiscountCode`,
+  `createGenericDiscountCode`) now read the existing code's
+  `customerGets.appliesOnSubscription` and, only when stale, fire one
+  `discountCodeBasicUpdate` setting `appliesOnSubscription`,
+  `appliesOnOneTimePurchase` and `recurringCycleLimit: 1`.
+
+### Changed
+- **Baseline selection nudges active subscribers off discounts** (spec 2.5): the
+  no-discount propensity bar drops 70 → 60 when `isActiveSubscriber`. A nudge,
+  not a block — gift and one-time purchases by subscribers are real, and the
+  bandit keeps exploring inside whichever pool is selected.
+- **Decision objects carry `subShare`** for margin auditability.
+
+### Fixed
+- **Pre-`1276574` codes rejected on subscription carts**: reused codes were
+  returned untouched and stayed one-time-purchase-only. The backfill is
+  self-limiting (a repaired code reports `appliesOnSubscription: true` and is
+  never updated again), so the fleet repairs itself over normal traffic — no
+  migration script. It never throws: an unrepairable code is still served,
+  since failing the offer request would be strictly worse. Non-`DiscountCodeBasic`
+  codes (merchant-made BXGY/shipping) are left untouched.
+
+### Migrations
+- `20260721140000_add_subscription_expected_cycles` — `Shop.subscriptionExpectedCycles`
+
+### Verification
+- `node scripts/dev/verify-margin-invariant.mjs` — extended with check 4:
+  (a) `subShare = 0` is byte-identical to the pre-subscription ceiling across 5k
+  draws × 4 cycle values, and (b) across 20k subscription draws the margin floor
+  and share cap hold against the AMORTIZED cost, amortization never tightens the
+  ceiling, and the nominal ceiling never exceeds 25%. All checks pass.
+- `node scripts/dev/golden-master.mjs` — all 20 scenarios match (no drift).
+
 ## Resparq AI - July 21, 2026 (Subscription & mixed-cart support — Release 1, Slice A)
 
 First slice of subscription (selling-plan) awareness. Resparq was subscription-blind:

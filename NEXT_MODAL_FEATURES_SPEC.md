@@ -75,7 +75,17 @@ Commit `1276574`: all 6 `discountCodeBasicCreate` sites in
 and top-level `recurringCycleLimit: 1` (schema-verified field names). New codes
 apply to subscription line items, first billing cycle only.
 
-**Open gap:** code-reuse paths return pre-existing Shopify codes untouched —
+**Status: SHIPPED** (Slice B). The reuse-path gap below is closed by
+`app/utils/discount-subscription.js` (`ensureSubscriptionEligibility`): each of
+the three reuse paths now reads the existing code's
+`customerGets.appliesOnSubscription` and, only when stale, fires one
+`discountCodeBasicUpdate` setting the three fields. Self-limiting (a repaired
+code reports `true` and is never updated again), so the fleet backfills itself
+over normal traffic — no migration script. Never throws: a code that can't be
+repaired is still served, since failing the request would be strictly worse.
+Non-`DiscountCodeBasic` codes (merchant-made BXGY/shipping) are left untouched.
+
+**Original gap:** code-reuse paths return pre-existing Shopify codes untouched —
 `createDiscountCode` / `createFixedAmountDiscountCode` early-return on the
 `codeDiscountNodeByCode` hit, and `createGenericDiscountCode` early-returns via
 `checkDiscountCodeExists`. Codes minted before `1276574` stay
@@ -156,6 +166,19 @@ discount, the modal must not imply the discount recurs.
 **Effort:** Low. One resolver branch + one primitive + 2 banned patterns.
 
 ### 2.3 LTV-aware offer sizing (margin engine)
+
+**Status: SHIPPED** (Slice B). Landed against the *actual* margin guardrail —
+`offerCeilingPercent` in `app/utils/ai-decision.server.js`, not the deferred
+per-product `getMaxDiscountForMargin` design this section was written against
+(see MARGIN_PROTECTION_SPEC header). New `subscriptionAmortization(subShare,
+cycles)` divides the two MARGIN caps (share cap, margin-floor cap) by the
+amortization factor; the propensity curve, the merchant's aggression ceiling and
+`D_MAX` are untouched — they aren't margin caps. `subShareFromSignals()` derives
+`subShare` from the 2.1 signals and is used by both the engine and the decision
+route's Stage-4 clamp. `Shop.subscriptionExpectedCycles Float @default(3)`
+(migration `20260721140000`); cycles clamped to [1, 24] so a runaway merchant
+value can't unlock an unbounded discount. `subShare` rides on every decision
+object for auditability. Settings UI still pending (default 3 applies).
 
 **Hypothesis:** a subscription conversion is worth `expectedCycles × margin`,
 not one order. The margin ceiling should therefore tolerate deeper first-cycle
@@ -279,6 +302,14 @@ let evidence, not priors, move share (same note as free-shipping 6.4).
 
 ### 2.5 Active-subscriber suppression
 
+**Status: SHIPPED** (Slice B). `tags` added to the existing customer-enrichment
+query; `signals.isActiveSubscriber` is server-derived only (client-supplied
+values are overwritten, same rule as `propensityScore`) and persists in
+`AIDecision.signals` from day one. Engine hook: `selectBaseline` lowers the
+no-discount propensity bar 70 → 60 for active subscribers — a nudge toward the
+no-discount pools, not a block, so gift/one-time purchases still reach discount
+archetypes and the bandit keeps exploring.
+
 **Hypothesis:** a logged-in customer with a live subscription buying a refill
 or add-on converts anyway; discounting them is pure margin burn.
 
@@ -349,8 +380,8 @@ Two correctness rules and one reporting upgrade:
 
 | Slice | Contents | Why |
 |---|---|---|
-| A | 2.1 signal + 2.2 disclosure + 2.6 webhook guard & column | Correctness + telemetry; tiny, zero learning surface |
-| B | 2.0 legacy-code backfill + 2.3 margin amortization + 2.5 suppression | Engine wins on the new signal |
+| A ✅ | 2.1 signal + 2.2 disclosure + 2.6 webhook guard & column | Correctness + telemetry; tiny, zero learning surface |
+| B ✅ | 2.0 legacy-code backfill + 2.3 margin amortization + 2.5 suppression | Engine wins on the new signal |
 | C | 2.4 subscription-upsell archetype | The differentiator; needs A's signal and 2.2's banned-pattern split |
 
 ---

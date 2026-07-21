@@ -30,8 +30,38 @@ import { computePropensity } from './propensity.server.js';
 // Anchored to ~40% average gross margin: give away at most half of it, and keep
 // post-discount gross margin >= 20%. All caps are configurable per store via
 // settings.assumedGrossMargin.
+//
+// SUBSCRIPTION AMORTIZATION (spec 2.3). A discount on a subscription line is
+// charged once but earns `expectedCycles` billings — Resparq codes are
+// first-cycle-only (recurringCycleLimit: 1), so renewals bill at full price.
+// The true margin cost of the offer is therefore:
+//
+//   effectiveCost = d × (1 - subShare) + d × subShare / expectedCycles
+//                 = d × amortization
+//
+// The two MARGIN caps (share, floor) are tested against effectiveCost, i.e.
+// their ceiling on the nominal discount is cap / amortization. The propensity
+// curve, the merchant's aggression ceiling, and D_MAX are NOT margin caps and
+// stay untouched. subShare = 0 => amortization = 1 => identical to the
+// pre-subscription behavior (regression-safe by construction; asserted in
+// scripts/dev/verify-margin-invariant.mjs).
 // =============================================================================
-export function offerCeilingPercent({ propensity, aggression = 5, assumedGrossMargin = 0.40 } = {}) {
+export function subscriptionAmortization(subShare = 0, expectedCycles = 3) {
+  const share = Math.max(0, Math.min(1, Number.isFinite(subShare) ? subShare : 0));
+  if (share === 0) return 1;
+  // Clamp cycles to a sane band: < 1 is meaningless, and a runaway merchant
+  // value must not unlock an unbounded discount.
+  const cycles = Math.max(1, Math.min(24, Number.isFinite(expectedCycles) ? expectedCycles : 3));
+  return (1 - share) + share / cycles;
+}
+
+export function offerCeilingPercent({
+  propensity,
+  aggression = 5,
+  assumedGrossMargin = 0.40,
+  subShare = 0,
+  expectedCycles = 3
+} = {}) {
   const D_MIN = 5;   // below this an offer is ignorable / invisible -> announce
   const D_MAX = 25;  // absolute ceiling on any single exit offer
   const P_LO = 20;
@@ -48,13 +78,25 @@ export function offerCeilingPercent({ propensity, aggression = 5, assumedGrossMa
   const dRaw = D_MIN + (D_MAX - D_MIN) * (P_HI - P) / (P_HI - P_LO);
   const dCurve = Math.max(0, Math.min(D_MAX, dRaw)) * (agg / 5);
 
-  const shareCap = 0.50 * agm * 100;             // offer consumes <= half the margin
-  const floorCap = (1 - (1 - agm) / (1 - 0.20)) * 100; // post-discount margin >= 20%
+  const amort = subscriptionAmortization(subShare, expectedCycles);
+  const shareCap = 0.50 * agm * 100 / amort;             // offer consumes <= half the margin
+  const floorCap = (1 - (1 - agm) / (1 - 0.20)) * 100 / amort; // post-discount margin >= 20%
   const aggrCap = 10 + agg * 1.5;                 // merchant's hard ceiling (10-25%)
 
   const finalD = Math.min(dCurve, shareCap, floorCap, aggrCap, D_MAX);
   // Floor (not round) so the integer result never rounds UP through a cap.
   return finalD < D_MIN ? 0 : Math.floor(finalD);
+}
+
+// Subscription share of cart value, from the client signals shipped in 2.1.
+// Returns 0 for one-time carts, missing signals, or a nonsensical ratio — the
+// margin math then degenerates to the pre-subscription behavior.
+export function subShareFromSignals(signals = {}, cartValue = 0) {
+  if (signals.cartSubscription !== 'mixed' && signals.cartSubscription !== 'all') return 0;
+  const total = Number(cartValue) || Number(signals.cartValue) || 0;
+  const subValue = Number(signals.subscriptionValue) || 0;
+  if (total <= 0 || subValue <= 0) return 0;
+  return Math.min(1, subValue / total);
 }
 
 // Helper: Detect funnel stage to automatically choose revenue vs conversion goal.
@@ -165,6 +207,9 @@ export async function decideOffer(signals, ctx = {}) {
     shopId = null,
     testMode = false,
     assumedGrossMargin = 0.40,
+    // Spec 2.3: subscription share of the cart (0..1) + the merchant's expected
+    // billing cycles. Absent/0 => today's exact behavior.
+    subscriptionExpectedCycles = 3,
     // Phase 4: cluster keys (store-cluster.server.js clusterKeysFor) for
     // cross-store threshold priors. Empty/absent = no pooling, legacy behavior.
     clusterKeys = null
@@ -251,7 +296,15 @@ export async function decideOffer(signals, ctx = {}) {
   // -------------------------------------------------------------------------
   // STAGE 3/4 — margin-aware ceiling + concrete recommended offer
   // -------------------------------------------------------------------------
-  const ceilingPercent = offerCeilingPercent({ propensity: P, aggression, assumedGrossMargin });
+  const subShare = subShareFromSignals(signals, cartValue);
+  const ceilingPercent = offerCeilingPercent({
+    propensity: P, aggression, assumedGrossMargin,
+    subShare, expectedCycles: subscriptionExpectedCycles
+  });
+  if (subShare > 0) {
+    const amort = subscriptionAmortization(subShare, subscriptionExpectedCycles);
+    console.log(`[Offer Engine] Subscription amortization: subShare=${subShare.toFixed(2)} cycles=${subscriptionExpectedCycles} → effective cost ${(ceilingPercent * amort).toFixed(1)}% of ${ceilingPercent}% offered`);
+  }
 
   // Announce-only: high propensity, aggression 0, or sub-floor curve. Capture
   // the visitor at zero margin cost.
@@ -262,6 +315,7 @@ export async function decideOffer(signals, ctx = {}) {
       triggerReason,
       timing,
       ceilingPercent: 0,
+      subShare,
       type: 'no-discount',
       amount: 0,
       threshold: null,
@@ -288,6 +342,7 @@ export async function decideOffer(signals, ctx = {}) {
       triggerReason,
       timing,
       ceilingPercent,
+      subShare,
       type: 'threshold',
       amount,
       threshold,
@@ -303,6 +358,7 @@ export async function decideOffer(signals, ctx = {}) {
     triggerReason,
     timing,
     ceilingPercent,
+    subShare,
     type: 'percentage',
     amount: ceilingPercent,
     threshold: null,
