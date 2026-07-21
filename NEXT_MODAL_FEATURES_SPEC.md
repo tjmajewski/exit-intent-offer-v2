@@ -1,9 +1,14 @@
 # Next Modal Features — Technical Spec
 
-Status: PLANNED. Covers the remaining features from the modal-performance roadmap,
-in ship order. `showProductImages` (gene + manual toggle + QA) already shipped
-(commits `95c0e41`, `0e2b725`) and is the reference implementation for every
-"wire a gene" checklist below.
+Status: IN PROGRESS. Covers the remaining features from the modal-performance
+roadmap, in ship order. `showProductImages` (gene + manual toggle + QA) already
+shipped (commits `95c0e41`, `0e2b725`) and is the reference implementation for
+every "wire a gene" checklist below.
+
+**Shipped so far:** Release 1 **Slice A** (subscription cart signal 2.1,
+first-order disclosure 2.2, renewal-attribution guard + `subscriptionConversion`
+column 2.6) — commits `00840c3`, `f10b075`, `e681218`. Next: Release 1 Slice B
+(2.0 legacy-code backfill, 2.3 margin amortization, 2.5 subscriber suppression).
 
 Contents:
 1. [Gene wiring checklist (shared)](#1-gene-wiring-checklist-shared)
@@ -81,6 +86,11 @@ backfill script over codes matching our title patterns).
 
 ### 2.1 Cart subscription signal (foundation — everything below depends on it)
 
+**Status: SHIPPED** (commit `00840c3`). Client derives `cartSubscription` +
+`subscriptionValue` in `getCartSnapshot()` / `collectCustomerSignals()`;
+`ai-decision` threads `resolvedCartSubscription` into both decision payloads;
+`VariantImpression.cartSubscription` column + `recordImpression` plumbing live.
+
 **Data source:** `/cart.js` line items carry `selling_plan_allocation` —
 `null` for one-time items, an object (`selling_plan.id`, `selling_plan.name`,
 per-cycle `price`) for subscription items. Already fetched twice per session;
@@ -113,6 +123,14 @@ zero new requests.
 every other subsection reads this signal.
 
 ### 2.2 First-order copy honesty
+
+**Status: SHIPPED** (commits `00840c3`, `f10b075`). Disclosure line renders via a
+shared `modal-templates.js` primitive (`makeDisclosureLine` + `injectDisclosureLine`,
+compact variant on the skip-list layouts); `resolveModalContent` sets
+`firstOrderDisclosure` when a discount decision meets `cartSubscription !== 'none'`.
+`RECURRING_LANGUAGE_PATTERNS` added to `UNIVERSAL_BANNED_PATTERNS` (the `forever`
+pattern narrowed to affirmative-only in `f10b075` so it doesn't clobber "won't
+last forever" urgency copy). Savings math unchanged (already first-cycle-correct).
 
 **Rule:** when the cart contains subscription lines AND the decision mints a
 discount, the modal must not imply the discount recurs.
@@ -287,22 +305,23 @@ or add-on converts anyway; discounting them is pure margin burn.
 
 ### 2.6 Subscription-aware attribution
 
+**Status: PARTIALLY SHIPPED** (commit `00840c3`) — both correctness rules are
+live; the reporting upgrade (third bullet) is still pending.
+
 Two correctness rules and one reporting upgrade:
 
-- **Exclude renewals from attribution.** Recurring billing orders arrive on
-  the same `orders/create` webhook with `source_name: 'subscription_contract'`.
-  `webhooks.orders.create.jsx` currently doesn't check `source_name` — a
-  renewal landing inside an attribution window would count as a recovered
-  order Resparq had nothing to do with, silently inflating measured lift.
-  Guard at the top of the handler: `source_name === 'subscription_contract'`
-  → log + return before any attribution matching. (Holdout lift integrity
-  depends on this — it's the highest-priority line in 2.6.)
-- **Tag subscription conversions.** `Conversion` gains
-  `subscriptionConversion Boolean @default(false)` — set when the matched
-  decision's logged `cartSubscription !== 'none'` (join at conversion time via
-  the existing decision linkage; no order-payload parsing needed, the REST
-  webhook payload doesn't reliably expose selling plans).
-- **Report LTV-adjusted value, clearly labeled.** Dashboard/analytics add
+- ✅ **Exclude renewals from attribution.** *(SHIPPED)* Recurring billing orders
+  arrive on the same `orders/create` webhook with
+  `source_name: 'subscription_contract'`. `webhooks.orders.create.jsx` now guards
+  at the top of the handler: `source_name === 'subscription_contract'` → log +
+  return before any attribution matching. (Holdout lift integrity depends on
+  this — it's the highest-priority line in 2.6.)
+- ✅ **Tag subscription conversions.** *(SHIPPED)* `Conversion` gained
+  `subscriptionConversion Boolean @default(false)` — set from the attributed
+  impression's logged `cartSubscription !== 'none'` (resolved in the webhook via
+  the stamped impression; no order-payload parsing needed, the REST webhook
+  payload doesn't reliably expose selling plans).
+- ⏳ **Report LTV-adjusted value, clearly labeled.** *(PENDING)* Dashboard/analytics add
   "Subscriptions started: N" and an *estimated* LTV column
   (`orderValue × subscriptionExpectedCycles`, subscription share only),
   explicitly labeled as merchant-configured estimate. First-order revenue
@@ -871,7 +890,7 @@ pooled `Variant` totals, plus serve-time gene biasing to consume the rows.
 
 | Release | Contents | Why together |
 |---|---|---|
-| 1 | **Subscription slices A + B (section 2.8)**: cart signal, disclosure line, renewal-attribution guard, legacy-code backfill, margin amortization, subscriber suppression | Top priority. Correctness + telemetry first, engine wins in the same release; no new learning surface (deterministic priors + one impression column) |
+| 1 | **Subscription slices A + B (section 2.8)**: cart signal, disclosure line, renewal-attribution guard, legacy-code backfill, margin amortization, subscriber suppression. **Slice A SHIPPED** (`00840c3`, `f10b075`, `e681218`): 2.1 signal, 2.2 disclosure, 2.6 guard + column. **Slice B pending**: 2.0 legacy-code backfill, 2.3 margin amortization, 2.5 subscriber suppression | Top priority. Correctness + telemetry first, engine wins in the same release; no new learning surface (deterministic priors + one impression column) |
 | 2 | Currency framing + product-aware copy + **mint-vs-owned copy hygiene (section 10.0)** | All copy-pool work on existing genes/placeholders; one resolver PR; no new learning surface beyond one gene. Disclosure line (2.2) must already be live so currency-framed savings on subscription carts stay honest. The 10.0 copy hygiene guard (headlines that read as pre-owned when subhead-suppressed) rides here — same copy-pool surface, detection-free, ships well ahead of the held-code work in release 6 |
 | 3 | **Subscription-upsell archetype (2.4)** + free-shipping archetype | Both are capability-gated archetypes sharing the same firewall pattern; one selection-gate PR; free-shipping gains its `cartSubscription === 'all'` ineligibility rule (2.7) here |
 | 4 | Back-button trigger + reminder bar | Both are session-flow features; test interaction between them explicitly (bar must not mount in a back-trapped session that never engaged) |

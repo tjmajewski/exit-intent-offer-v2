@@ -436,10 +436,20 @@ Analyzes customer signals and returns personalized offer configuration.
     "cartHesitation": 45,
     "productDwellTime": 30,
     "addToCartVelocity": 2,
-    "exitVelocity": 1
+    "exitVelocity": 1,
+    "cartSubscription": "mixed",
+    "subscriptionValue": 30.00
   }
 }
 ```
+
+**Subscription signals (spec 2.1):** `cartSubscription` is `"none" | "mixed" | "all"`
+(derived client-side from `/cart.js` `selling_plan_allocation`); `subscriptionValue`
+is the summed subscription line total in the buyer's presentment currency. The
+decision response echoes `decision.cartSubscription`, which drives the fixed
+first-order disclosure line ("Discount applies to your first order.") when a
+discount is minted against a cart carrying subscription lines. The value is also
+stamped on the `VariantImpression` (`cartSubscription` column) for later segmentation.
 
 **Response (Offer):**
 ```json

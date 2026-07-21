@@ -292,6 +292,7 @@ model VariantImpression {
   // Phase 2A scenario signals
   pageType    String?  // home | product | collection | cart | checkout | search | blog | account | other
   promoInCart Boolean  @default(false) // cart has applied discount code or item-level discount
+  cartSubscription String @default("none") // none | mixed | all — cart contains selling-plan (subscription) lines (spec 2.1)
   archetype   String?  // denormalized archetype name (THRESHOLD_DISCOUNT, SOFT_UPSELL, etc.)
   segmentKey  String?  // composite key (see app/utils/segment-key.js) — richer than `segment`
 
@@ -352,6 +353,7 @@ model Conversion {
   discountCode        String?
   discountRedeemed    Boolean  @default(false)
   discountAmount      Float?
+  subscriptionConversion Boolean @default(false) // attributed decision saw a subscription cart (cartSubscription != none) (spec 2.6)
 
   // Modal Configuration Snapshot (Enterprise only)
   modalHeadline    String?

@@ -1,5 +1,50 @@
 # @shopify/shopify-app-template-react-router
 
+## Resparq AI - July 21, 2026 (Subscription & mixed-cart support — Release 1, Slice A)
+
+First slice of subscription (selling-plan) awareness. Resparq was subscription-blind:
+every cart was treated as one-time D2C. Slice A adds the cart signal, first-order
+copy honesty, and renewal-attribution correctness. Spec:
+[`NEXT_MODAL_FEATURES_SPEC.md`](NEXT_MODAL_FEATURES_SPEC.md) §2. Policy (locked): a
+Resparq discount applies to the **first order only**; renewals are never discounted.
+
+### Added
+- **Cart subscription signal** (spec 2.1): `exit-intent-modal.js` derives
+  `cartSubscription` (`none | mixed | all`) and `subscriptionValue` from
+  `/cart.js` `selling_plan_allocation` (zero new requests). Threaded through
+  `ai-decision` into both decision payloads and stamped on a new
+  `VariantImpression.cartSubscription` column for later segmentation.
+- **First-order disclosure line** (spec 2.2): deterministic compliance line
+  "Discount applies to your first order." injected below the CTA when a discount
+  decision meets a subscription cart. Shared primitive in `modal-templates.js`
+  (dispatcher injection, mirrors `makeProductImageRow`); shortened "First order
+  only" variant on slim layouts (top-banner, scratch-reveal). Never a learning gene.
+- **`Conversion.subscriptionConversion` column** (spec 2.6): set from the
+  attributed impression's `cartSubscription` for subscription-aware reporting.
+
+### Changed
+- **Recurring-language banned patterns** (spec 2.2): `every order/month/delivery`
+  and an affirmative-only `forever` pattern added to `UNIVERSAL_BANNED_PATTERNS`
+  so generated/pool copy can never promise a recurring discount. Exported
+  `RECURRING_LANGUAGE_PATTERNS` for the future subscription-upsell archetype (2.4).
+  The `forever` pattern is negation-aware — existing urgency copy ("won't last
+  forever") is preserved.
+- **QA copy hygiene**: replaced the `qa-product-images.html` placeholder
+  "your 15% off is still here" (reads as a pre-owned/email-popup code) with
+  "Here's 15% off to finish your order" (unambiguous fresh mint). New spec
+  §10.0 tracks the general mint-vs-owned copy guard for Release 2.
+
+### Fixed
+- **Renewal attribution guard** (spec 2.6): `webhooks.orders.create.jsx` now bails
+  on `source_name === 'subscription_contract'` before any attribution matching.
+  Recurring billing orders land on the same `orders/create` webhook; counting one
+  inside an attribution window would silently inflate measured lift and corrupt
+  holdout integrity.
+
+### Migrations
+- `20260721120000_add_cart_subscription_impression` — `VariantImpression.cartSubscription`
+- `20260721120500_add_subscription_conversion` — `Conversion.subscriptionConversion`
+
 ## Resparq AI - July 7, 2026 (Super Admin Console + Global AI Dashboard)
 
 Operator-only console at `/admin` — password-protected, NOT embedded in
