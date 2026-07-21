@@ -1862,20 +1862,44 @@
       
       console.log('[Enterprise AI] Decision:', decision);
       
-      // AI controls when to show (default to immediate if timing not specified)
-      if (!decision.timing || decision.timing === 'immediate') {
-        // Show right away
+      // AI controls when to show. The decision carries the evolved trigger
+      // genes (triggerType + idleSeconds) — same contract the Pro path uses in
+      // setupAITriggers(). Legacy `timing`/`delay` fields still win if present.
+      this.enterpriseOffer = decision;
+
+      if (decision.timing === 'immediate') {
         setTimeout(() => this.showModalWithOffer(decision), 1000);
-      } else if (decision.timing === 'exit_intent') {
-        // Wait for exit intent
+        return;
+      }
+      if (decision.timing === 'delayed' && decision.delay) {
+        setTimeout(() => this.showModalWithOffer(decision), decision.delay * 1000);
+        return;
+      }
+
+      const isMobile = isMobileDevice();
+      const triggerType = decision.triggerType || 'exit_intent';
+      const idleSeconds = decision.idleSeconds || 30;
+
+      console.log(`[Enterprise AI] Trigger strategy: ${triggerType}, idle: ${idleSeconds}s, mobile: ${isMobile}`);
+
+      if (!isMobile) {
         document.addEventListener('mouseout', (e) => {
           if (e.clientY < 0 && !this.modalShown) {
+            console.log('[Enterprise AI] Exit intent triggered (mouse left viewport)');
             this.showModalWithOffer(decision);
           }
         });
-      } else if (decision.timing === 'delayed' && decision.delay) {
-        // Delayed show
-        setTimeout(() => this.showModalWithOffer(decision), decision.delay * 1000);
+      }
+
+      if (triggerType === 'idle' || triggerType === 'exit_intent_or_idle') {
+        this.setupIdleTrigger(idleSeconds);
+      }
+
+      // Exit intent can't fire on mobile (no mouseout) — fall back to a capped idle timer
+      if (isMobile && triggerType === 'exit_intent') {
+        const mobileIdle = Math.min(idleSeconds, 15);
+        console.log(`[Enterprise AI] Mobile + exit_intent only → adding idle fallback (${mobileIdle}s)`);
+        this.setupIdleTrigger(mobileIdle);
       }
     }
     
