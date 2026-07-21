@@ -11,6 +11,17 @@ export const action = async ({ request }) => {
     console.log(" Webhook received:", topic);
     console.log("Shop:", shop);
 
+    // RENEWAL GUARD (spec 2.6): recurring subscription billing arrives on this
+    // same orders/create webhook with source_name 'subscription_contract'.
+    // Resparq discounts first orders only (spec 2.0) and never touches a
+    // renewal, so counting one inside an attribution window would silently
+    // inflate measured lift and corrupt holdout integrity. Bail before any
+    // attribution matching.
+    if (payload.source_name === 'subscription_contract') {
+      console.log(`[Webhook] Subscription renewal (order ${payload.id}) — skipping attribution`);
+      return new Response(null, { status: 200 });
+    }
+
     // IDEMPOTENCY: claim this order before processing. Shopify retries
     // webhooks (and a 500 below guarantees one); without the claim, retries
     // double-count analytics revenue, conversion rows, and threshold counters.
@@ -443,21 +454,25 @@ export const action = async ({ request }) => {
     // Resolve the winning variant from the stamped impression so the
     // conversions table links order -> variant (was always null in AI mode).
     let attributedVariantId = null;
+    let subscriptionConversion = false;
     if (impressionAttr?.value) {
       try {
         const attributedImpression = await db.variantImpression.findUnique({
           where: { id: impressionAttr.value },
-          select: { variantId: true, shopId: true }
+          select: { variantId: true, shopId: true, cartSubscription: true }
         });
         if (attributedImpression && shopRecord && attributedImpression.shopId === shopRecord.id) {
           attributedVariantId = attributedImpression.variantId;
+          // spec 2.6: flag conversions whose decision saw a subscription cart.
+          subscriptionConversion = attributedImpression.cartSubscription &&
+            attributedImpression.cartSubscription !== 'none';
         }
       } catch (err) {
         console.error('[Webhook] Variant resolution for conversion failed:', err.message);
       }
     }
 
-    await storeConversion(shop, payload, exitDiscountUsed, admin, attributedVariantId);
+    await storeConversion(shop, payload, exitDiscountUsed, admin, attributedVariantId, subscriptionConversion);
     console.log(" Conversion stored in conversions table");
 
     return new Response(null, { status: 200 });
@@ -649,7 +664,7 @@ async function classifyPromotion(promoId) {
   console.log(` Promotion classified: ${promo.code} → ${classification} (${aiStrategy})`);
 }
 
-async function storeConversion(shop, orderPayload, discountUsed, admin, attributedVariantId = null) {
+async function storeConversion(shop, orderPayload, discountUsed, admin, attributedVariantId = null, subscriptionConversion = false) {
   try {
     // Find shop record
     const shopRecord = await db.shop.findUnique({
@@ -705,6 +720,7 @@ async function storeConversion(shop, orderPayload, discountUsed, admin, attribut
         discountCode: discountUsed?.code || null,
         discountRedeemed: !!discountUsed,
         discountAmount: discountAmount > 0 ? discountAmount : null,
+        subscriptionConversion: !!subscriptionConversion,
         modalSnapshot: currentModal ? JSON.stringify(currentModal.config) : null
       }
     });

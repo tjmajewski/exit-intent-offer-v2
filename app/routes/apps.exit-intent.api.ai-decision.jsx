@@ -593,6 +593,10 @@ export async function action({ request }) {
     const triggerReason = preScore?.triggerReason || 'general';
     const resolvedPageType = signals.pageType || signals.exitPage || null;
     const resolvedPromoInCart = signals.promoInCart === true;
+    const resolvedCartSubscription =
+      (signals.cartSubscription === 'mixed' || signals.cartSubscription === 'all')
+        ? signals.cartSubscription
+        : 'none';
     const segmentKey = composeSegmentKey({
       deviceType: signals.deviceType,
       trafficSource: signals.trafficSource,
@@ -802,6 +806,7 @@ export async function action({ request }) {
       triggerReason,
       pageType: resolvedPageType,
       promoInCart: resolvedPromoInCart,
+      cartSubscription: resolvedCartSubscription,
       archetype: archetypeName,
       segmentKey
     });
@@ -867,6 +872,7 @@ export async function action({ request }) {
           code: null,
           baseline: decision.baseline,
           archetype: decision.archetype,
+          cartSubscription: resolvedCartSubscription, // none | mixed | all
           variant: {
             headline: decision.headline,
             subhead: decision.subhead,
@@ -1023,7 +1029,8 @@ export async function action({ request }) {
         confidence: decision.confidence,
         expiresAt: discountResult.expiresAt,
         baseline: decision.baseline, // Include baseline for tracking
-        archetype: decision.archetype // Archetype name (e.g. THRESHOLD_DISCOUNT)
+        archetype: decision.archetype, // Archetype name (e.g. THRESHOLD_DISCOUNT)
+        cartSubscription: resolvedCartSubscription // none | mixed | all — drives first-order disclosure line
       }
     };
     

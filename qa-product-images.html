@@ -8,6 +8,9 @@
 </head>
 <body>
 <h3>showProductImages QA — pick template:</h3>
+<div style="margin:0 16px 8px">
+  <label><input type="checkbox" id="disclosure"> First-order subscription disclosure (spec 2.2)</label>
+</div>
 <div id="controls" style="margin:0 16px 16px"></div>
 <script src="extensions/exit-intent-modal/assets/modal-templates.js"></script>
 <script>
@@ -31,7 +34,8 @@
       amountText: '15%',
       timerEndsAt: templateId === 'timer-front' ? Date.now() + 86400000 : null,
       showPoweredBy: true,
-      productImages
+      productImages,
+      firstOrderDisclosure: document.getElementById('disclosure').checked
     });
     out.overlay.style.display = 'flex';
     out.closeBtn && (out.closeBtn.onclick = () => out.overlay.remove());
@@ -45,6 +49,7 @@
     b.onclick = () => show(t.id);
     controls.appendChild(b);
   });
+  document.getElementById('disclosure').onchange = () => show('classic-card');
   show('classic-card');
 </script>
 </body>

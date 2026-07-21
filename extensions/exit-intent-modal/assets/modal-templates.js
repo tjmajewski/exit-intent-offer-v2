@@ -299,6 +299,24 @@
   // scratch-reveal's canvas interaction leaves no room above the CTA.
   const NO_IMAGE_ROW_TEMPLATES = ['top-banner', 'scratch-reveal'];
 
+  /**
+   * First-order subscription disclosure (spec 2.2). Fixed compliance line —
+   * never a learning gene, always rendered when the cart carries subscription
+   * lines and the decision mints a discount, so shoppers can rely on it 100%
+   * of the time. `compact` is the shortened inline variant for slim layouts
+   * (top-banner, scratch-reveal) where the full fine-print block doesn't fit —
+   * the line is shortened, never dropped.
+   */
+  function makeDisclosureLine(t, compact) {
+    const el = document.createElement('p');
+    el.className = 'resparq-first-order-disclosure';
+    el.textContent = compact ? 'First order only' : 'Discount applies to your first order.';
+    el.style.cssText = compact
+      ? 'margin:6px 0 0;text-align:center;font-size:11px;opacity:0.7;line-height:1.3;color:' + (t.foreground || '#333') + ';'
+      : 'margin:10px 0 0;text-align:center;font-size:12px;opacity:0.7;line-height:1.4;color:' + (t.foreground || '#333') + ';';
+    return el;
+  }
+
   function makePoweredBy(show) {
     const el = document.createElement('div');
     if (!show) { el.style.display = 'none'; return el; }
@@ -1276,6 +1294,10 @@
     if (props && props.productImages) {
       injectProductImages(out, props.productImages, props.themeOverrides);
     }
+    // First-order subscription disclosure: compliance line below the CTA.
+    if (props && props.firstOrderDisclosure) {
+      injectDisclosureLine(out, props.themeOverrides);
+    }
     return out;
   }
 
@@ -1295,6 +1317,20 @@
     return true;
   }
 
+  /**
+   * Insert the first-order disclosure line below a rendered modal's primary CTA.
+   * Compliance line — on skip-list layouts it renders a shortened inline variant
+   * (never dropped). Idempotent per modal.
+   */
+  function injectDisclosureLine(handles, themeOverrides) {
+    if (!handles || !handles.primaryCta || !handles.primaryCta.parentNode) return false;
+    if (handles.primaryCta.parentNode.querySelector('.resparq-first-order-disclosure')) return false;
+    const compact = NO_IMAGE_ROW_TEMPLATES.includes(handles.templateId);
+    const line = makeDisclosureLine(tokensFor(themeOverrides), compact);
+    handles.primaryCta.parentNode.insertBefore(line, handles.primaryCta.nextSibling);
+    return true;
+  }
+
   function list() {
     return Object.values(TEMPLATES).map((t) => ({
       id: t.id,
@@ -1308,6 +1344,7 @@
     render,
     list,
     injectProductImages,
+    injectDisclosureLine,
     getThemeTokens,
     setThemeTokens,
     DEFAULT_TEMPLATE_ID

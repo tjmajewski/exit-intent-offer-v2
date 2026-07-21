@@ -287,6 +287,7 @@ model VariantImpression {
   // Phase 2A scenario signals — enable richer "who + where + what offer" aggregation
   pageType    String? // home | product | collection | cart | checkout | search | blog | account | other
   promoInCart Boolean @default(false) // cart has applied discount code or item-level discount
+  cartSubscription String @default("none") // none | mixed | all — cart contains selling-plan (subscription) lines
   archetype   String? // denormalized archetype name (THRESHOLD_DISCOUNT, SOFT_UPSELL, etc.) — fast aggregator queries
   segmentKey  String? // composite segment key (see app/utils/segment-key.js) — richer than the legacy segment field
 
@@ -435,6 +436,10 @@ model Conversion {
   discountCode     String?
   discountRedeemed Boolean @default(false)
   discountAmount   Float?
+
+  // Subscription attribution (spec 2.6): true when the attributed decision's
+  // logged cart carried selling-plan lines (cartSubscription !== 'none').
+  subscriptionConversion Boolean @default(false)
 
   // Modal snapshot (Enterprise only)
   modalSnapshot String? // JSON of modal config when shown

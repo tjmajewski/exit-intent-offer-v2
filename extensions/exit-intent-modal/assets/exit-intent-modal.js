@@ -823,7 +823,18 @@
         (item) => Array.isArray(item.discounts) && item.discounts.length > 0
       );
       const promoInCart = cartLevelPromo || itemLevelPromo;
-      
+
+      // 2c. Cart subscription signal. selling_plan_allocation is null for
+      //     one-time items, an object for selling-plan (subscription) lines.
+      //     'none' | 'mixed' | 'all'. subscriptionValue in the buyer's
+      //     presentment currency; server computes the share vs cartValue.
+      const items = Array.isArray(cart.items) ? cart.items : [];
+      const subLines = items.filter((item) => item.selling_plan_allocation);
+      const cartSubscription = subLines.length === 0
+        ? 'none'
+        : (subLines.length === items.length ? 'all' : 'mixed');
+      const subscriptionValue = subLines.reduce((s, i) => s + (i.final_line_price || 0), 0) / 100;
+
       // 3. Device type
       const deviceType = /mobile/i.test(navigator.userAgent) ? 'mobile' : 'desktop';
       
@@ -918,7 +929,10 @@
         dayOfWeek,
         // Phase 2A scenario signals
         pageType: exitPage, // broader page categorization, shared with exitPage
-        promoInCart
+        promoInCart,
+        // Subscription (selling-plan) signals
+        cartSubscription,
+        subscriptionValue
       };
     }
     
@@ -983,10 +997,25 @@
           }))
           .filter((i) => !!i.image)
           .slice(0, 3);
-        return { value: (cart.total_price || 0) / 100, productImages };
+
+        // Subscription (selling-plan) signal. `selling_plan_allocation` is null
+        // for one-time items, an object for subscription lines. Free — this cart
+        // fetch already happened.
+        const subLines = items.filter((i) => i.selling_plan_allocation);
+        const hasSubscriptionItems = subLines.length > 0;
+        const subscriptionOnly = hasSubscriptionItems && subLines.length === items.length;
+        const subscriptionValue = subLines.reduce((s, i) => s + (i.final_line_price || 0), 0) / 100;
+
+        return {
+          value: (cart.total_price || 0) / 100,
+          productImages,
+          hasSubscriptionItems,
+          subscriptionOnly,
+          subscriptionValue
+        };
       } catch (error) {
         console.error('[Cart Snapshot] Error fetching cart:', error);
-        return { value: 0, productImages: [] };
+        return { value: 0, productImages: [], hasSubscriptionItems: false, subscriptionOnly: false, subscriptionValue: 0 };
       }
     }
 
@@ -1704,6 +1733,7 @@
         amountText: content.amountText || null,
         timerEndsAt: content.timerEndsAt || null,
         productImages: (content.productImages && content.productImages.length) ? content.productImages : null,
+        firstOrderDisclosure: !!content.firstOrderDisclosure,
         themeOverrides,
         showPoweredBy: content.showPoweredBy !== false
       };
@@ -2819,6 +2849,15 @@
         return null; // no-discount
       };
 
+      // First-order honesty (spec 2.2): when the cart carries subscription lines
+      // AND this decision mints a discount, the modal must not imply the discount
+      // recurs. Deterministic disclosure line (compliance, never a learning gene).
+      // Resparq policy: a discount applies to the FIRST order only.
+      const carriesDiscount = decision.type !== 'no-discount' && decision.type !== 'no_intervention';
+      const firstOrderDisclosure = carriesDiscount &&
+        typeof decision.cartSubscription === 'string' &&
+        decision.cartSubscription !== 'none';
+
       // --- Variant copy (evolution system: Enterprise) ---
       if (decision.variant) {
         const thresholdRemaining = decision.threshold ? Math.ceil((decision.threshold - cartValue) / 5) * 5 : 0;
@@ -2890,7 +2929,8 @@
           headline, subhead, cta, showSubhead, showSecondary, secondaryCta,
           showProductImages: decision.variant.showProductImages === true,
           code: discountCode, amountText: amountTextFor(decision),
-          offerType, discountCode, redirectDestination, thresholdOffer
+          offerType, discountCode, redirectDestination, thresholdOffer,
+          firstOrderDisclosure
         };
       }
 
@@ -2942,7 +2982,8 @@
       return {
         headline, subhead, cta, showSubhead: true, showSecondary, secondaryCta,
         code: discountCode, amountText, offerType, discountCode,
-        redirectDestination: s.redirectDestination, thresholdOffer
+        redirectDestination: s.redirectDestination, thresholdOffer,
+        firstOrderDisclosure
       };
     }
 

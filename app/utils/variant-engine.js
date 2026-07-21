@@ -806,6 +806,7 @@ export async function recordImpression(variantId, shopId, context = {}) {
       // Phase 2A scenario signals — caller passes these for richer meta-learning
       pageType: context.pageType || null,
       promoInCart: context.promoInCart ?? false,
+      cartSubscription: context.cartSubscription || 'none',
       archetype: context.archetype || null,
       segmentKey: context.segmentKey || null,
       rendered: false,

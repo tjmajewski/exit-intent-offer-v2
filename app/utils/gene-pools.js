@@ -23,6 +23,16 @@
 // Shared banned patterns — copy that promises features no current archetype delivers.
 // Applied to every existing archetype because none of them render products,
 // recommendations, or have standing free-shipping/returns guarantees.
+// Recurring-language patterns (spec 2.2). A Resparq discount applies to the
+// FIRST order only, so no discount archetype may imply the discount recurs.
+// Exported so the subscription-upsell archetype (spec 2.4) — the one pool that
+// legitimately says "every order" because the SAVING recurs, not a code — can
+// filter these back out of its own copyBannedPatterns.
+export const RECURRING_LANGUAGE_PATTERNS = [
+  /every\s+(order|month|delivery)/i,            // implies a recurring discount
+  /forever/i                                    // implies a permanent discount
+];
+
 const UNIVERSAL_BANNED_PATTERNS = [
   /customers.+(bought|added|viewed|liked)/i,    // implies product cross-sell grid
   /(also|people).+(bought|added|viewed|liked)/i,
@@ -30,7 +40,8 @@ const UNIVERSAL_BANNED_PATTERNS = [
   /browse.+(favorites|recommendations|picks)/i, // implies product list
   /free\s+shipping/i,                           // merchant may not offer it
   /easy\s+returns/i,                            // merchant may not offer it
-  /money.?back.+guarantee/i                     // merchant may not offer it
+  /money.?back.+guarantee/i,                    // merchant may not offer it
+  ...RECURRING_LANGUAGE_PATTERNS                // discount never recurs (spec 2.2)
 ];
 
 // Modal-design template gene (Sprint 3). Cross-archetype: all 8 visual
