@@ -30,7 +30,11 @@
 // filter these back out of its own copyBannedPatterns.
 export const RECURRING_LANGUAGE_PATTERNS = [
   /every\s+(order|month|delivery)/i,            // implies a recurring discount
-  /forever/i                                    // implies a permanent discount
+  // "forever" only as an AFFIRMATIVE permanence claim. Negation-aware so
+  // existing urgency copy ("won't last forever", "not reserved forever") — which
+  // says the opposite — is not caught. Variable-length negative lookbehind for a
+  // negation word within 30 chars before "forever".
+  /(?<!\b(?:won'?t|will not|cannot|can'?t|don'?t|not|isn'?t|never|no)\b.{0,30})forever/i
 ];
 
 const UNIVERSAL_BANNED_PATTERNS = [
