@@ -1892,14 +1892,14 @@
       }
 
       if (triggerType === 'idle' || triggerType === 'exit_intent_or_idle') {
-        this.setupIdleTrigger(idleSeconds);
+        this.setupIdleTrigger(idleSeconds, 'Enterprise AI');
       }
 
       // Exit intent can't fire on mobile (no mouseout) — fall back to a capped idle timer
       if (isMobile && triggerType === 'exit_intent') {
         const mobileIdle = Math.min(idleSeconds, 15);
         console.log(`[Enterprise AI] Mobile + exit_intent only → adding idle fallback (${mobileIdle}s)`);
-        this.setupIdleTrigger(mobileIdle);
+        this.setupIdleTrigger(mobileIdle, 'Enterprise AI');
       }
     }
     
@@ -2053,7 +2053,7 @@
      * Resets on mouse movement, scroll, touch, or keyboard activity.
      * This is the primary trigger for mobile (where exit intent doesn't work).
      */
-    setupIdleTrigger(seconds) {
+    setupIdleTrigger(seconds, label = 'Pro AI') {
       let idleTimer = null;
 
       const resetIdle = () => {
@@ -2061,7 +2061,7 @@
         if (this.modalShown) return;
         idleTimer = setTimeout(() => {
           if (!this.modalShown) {
-            console.log(`[Pro AI] Idle trigger fired after ${seconds}s of inactivity`);
+            console.log(`[${label}] Idle trigger fired after ${seconds}s of inactivity`);
             this.showModal();
           }
         }, seconds * 1000);
@@ -2076,7 +2076,7 @@
         document.addEventListener(event, resetIdle, { passive: true });
       });
 
-      console.log(`[Pro AI] Idle trigger enabled: ${seconds}s`);
+      console.log(`[${label}] Idle trigger enabled: ${seconds}s`);
     }
 
     /**
