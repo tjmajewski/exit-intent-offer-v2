@@ -39,7 +39,7 @@ export async function action({ request }) {
   if (limited) return limited;
 
   const { default: db } = await import("../db.server.js");
-  const { decideOffer, checkBudget, offerCeilingPercent, recommendedThreshold, subShareFromSignals } = await import("../utils/ai-decision.server.js");
+  const { decideOffer, checkBudget, offerCeilingPercent, recommendedThreshold, capThresholdByDiscount, subShareFromSignals } = await import("../utils/ai-decision.server.js");
   try{
     const { admin } = await authenticate.public.appProxy(request);
     const { shop, signals, testMode } = await request.json();
@@ -781,7 +781,15 @@ export async function action({ request }) {
     const decision = {
       type: baseline.includes('revenue') ? 'threshold' : 'percentage',
       amount: cappedOfferAmount,
-      threshold: baseline.includes('revenue') ? recommendedThreshold(signals.cartValue || 0) : null,
+      // Threshold is capped against the FINAL discount (post margin guard) so
+      // the ask stays proportionate to the reward. See capThresholdByDiscount.
+      threshold: baseline.includes('revenue')
+        ? capThresholdByDiscount(
+            signals.cartValue || 0,
+            recommendedThreshold(signals.cartValue || 0),
+            cappedOfferAmount
+          )
+        : null,
       headline: effectiveHeadline,
       subhead: selectedVariant.subhead,
       cta: effectiveCta,

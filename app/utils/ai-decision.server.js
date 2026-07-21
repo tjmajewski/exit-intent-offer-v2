@@ -184,6 +184,36 @@ export function recommendedThreshold(cartValue, mult = 1.3) {
   return Math.max(roundToNiceNumber(cv * mult), cv + 10);
 }
 
+// Ceiling on how much extra spend one dollar of discount may ask for.
+// 5 => the customer never spends more than $5 extra per $1 saved (a 20% floor
+// on the return for reaching the threshold).
+export const MAX_GAP_MULTIPLE = 5;
+
+/**
+ * Clamp a threshold so the ask stays proportionate to the reward.
+ *
+ * recommendedThreshold scales the REQUIREMENT with cart value (1.3x) while the
+ * discount is drawn from a flat pool ($10-$25) and then cut further by the
+ * margin guard. The two numbers were never coupled, so the deal decayed as
+ * carts grew: a $2,983 cart was asked for $892 more to earn $8 off. Deriving
+ * the gap ceiling FROM the discount keeps them in step — when the margin guard
+ * cuts the discount, the ask shrinks with it.
+ *
+ * Non-binding at typical cart sizes: at $200 and below the proportional
+ * threshold is already inside the cap, so this is a no-op there. It engages
+ * around $300+ and on margin-capped discounts.
+ *
+ * Call AFTER the final discount is known. `discount` is in dollars; a
+ * percentage-baseline offer has no threshold and never reaches here.
+ */
+export function capThresholdByDiscount(cartValue, threshold, discount, maxGapMultiple = MAX_GAP_MULTIPLE) {
+  const cv = Number(cartValue) || 0;
+  const d = Number(discount) || 0;
+  if (d <= 0 || !Number.isFinite(threshold)) return threshold;
+  // Keep the +$10 floor: the customer must always have something to add.
+  return Math.max(Math.min(threshold, cv + d * maxGapMultiple), cv + 10);
+}
+
 // =============================================================================
 // CORE: decideOffer — the one engine. Tier is pure config (ctx.plan).
 //
@@ -332,10 +362,13 @@ export async function decideOffer(signals, ctx = {}) {
   if (aiGoal === 'revenue' && cartValue > 20) {
     const mult = cart.isHighTicket && !cart.isMultiItem ? 1.25
                : cart.isMultiItem ? 1.3 : 1.25;
-    const threshold = recommendedThreshold(cartValue, mult);
+    const proposedThreshold = recommendedThreshold(cartValue, mult);
     // Discount on the qualifying spend, clamped to the margin ceiling.
-    const maxDollars = Math.floor(threshold * (ceilingPercent / 100));
-    const amount = Math.max(Math.min(roundToNiceNumber(threshold * (ceilingPercent / 100)), maxDollars), 1);
+    const maxDollars = Math.floor(proposedThreshold * (ceilingPercent / 100));
+    const amount = Math.max(Math.min(roundToNiceNumber(proposedThreshold * (ceilingPercent / 100)), maxDollars), 1);
+    // Ceiling comes off the proposed threshold (above), then the threshold is
+    // pulled back to stay proportionate to the discount that survived it.
+    const threshold = capThresholdByDiscount(cartValue, proposedThreshold, amount);
     return {
       show: true,
       propensity: P,
