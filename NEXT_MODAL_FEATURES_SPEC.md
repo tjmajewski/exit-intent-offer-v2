@@ -721,6 +721,43 @@ and trains discount-hunting. The profitable plays are (a) non-discount
 interventions, or (b) reminding them to *use the code they already have* —
 recovery at zero incremental margin cost.
 
+### 10.0 Copy hygiene precursor — never imply a pre-owned code (ships ahead of detection, Release 2)
+
+The detection + response below is the *structural* fix. But a cheaper,
+detection-free problem exists in our own copy today and should ship first:
+**Resparq's discount copy must read as a freshly-minted offer, never as a code
+the shopper already claimed.** Framing like "your 15% off is still here" or
+"Your {{amount}}% discount is waiting" is ambiguous — it's indistinguishable
+from "the code you got for giving your email is still here." Every discount
+modal is a fresh Resparq mint (held-code detection isn't built), so pre-owned
+framing is misleading now, and becomes actively harmful the moment the shopper
+*does* hold an email-capture code (the double-discount case detection solves).
+
+Today's pools mostly disambiguate via "created just for you" / "personal
+discount code" subheads — but `showSubhead` is a learnable gene, so those
+clarifiers can be suppressed, leaving the ambiguous headline bare. Two guards,
+both copy-pool work, no schema, no new gene:
+
+1. **Self-disambiguating headlines.** Any discount headline that leans on the
+   subhead for provenance ("Your {{amount}}% discount is waiting" +
+   "This unique code was created just for you") must still read as a fresh
+   offer with `showSubhead: false`. Fix: reword the headline to carry its own
+   new/just-created signal (preferred — keeps the `showSubhead` gene free to
+   learn), rather than force-pinning `showSubhead: true` for ambiguous copy.
+2. **Pool audit + dev-time assertion.** Sweep `conversion_with_discount` and
+   `revenue_with_discount` for headlines/subheads implying pre-ownership
+   ("still here", "waiting", "back", "already claimed"); confirm each reads as
+   a fresh offer subhead-suppressed. Add a startup assertion mirroring the
+   currency-symbol assertion (section 3): flag discount-pool headlines matching
+   `/\bstill\s+here\b|already.+(have|claimed)|\bwaiting\b/i` unless they also
+   carry a self-contained mint signal (e.g. "new", "just created", "here's").
+
+**Effort:** Low. Copy-pool rewrite + one assertion. Ship with the Release 2
+copy work (currency framing / product-aware copy) — it's the same copy-pool
+surface and the same "copy honesty" family as the subscription disclosure line
+(section 2.2). The held-code *detection + reminder response* stays Release 6
+(below).
+
 ### Detection (client)
 
 Builds on the competing-popup gate (commit `75b83a5`), which already locates
@@ -835,7 +872,7 @@ pooled `Variant` totals, plus serve-time gene biasing to consume the rows.
 | Release | Contents | Why together |
 |---|---|---|
 | 1 | **Subscription slices A + B (section 2.8)**: cart signal, disclosure line, renewal-attribution guard, legacy-code backfill, margin amortization, subscriber suppression | Top priority. Correctness + telemetry first, engine wins in the same release; no new learning surface (deterministic priors + one impression column) |
-| 2 | Currency framing + product-aware copy | Both are copy-pool work on existing genes/placeholders; one resolver PR; no new learning surface beyond one gene. Disclosure line (2.2) must already be live so currency-framed savings on subscription carts stay honest |
+| 2 | Currency framing + product-aware copy + **mint-vs-owned copy hygiene (section 10.0)** | All copy-pool work on existing genes/placeholders; one resolver PR; no new learning surface beyond one gene. Disclosure line (2.2) must already be live so currency-framed savings on subscription carts stay honest. The 10.0 copy hygiene guard (headlines that read as pre-owned when subhead-suppressed) rides here — same copy-pool surface, detection-free, ships well ahead of the held-code work in release 6 |
 | 3 | **Subscription-upsell archetype (2.4)** + free-shipping archetype | Both are capability-gated archetypes sharing the same firewall pattern; one selection-gate PR; free-shipping gains its `cartSubscription === 'all'` ineligibility rule (2.7) here |
 | 4 | Back-button trigger + reminder bar | Both are session-flow features; test interaction between them explicitly (bar must not mount in a back-trapped session that never engaged) |
 | 5 | Scarcity + trust row | Scarcity carries the release; trust row rides along |
