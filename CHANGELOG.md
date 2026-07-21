@@ -57,6 +57,11 @@ themselves so they stop being rejected on subscription carts. Spec:
   draws × 4 cycle values, and (b) across 20k subscription draws the margin floor
   and share cap hold against the AMORTIZED cost, amortization never tightens the
   ceiling, and the nominal ceiling never exceeds 25%. All checks pass.
+- `node scripts/dev/verify-subscription-slice-b.mjs` — new behavioral harness
+  (30 checks): amortization moves the ceiling on subscription carts but never
+  relaxes the non-margin caps; `subShareFromSignals` is div-by-zero/garbage safe;
+  the 2.5 signal nudges without blocking; the 2.0 backfill updates exactly once,
+  skips current and non-basic codes, and never throws (mocked Admin client).
 - `node scripts/dev/golden-master.mjs` — all 20 scenarios match (no drift).
 
 ## Resparq AI - July 21, 2026 (Subscription & mixed-cart support — Release 1, Slice A)
