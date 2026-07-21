@@ -510,10 +510,13 @@ export async function action({ request }) {
         aiDecisionId: aiDecisionRecord.id
       }).catch(e => console.error('[Threshold] Failed to record no_intervention outcome:', e));
 
-      // Track as an analytics event for learning
-      trackAnalyticsEvent(admin, 'no_intervention').catch(e =>
-        console.error('[Analytics] Failed to track no_intervention event:', e)
-      );
+      // Track as an analytics event for learning. Gated like every neighbouring
+      // write — dev/preview traffic must not inflate the merchant's dashboard.
+      if (!devWriteSkip && !isTestMode) {
+        trackAnalyticsEvent(admin, 'no_intervention').catch(e =>
+          console.error('[Analytics] Failed to track no_intervention event:', e)
+        );
+      }
 
       // Journey log: learned/forced skip
       if (!devWriteSkip) recordTouch(db, {
@@ -852,10 +855,17 @@ export async function action({ request }) {
     });
     const impressionId = impressionRecord?.id || null;
 
-    // Update analytics metafield for dashboard metrics (fire-and-forget to avoid blocking)
-    trackAnalyticsEvent(admin, 'impression').catch(e =>
-      console.error('[Analytics] Failed to track impression event:', e)
-    );
+    // NOTE: no analytics-metafield impression write here.
+    //
+    // Decisions are minted at PREFETCH, before any trigger fires — this line
+    // ran unconditionally and counted a show for every decision, including
+    // ones the customer never saw. It was also the only write in this endpoint
+    // not behind `devWriteSkip`, so QA traffic that was correctly excluded from
+    // every learning table still landed on the merchant's dashboard.
+    //
+    // The storefront already reports the impression at actual render time
+    // (`trackEvent('impression')` -> apps.exit-intent.track), with frequency
+    // context this path does not have. That is the single writer now.
 
     // If no discount needed (no-discount baseline or 0 amount), return with copy but no code
     if (decision.type === 'no-discount' || decision.amount === 0) {

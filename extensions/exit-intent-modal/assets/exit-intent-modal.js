@@ -3506,6 +3506,10 @@
           body: JSON.stringify({
             event: eventType,
             timestamp: new Date().toISOString(),
+            // Merchant self-tests must not burn plan quota or land in the
+            // merchant's own analytics. Same flag the decision endpoint reads;
+            // the server also skips dev shops on its own.
+            testMode: isResparqTestMode(),
             ...(meta || {})
           })
         });

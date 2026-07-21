@@ -1,5 +1,43 @@
 # @shopify/shopify-app-template-react-router
 
+## Resparq AI - July 21, 2026 (Analytics: stop counting phantoms and QA traffic)
+
+The merchant dashboard's impression count was inflated from two directions.
+Learning tables were never affected — `VariantImpression` / `AIDecision` /
+`InterventionOutcome` are all gated correctly and stay as they were.
+
+### Fixed
+- **Impressions were counted twice per show.** `apps.exit-intent.api.ai-decision`
+  wrote an analytics-metafield impression at DECISION time while the storefront
+  wrote another at RENDER time (`trackEvent('impression')` →
+  `apps.exit-intent.track`). Decisions are minted at prefetch, before any
+  trigger fires, so the first write also counted shows that never happened —
+  the thing `b28956e` set out to stop. That fix added `pendingRender` +
+  `confirm-render`, but the gate only ever reached `recordInterventionOutcome`.
+  The decision-time write is now removed; the render-time write is the single
+  writer, and it carries frequency context (`showNumber`, `ignoreStreak`) the
+  decision path never had.
+- **QA traffic counted as merchant traffic.** `trackAnalyticsEvent(admin,
+  'impression')` was the ONLY write in the decision endpoint not behind
+  `devWriteSkip`, and `apps.exit-intent.track` had no dev/test guard at all. Dev
+  shops and merchant test-mode sessions were correctly excluded from every
+  learning table and counted straight onto the dashboard. Both paths now honour
+  `isLearningWriteSkipped` + merchant test mode; the storefront sends
+  `testMode` with each event.
+- **QA traffic burned real plan quota.** Same missing guard: `track` increments
+  `plan.usage.impressionsThisMonth`, and exhaustion returns a 429 that stops
+  modals rendering. A merchant (or we) could self-test into a dead modal and
+  debug the wrong thing. Skipped events now return `200 {skipped:true}`.
+- **`no_intervention` counter** was ungated between two `!devWriteSkip`-guarded
+  writes. Now gated to match.
+
+### Added
+- `scripts/dev/reset-analytics-counters.mjs` — dry-run by default, `--confirm`
+  to write. Reports the metafield's counters next to Prisma's `rendered=true`
+  ground truth. The event array is pruned at 90 days so lifetime totals cannot
+  be rebuilt from it; with no live merchants the counters were reset to zero
+  rather than rebased.
+
 ## Resparq AI - July 21, 2026 (Threshold offer coherence)
 
 Found in QA: a modal offered "$8 off" with CTA "Keep Shopping" and never

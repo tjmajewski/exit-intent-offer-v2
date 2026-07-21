@@ -1,6 +1,7 @@
 import { authenticate } from "../shopify.server";
 import { checkUsageLimit, PLAN_FEATURES } from "../utils/featureGates";
 import { pruneAnalyticsEvents } from "../utils/analytics-metafield.js";
+import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
 
 export async function action({ request }) {
   // Authenticate the request from the storefront
@@ -14,13 +15,27 @@ export async function action({ request }) {
       });
     }
 
-    const { event, showNumber, daysSinceLastShow, ignoreStreak } = await request.json();
+    const { event, showNumber, daysSinceLastShow, ignoreStreak, testMode } = await request.json();
 
     console.log(" Analytics event received:", event);
-    
+
     if (!event || !["impression", "click", "closeout", "conversion"].includes(event)) {
-      return new Response(JSON.stringify({ error: "Invalid event type" }), { 
+      return new Response(JSON.stringify({ error: "Invalid event type" }), {
         status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    // Dev shops and merchant self-tests are excluded from analytics AND from
+    // the plan usage counter. Every learning write in the decision endpoint is
+    // already gated this way; this endpoint was not, so QA traffic both
+    // polluted the merchant dashboard and burned real quota — and quota
+    // exhaustion returns a 429 below that stops modals from rendering at all.
+    // Returns 200: nothing went wrong, the event is simply not counted.
+    if (testMode === true || isLearningWriteSkipped({ shopDomain: session.shop })) {
+      console.log(` Analytics skipped (${testMode === true ? "merchant test mode" : "dev shop"}):`, event);
+      return new Response(JSON.stringify({ success: true, skipped: true }), {
+        status: 200,
         headers: { "Content-Type": "application/json" }
       });
     }
