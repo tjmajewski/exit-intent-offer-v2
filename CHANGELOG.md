@@ -1,5 +1,32 @@
 # @shopify/shopify-app-template-react-router
 
+## Resparq AI - July 21, 2026 (Enterprise trigger genes)
+
+The Enterprise storefront path ignored the evolved trigger genes and showed the
+modal ~1s after add-to-cart, regardless of the trigger the engine picked. Pro
+already honoured the genes; Enterprise never did.
+
+### Fixed
+- **Enterprise showed immediately instead of on the chosen trigger.**
+  `evaluateEnterpriseCustomer` (`exit-intent-modal.js`) branched on
+  `decision.timing`, a field the `ai-decision` endpoint never puts on the
+  Enterprise response. `undefined` fell into the `immediate` branch, so a
+  decision carrying `triggerType: exit_intent` / `idleSeconds: 45` still fired
+  ~1s after the cart filled. It now arms the same triggers `setupAITriggers`
+  uses for Pro: desktop `mouseout` exit intent, an idle timer for `idle` /
+  `exit_intent_or_idle`, and a capped idle fallback on mobile where `mouseout`
+  never fires. The legacy `timing` / `delay` fields still win when a decision
+  carries them (the engine sets `timing: immediate` for failedCoupon /
+  checkoutExit / staleCart, so those high-intent signals still interrupt at
+  once).
+
+### Changed
+- **Idle-trigger logs are labelled by caller.** `setupIdleTrigger` hardcoded a
+  `[Pro AI]` prefix, so Enterprise sessions logged idle arming/firing under
+  Pro's name and read like the Enterprise path was falling through to Pro. It
+  now takes a label (default `Pro AI`); the Enterprise path passes
+  `Enterprise AI`. Logging only.
+
 ## Resparq AI - July 21, 2026 (Analytics: stop counting phantoms and QA traffic)
 
 The merchant dashboard's impression count was inflated from two directions.
