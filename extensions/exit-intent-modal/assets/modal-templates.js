@@ -317,6 +317,20 @@
     return el;
   }
 
+  // Dedicated social-proof line. Merchant-controlled, resolved server-side to a
+  // ready string (e.g. "500+ orders placed"). Rendered as its own trust line
+  // just above the CTA via injectSocialProof — templates stay unaware of it.
+  function makeSocialProof(text, t) {
+    if (!text) return null;
+    const el = document.createElement('p');
+    el.className = 'resparq-social-proof';
+    el.textContent = '✓ ' + text;
+    el.style.cssText =
+      'margin:0 0 12px;text-align:center;font-size:13px;font-weight:600;' +
+      'line-height:1.4;letter-spacing:0.01em;color:' + (t.muted || '#555') + ';';
+    return el;
+  }
+
   function makePoweredBy(show) {
     const el = document.createElement('div');
     if (!show) { el.style.display = 'none'; return el; }
@@ -1298,7 +1312,27 @@
     if (props && props.firstOrderDisclosure) {
       injectDisclosureLine(out, props.themeOverrides);
     }
+    // Merchant social-proof line: trust line just above the CTA. Sits below the
+    // product-image row (injected first) when both are present.
+    if (props && props.socialProof) {
+      injectSocialProof(out, props.socialProof, props.themeOverrides);
+    }
     return out;
+  }
+
+  /**
+   * Insert the social-proof line directly above a rendered modal's primary CTA.
+   * Anchors to primaryCta.parentNode so it lands correctly in every template's
+   * layout. No-op when there's no text, no handle, or it's already injected.
+   */
+  function injectSocialProof(handles, text, themeOverrides) {
+    if (!text) return false;
+    if (!handles || !handles.primaryCta || !handles.primaryCta.parentNode) return false;
+    if (handles.primaryCta.parentNode.querySelector('.resparq-social-proof')) return false;
+    const line = makeSocialProof(text, tokensFor(themeOverrides));
+    if (!line) return false;
+    handles.primaryCta.parentNode.insertBefore(line, handles.primaryCta);
+    return true;
   }
 
   /**

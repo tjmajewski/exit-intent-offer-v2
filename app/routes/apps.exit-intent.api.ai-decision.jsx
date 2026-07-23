@@ -781,6 +781,30 @@ export async function action({ request }) {
       effectiveShowSubhead = false;
     }
 
+    // Defense-in-depth: social proof is a dedicated serve-time line now (see
+    // socialProof below), NOT baked into evolved copy — so genes should never
+    // carry {{social_proof_count}}/{{rating}}. A legacy DB row still might. The
+    // storefront fill() can't resolve those tokens, so suppress rather than leak
+    // the literal token: fall back the headline, hide the subhead.
+    const UNRESOLVED_SOCIAL = /\{\{(social_proof_count|rating)\}\}/;
+    if (UNRESOLVED_SOCIAL.test(effectiveHeadline)) {
+      effectiveHeadline = pickFallbackHeadline(baseline) || effectiveHeadline;
+    }
+    if (effectiveShowSubhead && UNRESOLVED_SOCIAL.test(selectedVariant.subhead || '')) {
+      effectiveShowSubhead = false;
+    }
+
+    // Dedicated social-proof line — an Enterprise, merchant-controlled overlay.
+    // Resolved here from the shop's live metrics so "enable it" reliably shows
+    // real numbers; null when disabled, non-Enterprise, or data is short of the
+    // merchant's minimum. Rendered as its own line, independent of which copy
+    // variant evolution selected.
+    const { socialProofLine } = await import('../utils/social-proof.js');
+    const socialProof =
+      shopRecord.plan === 'enterprise' && shopRecord.socialProofEnabled
+        ? socialProofLine(shopRecord)
+        : null;
+
     const decision = {
       type: baseline.includes('revenue') ? 'threshold' : 'percentage',
       amount: cappedOfferAmount,
@@ -800,6 +824,7 @@ export async function action({ request }) {
       urgency: selectedVariant.urgency,
       showSubhead: effectiveShowSubhead,
       showProductImages: selectedVariant.showProductImages === true,
+      socialProof,
       triggerType: selectedVariant.triggerType || 'exit_intent',
       idleSeconds: selectedVariant.idleSeconds || 30,
       templateId: effectiveTemplateId,

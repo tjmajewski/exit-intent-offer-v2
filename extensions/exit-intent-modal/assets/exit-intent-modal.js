@@ -1734,6 +1734,7 @@
         timerEndsAt: content.timerEndsAt || null,
         productImages: (content.productImages && content.productImages.length) ? content.productImages : null,
         firstOrderDisclosure: !!content.firstOrderDisclosure,
+        socialProof: content.socialProof || null,
         themeOverrides,
         showPoweredBy: content.showPoweredBy !== false
       };
@@ -1807,7 +1808,7 @@
       this.isPreview = true;
       const isTimer = templateId === 'timer-front';
       const props = this.buildTemplateProps({
-        headline: s.modalHeadline || 'Wait — your 15% off is still here',
+        headline: s.modalHeadline || 'Wait, your 15% off is still here',
         subhead: s.modalBody || 'Finish checkout and your discount applies automatically.',
         cta: s.ctaButton || 'Claim My Discount',
         secondaryCta: 'No thanks',
@@ -2708,12 +2709,14 @@
         // The redirect gene is independent and can conflict (e.g., "See What Pairs Well" + checkout).
         if (decision.type === 'no-discount') {
           const ctaLower = ctaText.toLowerCase();
-          if (ctaLower.includes('complete') || ctaLower.includes('checkout') || ctaLower.includes('order')) {
-            this.settings.redirectDestination = 'checkout';
-          } else if (ctaLower.includes('pairs') || ctaLower.includes('recommend')) {
+          if (ctaLower.includes('pairs') || ctaLower.includes('recommend')) {
             this.settings.redirectDestination = 'recommendations';
+          } else if (ctaLower.includes('cart')) {
+            this.settings.redirectDestination = 'cart';
           } else {
-            this.settings.redirectDestination = 'shop';
+            // complete / checkout / order / "yes, i want this" — a cart-holding
+            // customer should land on checkout, never the browse page.
+            this.settings.redirectDestination = 'checkout';
           }
         } else {
           this.settings.redirectDestination = decision.variant.redirect || this.settings.redirectDestination;
@@ -2749,7 +2752,7 @@
           if (!mentionsOffer && headlineEl && bodyEl) {
             if (cartValue >= decision.threshold) {
               headlineEl.textContent = `You unlocked ${formatCurrency(decision.amount)} off!`;
-              bodyEl.textContent = `Your cart qualifies — this discount is applied at checkout.`;
+              bodyEl.textContent = `Your cart qualifies. This discount is applied at checkout.`;
             } else {
               headlineEl.textContent = `You're ${formatCurrency(thresholdRemaining)} away from ${formatCurrency(decision.amount)} off`;
               bodyEl.textContent = `Add a little more to your cart and save on your entire order.`;
@@ -2804,7 +2807,7 @@
         const defaultRemaining = Math.ceil((decision.threshold - defaultCartValue) / 5) * 5;
         if (defaultCartValue >= decision.threshold) {
           headline.textContent = `You unlocked ${formatCurrency(decision.amount)} off!`;
-          body.textContent = `Your cart qualifies — this discount is applied at checkout.`;
+          body.textContent = `Your cart qualifies. This discount is applied at checkout.`;
         } else {
           headline.textContent = `You're ${formatCurrency(defaultRemaining)} away from ${formatCurrency(decision.amount)} off`;
           body.textContent = `Add a little more to your cart and save on your entire order.`;
@@ -2907,12 +2910,14 @@
         let redirectDestination;
         if (decision.type === 'no-discount') {
           const ctaLower = cta.toLowerCase();
-          if (ctaLower.includes('complete') || ctaLower.includes('checkout') || ctaLower.includes('order')) {
-            redirectDestination = 'checkout';
-          } else if (ctaLower.includes('pairs') || ctaLower.includes('recommend')) {
+          if (ctaLower.includes('pairs') || ctaLower.includes('recommend')) {
             redirectDestination = 'recommendations';
+          } else if (ctaLower.includes('cart')) {
+            redirectDestination = 'cart';
           } else {
-            redirectDestination = 'shop';
+            // complete / checkout / order / "yes, i want this" — a cart-holding
+            // customer should land on checkout, never the browse page.
+            redirectDestination = 'checkout';
           }
         } else {
           redirectDestination = decision.variant.redirect || s.redirectDestination;
@@ -2949,7 +2954,7 @@
           if (qualified) {
             // Evolved copy still frames this as a goal to reach; it isn't one.
             headline = `You unlocked ${formatCurrency(decision.amount)} off!`;
-            subhead = `Your cart qualifies — this discount is applied at checkout.`;
+            subhead = `Your cart qualifies. This discount is applied at checkout.`;
           } else if (!statesCondition) {
             headline = `You're ${remainingText} away from ${formatCurrency(decision.amount)} off`;
             subhead = `Add a little more to your cart and save on your entire order.`;
@@ -2966,7 +2971,8 @@
           showProductImages: decision.variant.showProductImages === true,
           code: discountCode, amountText: amountTextFor(decision),
           offerType, discountCode, redirectDestination, thresholdOffer,
-          firstOrderDisclosure
+          firstOrderDisclosure,
+          socialProof: decision.socialProof || null
         };
       }
 
@@ -3004,7 +3010,7 @@
         const remaining = Math.ceil(((decision.threshold || 0) - cartValue) / 5) * 5;
         if (qualified) {
           headline = `You unlocked ${formatCurrency(decision.amount)} off!`;
-          subhead = `Your cart qualifies — this discount is applied at checkout.`;
+          subhead = `Your cart qualifies. This discount is applied at checkout.`;
         } else {
           headline = `You're ${formatCurrency(remaining)} away from ${formatCurrency(decision.amount)} off`;
           subhead = `Add a little more to your cart and save on your entire order.`;
@@ -3022,7 +3028,8 @@
         headline, subhead, cta, showSubhead: true, showSecondary, secondaryCta,
         code: discountCode, amountText, offerType, discountCode,
         redirectDestination: s.redirectDestination, thresholdOffer,
-        firstOrderDisclosure
+        firstOrderDisclosure,
+        socialProof: decision.socialProof || null
       };
     }
 
@@ -3367,6 +3374,10 @@
 
         if (destination === 'checkout') {
           window.location.href = '/checkout';
+        } else if (destination === 'cart') {
+          // "Back to My Cart" / "View My Cart" — send them to the cart page the
+          // button names, not the browse page.
+          window.location.href = '/cart';
         } else if (destination === 'recommendations') {
           // "See What Pairs Well" — navigate to a product page so the theme's
           // recommendation section ("You may also like") shows relevant cross-sells

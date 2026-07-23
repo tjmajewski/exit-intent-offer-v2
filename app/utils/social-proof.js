@@ -152,6 +152,42 @@ export function formatRating(rating) {
 }
 
 /**
+ * Build the ready-to-render social-proof line for a shop.
+ *
+ * This is the single source of truth for the dedicated social-proof line the
+ * modal renders when a merchant enables the feature. It is resolved at SERVE
+ * time from the shop's live metrics (never baked into evolved copy genes), so
+ * turning the setting on reliably shows real numbers and turning it off — or
+ * lacking data — shows nothing. Returns a display string or null.
+ *
+ *   socialProofType: 'orders' | 'customers' | 'reviews'
+ *   socialProofMinimum: hide until the metric reaches this (default 100)
+ *
+ * No em dashes (shopper-facing marketing copy).
+ */
+export function socialProofLine(shop) {
+  if (!shop) return null;
+
+  const type = shop.socialProofType || 'orders';
+  const min = Number.isFinite(shop.socialProofMinimum) ? shop.socialProofMinimum : 100;
+
+  if (type === 'reviews') {
+    const rating = formatRating(shop.avgRating);
+    return rating ? `Rated ${rating}/5 by verified buyers` : null;
+  }
+
+  const count = type === 'customers' ? shop.customerCount : shop.orderCount;
+  if (!count || count < min) return null;
+
+  const formatted = formatSocialProof(count, type);
+  if (!formatted) return null; // guards tiny/unimpressive numbers
+
+  return type === 'customers'
+    ? `Trusted by ${formatted} shoppers`
+    : `${formatted} orders placed`;
+}
+
+/**
  * Replace social proof placeholders in text with actual values
  */
 export function replaceSocialProofPlaceholders(text, shop) {

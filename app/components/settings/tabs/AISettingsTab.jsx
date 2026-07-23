@@ -478,9 +478,9 @@ export default function AISettingsTab({
                 cursor: plan?.tier === 'enterprise' ? "pointer" : "not-allowed"
               }}
             >
-              <option value="orders">Number of orders — “5,000+ orders shipped — yours could be next”</option>
-              <option value="customers">Number of customers — “5,000+ shoppers said yes — don't miss out”</option>
-              <option value="reviews" disabled>Average rating — “Rated 4.8/5 — see why shoppers keep coming back” (requires Judge.me / Yotpo — coming soon)</option>
+              <option value="orders">Number of orders (shows “✓ 5k+ orders placed”)</option>
+              <option value="customers">Number of customers (shows “✓ Trusted by 5k+ shoppers”)</option>
+              <option value="reviews" disabled>Average rating (shows “✓ Rated 4.8/5 by verified buyers”) — requires Judge.me / Yotpo, coming soon</option>
             </select>
           </div>
 

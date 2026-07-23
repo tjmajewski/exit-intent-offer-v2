@@ -74,26 +74,14 @@ export const genePools = {
 
     headlines: [
       'You\'re just {{threshold_remaining}} away from {{amount}} off',
-      'Spend {{threshold_remaining}} more, save {{amount}} instantly',
-      'So close! {{percent_to_goal}}% to unlocking {{amount}} off'
-    ],
-
-    headlinesWithSocialProof: [
-      '{{social_proof_count}} shoppers unlocked this deal today',
-      'This discount helped {{social_proof_count}} customers save',
-      '{{rating}}-star favorites — add {{threshold_remaining}} to save'
+      'Spend {{threshold_remaining}} more and save {{amount}}',
+      'Add {{threshold_remaining}} to unlock {{amount}} off'
     ],
 
     subheads: [
-      'Add a little more and save on your entire order',
-      'This offer is only available right now',
-      'A few more items and your savings unlock'
-    ],
-
-    subheadsWithSocialProof: [
-      '{{social_proof_count}} orders saved with this offer today',
-      '{{social_proof_count}} shoppers grabbed this deal — your turn',
-      '{{rating}}-star rated products at a price you\'ll love'
+      'The discount applies to your whole order at checkout',
+      'Your savings apply automatically at checkout',
+      'Every item you add counts toward the goal'
     ],
 
     // THRESHOLD ARCHETYPE: urgency copy must ALSO state the qualifying
@@ -103,15 +91,15 @@ export const genePools = {
     // "save $8" while silently requiring several hundred dollars more in the
     // cart. Every line below carries {{threshold_remaining}} or {{threshold}}.
     headlinesWithUrgency: [
-      'Add {{threshold_remaining}} for {{amount}} off, expires in 24 hours',
-      '{{threshold_remaining}} from {{amount}} off, and time is running out',
-      'Unlock {{amount}} off by adding {{threshold_remaining}}, today only'
+      'Add {{threshold_remaining}} for {{amount}} off. Expires in 24 hours.',
+      'Only 24 hours left to add {{threshold_remaining}} and save {{amount}}',
+      'Today only: add {{threshold_remaining}} to unlock {{amount}} off'
     ],
 
     subheadsWithUrgency: [
-      'Add {{threshold_remaining}} to your cart to save {{amount}}. This offer expires in 24 hours.',
-      'Your {{amount}} discount unlocks at {{threshold}} and is only valid for 24 hours.',
-      'Reach {{threshold}} to save {{amount}}. Once the timer runs out, this deal is gone.'
+      'Once you reach {{threshold}}, the {{amount}} comes off automatically',
+      'Add {{threshold_remaining}} more and it applies to your whole order',
+      'You\'re {{threshold_remaining}} away from the full discount'
     ],
 
     ctas: [
@@ -151,31 +139,20 @@ export const genePools = {
     offerAmounts: [0],  // No discount, no incentive
 
     headlines: [
-      'Great picks — make it the perfect order',
       'Your order is almost complete',
-      'Ready when you are'
-    ],
-
-    headlinesWithSocialProof: [
-      '{{social_proof_count}} customers completed their orders today',
-      '{{rating}}-star favorites are in your cart'
+      'Ready to finish up?',
+      'Your cart is waiting for you'
     ],
 
     subheads: [
-      'Make the most of your order before you go',
-      'Your cart is saved — finish whenever you\'re ready',
-      'A few taps and it\'s on the way'
-    ],
-
-    subheadsWithSocialProof: [
-      '{{social_proof_count}} orders completed today',
-      '{{social_proof_count}} happy customers can\'t be wrong',
-      '{{rating}}-star quality across the board'
+      'Everything\'s saved. Pick up right where you left off.',
+      'Checkout takes less than a minute',
+      'No rush. Your items aren\'t going anywhere.'
     ],
 
     ctas: [
       'Complete My Order',
-      'Return to Checkout',
+      'Take Me to Checkout',
       'Finish My Order'
     ],
 
@@ -200,39 +177,27 @@ export const genePools = {
     offerAmounts: [10, 15, 20, 25],  // % off
 
     headlines: [
-      'Hold on — take {{amount}}% off your order',
-      'Your {{amount}}% discount is waiting',
-      'Before you go — save {{amount}}% right now'
-    ],
-
-    headlinesWithSocialProof: [
-      '{{social_proof_count}} shoppers claimed this {{amount}}% off today',
-      'Join {{social_proof_count}} customers saving {{amount}}%',
-      '{{rating}}-star products, now {{amount}}% off for you'
+      'Take {{amount}}% off your order',
+      'Your {{amount}}% discount is ready',
+      'Save {{amount}}% before you go'
     ],
 
     subheads: [
-      'Use it now — this offer expires soon',
-      'Apply at checkout in one click',
-      'This exclusive offer won\'t be here tomorrow'
-    ],
-
-    subheadsWithSocialProof: [
-      '{{social_proof_count}} orders placed with this discount today',
-      '{{social_proof_count}} customers saved — don\'t miss your turn',
-      '{{rating}}-star products at {{amount}}% off? Easy decision'
+      'Applied automatically at checkout',
+      'It works on everything in your cart',
+      'One click and the discount is yours'
     ],
 
     headlinesWithUrgency: [
       'Your {{amount}}% discount expires in 24 hours',
-      'Act fast — {{amount}}% off won\'t last forever',
-      'Exclusive {{amount}}% off, just for you — limited time'
+      '24 hours left to save {{amount}}%',
+      'Limited time: {{amount}}% off, just for you'
     ],
 
     subheadsWithUrgency: [
-      'This unique code was created just for you and expires soon',
-      'Your personal discount code is only valid for 24 hours',
-      'Grab this deal before your exclusive offer expires'
+      'This code was made just for you. It applies at checkout.',
+      'It works on everything in your cart',
+      'One click and {{amount}}% comes off your total'
     ],
 
     ctas: [
@@ -262,32 +227,20 @@ export const genePools = {
     offerAmounts: [0],  // No discount, social proof only
 
     headlines: [
-      'You left something great in your cart',
-      'Your order is just one click away',
+      'You left something in your cart',
+      'Your order is just a click away',
       'Still thinking it over?'
     ],
 
-    headlinesWithSocialProof: [
-      '{{social_proof_count}} customers bought this — and loved it',
-      '{{rating}} stars from verified buyers',
-      'Join {{social_proof_count}} happy customers today'
-    ],
-
     subheads: [
-      'Your cart is saved and ready for you',
-      'Checkout takes less than 60 seconds',
-      'Your items are selling fast — grab yours'
-    ],
-
-    subheadsWithSocialProof: [
-      '{{social_proof_count}} five-star reviews and counting',
-      '{{social_proof_count}} happy orders this week — yours is next',
-      '{{rating}} stars — see why customers keep coming back'
+      'Your cart is saved and ready when you are',
+      'Checkout takes less than a minute',
+      'Everything\'s still here, just as you left it'
     ],
 
     ctas: [
       'Complete My Order',
-      'Return to Checkout',
+      'Take Me to Checkout',
       'Yes, I Want This'
     ],
 
@@ -314,33 +267,21 @@ export const genePools = {
 
     headlines: [
       'You left something behind',
-      'Still interested? Your cart is saved',
-      'Your picks are going fast',
-      'Don\'t let your cart expire'
-    ],
-
-    headlinesWithSocialProof: [
-      '{{social_proof_count}} customers checked out today',
-      '{{social_proof_count}} shoppers are browsing this right now',
-      '{{rating}}-star products — still in your cart'
+      'Ready to pick up where you left off?',
+      'Your cart is still here',
+      'Don\'t lose your picks'
     ],
 
     subheads: [
-      'Stock levels change — grab yours before it\'s gone',
-      'Your cart is saved, but not reserved forever',
-      'Come back and finish what you started',
-      'One click and it\'s yours'
-    ],
-
-    subheadsWithSocialProof: [
-      '{{social_proof_count}} orders placed this week',
-      '{{social_proof_count}} customers grabbed theirs — will you?',
-      '{{rating}}-star quality — still in your cart'
+      'Everything\'s saved. Checkout takes less than a minute.',
+      'Come back and finish whenever you\'re ready',
+      'One click and your order is on its way',
+      'Your items are waiting, but stock can change'
     ],
 
     ctas: [
       'Back to My Cart',
-      'Finish Checkout',
+      'Go to Checkout',
       'Complete My Order',
       'View My Cart'
     ],
@@ -371,14 +312,14 @@ function collectPoolStrings(baseline, keys) {
 
 export function isValidSubhead(baseline, text) {
   if (!text) return true; // empty/null is safe — renderer will hide it
-  const all = collectPoolStrings(baseline, ['subheads', 'subheadsWithSocialProof', 'subheadsWithUrgency']);
+  const all = collectPoolStrings(baseline, ['subheads', 'subheadsWithUrgency']);
   const target = normalizeGene(text);
   return all.some((t) => normalizeGene(t) === target);
 }
 
 export function isValidHeadline(baseline, text) {
   if (!text) return false; // headline is required — blank is not safe
-  const all = collectPoolStrings(baseline, ['headlines', 'headlinesWithSocialProof', 'headlinesWithUrgency']);
+  const all = collectPoolStrings(baseline, ['headlines', 'headlinesWithUrgency']);
   const target = normalizeGene(text);
   return all.some((t) => normalizeGene(t) === target);
 }
