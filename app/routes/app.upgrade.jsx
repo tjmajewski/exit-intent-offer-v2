@@ -122,6 +122,20 @@ export async function action({ request }) {
   const billingCycle = formData.get("billingCycle");
   const promoCodeInput = formData.get("promoCode");
 
+  // Comp promo (e.g. RESPARQFREE): grant full access with no Shopify charge.
+  // DB Shop.plan is the source of truth for features, and a comped shop has no
+  // active subscription, so syncSubscriptionToPlan leaves this tier untouched.
+  const compPromo = validatePromoCode(promoCodeInput);
+  if (compPromo?.comp) {
+    const code = promoCodeInput.toUpperCase().trim();
+    await db.shop.upsert({
+      where: { shopifyDomain: session.shop },
+      update: { plan: compPromo.targetTier, promoCode: code, promoAppliedAt: new Date(), subscriptionId: null },
+      create: { shopifyDomain: session.shop, plan: compPromo.targetTier, promoCode: code, promoAppliedAt: new Date() },
+    });
+    return { comped: true, tier: compPromo.targetTier };
+  }
+
   if (!["starter", "pro", "enterprise"].includes(tier)) {
     return { error: "Invalid plan tier" };
   }
@@ -255,6 +269,15 @@ export default function Upgrade() {
     }
   }, [actionData]);
 
+  // Comp promo activated (free forever, no billing) — send them to the dashboard
+  useEffect(() => {
+    if (actionData?.comped) {
+      navigate("/app");
+    }
+  }, [actionData, navigate]);
+
+  const isComp = Boolean(promoCode && promoConfig?.comp);
+
   const plans = [
     {
       tier: "starter",
@@ -325,8 +348,49 @@ export default function Upgrade() {
         background: "linear-gradient(180deg, #0f0a1f 0%, #1a0f2e 50%, #0f0a1f 100%)",
         minHeight: "100vh"
       }}>
+        {/* Comp Banner — free forever, no billing */}
+        {isComp && (
+          <div style={{
+            background: "linear-gradient(135deg, rgba(16,185,129,0.18) 0%, rgba(139,92,246,0.18) 100%)",
+            border: "1px solid rgba(16,185,129,0.5)",
+            borderRadius: 12,
+            padding: "24px 24px",
+            marginBottom: 32,
+            textAlign: "center"
+          }}>
+            <div style={{ color: "#10b981", fontWeight: 700, fontSize: 22, marginBottom: 6 }}>
+              🎉 {promoCode} unlocked — Resparq is free forever
+            </div>
+            <div style={{ color: "#6ee7b7", fontSize: 14, marginBottom: 16 }}>
+              Full access to every feature, no charge, ever. No credit card, no trial countdown.
+            </div>
+            <Form method="post">
+              <input type="hidden" name="tier" value={promoConfig.targetTier} />
+              <input type="hidden" name="billingCycle" value="monthly" />
+              <input type="hidden" name="promoCode" value={promoCode} />
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                style={{
+                  padding: "14px 32px",
+                  background: isSubmitting ? "#6b7280" : "linear-gradient(90deg, #10b981 0%, #059669 100%)",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 8,
+                  fontSize: 16,
+                  fontWeight: 700,
+                  cursor: isSubmitting ? "wait" : "pointer",
+                  boxShadow: "0 4px 15px rgba(16,185,129,0.3)"
+                }}
+              >
+                {isSubmitting ? "Activating..." : "Activate Free Access"}
+              </button>
+            </Form>
+          </div>
+        )}
+
         {/* Promo Banner */}
-        {promoCode && promoConfig && (
+        {promoCode && promoConfig && !promoConfig.comp && (
           <div style={{
             background: "linear-gradient(135deg, rgba(236,72,153,0.15) 0%, rgba(139,92,246,0.15) 100%)",
             border: "1px solid rgba(236,72,153,0.4)",
@@ -345,6 +409,7 @@ export default function Upgrade() {
         )}
 
         {/* Free Trial Banner */}
+        {!isComp && (
         <div style={{
           background: "linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(5,150,105,0.15) 100%)",
           border: "1px solid rgba(16,185,129,0.4)",
@@ -360,6 +425,7 @@ export default function Upgrade() {
             Try {promoConfig ? "Pro" : "any plan"} free for {trialLabel.toLowerCase()}. No charge until your trial ends. Cancel anytime.
           </div>
         </div>
+        )}
 
         {/* Promo Code Input — shown when no promo is active */}
         {!promoCode && (
@@ -434,6 +500,7 @@ export default function Upgrade() {
           </div>
         )}
 
+        {!isComp && (<>
         {/* Billing Toggle */}
         <div style={{
           display: "flex",
@@ -710,6 +777,7 @@ export default function Upgrade() {
             );
           })}
         </div>
+        </>)}
 
         {/* 14-Day Money-Back Guarantee */}
         <div style={{

@@ -28,6 +28,14 @@ export async function getShopBillingCurrency(admin) {
 }
 
 const PROMO_CONFIGS = {
+  // Comp code: grants full Enterprise access with NO Shopify charge, forever.
+  // `comp: true` routes the upgrade action down the grant path (write the tier
+  // straight to Shop.plan) instead of createSubscription. A comped shop has no
+  // active subscription, so syncSubscriptionToPlan never resets its tier.
+  RESPARQFREE: {
+    targetTier: "enterprise",
+    comp: true,
+  },
   EARLYACCESS: {
     targetTier: "pro",
     monthlyPrice: 29,
