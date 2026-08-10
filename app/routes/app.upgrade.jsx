@@ -362,7 +362,7 @@ export default function Upgrade() {
               🎉 {promoCode} unlocked — Resparq is free forever
             </div>
             <div style={{ color: "#6ee7b7", fontSize: 14, marginBottom: 16 }}>
-              Full access to every feature, no charge, ever. No credit card, no trial countdown.
+              Full Pro access, no charge, ever. No credit card, no trial countdown.
             </div>
             <Form method="post">
               <input type="hidden" name="tier" value={promoConfig.targetTier} />

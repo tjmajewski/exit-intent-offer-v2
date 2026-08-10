@@ -33,7 +33,7 @@ const PROMO_CONFIGS = {
   // straight to Shop.plan) instead of createSubscription. A comped shop has no
   // active subscription, so syncSubscriptionToPlan never resets its tier.
   RESPARQFREE: {
-    targetTier: "enterprise",
+    targetTier: "pro",
     comp: true,
   },
   EARLYACCESS: {
