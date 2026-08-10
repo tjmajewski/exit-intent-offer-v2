@@ -274,7 +274,7 @@ export default function AppLayout({ children, plan }) {
             fontSize: 12
           }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>
-              {plan.tier.toUpperCase()} PLAN
+              {(plan.tier || 'free').toUpperCase()} PLAN
             </div>
             <div style={{ opacity: 0.7, fontSize: 11 }}>
               {plan.status === "trialing" ? "Trial Active" : "Active"}
