@@ -1,7 +1,6 @@
 import { authenticate } from "../shopify.server";
 import { checkUsageLimit, PLAN_FEATURES } from "../utils/featureGates";
 import { pruneAnalyticsEvents } from "../utils/analytics-metafield.js";
-import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
 
 export async function action({ request }) {
   // Authenticate the request from the storefront
@@ -15,7 +14,7 @@ export async function action({ request }) {
       });
     }
 
-    const { event, showNumber, daysSinceLastShow, ignoreStreak, testMode } = await request.json();
+    const { event, showNumber, daysSinceLastShow, ignoreStreak } = await request.json();
 
     console.log(" Analytics event received:", event);
 
@@ -26,19 +25,15 @@ export async function action({ request }) {
       });
     }
 
-    // Dev shops and merchant self-tests are excluded from analytics AND from
-    // the plan usage counter. Every learning write in the decision endpoint is
-    // already gated this way; this endpoint was not, so QA traffic both
-    // polluted the merchant dashboard and burned real quota — and quota
-    // exhaustion returns a 429 below that stops modals from rendering at all.
-    // Returns 200: nothing went wrong, the event is simply not counted.
-    if (testMode === true || isLearningWriteSkipped({ shopDomain: session.shop })) {
-      console.log(` Analytics skipped (${testMode === true ? "merchant test mode" : "dev shop"}):`, event);
-      return new Response(JSON.stringify({ success: true, skipped: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
+    // NOTE: test/dev traffic is intentionally NOT skipped here. These are all
+    // merchant-display writes (analytics metafield, modal stats, usage counter)
+    // — none of them are learning tables. Skipping them made the dashboard
+    // inconsistent: conversions/revenue (written by the orders webhook, which
+    // only gates its learning writes) still landed, but impressions/clicks/
+    // sessions were dropped, so a merchant self-test showed a 0% success rate
+    // next to a real order. Learning-table writes remain gated separately in
+    // the decision endpoint + webhook (isLearningWriteSkipped), so recording
+    // display metrics here does not poison Thompson Sampling.
 
     // Get shop ID from Shopify (needed for metafield writes)
     const shopResponse = await admin.graphql(
