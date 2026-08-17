@@ -48,16 +48,17 @@ const UNIVERSAL_BANNED_PATTERNS = [
   ...RECURRING_LANGUAGE_PATTERNS                // discount never recurs (spec 2.2)
 ];
 
-// Modal-design template gene (Sprint 3). Cross-archetype: all 8 visual
+// Modal-design template gene (Sprint 3). Cross-archetype: all 7 visual
 // templates are copy-agnostic chrome, so every archetype draws from the same
 // pool. Must stay in sync with MODAL_LAYOUTS (app/utils/templates.js) and the
-// storefront TEMPLATES registry (modal-templates.js). Testimonial renders
-// decorative stars + merchant copy only (no fabricated social proof);
+// storefront TEMPLATES registry (modal-templates.js). Testimonial is pulled
+// from the pool: hardcoded 5 stars + AI copy in quotes reads as a fabricated
+// review, and there's no review-app integration to source real ratings.
 // Timer-Front is deadline-driven from offerExpiresAt, independent of the
-// urgency gene — both safe to pair with any archetype.
+// urgency gene — safe to pair with any archetype.
 export const TEMPLATE_IDS = [
   'classic-card', 'top-banner', 'bottom-sheet', 'coupon-ticket',
-  'split-hero', 'timer-front', 'testimonial', 'scratch-reveal'
+  'split-hero', 'timer-front', 'scratch-reveal'
 ];
 
 export const genePools = {
