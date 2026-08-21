@@ -193,18 +193,6 @@ function LayoutThumbnail({ id }) {
           <rect x="112" y="88" width="76" height="14" rx="7" fill={accent} />
         </Frame>
       );
-    case "testimonial":
-      return (
-        <Frame>
-          <rect x="70" y="42" width="160" height="68" rx="8" fill="#fff" stroke={line} />
-          {[0, 1, 2, 3, 4].map((i) => (
-            <circle key={i} cx={108 + i * 17} cy="56" r="4" fill="#f59e0b" />
-          ))}
-          <rect x="92" y="70" width="116" height="6" rx="3" fill="#9ca3af" />
-          <rect x="100" y="82" width="100" height="5" rx="2.5" fill="#cbd5e1" />
-          <rect x="112" y="94" width="76" height="12" rx="6" fill={accent} />
-        </Frame>
-      );
     case "scratch-reveal":
       return (
         <Frame>
@@ -213,6 +201,41 @@ function LayoutThumbnail({ id }) {
           <path d="M92 94 L208 58" stroke="#fff" strokeWidth="3" opacity="0.7" />
           <path d="M92 80 L150 58" stroke="#fff" strokeWidth="3" opacity="0.5" />
           <rect x="120" y="98" width="60" height="6" rx="3" fill={accent} />
+        </Frame>
+      );
+    case "cart-preservation":
+      return (
+        <Frame>
+          <rect x="0" y="22" width="300" height="128" fill="#0f172a" opacity="0.18" />
+          <rect x="70" y="38" width="160" height="90" rx="10" fill="#fff" stroke={line} />
+          <rect x="120" y="48" width="60" height="10" rx="5" fill="#e5e7eb" />
+          <rect x="108" y="64" width="24" height="24" rx="4" fill="#eef2f7" stroke={line} />
+          <rect x="138" y="64" width="24" height="24" rx="4" fill="#eef2f7" stroke={line} />
+          <rect x="168" y="64" width="24" height="24" rx="4" fill="#eef2f7" stroke={line} />
+          <rect x="118" y="98" width="64" height="6" rx="3" fill="#9ca3af" />
+          <rect x="118" y="112" width="64" height="12" rx="6" fill={accent} />
+        </Frame>
+      );
+    case "editorial":
+      return (
+        <Frame>
+          <rect x="0" y="22" width="300" height="128" fill="#0f172a" opacity="0.14" />
+          <rect x="70" y="40" width="160" height="92" rx="10" fill="#fff" stroke={line} />
+          <rect x="112" y="58" width="76" height="9" rx="2" fill={dark} />
+          <rect x="120" y="72" width="60" height="7" rx="2" fill={dark} />
+          <rect x="140" y="90" width="20" height="2" rx="1" fill="#cbd5e1" />
+          <rect x="110" y="100" width="80" height="4" rx="2" fill="#9ca3af" />
+          <rect x="126" y="116" width="48" height="3" rx="1.5" fill={accent} />
+        </Frame>
+      );
+    case "corner-toast":
+      return (
+        <Frame>
+          <rect x="0" y="22" width="300" height="128" fill="#0f172a" opacity="0.06" />
+          <rect x="176" y="92" width="104" height="46" rx="8" fill="#fff" stroke={line} />
+          <rect x="186" y="102" width="72" height="5" rx="2.5" fill={dark} />
+          <rect x="186" y="112" width="56" height="4" rx="2" fill="#9ca3af" />
+          <rect x="186" y="122" width="84" height="10" rx="5" fill={accent} />
         </Frame>
       );
     case "classic-card":

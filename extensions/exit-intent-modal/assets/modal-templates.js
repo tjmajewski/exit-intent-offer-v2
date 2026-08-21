@@ -116,10 +116,58 @@
     return true;
   }
 
+  // ===========================================================================
+  // CONTRAST SAFETY (WCAG)
+  // Sniffed theme tokens are picked independently, so pairs can collide (light
+  // foreground on a white-fallback background, button text that matches the
+  // button). These helpers let tokensFor validate the PAIRS and snap any unsafe
+  // one to a readable value. parseRGB defers to the browser so it handles hex,
+  // rgb(), hsl(), and named colors uniformly. Results cached.
+  // ===========================================================================
+  const _rgbCache = {};
+  function parseRGB(color) {
+    if (!color) return null;
+    if (Object.prototype.hasOwnProperty.call(_rgbCache, color)) return _rgbCache[color];
+    let out = null;
+    try {
+      const el = document.createElement('span');
+      el.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
+      el.style.color = color;
+      (document.body || document.documentElement).appendChild(el);
+      const cs = getComputedStyle(el).color;
+      el.parentNode.removeChild(el);
+      const m = cs && cs.match(/rgba?\(([^)]+)\)/);
+      if (m) {
+        const p = m[1].split(',').map((s) => parseFloat(s));
+        out = { r: p[0] || 0, g: p[1] || 0, b: p[2] || 0, a: p.length > 3 ? p[3] : 1 };
+      }
+    } catch (_) {}
+    _rgbCache[color] = out;
+    return out;
+  }
+  function _lin(c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+  function relLum(rgb) { return 0.2126 * _lin(rgb.r) + 0.7152 * _lin(rgb.g) + 0.0722 * _lin(rgb.b); }
+  function contrastRatio(a, b) {
+    // Unparseable input -> return a passing ratio so we never override blindly.
+    if (!a || !b) return 21;
+    const L1 = relLum(a), L2 = relLum(b);
+    const hi = Math.max(L1, L2), lo = Math.min(L1, L2);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+  function readableTextOn(bg) {
+    const rgb = typeof bg === 'string' ? parseRGB(bg) : bg;
+    if (!rgb) return '#111111';
+    const white = { r: 255, g: 255, b: 255 }, black = { r: 17, g: 17, b: 17 };
+    return contrastRatio(rgb, white) >= contrastRatio(rgb, black) ? '#ffffff' : '#111111';
+  }
+
   /**
-   * Merge sniffed tokens with merchant-provided overrides (brand settings).
-   * Merchant settings always win for visible colors. Sniffed values are kept
-   * for borderRadius and fontFamily (low risk to defer to theme).
+   * Merge sniffed tokens with merchant-provided overrides (brand settings), then
+   * enforce legibility. Precedence is unchanged — merchant CSS/brand settings
+   * win, then sniffed theme tokens, then safe fallbacks — but every color pair
+   * that can render illegibly is validated and snapped to a readable value.
+   * Font and border-radius always defer to the theme (low risk, high native
+   * feel). The CSS builder still overrides everything downstream of this.
    *
    * Caller passes brand settings as `{ primary, primaryText, background,
    * foreground }` — typically built from settings.brand* in the storefront.
@@ -127,15 +175,55 @@
   function tokensFor(overrides) {
     const sniffed = getThemeTokens();
     const o = overrides || {};
+
+    const primary = o.primary || sniffed.primary;
+    const background = isSafeOpaqueColor(o.background) ? o.background
+                     : isSafeOpaqueColor(sniffed.background) ? sniffed.background
+                     : '#ffffff';
+    const bgRGB = parseRGB(background);
+    const primRGB = parseRGB(primary);
+
+    // Body/foreground text must stay legible on the (opaque) background. Guard
+    // the PAIR — a light sniffed foreground on a white-fallback background is
+    // the classic "broken" case. Snap to readable only when it actually fails.
+    let foreground = o.foreground || sniffed.foreground || '#1a1a1a';
+    if (bgRGB && contrastRatio(parseRGB(foreground), bgRGB) < 4.5) {
+      foreground = readableTextOn(bgRGB);
+    }
+
+    // Button label: derive from the button color by luminance instead of
+    // sniffing it independently. Honor an explicit override only if it contrasts.
+    let primaryText = o.primaryText;
+    if (!primaryText || (primRGB && contrastRatio(parseRGB(primaryText), primRGB) < 4.5)) {
+      primaryText = readableTextOn(primRGB || primary);
+    }
+
+    // Accent carries the offer emphasis (badge, timer cells, progress fill,
+    // amount hero). It must be visibly distinct from the card background or the
+    // offer disappears. If it's too close, fall back to the button color, then
+    // the foreground.
+    let accent = o.accent || sniffed.accent || primary;
+    if (bgRGB && contrastRatio(parseRGB(accent), bgRGB) < 3) {
+      accent = (primRGB && contrastRatio(primRGB, bgRGB) >= 3) ? primary : foreground;
+    }
+    const accentText = readableTextOn(accent);
+
+    // Muted (subheads/captions): legible on the background, else fall back to
+    // full foreground (loses the muted look but stays readable — only fires on
+    // broken themes).
+    let muted = o.muted || sniffed.muted || '#6b7280';
+    if (bgRGB && contrastRatio(parseRGB(muted), bgRGB) < 2.2) {
+      muted = foreground;
+    }
+
     return {
-      primary: o.primary || sniffed.primary,
-      primaryText: o.primaryText || sniffed.primaryText,
-      background: isSafeOpaqueColor(o.background) ? o.background
-                : isSafeOpaqueColor(sniffed.background) ? sniffed.background
-                : '#ffffff',
-      foreground: o.foreground || sniffed.foreground || '#1a1a1a',
-      muted: o.muted || sniffed.muted,
-      accent: o.accent || sniffed.accent || (o.primary || sniffed.primary),
+      primary,
+      primaryText,
+      background,
+      foreground,
+      muted,
+      accent,
+      accentText,
       borderRadius: sniffed.borderRadius,
       fontFamily: o.fontFamily || sniffed.fontFamily
     };
@@ -145,19 +233,65 @@
   // SHARED PRIMITIVES
   // ===========================================================================
 
+  // Inject shared keyframes / focus-ring / reduced-motion rules once. The show
+  // lifecycle flips display:none -> flex, which fires these entrance animations.
+  // Individual overlays set --resparq-ring for the focus-ring color.
+  function ensureBaseStyles() {
+    if (document.getElementById('resparq-base-styles')) return;
+    const s = document.createElement('style');
+    s.id = 'resparq-base-styles';
+    s.textContent = `
+      @keyframes resparq-fade-in { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes resparq-pop-in {
+        from { opacity: 0; transform: translateY(8px) scale(0.96); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      @keyframes resparq-sheet-up {
+        from { transform: translateY(100%); }
+        to   { transform: translateY(0); }
+      }
+      @keyframes resparq-tick {
+        0%   { transform: scale(1); }
+        30%  { transform: scale(1.12); }
+        100% { transform: scale(1); }
+      }
+      .resparq-overlay { animation: resparq-fade-in 0.22s ease-out; }
+      .resparq-modal:not(.resparq-top-banner) {
+        animation: resparq-pop-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .resparq-bottom-sheet {
+        animation: resparq-sheet-up 0.34s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .resparq-overlay button:focus-visible {
+        outline: 2px solid var(--resparq-ring, #1a1a1a);
+        outline-offset: 2px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .resparq-overlay,
+        .resparq-modal,
+        .resparq-bottom-sheet,
+        .resparq-banner-overlay { animation: none !important; }
+      }
+    `;
+    (document.head || document.documentElement).appendChild(s);
+  }
+
   function makeOverlay({ align = 'center', opaque = true } = {}) {
+    ensureBaseStyles();
     const overlay = document.createElement('div');
     overlay.className = 'resparq-overlay';
     overlay.style.cssText = `
       position: fixed;
       inset: 0;
       background: ${opaque ? 'rgba(0,0,0,0.6)' : 'transparent'};
+      ${opaque ? 'backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);' : ''}
       display: none;
       justify-content: center;
       align-items: ${align};
       z-index: 9999;
       pointer-events: ${opaque ? 'auto' : 'none'};
     `;
+    overlay.style.setProperty('--resparq-ring', getThemeTokens().primary);
     return overlay;
   }
 
@@ -206,12 +340,21 @@
       width: ${full ? '100%' : 'auto'};
       min-height: 48px;
       font-family: ${t.fontFamily};
-      transition: opacity 0.15s, transform 0.15s;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
     `;
-    btn.onmouseover = () => { btn.style.opacity = '0.92'; };
-    btn.onmouseout = () => { btn.style.opacity = '1'; };
+    btn.onmouseenter = () => {
+      btn.style.transform = 'translateY(-1px)';
+      btn.style.boxShadow = '0 6px 16px -4px rgba(0,0,0,0.25)';
+    };
+    btn.onmouseleave = () => {
+      btn.style.transform = 'none';
+      btn.style.boxShadow = '0 1px 2px rgba(0,0,0,0.08)';
+    };
+    btn.onmousedown = () => { btn.style.transform = 'translateY(0) scale(0.98)'; };
+    btn.onmouseup = () => { btn.style.transform = 'translateY(-1px)'; };
     return btn;
   }
 
@@ -242,8 +385,8 @@
     el.textContent = `${amountText} OFF`;
     el.style.cssText = `
       display: inline-block;
-      background: ${t.primary};
-      color: ${t.primaryText};
+      background: ${t.accent};
+      color: ${t.accentText};
       padding: 4px 10px;
       border-radius: 999px;
       font-size: 11px;
@@ -251,6 +394,37 @@
       letter-spacing: 0.08em;
       margin-bottom: 12px;
     `;
+    return el;
+  }
+
+  // Prominent discount amount, for layouts that lead with the offer (classic
+  // card when a discount is present). Big accent figure + a small caption.
+  // Returns null when there's no amount, so no-discount offers degrade cleanly.
+  function makeAmountHero(amountText, t, { align = 'left' } = {}) {
+    if (!amountText) return null;
+    const el = document.createElement('div');
+    el.style.cssText = `margin: 0 0 14px; text-align: ${align};`;
+    const fig = document.createElement('div');
+    fig.textContent = `${amountText} OFF`;
+    fig.style.cssText = `
+      font-size: 44px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      color: ${t.accent};
+    `;
+    const cap = document.createElement('div');
+    cap.textContent = 'your order';
+    cap.style.cssText = `
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: ${t.muted};
+      margin-top: 6px;
+    `;
+    el.appendChild(fig);
+    el.appendChild(cap);
     return el;
   }
 
@@ -393,10 +567,136 @@
     if (!props.showSecondary) secondaryCta.style.display = 'none';
 
     modal.appendChild(closeBtn);
-    const badge = makeDiscountBadge(props.amountText, t);
-    if (badge) modal.appendChild(badge);
+    // Lead with the discount amount as a hero when present; fall back to no
+    // amount block for announcement-only offers.
+    const amountHero = makeAmountHero(props.amountText, t, { align: 'left' });
+    if (amountHero) modal.appendChild(amountHero);
     modal.appendChild(headline);
     modal.appendChild(subhead);
+    modal.appendChild(primaryCta);
+    modal.appendChild(secondaryCta);
+    modal.appendChild(makePoweredBy(props.showPoweredBy));
+
+    overlay.appendChild(modal);
+    return { overlay, modal, primaryCta, secondaryCta, closeBtn };
+  }
+
+  // ===========================================================================
+  // TEMPLATE: CART PRESERVATION
+  // Recovery-native card. Leads with a "your cart is saved" reassurance chip and
+  // the shopper's actual cart items (productImages), then the offer + CTA. Built
+  // on the existing productImages plumbing — degrades to a strong reassurance
+  // card when the cart has no imagery. Discount is optional (works with or
+  // without an amount).
+  // ===========================================================================
+  function renderCartPreservation(props) {
+    const t = tokensFor(props.themeOverrides);
+    const mobile = isMobile();
+
+    const overlay = makeOverlay({ align: mobile ? 'flex-end' : 'center' });
+
+    const modal = document.createElement('div');
+    modal.className = 'resparq-modal resparq-cart-preservation';
+    modal.style.cssText = `
+      background: ${t.background};
+      color: ${t.foreground};
+      border-radius: ${mobile ? '20px 20px 0 0' : t.borderRadius};
+      padding: ${mobile ? '30px 22px 22px' : '38px 34px 30px'};
+      max-width: ${mobile ? '100%' : '460px'};
+      width: ${mobile ? '100%' : '90%'};
+      position: relative;
+      text-align: center;
+      box-shadow: 0 25px 60px -15px rgba(0,0,0,0.3);
+      font-family: ${t.fontFamily};
+    `;
+
+    const closeBtn = makeCloseButton(t);
+
+    // "Cart saved" reassurance chip — the identity of this layout.
+    const chip = document.createElement('div');
+    chip.innerHTML = '&#10003; Your cart is saved';
+    chip.style.cssText = `
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0,0,0,0.05);
+      color: ${t.foreground};
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      margin-bottom: 16px;
+    `;
+
+    // Cart items as the hero (larger than the shared thumbnail row). Rendered
+    // here with the shared class so the dispatcher's post-render injection
+    // no-ops when items are already present at render time.
+    let heroImages = null;
+    const imgs = Array.isArray(props.productImages) ? props.productImages : [];
+    if (imgs.length > 0) {
+      heroImages = document.createElement('div');
+      heroImages.className = 'resparq-product-images';
+      heroImages.style.cssText = `
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        margin: 0 0 20px;
+      `;
+      imgs.slice(0, 3).forEach((item) => {
+        if (!item || !item.image) return;
+        const img = document.createElement('img');
+        img.src = /^(https?:)?\/\//.test(item.image)
+          ? item.image + (item.image.includes('?') ? '&' : '?') + 'width=160'
+          : item.image;
+        img.alt = item.title || '';
+        img.loading = 'lazy';
+        img.onerror = () => { img.style.display = 'none'; };
+        img.style.cssText = `
+          width: ${mobile ? '72px' : '84px'};
+          height: ${mobile ? '72px' : '84px'};
+          object-fit: cover;
+          border-radius: ${t.borderRadius};
+          border: 1px solid rgba(0,0,0,0.08);
+          background: #ffffff;
+          flex: 0 0 auto;
+        `;
+        heroImages.appendChild(img);
+      });
+      if (heroImages.children.length === 0) heroImages = null;
+    }
+
+    const headline = document.createElement('h2');
+    headline.textContent = props.headline;
+    headline.style.cssText = `
+      margin: 0 0 10px;
+      font-size: ${mobile ? '22px' : '26px'};
+      font-weight: 700;
+      line-height: 1.25;
+      letter-spacing: -0.02em;
+      color: ${t.foreground};
+    `;
+
+    const subhead = document.createElement('p');
+    subhead.textContent = props.subhead;
+    subhead.style.cssText = `
+      margin: 0 0 22px;
+      font-size: 15px;
+      line-height: 1.5;
+      color: ${t.muted};
+    `;
+
+    const primaryCta = makePrimaryButton(props.cta, t);
+    const secondaryCta = makeSecondaryButton(props.secondaryCta || 'No thanks', t);
+    if (!props.showSecondary) secondaryCta.style.display = 'none';
+
+    modal.appendChild(closeBtn);
+    modal.appendChild(chip);
+    if (heroImages) modal.appendChild(heroImages);
+    const badge = makeDiscountBadge(props.amountText, t);
+    if (badge) { badge.style.display = 'inline-block'; modal.appendChild(badge); }
+    modal.appendChild(headline);
+    if (props.subhead) modal.appendChild(subhead);
     modal.appendChild(primaryCta);
     modal.appendChild(secondaryCta);
     modal.appendChild(makePoweredBy(props.showPoweredBy));
@@ -445,6 +745,7 @@
     // We still wrap in an overlay div for show/hide consistency.
     // Sit BELOW the storefront's header instead of covering it: measure any
     // header-like element anchored at the top and offset the banner past it.
+    ensureBaseStyles();
     const topInset = bannerTopInset();
     const overlay = document.createElement('div');
     overlay.className = 'resparq-overlay resparq-banner-overlay';
@@ -457,6 +758,7 @@
       z-index: 9999;
       animation: resparq-slide-down 0.35s ease-out;
     `;
+    overlay.style.setProperty('--resparq-ring', t.primary);
 
     const styleTag = document.createElement('style');
     styleTag.textContent = `
@@ -563,9 +865,53 @@
       background: rgba(0,0,0,0.18);
       border-radius: 999px;
       margin: 0 auto 18px;
+      cursor: grab;
     `;
 
     const closeBtn = makeCloseButton(t);
+
+    // Drag-to-dismiss: the handle now does what it implies. Dragging the sheet
+    // down past a threshold animates it away and fires the close handler; a
+    // short drag snaps back. Starts on any non-button surface so the CTA stays
+    // tappable. Skipped under reduced motion (no drag affordance change needed —
+    // the close button and overlay still dismiss).
+    (function enableDragDismiss() {
+      let startY = null, dragging = false, curY = 0;
+      const point = (e) => (e.touches && e.touches[0]) ? e.touches[0] : e;
+      const onDown = (e) => {
+        const tgt = e.target;
+        if (tgt && tgt.closest && tgt.closest('button')) return;
+        dragging = true;
+        startY = point(e).clientY;
+        curY = 0;
+        modal.style.transition = 'none';
+        handle.style.cursor = 'grabbing';
+      };
+      const onMove = (e) => {
+        if (!dragging) return;
+        curY = Math.max(0, point(e).clientY - startY);
+        modal.style.transform = `translateY(${curY}px)`;
+        if (e.cancelable) e.preventDefault();
+      };
+      const onUp = () => {
+        if (!dragging) return;
+        dragging = false;
+        handle.style.cursor = 'grab';
+        modal.style.transition = 'transform 0.25s ease';
+        if (curY > 100) {
+          modal.style.transform = 'translateY(100%)';
+          setTimeout(() => { if (closeBtn) closeBtn.click(); }, 220);
+        } else {
+          modal.style.transform = 'translateY(0)';
+        }
+      };
+      modal.addEventListener('mousedown', onDown);
+      modal.addEventListener('touchstart', onDown, { passive: true });
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('touchmove', onMove, { passive: false });
+      window.addEventListener('mouseup', onUp);
+      window.addEventListener('touchend', onUp);
+    })();
 
     const headline = document.createElement('h2');
     headline.textContent = props.headline;
@@ -632,18 +978,43 @@
     closeBtn.style.color = t.primaryText;
     closeBtn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
 
-    // Coupon body with dashed edge
+    // Coupon body with real punched-out side notches (CSS mask) — reads as a
+    // ticket rather than a plain dashed box. The mask cuts two transparent
+    // semicircles at the sides so the backdrop shows through the notches. A
+    // dashed perforation line sits at the same height between the two notches.
     const ticket = document.createElement('div');
+    const notch = `
+      -webkit-mask:
+        radial-gradient(circle 12px at left 58%, transparent 12px, #000 12.5px),
+        radial-gradient(circle 12px at right 58%, transparent 12px, #000 12.5px);
+      -webkit-mask-composite: source-in;
+      mask:
+        radial-gradient(circle 12px at left 58%, transparent 12px, #000 12.5px),
+        radial-gradient(circle 12px at right 58%, transparent 12px, #000 12.5px);
+      mask-composite: intersect;
+    `;
     ticket.style.cssText = `
       background: ${t.background};
       color: ${t.foreground};
-      border: 2px dashed ${t.primary};
-      border-radius: 14px;
+      border-radius: 16px;
       padding: 28px 24px 24px;
       text-align: center;
       box-shadow: 0 20px 60px -20px rgba(0,0,0,0.35);
       position: relative;
+      ${notch}
     `;
+
+    // Dashed perforation aligned with the notch centers (58% down the ticket).
+    const perforation = document.createElement('div');
+    perforation.style.cssText = `
+      position: absolute;
+      top: 58%;
+      left: 18px;
+      right: 18px;
+      border-top: 2px dashed rgba(0,0,0,0.14);
+      pointer-events: none;
+    `;
+    ticket.appendChild(perforation);
 
     const tag = document.createElement('div');
     tag.textContent = 'EXCLUSIVE OFFER';
@@ -651,7 +1022,7 @@
       font-size: 11px;
       font-weight: 700;
       letter-spacing: 0.15em;
-      color: ${t.primary};
+      color: ${t.accent};
       margin-bottom: 10px;
     `;
 
@@ -741,7 +1112,11 @@
       flex-direction: ${mobile ? 'column' : 'row'};
     `;
 
-    const closeBtn = makeCloseButton(t, { tone: 'dark' });
+    // The close button sits top-right. On desktop that's over the light content
+    // panel (needs a dark glyph); on mobile the hero panel stacks on top there
+    // (needs a light glyph). A 'dark'-toned white × on the white desktop panel
+    // was invisible — that's why there appeared to be no close button.
+    const closeBtn = makeCloseButton(t, { tone: mobile ? 'dark' : 'light' });
 
     // Left hero panel
     const hero = document.createElement('div');
@@ -877,8 +1252,8 @@
       const makeCell = () => {
         const cell = document.createElement('div');
         cell.style.cssText = `
-          background: ${t.primary};
-          color: ${t.primaryText};
+          background: ${t.accent};
+          color: ${t.accentText};
           font-size: ${mobile ? '28px' : '34px'};
           font-weight: 800;
           line-height: 1;
@@ -894,7 +1269,7 @@
         const colon = document.createElement('div');
         colon.textContent = ':';
         colon.style.cssText =
-          `font-size:28px;font-weight:800;color:${t.primary};align-self:center;`;
+          `font-size:28px;font-weight:800;color:${t.accent};align-self:center;`;
         return colon;
       };
       const hourCell = showHours ? makeCell() : null;
@@ -921,10 +1296,19 @@
         secCell.textContent = String(s).padStart(2, '0');
       };
       paint();
+      const reduceMotion = window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const pulse = () => {
+        if (reduceMotion) return;
+        secCell.style.animation = 'none';
+        void secCell.offsetWidth; // reflow so the animation restarts each tick
+        secCell.style.animation = 'resparq-tick 0.45s ease-out';
+      };
       // Interval clears itself when the modal is removed from the DOM.
       const tick = setInterval(() => {
         if (!document.body.contains(modal)) { clearInterval(tick); return; }
         paint();
+        pulse();
         const target = Number(modal.dataset.resparqTimerEndsAt) || endsAt;
         if (target - Date.now() <= 0) clearInterval(tick);
       }, 1000);
@@ -959,81 +1343,6 @@
     if (badge) { badge.style.display = 'block'; modal.appendChild(badge); }
     modal.appendChild(headline);
     modal.appendChild(subhead);
-    modal.appendChild(primaryCta);
-    modal.appendChild(secondaryCta);
-    modal.appendChild(makePoweredBy(props.showPoweredBy));
-
-    overlay.appendChild(modal);
-    return { overlay, modal, primaryCta, secondaryCta, closeBtn };
-  }
-
-  // ===========================================================================
-  // TEMPLATE 7: TESTIMONIAL
-  // Social-proof card. Star row + merchant-supplied quote (subhead) framed as
-  // a testimonial, then the offer and CTA. No fabricated names or stats.
-  // ===========================================================================
-  function renderTestimonial(props) {
-    const t = tokensFor(props.themeOverrides);
-    const mobile = isMobile();
-
-    const overlay = makeOverlay({ align: mobile ? 'flex-end' : 'center' });
-
-    const modal = document.createElement('div');
-    modal.className = 'resparq-modal resparq-testimonial';
-    modal.style.cssText = `
-      background: ${t.background};
-      color: ${t.foreground};
-      border-radius: ${mobile ? '20px 20px 0 0' : t.borderRadius};
-      padding: ${mobile ? '32px 22px 22px' : '40px 36px 32px'};
-      max-width: ${mobile ? '100%' : '460px'};
-      width: ${mobile ? '100%' : '90%'};
-      position: relative;
-      text-align: center;
-      box-shadow: 0 25px 60px -15px rgba(0,0,0,0.3);
-      font-family: ${t.fontFamily};
-    `;
-
-    const closeBtn = makeCloseButton(t);
-
-    const stars = document.createElement('div');
-    stars.textContent = '★★★★★';
-    stars.setAttribute('aria-label', '5 out of 5 stars');
-    stars.style.cssText =
-      `color:${t.primary};font-size:20px;letter-spacing:3px;margin-bottom:14px;`;
-
-    const quote = document.createElement('p');
-    quote.textContent = props.subhead
-      ? `“${props.subhead}”`
-      : `“${props.headline}”`;
-    quote.style.cssText = `
-      margin: 0 0 18px;
-      font-size: ${mobile ? '18px' : '20px'};
-      line-height: 1.4;
-      font-weight: 600;
-      font-style: italic;
-      color: ${t.foreground};
-    `;
-
-    const headline = document.createElement('h2');
-    headline.textContent = props.headline;
-    headline.style.cssText = `
-      margin: 0 0 18px;
-      font-size: 15px;
-      font-weight: 500;
-      line-height: 1.5;
-      color: ${t.muted};
-    `;
-
-    const primaryCta = makePrimaryButton(props.cta, t);
-    const secondaryCta = makeSecondaryButton(props.secondaryCta || 'No thanks', t);
-    if (!props.showSecondary) secondaryCta.style.display = 'none';
-
-    modal.appendChild(closeBtn);
-    modal.appendChild(stars);
-    const badge = makeDiscountBadge(props.amountText, t);
-    if (badge) { badge.style.display = 'inline-block'; modal.appendChild(badge); }
-    modal.appendChild(quote);
-    modal.appendChild(headline);
     modal.appendChild(primaryCta);
     modal.appendChild(secondaryCta);
     modal.appendChild(makePoweredBy(props.showPoweredBy));
@@ -1158,23 +1467,39 @@
 
     let scratching = false;
     let revealed = false;
+    // Track cleared area with a coarse boolean grid instead of reading back the
+    // whole canvas (getImageData) on every release — cheaper and dodges
+    // canvas-fingerprinting heuristics in some privacy blockers.
+    const GRID_COLS = 12;
+    const GRID_ROWS = 6;
+    const cellCleared = new Uint8Array(GRID_COLS * GRID_ROWS);
+    let clearedCells = 0;
+    const eraseRadius = 20;
+    const markCells = (x, y) => {
+      const cw = stageW / GRID_COLS;
+      const ch = stageH / GRID_ROWS;
+      const c0 = Math.max(0, Math.floor((x - eraseRadius) / cw));
+      const c1 = Math.min(GRID_COLS - 1, Math.floor((x + eraseRadius) / cw));
+      const r0 = Math.max(0, Math.floor((y - eraseRadius) / ch));
+      const r1 = Math.min(GRID_ROWS - 1, Math.floor((y + eraseRadius) / ch));
+      for (let r = r0; r <= r1; r++) {
+        for (let c = c0; c <= c1; c++) {
+          const idx = r * GRID_COLS + c;
+          if (!cellCleared[idx]) { cellCleared[idx] = 1; clearedCells++; }
+        }
+      }
+    };
     const eraseAt = (clientX, clientY) => {
       const rect = canvas.getBoundingClientRect();
       const x = (clientX - rect.left) * (stageW / rect.width);
       const y = (clientY - rect.top) * (stageH / rect.height);
       ctx.globalCompositeOperation = 'destination-out';
       ctx.beginPath();
-      ctx.arc(x, y, 20, 0, Math.PI * 2);
+      ctx.arc(x, y, eraseRadius, 0, Math.PI * 2);
       ctx.fill();
+      markCells(x, y);
     };
-    const clearedRatio = () => {
-      const data = ctx.getImageData(0, 0, stageW, stageH).data;
-      let clear = 0;
-      for (let i = 3; i < data.length; i += 4 * 80) {
-        if (data[i] === 0) clear++;
-      }
-      return clear / (data.length / (4 * 80));
-    };
+    const clearedRatio = () => clearedCells / (GRID_COLS * GRID_ROWS);
     const maybeReveal = () => {
       if (revealed) return;
       if (clearedRatio() > 0.45) {
@@ -1226,6 +1551,211 @@
   }
 
   // ===========================================================================
+  // TEMPLATE: EDITORIAL
+  // Quiet, premium, gallery-minimal. Serif headline, generous whitespace, a
+  // hairline rule, and a text-link CTA instead of a loud button. For considered
+  // brands where the promo-heavy layouts feel cheap. No badge; any amount is
+  // stated inline, softly.
+  // ===========================================================================
+  function renderEditorial(props) {
+    const t = tokensFor(props.themeOverrides);
+    const mobile = isMobile();
+
+    const overlay = makeOverlay({ align: mobile ? 'flex-end' : 'center' });
+
+    const modal = document.createElement('div');
+    modal.className = 'resparq-modal resparq-editorial';
+    modal.style.cssText = `
+      background: ${t.background};
+      color: ${t.foreground};
+      border-radius: ${mobile ? '20px 20px 0 0' : t.borderRadius};
+      padding: ${mobile ? '44px 28px 30px' : '60px 56px 48px'};
+      max-width: ${mobile ? '100%' : '480px'};
+      width: ${mobile ? '100%' : '90%'};
+      position: relative;
+      text-align: center;
+      box-shadow: 0 25px 60px -15px rgba(0,0,0,0.22);
+      font-family: ${t.fontFamily};
+    `;
+
+    const closeBtn = makeCloseButton(t);
+
+    const serif = "Georgia, 'Times New Roman', 'Iowan Old Style', serif";
+
+    // Soft inline amount line (no badge). Only when a discount exists.
+    let overline = null;
+    if (props.amountText) {
+      overline = document.createElement('div');
+      overline.textContent = `${props.amountText} off, with our compliments`;
+      overline.style.cssText = `
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: ${t.muted};
+        margin-bottom: 18px;
+      `;
+    }
+
+    const headline = document.createElement('h2');
+    headline.textContent = props.headline;
+    headline.style.cssText = `
+      margin: 0 0 20px;
+      font-family: ${serif};
+      font-size: ${mobile ? '28px' : '34px'};
+      font-weight: 500;
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+      color: ${t.foreground};
+    `;
+
+    const rule = document.createElement('div');
+    rule.style.cssText = `
+      width: 40px;
+      height: 1px;
+      background: ${t.foreground};
+      opacity: 0.25;
+      margin: 0 auto 20px;
+    `;
+
+    const subhead = document.createElement('p');
+    subhead.textContent = props.subhead;
+    subhead.style.cssText = `
+      margin: 0 0 28px;
+      font-size: 15px;
+      line-height: 1.6;
+      color: ${t.muted};
+    `;
+
+    // Text-link CTA rather than a filled button. Still a real <button> so the
+    // lifecycle wiring (handleCTAClick) is unchanged.
+    const primaryCta = document.createElement('button');
+    primaryCta.type = 'button';
+    primaryCta.textContent = props.cta;
+    primaryCta.style.cssText = `
+      background: transparent;
+      color: ${t.foreground};
+      border: none;
+      padding: 6px 2px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      font-family: ${t.fontFamily};
+      cursor: pointer;
+      border-bottom: 2px solid ${t.accent};
+      transition: opacity 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    `;
+    primaryCta.onmouseenter = () => { primaryCta.style.opacity = '0.7'; };
+    primaryCta.onmouseleave = () => { primaryCta.style.opacity = '1'; };
+
+    const secondaryCta = makeSecondaryButton(props.secondaryCta || 'No thanks', t);
+    if (!props.showSecondary) secondaryCta.style.display = 'none';
+
+    modal.appendChild(closeBtn);
+    if (overline) modal.appendChild(overline);
+    modal.appendChild(headline);
+    modal.appendChild(rule);
+    if (props.subhead) modal.appendChild(subhead);
+    modal.appendChild(primaryCta);
+    modal.appendChild(secondaryCta);
+    modal.appendChild(makePoweredBy(props.showPoweredBy));
+
+    overlay.appendChild(modal);
+    return { overlay, modal, primaryCta, secondaryCta, closeBtn };
+  }
+
+  // ===========================================================================
+  // TEMPLATE: CORNER TOAST
+  // Low-intrusion pill anchored to the bottom-right. No dark overlay and the
+  // page stays interactive (overlay is click-through; only the toast itself is
+  // interactive). The quietest surface in the set.
+  // ===========================================================================
+  function renderCornerToast(props) {
+    const t = tokensFor(props.themeOverrides);
+    const mobile = isMobile();
+    ensureBaseStyles();
+
+    // Custom non-blocking overlay (not makeOverlay — this one is click-through).
+    const overlay = document.createElement('div');
+    overlay.className = 'resparq-overlay resparq-corner-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      right: ${mobile ? '12px' : '20px'};
+      bottom: ${mobile ? '12px' : '20px'};
+      left: ${mobile ? '12px' : 'auto'};
+      display: none;
+      z-index: 9999;
+      pointer-events: none;
+    `;
+    overlay.style.setProperty('--resparq-ring', t.primary);
+
+    const modal = document.createElement('div');
+    modal.className = 'resparq-modal resparq-corner-toast';
+    modal.style.cssText = `
+      pointer-events: auto;
+      background: ${t.background};
+      color: ${t.foreground};
+      border-radius: ${t.borderRadius};
+      padding: 16px 16px 16px 18px;
+      max-width: ${mobile ? '100%' : '340px'};
+      position: relative;
+      box-shadow: 0 12px 36px -8px rgba(0,0,0,0.28);
+      border: 1px solid rgba(0,0,0,0.06);
+      font-family: ${t.fontFamily};
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    `;
+
+    const closeBtn = makeCloseButton(t);
+    closeBtn.style.top = '8px';
+    closeBtn.style.right = '8px';
+    closeBtn.style.width = '26px';
+    closeBtn.style.height = '26px';
+    closeBtn.style.fontSize = '18px';
+
+    const text = document.createElement('div');
+    text.style.cssText = 'padding-right: 22px;';
+    const headline = document.createElement('div');
+    headline.textContent = props.amountText
+      ? `${props.amountText} off — ${props.headline}`
+      : props.headline;
+    headline.style.cssText = `
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.3;
+      color: ${t.foreground};
+    `;
+    text.appendChild(headline);
+    if (props.subhead) {
+      const sub = document.createElement('div');
+      sub.textContent = props.subhead;
+      sub.style.cssText = `font-size: 13px; line-height: 1.4; color: ${t.muted}; margin-top: 3px;`;
+      text.appendChild(sub);
+    }
+
+    const primaryCta = makePrimaryButton(props.cta, t, { full: true });
+    primaryCta.style.minHeight = '40px';
+    primaryCta.style.padding = '10px 16px';
+    primaryCta.style.fontSize = '14px';
+
+    // Corner toast has no room for a distinct secondary; keep a hidden one so
+    // the handle contract (secondaryCta) stays consistent for the caller.
+    const secondaryCta = makeSecondaryButton(props.secondaryCta || 'No thanks', t);
+    secondaryCta.style.display = 'none';
+
+    modal.appendChild(closeBtn);
+    modal.appendChild(text);
+    modal.appendChild(primaryCta);
+    modal.appendChild(secondaryCta);
+    modal.appendChild(makePoweredBy(props.showPoweredBy));
+
+    overlay.appendChild(modal);
+    return { overlay, modal, primaryCta, secondaryCta, closeBtn };
+  }
+
+  // ===========================================================================
   // REGISTRY + DISPATCHER
   // ===========================================================================
   const TEMPLATES = {
@@ -1235,6 +1765,13 @@
       description: 'Centered, soft shadow',
       tier: 1,
       render: renderClassicCard
+    },
+    'cart-preservation': {
+      id: 'cart-preservation',
+      name: 'Cart Preservation',
+      description: 'Shows saved cart items',
+      tier: 1,
+      render: renderCartPreservation
     },
     'top-banner': {
       id: 'top-banner',
@@ -1271,19 +1808,26 @@
       tier: 2,
       render: renderTimerFront
     },
-    'testimonial': {
-      id: 'testimonial',
-      name: 'Testimonial',
-      description: 'Star rating + social proof',
-      tier: 2,
-      render: renderTestimonial
-    },
     'scratch-reveal': {
       id: 'scratch-reveal',
       name: 'Scratch Reveal',
       description: 'Scratch-off to reveal',
       tier: 2,
       render: renderScratchReveal
+    },
+    'editorial': {
+      id: 'editorial',
+      name: 'Editorial',
+      description: 'Quiet, premium, minimal',
+      tier: 2,
+      render: renderEditorial
+    },
+    'corner-toast': {
+      id: 'corner-toast',
+      name: 'Corner Toast',
+      description: 'Low-intrusion corner pill',
+      tier: 1,
+      render: renderCornerToast
     }
   };
 

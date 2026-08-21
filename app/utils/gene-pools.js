@@ -57,8 +57,8 @@ const UNIVERSAL_BANNED_PATTERNS = [
 // Timer-Front is deadline-driven from offerExpiresAt, independent of the
 // urgency gene — safe to pair with any archetype.
 export const TEMPLATE_IDS = [
-  'classic-card', 'top-banner', 'bottom-sheet', 'coupon-ticket',
-  'split-hero', 'timer-front', 'scratch-reveal'
+  'classic-card', 'cart-preservation', 'top-banner', 'bottom-sheet', 'coupon-ticket',
+  'split-hero', 'timer-front', 'scratch-reveal', 'editorial', 'corner-toast'
 ];
 
 export const genePools = {

@@ -696,6 +696,18 @@ function LayoutThumbnail({ layoutId, selected }) {
           <rect x="50" y="42" width="60" height="8" rx="2" fill={fill} />
         </svg>
       );
+    case "cart-preservation":
+      return (
+        <svg viewBox="0 0 160 70" style={box} preserveAspectRatio="none">
+          <rect x="0" y="0" width="160" height="70" fill="#f9fafb" />
+          <rect x="34" y="8" width="92" height="56" rx="6" fill="white" stroke={stroke} strokeWidth="1.5" />
+          <rect x="62" y="14" width="36" height="6" rx="3" fill={muted} />
+          <rect x="54" y="24" width="14" height="14" rx="2" fill="#eef2f7" stroke={stroke} strokeWidth="0.75" />
+          <rect x="73" y="24" width="14" height="14" rx="2" fill="#eef2f7" stroke={stroke} strokeWidth="0.75" />
+          <rect x="92" y="24" width="14" height="14" rx="2" fill="#eef2f7" stroke={stroke} strokeWidth="0.75" />
+          <rect x="58" y="52" width="44" height="7" rx="2" fill={fill} />
+        </svg>
+      );
     case "top-banner":
       return (
         <svg viewBox="0 0 160 70" style={box} preserveAspectRatio="none">
@@ -753,17 +765,6 @@ function LayoutThumbnail({ layoutId, selected }) {
           <rect x="60" y="50" width="40" height="7" rx="2" fill={fill} />
         </svg>
       );
-    case "testimonial":
-      return (
-        <svg viewBox="0 0 160 70" style={box} preserveAspectRatio="none">
-          <rect x="0" y="0" width="160" height="70" fill="#f9fafb" />
-          <rect x="34" y="10" width="92" height="50" rx="6" fill="white" stroke={stroke} strokeWidth="1.5" />
-          <text x="80" y="26" textAnchor="middle" fontSize="9" fill={fill} letterSpacing="1">★★★★★</text>
-          <rect x="50" y="32" width="60" height="3" rx="1" fill={muted} />
-          <rect x="56" y="39" width="48" height="3" rx="1" fill={muted} />
-          <rect x="58" y="48" width="44" height="7" rx="2" fill={fill} />
-        </svg>
-      );
     case "scratch-reveal":
       return (
         <svg viewBox="0 0 160 70" style={box} preserveAspectRatio="none">
@@ -773,6 +774,28 @@ function LayoutThumbnail({ layoutId, selected }) {
           <text x="76" y="36" textAnchor="middle" fontSize="11" fontWeight="800" fill={fill}>30%</text>
           <path d="M96 22 l14 -4 M98 30 l16 -3" stroke={stroke} strokeWidth="1.5" strokeLinecap="round" />
           <rect x="58" y="48" width="44" height="7" rx="2" fill={fill} />
+        </svg>
+      );
+    case "editorial":
+      return (
+        <svg viewBox="0 0 160 70" style={box} preserveAspectRatio="none">
+          <rect x="0" y="0" width="160" height="70" fill="#f9fafb" />
+          <rect x="30" y="8" width="100" height="54" rx="6" fill="white" stroke={stroke} strokeWidth="1.5" />
+          <rect x="56" y="20" width="48" height="5" rx="1.5" fill={fill} />
+          <rect x="62" y="28" width="36" height="4" rx="1.5" fill={fill} />
+          <rect x="74" y="38" width="12" height="1.5" rx="0.75" fill={muted} />
+          <rect x="58" y="44" width="44" height="3" rx="1" fill={muted} />
+          <rect x="66" y="52" width="28" height="2" rx="1" fill={fill} />
+        </svg>
+      );
+    case "corner-toast":
+      return (
+        <svg viewBox="0 0 160 70" style={box} preserveAspectRatio="none">
+          <rect x="0" y="0" width="160" height="70" fill="#f9fafb" />
+          <rect x="92" y="32" width="60" height="30" rx="5" fill="white" stroke={stroke} strokeWidth="1.5" />
+          <rect x="99" y="38" width="40" height="4" rx="1.5" fill={fill} />
+          <rect x="99" y="45" width="30" height="3" rx="1.5" fill={muted} />
+          <rect x="99" y="52" width="46" height="6" rx="2" fill={fill} />
         </svg>
       );
     default:

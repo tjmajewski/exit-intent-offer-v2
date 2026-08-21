@@ -62,13 +62,19 @@ export function getAvailableTemplates(planTier) {
 //
 // Tiers:
 //   1 = ships with Sprint 1 (Classic Card, Top Banner, Bottom Sheet, Coupon Ticket)
-//   2 = Sprint 2 (Split Hero, Timer-Front, Testimonial, Scratch Reveal)
+//   2 = Sprint 2 (Split Hero, Timer-Front, Scratch Reveal)
 // =============================================================================
 export const MODAL_LAYOUTS = {
   "classic-card": {
     id: "classic-card",
     name: "Classic Card",
     description: "Centered, soft shadow",
+    tier: 1
+  },
+  "cart-preservation": {
+    id: "cart-preservation",
+    name: "Cart Preservation",
+    description: "Shows saved cart items",
     tier: 1
   },
   "top-banner": {
@@ -101,17 +107,23 @@ export const MODAL_LAYOUTS = {
     description: "Live countdown urgency",
     tier: 2
   },
-  "testimonial": {
-    id: "testimonial",
-    name: "Testimonial",
-    description: "Star rating + social proof",
-    tier: 2
-  },
   "scratch-reveal": {
     id: "scratch-reveal",
     name: "Scratch Reveal",
     description: "Scratch-off to reveal",
     tier: 2
+  },
+  "editorial": {
+    id: "editorial",
+    name: "Editorial",
+    description: "Quiet, premium, minimal",
+    tier: 2
+  },
+  "corner-toast": {
+    id: "corner-toast",
+    name: "Corner Toast",
+    description: "Low-intrusion corner pill",
+    tier: 1
   }
 };
 

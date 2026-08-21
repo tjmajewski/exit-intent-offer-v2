@@ -52,6 +52,26 @@
     return false;
   }
 
+  // Measure the storefront header so a fixed fallback banner can sit BELOW it
+  // instead of covering the logo/nav. Mirrors bannerTopInset in modal-templates.
+  // Returns the header's bottom edge (px), capped, or 0 if none found.
+  function headerInset() {
+    let inset = 0;
+    try {
+      const sel = 'header,.header,.site-header,#shopify-section-header,' +
+        '[data-section-type="header"],[class*="ection-header"]';
+      document.querySelectorAll(sel).forEach((el) => {
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return;
+        const r = el.getBoundingClientRect();
+        if (r.top <= 4 && r.height > 8 && r.width >= window.innerWidth * 0.6 && r.bottom > inset) {
+          inset = r.bottom;
+        }
+      });
+    } catch (_) {}
+    return Math.min(Math.max(inset, 0), 240);
+  }
+
   // Clone a few visual properties off the cart's existing checkout button so
   // our injected Apply button looks like it belongs to the theme.
   function cloneCheckoutButtonStyle(scope) {
@@ -313,7 +333,7 @@
         
         // Show banner on cart page
         if (isCartPage) {
-          this.showQualificationBanner(offer);
+          this.renderThresholdCartCard(offer, currentTotal, true);
         }
         
         // Update mini-cart CTA if exists
@@ -331,10 +351,9 @@
         //  DROPPED BELOW THRESHOLD - Lost qualification!
         console.log('[Cart Monitor]  Cart dropped below threshold - removing qualification');
         
-        // Remove qualification banner and show progress
+        // Swap the card back to progress state
         if (isCartPage) {
-          this.removeQualificationBanner();
-          this.showProgressBanner(offer, currentTotal);
+          this.renderThresholdCartCard(offer, currentTotal, false);
         }
         
         // Show progress again in mini-cart
@@ -350,7 +369,7 @@
       } else if (currentTotal < offer.threshold && !this.bannerShown) {
         // Still below threshold - show progress
         if (isCartPage) {
-          this.showProgressBanner(offer, currentTotal);
+          this.renderThresholdCartCard(offer, currentTotal, false);
         }
         
         if (hasMiniCart) {
@@ -359,141 +378,86 @@
       }
     }
 
-    showQualificationBanner(offer) {
-      // Check if banner already exists
-      if (document.getElementById('exit-intent-qualification-banner')) {
-        return;
-      }
 
+    // Unified cart-page threshold surface. Renders ONE neutral, theme-adopting
+    // card inline in the cart (not a full-bleed primary banner). Accent is used
+    // only for the discount amount + the progress fill. Coexistence-aware:
+    // downgrades to a text-only line when the cart already shows competing
+    // promos. Escalates to a contained, header-inset fixed card only when there
+    // is no cart container to mount into.
+    renderThresholdCartCard(offer, currentTotal, qualified) {
       const t = this.getThemeTokens();
+      const id = 'exit-intent-threshold-card';
+      const remaining = Math.max(0, offer.threshold - currentTotal);
+      const roundedRemaining = Math.ceil(remaining / 5) * 5;
+      const amount = formatCurrency(offer.discount);
 
-      // Create banner
-      const banner = document.createElement('div');
-      banner.id = 'exit-intent-qualification-banner';
-      banner.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        background: ${t.primary};
-        color: ${t.primaryText};
-        padding: 16px;
-        text-align: center;
-        font-size: 16px;
-        font-weight: 600;
-        font-family: ${t.fontFamily};
-        box-shadow: 0 2px 10px rgba(0,0,0,0.15);
-        z-index: 9998;
-        animation: slideDown 0.5s ease-out;
-      `;
+      const label = qualified
+        ? `<span>You've unlocked <span style="color:${t.accent};font-weight:700;">${amount} off</span> — code <strong>${offer.code}</strong> applied at checkout.</span>`
+        : `<span>Add <strong>${formatCurrency(roundedRemaining)}</strong> more to get <span style="color:${t.accent};font-weight:700;">${amount} off</span></span>`;
 
-      banner.innerHTML = `
-        <style>
-          @keyframes slideDown {
-            from { transform: translateY(-100%); }
-            to { transform: translateY(0); }
-          }
-          #exit-intent-qualification-banner .close-banner {
-            position: absolute;
-            right: 20px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: rgba(255,255,255,0.18);
-            border: none;
-            color: ${t.primaryText};
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            cursor: pointer;
-            font-size: 20px;
-            line-height: 1;
-            transition: background 0.2s;
-          }
-          #exit-intent-qualification-banner .close-banner:hover {
-            background: rgba(255,255,255,0.3);
-          }
-        </style>
-        <span>You qualified for ${formatCurrency(offer.discount)} off — code <strong>${offer.code}</strong> applied at checkout.</span>
-        <button class="close-banner" onclick="this.parentElement.remove()">×</button>
-      `;
-
-      document.body.appendChild(banner);
-      console.log('[Cart Monitor] Banner displayed');
-    }
-
-    removeQualificationBanner() {
-      const banner = document.getElementById('exit-intent-qualification-banner');
-      if (banner) {
-        banner.remove();
-        console.log('[Cart Monitor] Qualification banner removed');
+      let card = document.getElementById(id);
+      if (card) {
+        const wasCrowded = card.dataset.crowded === '1';
+        card.innerHTML = label + (wasCrowded || qualified ? '' : this.getProgressBar(currentTotal, offer.threshold));
+        return card;
       }
-    }
 
-    showProgressBanner(offer, currentTotal) {
-      // Check if banner already exists
-      let banner = document.getElementById('exit-intent-progress-banner');
+      const cartScope =
+        document.querySelector('main [class*="cart"]') ||
+        document.querySelector('main');
+      const crowded = detectCompetingPromos(cartScope || document.body);
 
-      const remaining = offer.threshold - currentTotal;
-
-      if (!banner) {
-        const t = this.getThemeTokens();
-
-        // Create banner
-        banner = document.createElement('div');
-        banner.id = 'exit-intent-progress-banner';
-        banner.style.cssText = `
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          background: ${t.primary};
-          color: ${t.primaryText};
-          padding: 16px;
-          text-align: center;
-          font-size: 16px;
-          font-weight: 600;
+      card = document.createElement('div');
+      card.id = id;
+      card.dataset.crowded = crowded ? '1' : '0';
+      card.style.cssText = crowded
+        ? `
+          box-sizing: border-box;
+          margin: 8px 0 16px;
+          padding: 10px 12px;
           font-family: ${t.fontFamily};
-          box-shadow: 0 2px 10px rgba(0,0,0,0.15);
-          z-index: 9998;
-          animation: slideDown 0.5s ease-out;
+          font-size: 14px;
+          line-height: 1.4;
+          color: ${t.foreground};
+          border-top: 1px solid rgba(0,0,0,0.08);
+          border-bottom: 1px solid rgba(0,0,0,0.08);
+        `
+        : `
+          box-sizing: border-box;
+          margin: 12px 0 20px;
+          padding: 14px 16px;
+          background: rgba(0,0,0,0.03);
+          border: 1px solid rgba(0,0,0,0.08);
+          border-radius: ${t.borderRadius};
+          font-family: ${t.fontFamily};
+          font-size: 14px;
+          line-height: 1.4;
+          color: ${t.foreground};
         `;
+      card.innerHTML = label + (crowded || qualified ? '' : this.getProgressBar(currentTotal, offer.threshold));
 
-        banner.innerHTML = `
-          <style>
-            @keyframes slideDown {
-              from { transform: translateY(-100%); }
-              to { transform: translateY(0); }
-            }
-            #exit-intent-progress-banner .close-banner {
-              position: absolute;
-              right: 20px;
-              top: 50%;
-              transform: translateY(-50%);
-              background: rgba(255,255,255,0.18);
-              border: none;
-              color: ${t.primaryText};
-              width: 30px;
-              height: 30px;
-              border-radius: 50%;
-              cursor: pointer;
-              font-size: 20px;
-              line-height: 1;
-              transition: background 0.2s;
-            }
-            #exit-intent-progress-banner .close-banner:hover {
-              background: rgba(255,255,255,0.3);
-            }
-          </style>
-          <span>Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off</span>
-          <button class="close-banner" onclick="this.parentElement.remove()">×</button>
-        `;
-
-        document.body.appendChild(banner);
-        console.log('[Cart Monitor] Progress banner displayed');
+      if (cartScope) {
+        if (cartScope.firstChild) cartScope.insertBefore(card, cartScope.firstChild);
+        else cartScope.appendChild(card);
       } else {
-        // Update existing banner
-        banner.querySelector('span').textContent = `Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off`;
+        // Fallback only: no cart container to inline into. A contained, neutral,
+        // header-inset card — never a full-bleed primary bar over the header.
+        const inset = headerInset();
+        card.style.position = 'fixed';
+        card.style.top = inset + 'px';
+        card.style.left = '0';
+        card.style.right = '0';
+        card.style.margin = '12px auto';
+        card.style.maxWidth = '520px';
+        card.style.width = 'calc(100% - 24px)';
+        card.style.background = t.background;
+        card.style.boxShadow = '0 6px 20px -8px rgba(0,0,0,0.25)';
+        card.style.zIndex = '9998';
+        document.body.appendChild(card);
       }
+      console.log('[Cart Monitor] Threshold card rendered (qualified:', qualified, ')');
+      return card;
     }
 
     applyDiscountCode(code) {
@@ -536,13 +500,11 @@
         }
 
         existingCTA.innerHTML = `
-          <div style="text-align: center; padding: 12px;">
-            <div style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">You qualified</div>
-            <div style="font-size: 14px; opacity: 0.92;">${formatCurrency(offer.discount)} off applied at checkout</div>
+          <div style="padding: 12px 14px;">
+            <div style="font-size: 15px; font-weight: 700; margin-bottom: 2px; color: ${t.foreground};">You've unlocked <span style="color:${t.accent};">${formatCurrency(offer.discount)} off</span></div>
+            <div style="font-size: 13px; color: ${t.foreground}; opacity: 0.75;">Code <strong>${offer.code}</strong> applied at checkout</div>
           </div>
         `;
-        existingCTA.style.background = t.primary;
-        existingCTA.style.color = t.primaryText;
       } else {
         // Show progress
         const remaining = offer.threshold - currentTotal;
@@ -552,17 +514,13 @@
         }
 
         existingCTA.innerHTML = `
-          <div style="text-align: center; padding: 12px;">
-            <div style="font-size: 16px; font-weight: 600; margin-bottom: 4px;">
-              Add ${formatCurrency(Math.ceil(remaining / 5) * 5)} more to get ${formatCurrency(offer.discount)} off
+          <div style="padding: 12px 14px;">
+            <div style="font-size: 14px; font-weight: 600; color: ${t.foreground};">
+              Add <strong>${formatCurrency(Math.ceil(remaining / 5) * 5)}</strong> more to get <span style="color:${t.accent};">${formatCurrency(offer.discount)} off</span>
             </div>
-            <div style="font-size: 13px; opacity: 0.9;">
-              ${this.getProgressBar(currentTotal, offer.threshold)}
-            </div>
+            ${this.getProgressBar(currentTotal, offer.threshold)}
           </div>
         `;
-        existingCTA.style.background = t.primary;
-        existingCTA.style.color = t.primaryText;
       }
 
       console.log(`[Cart Monitor] Mini-cart CTA updated (qualified: ${qualified})`);
@@ -822,10 +780,12 @@
       const cta = document.createElement('div');
       cta.id = ctaId;
       cta.style.cssText = `
-        color: ${t.primaryText};
+        box-sizing: border-box;
+        color: ${t.foreground};
+        background: rgba(0,0,0,0.03);
+        border: 1px solid rgba(0,0,0,0.08);
         border-radius: ${t.borderRadius};
         margin: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.12);
         font-family: ${t.fontFamily};
         transition: all 0.3s ease;
       `;
@@ -849,7 +809,7 @@
       const t = this.getThemeTokens();
       return `
         <div style="background: ${t.trackBg}; border-radius: 999px; height: 6px; overflow: hidden; margin-top: 8px;">
-          <div style="background: ${t.primaryText}; height: 100%; width: ${percentage}%; transition: width 0.3s ease;"></div>
+          <div style="background: ${t.accent}; height: 100%; width: ${percentage}%; transition: width 0.3s ease;"></div>
         </div>
       `;
     }
@@ -913,16 +873,27 @@
         ['--color-accent-2', '--color-accent-1', '--color-link'],
         primary
       );
+      const background = pick(
+        ['--color-background', '--color-base-background-1'],
+        '#ffffff'
+      );
+      const foreground = pick(
+        ['--color-foreground', '--color-base-text'],
+        '#1a1a1a'
+      );
 
       this._themeTokens = {
         primary,
         primaryText,
         accent,
+        background,
+        foreground,
         fontFamily: btnFont || readVar('--font-body-family') ||
           "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
         borderRadius: btnRadius,
-        // semi-transparent track derived from primaryText for use against primary bg
-        trackBg: 'rgba(255, 255, 255, 0.25)'
+        // Neutral track for progress bars rendered on a light/neutral card
+        // (threshold surfaces now use accent fill on a neutral track).
+        trackBg: 'rgba(0, 0, 0, 0.08)'
       };
       return this._themeTokens;
     }
