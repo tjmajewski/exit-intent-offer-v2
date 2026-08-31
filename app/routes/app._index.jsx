@@ -890,13 +890,16 @@ export default function Dashboard() {
 
   // Compute onboarding step completion
   const tier = plan?.tier || "starter";
+  // Real proof the embed is live on the storefront (an impression can only fire
+  // if the app embed is enabled). Clicking "Open Theme Editor" is not proof.
+  const hasImpression = (analytics?.last30Days?.impressions || 0) > 0 || (analytics?.lifetime?.impressions || 0) > 0;
   const completedSteps = {
-    themeExtension: onboarding?.themeEditorClicked || false,
+    themeExtension: hasImpression,
     configureOffer: modalLibrary?.modals?.length > 0,
     // Use persisted flag so switching back to manual doesn't un-check this
     configureAI: onboarding?.configureAI || settings?.mode === "ai",
     enableModal: isEnabled,
-    firstImpression: (analytics?.last30Days?.impressions || 0) > 0 || (analytics?.lifetime?.impressions || 0) > 0,
+    firstImpression: hasImpression,
   };
   const showOnboarding = !onboarding?.dismissed && !onboarding?.completed;
 
@@ -1078,6 +1081,7 @@ export default function Dashboard() {
           planTier={tier}
           shopDomain={shopDomain}
           onToggle={handleToggle}
+          themeEditorClicked={onboarding?.themeEditorClicked}
         />
       )}
 

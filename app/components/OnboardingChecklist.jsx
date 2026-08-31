@@ -63,7 +63,7 @@ const STEPS = {
 
 STEPS.enterprise = STEPS.pro;
 
-export default function OnboardingChecklist({ completedSteps, planTier, shopDomain, onToggle }) {
+export default function OnboardingChecklist({ completedSteps, planTier, shopDomain, onToggle, themeEditorClicked }) {
   const fetcher = useFetcher();
   const steps = STEPS[planTier] || STEPS.starter;
   const completedCount = steps.filter((s) => completedSteps[s.key]).length;
@@ -232,6 +232,11 @@ export default function OnboardingChecklist({ completedSteps, planTier, shopDoma
                 {!isComplete && (
                   <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>
                     {step.description}
+                  </div>
+                )}
+                {!isComplete && step.actionType === "themeEditor" && themeEditorClicked && (
+                  <div style={{ fontSize: 13, color: "#8b5cf6", marginTop: 4, fontStyle: "italic" }}>
+                    Verifying install. Waiting for the embed to go live. Re-open the theme editor if it isn&rsquo;t enabled.
                   </div>
                 )}
               </div>
