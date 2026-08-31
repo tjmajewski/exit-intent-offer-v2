@@ -583,6 +583,31 @@ export async function action({ request }) {
       modalLibrary.currentModalId = newModalId;
       modalLibrary.nextModalNumber = modalLibrary.nextModalNumber + 1;
 
+      // Prune the library so the metafield can't grow unbounded and 500 on
+      // save. Each entry embeds a full config, so a merchant who saves often
+      // eventually blows past Shopify's metafield size limit. We keep at most
+      // MAX_MODALS, and never drop a modal that matters: the currently active
+      // one, or any that has accrued real stats (its performance history).
+      // Only zero-stat inactive entries are prunable, oldest first.
+      const MAX_MODALS = 30;
+      if (modalLibrary.modals.length > MAX_MODALS) {
+        const hasStats = (m) => {
+          const s = m.stats || {};
+          return (s.impressions || 0) + (s.clicks || 0) + (s.conversions || 0) + (s.revenue || 0) > 0;
+        };
+        const isKeeper = (m) => m.active || m.modalId === modalLibrary.currentModalId || hasStats(m);
+
+        const prunable = modalLibrary.modals
+          .filter((m) => !isKeeper(m))
+          .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+
+        const dropCount = Math.min(prunable.length, modalLibrary.modals.length - MAX_MODALS);
+        const dropIds = new Set(prunable.slice(0, dropCount).map((m) => m.modalId));
+        if (dropIds.size > 0) {
+          modalLibrary.modals = modalLibrary.modals.filter((m) => !dropIds.has(m.modalId));
+        }
+      }
+
       // Save modal library
       await admin.graphql(
         `mutation SetModalLibrary($ownerId: ID!, $value: String!) {
@@ -642,6 +667,13 @@ export default function Settings() {
   const [modalHeadline, setModalHeadline] = useState(settings.modalHeadline || "Wait! Don't leave yet ");
   const [modalBody, setModalBody] = useState(settings.modalBody || "Complete your purchase now and get an exclusive discount on your order!");
   const [ctaButton, setCtaButton] = useState(settings.ctaButton || "Complete My Order");
+  // Discount fields are lifted to controlled state so the live preview reflects
+  // them as they change (previously it read the last-saved loader values, so
+  // toggling %/$ or editing the amount didn't update the preview).
+  const [discountEnabled, setDiscountEnabled] = useState(settings.discountEnabled ?? true);
+  const [offerType, setOfferType] = useState(settings.offerType || "percentage");
+  const [discountPercentage, setDiscountPercentage] = useState(settings.discountPercentage || 10);
+  const [discountAmount, setDiscountAmount] = useState(settings.discountAmount || 10);
      
 
 
@@ -708,10 +740,10 @@ export default function Settings() {
     modalHeadline,
     modalBody,
     ctaButton,
-    discountEnabled: settings.discountEnabled,
-    offerType: settings.offerType,
-    discountPercentage: settings.discountPercentage || 10,
-    discountAmount: settings.discountAmount || 10,
+    discountEnabled,
+    offerType,
+    discountPercentage: discountPercentage || 10,
+    discountAmount: discountAmount || 10,
     exitIntentEnabled: settings.exitIntentEnabled || settings.triggers?.exitIntent,
     timeDelayEnabled: settings.timeDelayEnabled || settings.triggers?.timeDelay,
     timeDelaySeconds: settings.timeDelaySeconds || settings.triggers?.timeDelaySeconds || 30,
@@ -886,6 +918,14 @@ export default function Settings() {
           setModalBody={setModalBody}
           ctaButton={ctaButton}
           setCtaButton={setCtaButton}
+          discountEnabled={discountEnabled}
+          setDiscountEnabled={setDiscountEnabled}
+          offerType={offerType}
+          setOfferType={setOfferType}
+          discountPercentage={discountPercentage}
+          setDiscountPercentage={setDiscountPercentage}
+          discountAmount={discountAmount}
+          setDiscountAmount={setDiscountAmount}
           setFormChanged={setFormChanged}
           setActiveTab={setActiveTab}
           canUseAllTriggers={canUseAllTriggers}

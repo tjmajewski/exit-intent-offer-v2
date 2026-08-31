@@ -56,21 +56,21 @@ export function validatePromoCode(code) {
 const PLAN_CONFIGS = {
   starter: {
     name: "Starter",
-    monthlyPrice: 29,
-    annualPrice: 24.65,
-    annualTotal: 296,
+    monthlyPrice: 0,
+    annualPrice: 0,
+    annualTotal: 0,
   },
   pro: {
     name: "Pro",
-    monthlyPrice: 79,
-    annualPrice: 67.15,
-    annualTotal: 806,
+    monthlyPrice: 50,
+    annualPrice: 42.5,
+    annualTotal: 510,
   },
   enterprise: {
     name: "Enterprise",
-    monthlyPrice: 199,
-    annualPrice: 169.15,
-    annualTotal: 2030,
+    monthlyPrice: 150,
+    annualPrice: 127.5,
+    annualTotal: 1530,
   },
 };
 
@@ -167,6 +167,35 @@ export async function createSubscription(admin, tier, billingCycle, returnUrl, i
     subscriptionId: result.appSubscription.id,
     confirmationUrl: result.confirmationUrl,
   };
+}
+
+/**
+ * Cancel the shop's active app subscription. Used when a merchant moves to a
+ * free tier (Starter): Shopify won't create a $0 subscription, so instead of
+ * charging we cancel the existing paid one and grant Starter directly.
+ * No-op (returns false) when there's no active subscription to cancel.
+ */
+export async function cancelSubscription(admin) {
+  const subscription = await getActiveSubscription(admin);
+  if (!subscription?.id) return false;
+
+  const response = await admin.graphql(
+    `mutation AppSubscriptionCancel($id: ID!) {
+      appSubscriptionCancel(id: $id) {
+        appSubscription { id status }
+        userErrors { field message }
+      }
+    }`,
+    { variables: { id: subscription.id } }
+  );
+
+  const data = await response.json();
+  const result = data?.data?.appSubscriptionCancel;
+  if (result?.userErrors?.length > 0) {
+    console.error("[Billing] Subscription cancel errors:", result.userErrors);
+    throw new Error(result.userErrors.map((e) => e.message).join(", "));
+  }
+  return true;
 }
 
 /**

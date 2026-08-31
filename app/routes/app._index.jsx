@@ -19,7 +19,16 @@ export async function loader({ request }) {
   // Best-effort — syncSubscriptionToPlan swallows its own errors and returns
   // null — and lives here (dashboard landing) rather than the parent loader so
   // it doesn't add a Shopify round-trip to every action/navigation.
-  await syncSubscriptionToPlan(admin, session, db);
+  //
+  // Skipped outside production: the dev plan switcher (/app/dev-update-plan)
+  // sets a tier with no real subscription, but dev stores often carry a
+  // lingering ACTIVE test subscription. Syncing would treat that as truth and
+  // reset the dev-switched tier on every dashboard load (other pages read the
+  // DB directly and don't, so they'd disagree). Real reconciliation only
+  // matters in production.
+  if (process.env.NODE_ENV === "production") {
+    await syncSubscriptionToPlan(admin, session, db);
+  }
 
   // Load plan up-front so it survives any downstream error in this loader.
   // If the rest of the dashboard query fails, we still pass a real plan to
@@ -938,113 +947,6 @@ export default function Dashboard() {
     <AppLayout plan={plan}>
       <div style={{ padding: 40 }}>
 
-      {/* Enterprise: Promotional Intelligence Widget */}
-      {activePromotions && activePromotions.count > 0 && (
-        <div style={{
-          background: "white",
-          border: "2px solid #fbbf24",
-          borderRadius: 12,
-          padding: 24,
-          marginBottom: 24
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
-                  Promotional Intelligence
-                </h3>
-                <span style={{
-                  padding: "3px 10px",
-                  background: "#fbbf24",
-                  color: "#78350f",
-                  borderRadius: 6,
-                  fontSize: 11,
-                  fontWeight: 700
-                }}>
-                  {activePromotions.count} ACTIVE
-                </span>
-              </div>
-
-              {/* Show actionable insight for the active strategy. Decrease is the
-                  default for high-take-rate site-wide promos: modals keep running
-                  with smaller/no offers that stack on top of the store promo.
-                  Pause only appears if the merchant manually chose it. */}
-              {(() => {
-                const decreasedPromo = activePromotions.promotions.find(p => p.aiStrategy === 'decrease');
-                const pausedPromo = activePromotions.promotions.find(p => p.aiStrategy === 'pause');
-                const fmt = (p) => p.type === 'percentage' ? `${p.amount}%` : formatCurrency(p.amount);
-
-                if (decreasedPromo) {
-                  return (
-                    <div style={{
-                      fontSize: 14,
-                      color: "#78350f",
-                      marginBottom: 12,
-                      lineHeight: 1.5,
-                      padding: "10px 14px",
-                      background: "#fef3c7",
-                      borderRadius: 8
-                    }}>
-                      AI reduced exit-offer amounts while <strong>{decreasedPromo.code}</strong> ({fmt(decreasedPromo)} off) is active, so they stack with your promo instead of competing with it. Your modals are still running to recover carts.
-                    </div>
-                  );
-                }
-
-                if (pausedPromo) {
-                  return (
-                    <div style={{
-                      fontSize: 14,
-                      color: "#78350f",
-                      marginBottom: 12,
-                      lineHeight: 1.5,
-                      padding: "10px 14px",
-                      background: "#fef3c7",
-                      borderRadius: 8
-                    }}>
-                      You paused exit offers during <strong>{pausedPromo.code}</strong> ({fmt(pausedPromo)} off). Modals are off until the promo ends or you change this on the Promotions page.
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                {activePromotions.promotions.map((promo, idx) => (
-                  <div key={idx} style={{
-                    padding: "6px 12px",
-                    background: "#f9fafb",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 6,
-                    fontSize: 13,
-                    color: "#374151",
-                    fontWeight: 500
-                  }}>
-                    {promo.code} ({promo.type === 'percentage' ? `${promo.amount}%` : formatCurrency(promo.amount)}) → <span style={{ color: getStrategyColor(promo.aiStrategy), fontWeight: 600 }}>{getStrategyLabel(promo.aiStrategy)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <Link
-              to="/app/promotions"
-              style={{
-                padding: "12px 24px",
-                background: "#fbbf24",
-                color: "#78350f",
-                textDecoration: "none",
-                borderRadius: 8,
-                fontWeight: 600,
-                fontSize: 14,
-                whiteSpace: "nowrap",
-                flexShrink: 0,
-                marginLeft: 16
-              }}
-            >
-              Manage →
-            </Link>
-          </div>
-        </div>
-      )}
-
       {/* PHASE 5: Promotional Intelligence Warning (Pro Tier Upsell) */}
       {promoWarning && (
         <div style={{
@@ -1352,7 +1254,7 @@ export default function Dashboard() {
 
       {/* Hero Revenue Card - Last 30 Days */}
       {(() => {
-        const planPrice = PLAN_FEATURES[plan?.tier || 'starter']?.price || 29;
+        const planPrice = PLAN_FEATURES[plan?.tier || 'starter']?.price ?? 0;
         const totalRevenue = analytics.last30Days.totalRevenue;
         const avgOrder = analytics.last30Days.conversions > 0
           ? (totalRevenue / analytics.last30Days.conversions).toFixed(2)
@@ -1440,7 +1342,7 @@ export default function Dashboard() {
                     {formatCurrency(holdoutLift.incrementalRevenue)}
                   </div>
                   <TrendArrow value={trends.revenueChange} />
-                  {holdoutLift.incrementalRevenue > 0 ? (
+                  {holdoutLift.incrementalRevenue > 0 && planPrice > 0 ? (
                     <div style={{ fontSize: 16, marginTop: 8, opacity: 0.9 }}>
                       That's <strong>{roiMultiplier}x</strong> your {formatCurrency(planPrice)}/mo plan cost
                     </div>
@@ -1508,7 +1410,7 @@ export default function Dashboard() {
                     {formatCurrency(totalRevenue)}
                   </div>
                   <TrendArrow value={trends.revenueChange} />
-                  {totalRevenue > 0 ? (
+                  {totalRevenue > 0 && planPrice > 0 ? (
                     <div style={{ fontSize: 16, marginTop: 8, opacity: 0.9 }}>
                       That's <strong>{roiMultiplier}x</strong> your {formatCurrency(planPrice)}/mo plan cost
                     </div>
@@ -1625,6 +1527,113 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Enterprise: Promotional Intelligence Widget */}
+      {activePromotions && activePromotions.count > 0 && (
+        <div style={{
+          background: "white",
+          border: "2px solid #fbbf24",
+          borderRadius: 12,
+          padding: 24,
+          marginBottom: 24
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
+                  Promotional Intelligence
+                </h3>
+                <span style={{
+                  padding: "3px 10px",
+                  background: "#fbbf24",
+                  color: "#78350f",
+                  borderRadius: 6,
+                  fontSize: 11,
+                  fontWeight: 700
+                }}>
+                  {activePromotions.count} ACTIVE
+                </span>
+              </div>
+
+              {/* Show actionable insight for the active strategy. Decrease is the
+                  default for high-take-rate site-wide promos: modals keep running
+                  with smaller/no offers that stack on top of the store promo.
+                  Pause only appears if the merchant manually chose it. */}
+              {(() => {
+                const decreasedPromo = activePromotions.promotions.find(p => p.aiStrategy === 'decrease');
+                const pausedPromo = activePromotions.promotions.find(p => p.aiStrategy === 'pause');
+                const fmt = (p) => p.type === 'percentage' ? `${p.amount}%` : formatCurrency(p.amount);
+
+                if (decreasedPromo) {
+                  return (
+                    <div style={{
+                      fontSize: 14,
+                      color: "#78350f",
+                      marginBottom: 12,
+                      lineHeight: 1.5,
+                      padding: "10px 14px",
+                      background: "#fef3c7",
+                      borderRadius: 8
+                    }}>
+                      AI reduced exit-offer amounts while <strong>{decreasedPromo.code}</strong> ({fmt(decreasedPromo)} off) is active, so they stack with your promo instead of competing with it. Your modals are still running to recover carts.
+                    </div>
+                  );
+                }
+
+                if (pausedPromo) {
+                  return (
+                    <div style={{
+                      fontSize: 14,
+                      color: "#78350f",
+                      marginBottom: 12,
+                      lineHeight: 1.5,
+                      padding: "10px 14px",
+                      background: "#fef3c7",
+                      borderRadius: 8
+                    }}>
+                      You paused exit offers during <strong>{pausedPromo.code}</strong> ({fmt(pausedPromo)} off). Modals are off until the promo ends or you change this on the Promotions page.
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                {activePromotions.promotions.map((promo, idx) => (
+                  <div key={idx} style={{
+                    padding: "6px 12px",
+                    background: "#f9fafb",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 6,
+                    fontSize: 13,
+                    color: "#374151",
+                    fontWeight: 500
+                  }}>
+                    {promo.code} ({promo.type === 'percentage' ? `${promo.amount}%` : formatCurrency(promo.amount)}) → <span style={{ color: getStrategyColor(promo.aiStrategy), fontWeight: 600 }}>{getStrategyLabel(promo.aiStrategy)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <Link
+              to="/app/promotions"
+              style={{
+                padding: "12px 24px",
+                background: "#fbbf24",
+                color: "#78350f",
+                textDecoration: "none",
+                borderRadius: 8,
+                fontWeight: 600,
+                fontSize: 14,
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+                marginLeft: 16
+              }}
+            >
+              Manage →
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Impact Card — mode-aware */}
       {analytics.last30Days.conversions > 0 && (

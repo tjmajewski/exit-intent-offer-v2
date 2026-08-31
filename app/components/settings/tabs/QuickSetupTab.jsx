@@ -21,6 +21,14 @@ export default function QuickSetupTab({
   setModalBody,
   ctaButton,
   setCtaButton,
+  discountEnabled,
+  setDiscountEnabled,
+  offerType,
+  setOfferType,
+  discountPercentage,
+  setDiscountPercentage,
+  discountAmount,
+  setDiscountAmount,
   setFormChanged,
   setActiveTab,
   canUseAllTriggers,
@@ -330,28 +338,18 @@ export default function QuickSetupTab({
               />
             </div>
 
-            <div>
-              <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  name="showProductImages"
-                  defaultChecked={settings.showProductImages}
-                  onChange={() => setFormChanged(true)}
-                  style={{ marginRight: 12, width: 20, height: 20 }}
-                />
-                <div>
-                  <div style={{ fontWeight: 500 }}>Show Product Images</div>
-                  <div style={{ fontSize: 14, color: "#666" }}>
-                    Display up to 3 items from the customer's cart inside the pop-up
-                    (skipped on the Top Banner and Scratch Reveal layouts)
-                  </div>
-                </div>
-              </label>
-              {/* Presence marker: this checkbox only exists on the Quick Setup tab.
-                  Unchecked and unmounted are indistinguishable in FormData, so the
-                  action keys off this marker to avoid wiping the saved value. */}
-              <input type="hidden" name="showProductImagesPresent" value="1" />
-            </div>
+            {/* Product images are a property of the Cart Preservation layout —
+                it's the only design that renders the shopper's saved cart items.
+                Rather than expose a checkbox, we derive the value from the
+                selected layout: on for cart-preservation, off otherwise. The
+                presence marker keeps the save action from wiping the stored
+                value when this tab isn't the one being submitted. */}
+            <input
+              type="hidden"
+              name="showProductImages"
+              value={selectedLayout === "cart-preservation" ? "on" : "off"}
+            />
+            <input type="hidden" name="showProductImagesPresent" value="1" />
 
           </div>
 
@@ -370,8 +368,8 @@ export default function QuickSetupTab({
                 <input
                   type="checkbox"
                   name="discountEnabled"
-                  defaultChecked={settings.discountEnabled}
-                  onChange={() => setFormChanged(true)}
+                  checked={discountEnabled}
+                  onChange={(e) => { setDiscountEnabled(e.target.checked); setFormChanged(true); }}
                   style={{ marginRight: 12, width: 20, height: 20 }}
                 />
                 <div>
@@ -450,8 +448,8 @@ export default function QuickSetupTab({
                     type="radio"
                     name="offerType"
                     value="percentage"
-                    defaultChecked={settings.offerType === "percentage" || !settings.offerType}
-                    onChange={() => setFormChanged(true)}
+                    checked={offerType === "percentage"}
+                    onChange={() => { setOfferType("percentage"); setFormChanged(true); }}
                     style={{ marginRight: 12, marginTop: 4 }}
                   />
                   <div style={{ flex: 1 }}>
@@ -462,16 +460,16 @@ export default function QuickSetupTab({
                     <input
                       type="number"
                       name="discountPercentage"
-                      defaultValue={settings.discountPercentage || 10}
+                      value={discountPercentage}
                       min="1"
                       max="100"
                       step="1"
                       inputMode="numeric"
                       pattern="[0-9]*"
-                      onInput={(e) => {
-                        e.target.value = e.target.value.replace(/[^0-9]/g, '');
+                      onChange={(e) => {
+                        setDiscountPercentage(e.target.value.replace(/[^0-9]/g, ''));
+                        setFormChanged(true);
                       }}
-                      onChange={() => setFormChanged(true)}
                       style={{
                         padding: "8px 12px",
                         border: "1px solid #d1d5db",
@@ -492,8 +490,8 @@ export default function QuickSetupTab({
                     type="radio"
                     name="offerType"
                     value="fixed"
-                    defaultChecked={settings.offerType === "fixed"}
-                    onChange={() => setFormChanged(true)}
+                    checked={offerType === "fixed"}
+                    onChange={() => { setOfferType("fixed"); setFormChanged(true); }}
                     style={{ marginRight: 12, marginTop: 4 }}
                   />
                   <div style={{ flex: 1 }}>
@@ -504,15 +502,15 @@ export default function QuickSetupTab({
                     <input
                       type="number"
                       name="discountAmount"
-                      defaultValue={settings.discountAmount || 10}
+                      value={discountAmount}
                       min="1"
                       step="1"
                       inputMode="numeric"
                       pattern="[0-9]*"
-                      onInput={(e) => {
-                        e.target.value = e.target.value.replace(/[^0-9]/g, '');
+                      onChange={(e) => {
+                        setDiscountAmount(e.target.value.replace(/[^0-9]/g, ''));
+                        setFormChanged(true);
                       }}
-                      onChange={() => setFormChanged(true)}
                       style={{
                         padding: "8px 12px",
                         border: "1px solid #d1d5db",

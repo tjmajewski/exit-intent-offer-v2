@@ -2,7 +2,7 @@
 export const PLAN_FEATURES = {
   starter: {
     name: "Starter",
-    price: 29,
+    price: 0,
     autoApplyDiscount: true,
     abTesting: false,
     personalization: false,
@@ -17,7 +17,7 @@ export const PLAN_FEATURES = {
   },
   pro: {
     name: "Pro",
-    price: 79,
+    price: 50,
     autoApplyDiscount: true,
     abTesting: false,
     personalization: false,
@@ -32,7 +32,7 @@ export const PLAN_FEATURES = {
   },
   enterprise: {
     name: "Enterprise",
-    price: 199,
+    price: 150,
     autoApplyDiscount: true,
     abTesting: true,
     personalization: true,

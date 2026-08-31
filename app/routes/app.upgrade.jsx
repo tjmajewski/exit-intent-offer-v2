@@ -1,4 +1,4 @@
-import { useLoaderData, useActionData, Link, Form, useNavigation, useNavigate, useSearchParams } from "react-router";
+import { useLoaderData, useActionData, Link, Form, useNavigation, useNavigate, useSearchParams, redirect } from "react-router";
 import { useState, useEffect } from "react";
 import { authenticate } from "../shopify.server";
 import { PLAN_FEATURES } from "../utils/featureGates";
@@ -116,7 +116,7 @@ export async function loader({ request }) {
 
 export async function action({ request }) {
   const { admin, session } = await authenticate.admin(request);
-  const { createSubscription, getActiveSubscription, validatePromoCode } = await import("../utils/billing.server");
+  const { createSubscription, getActiveSubscription, cancelSubscription, validatePromoCode } = await import("../utils/billing.server");
   const formData = await request.formData();
   const tier = formData.get("tier");
   const billingCycle = formData.get("billingCycle");
@@ -138,6 +138,25 @@ export async function action({ request }) {
 
   if (!["starter", "pro", "enterprise"].includes(tier)) {
     return { error: "Invalid plan tier" };
+  }
+
+  // Starter is free ($0). Shopify Billing won't create a $0 subscription, so
+  // instead of charging we cancel any active paid subscription and grant
+  // Starter directly in the DB. The next admin load reads this tier via
+  // getShopPlan; syncSubscriptionToPlan leaves it alone once no active sub.
+  if (tier === "starter") {
+    try {
+      await cancelSubscription(admin);
+      await db.shop.upsert({
+        where: { shopifyDomain: session.shop },
+        update: { plan: "starter", subscriptionId: null },
+        create: { shopifyDomain: session.shop, plan: "starter" },
+      });
+      return redirect("/app/upgrade");
+    } catch (error) {
+      console.error("[Billing] Error switching to free Starter:", error);
+      return { error: error.message };
+    }
   }
 
   // Validate promo code server-side — only applies to the target tier
@@ -220,14 +239,18 @@ export default function Upgrade() {
   // shop sees "€29/mo" instead of a misleading "$29/mo".
   const formatPrice = (amount) => {
     try {
+      const n = Number(amount) || 0;
+      // Whole numbers render with no decimals ("$50"); fractional prices keep
+      // two ("$42.50") so the trailing zero shows on annual per-month prices.
+      const hasCents = !Number.isInteger(n);
       const locale = (typeof navigator !== "undefined" && navigator.language) || "en-US";
       const f = new Intl.NumberFormat(locale, {
         style: "currency",
         currency: currencyCode || "USD",
-        minimumFractionDigits: 0,
+        minimumFractionDigits: hasCents ? 2 : 0,
         maximumFractionDigits: 2,
       });
-      return f.format(Number(amount) || 0).replace(/[\u00A0\s]?\.00$/, "");
+      return f.format(n);
     } catch {
       return `${currencyCode || "USD"} ${amount}`;
     }
@@ -282,9 +305,9 @@ export default function Upgrade() {
     {
       tier: "starter",
       name: "Starter",
-      monthlyPrice: 29,
-      annualPrice: 24.65,
-      annualTotal: 296,
+      monthlyPrice: 0,
+      annualPrice: 0,
+      annualTotal: 0,
       description: "Perfect for testing exit intent",
       features: [
         "Manual mode (you set what appears and when)",
@@ -299,9 +322,9 @@ export default function Upgrade() {
     {
       tier: "pro",
       name: "Pro",
-      monthlyPrice: 79,
-      annualPrice: 67.15,
-      annualTotal: 806,
+      monthlyPrice: 50,
+      annualPrice: 42.5,
+      annualTotal: 510,
       description: "AI-powered optimization for growing stores",
       popular: true,
       features: [
@@ -320,9 +343,9 @@ export default function Upgrade() {
     {
       tier: "enterprise",
       name: "Enterprise",
-      monthlyPrice: 199,
-      annualPrice: 169.15,
-      annualTotal: 2030,
+      monthlyPrice: 150,
+      annualPrice: 127.5,
+      annualTotal: 1530,
       description: "Maximum control for high-volume stores",
       features: [
         "Everything in Pro",
@@ -666,7 +689,7 @@ export default function Upgrade() {
                   </div>
 
                   {/* Annual Total */}
-                  {billingCycle === "annual" && (
+                  {billingCycle === "annual" && planOption.monthlyPrice > 0 && (
                     <div style={{
                       fontSize: 13,
                       color: "#6b7280"
@@ -675,6 +698,11 @@ export default function Upgrade() {
                         ? `${formatPriceWhole(promoConfig.annualTotal)}/year`
                         : `${formatPriceWhole(planOption.annualTotal)}/year (save 15%)`
                       }
+                    </div>
+                  )}
+                  {billingCycle === "annual" && planOption.monthlyPrice === 0 && (
+                    <div style={{ fontSize: 13, color: "#6b7280" }}>
+                      Free forever
                     </div>
                   )}
                 </div>
@@ -733,12 +761,14 @@ export default function Upgrade() {
                       }}
                     >
                       {isSubmitting && submittingTier === planOption.tier
-                        ? "Redirecting to Shopify..."
-                        : !plan.hasUsedTrial && trialDaysRemaining > 0
-                          ? "Start Free Trial"
-                          : trialDaysRemaining > 0
-                            ? `Switch Plan (${trialDaysRemaining} days left in trial)`
-                            : "Subscribe"}
+                        ? (planOption.monthlyPrice === 0 ? "Switching..." : "Redirecting to Shopify...")
+                        : planOption.monthlyPrice === 0
+                          ? "Switch to Free"
+                          : !plan.hasUsedTrial && trialDaysRemaining > 0
+                            ? "Start Free Trial"
+                            : trialDaysRemaining > 0
+                              ? `Switch Plan (${trialDaysRemaining} days left in trial)`
+                              : "Subscribe"}
                     </button>
                   </Form>
                 )}
