@@ -1929,41 +1929,26 @@ export default function Dashboard() {
       </div>
     </div>
 
-    {/* CVR comparison */}
+    {/* Current performance */}
     <div style={{
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: 16,
       padding: 20,
       background: "#f9fafb",
       borderRadius: 8,
       marginBottom: 24
     }}>
-      <div>
-        <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>Your conversion rate</div>
-        <div style={{ fontSize: 24, fontWeight: 700, color: "#1f2937" }}>
-          {analytics.last30Days.conversionRate}%
-        </div>
-      </div>
-      <div>
-        <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>AI-optimized stores avg</div>
-        <div style={{ fontSize: 24, fontWeight: 700, color: "#10b981" }}>
-          3.8%
-        </div>
+      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>Your conversion rate</div>
+      <div style={{ fontSize: 24, fontWeight: 700, color: "#1f2937" }}>
+        {analytics.last30Days.conversionRate}%
       </div>
     </div>
 
-    {/* Personalized CTA */}
-    {analytics.last30Days.totalRevenue > 0 ? (
-      <div style={{ fontSize: 15, color: "#374151", marginBottom: 20, lineHeight: 1.6 }}>
-        You've recovered <strong>{formatCurrency(analytics.last30Days.totalRevenue)}</strong> so far.
-        AI optimization could help you recover an estimated <strong>{formatCurrency(Math.round(analytics.last30Days.totalRevenue * 2.5))}</strong>.
-      </div>
-    ) : (
-      <div style={{ fontSize: 15, color: "#374151", marginBottom: 20, lineHeight: 1.6 }}>
-        Pro stores recover 2-3x more revenue with AI automatically testing different headlines, offers, and CTAs for each visitor.
-      </div>
-    )}
+    {/* CTA */}
+    <div style={{ fontSize: 15, color: "#374151", marginBottom: 20, lineHeight: 1.6 }}>
+      {analytics.last30Days.totalRevenue > 0 && (
+        <>You've recovered <strong>{formatCurrency(analytics.last30Days.totalRevenue)}</strong> so far. </>
+      )}
+      Pro automatically tests different headlines, offers, and CTAs for each visitor, and a built-in holdout measures the real lift on your store.
+    </div>
 
     <Link
       to="/app/upgrade"
