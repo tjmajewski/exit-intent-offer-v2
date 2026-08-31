@@ -36,6 +36,13 @@ export async function action({ request }) {
       return { success: false, message: "Couldn't save that change. Your layouts are unchanged. Try again." };
     }
 
+    // Enabling/disabling layouts only affects AI-mode auto-selection, which
+    // Starter shops can't use. Block the toggle server-side so a Starter can't
+    // reach it via a crafted request even though the UI hides the control.
+    if (shop.plan !== "pro" && shop.plan !== "enterprise") {
+      return { success: false, message: "Turning layouts on and off is a Pro feature. Upgrade to unlock AI mode." };
+    }
+
     const disabled = new Set(parseDisabledLayouts(shop.disabledLayouts));
 
     if (disable) {
@@ -106,6 +113,9 @@ export async function loader({ request }) {
           }
         : {},
       showPoweredBy: plan?.tier !== "enterprise",
+      // Enabling/disabling layouts only matters in AI mode, which is Pro+.
+      // Starter shops can preview every layout but don't get the on/off CTA.
+      canUseAI: plan?.tier === "pro" || plan?.tier === "enterprise",
       dbError: false,
     };
   } catch (error) {
@@ -369,7 +379,7 @@ function buildPreviewSrcDoc({ layoutId, brand, showPoweredBy }) {
 
 // Full-screen in-admin preview: renders the real storefront template inside a
 // device-sized iframe, with desktop/mobile toggle and layout switching.
-function PreviewOverlay({ layouts, index, device, brand, showPoweredBy, previewUrl, onSetIndex, onSetDevice, onClose, fetcher }) {
+function PreviewOverlay({ layouts, index, device, brand, showPoweredBy, canUseAI, previewUrl, onSetIndex, onSetDevice, onClose, fetcher }) {
   const layout = layouts[index];
 
   // Reload the iframe whenever the layout or device changes.
@@ -496,23 +506,25 @@ function PreviewOverlay({ layouts, index, device, brand, showPoweredBy, previewU
             >
               Open on store
             </a>
-            <fetcher.Form method="post" style={{ margin: 0 }}>
-              <input type="hidden" name="intent" value="toggle" />
-              <input type="hidden" name="layoutId" value={layout.id} />
-              <input type="hidden" name="disable" value={layout.enabled ? "true" : "false"} />
-              <button
-                type="submit"
-                style={{
-                  padding: "8px 16px",
-                  background: layout.enabled ? "white" : "#008060",
-                  color: layout.enabled ? "#dc2626" : "white",
-                  border: layout.enabled ? "1px solid #fca5a5" : "1px solid #008060",
-                  borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
-                }}
-              >
-                {layout.enabled ? "Disable" : "Enable"}
-              </button>
-            </fetcher.Form>
+            {canUseAI && (
+              <fetcher.Form method="post" style={{ margin: 0 }}>
+                <input type="hidden" name="intent" value="toggle" />
+                <input type="hidden" name="layoutId" value={layout.id} />
+                <input type="hidden" name="disable" value={layout.enabled ? "true" : "false"} />
+                <button
+                  type="submit"
+                  style={{
+                    padding: "8px 16px",
+                    background: layout.enabled ? "white" : "#008060",
+                    color: layout.enabled ? "#dc2626" : "white",
+                    border: layout.enabled ? "1px solid #fca5a5" : "1px solid #008060",
+                    borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  }}
+                >
+                  {layout.enabled ? "Disable" : "Enable"}
+                </button>
+              </fetcher.Form>
+            )}
           </div>
         </div>
       </div>
@@ -553,7 +565,7 @@ function Toast({ message, tone, onDone }) {
 
 export default function QaLayouts() {
   const data = useLoaderData();
-  const { plan, shop, layouts, enabledCount, dbError, brand, showPoweredBy } = data;
+  const { plan, shop, layouts, enabledCount, dbError, brand, showPoweredBy, canUseAI } = data;
   const fetcher = useFetcher();
   const [toast, setToast] = useState(null);
   const [previewIndex, setPreviewIndex] = useState(null);
@@ -728,29 +740,31 @@ export default function QaLayouts() {
                     Preview here
                   </button>
 
-                  <fetcher.Form method="post" style={{ margin: 0, flex: 1 }}>
-                    <input type="hidden" name="intent" value="toggle" />
-                    <input type="hidden" name="layoutId" value={l.id} />
-                    <input type="hidden" name="disable" value={l.enabled ? "true" : "false"} />
-                    <button
-                      type="submit"
-                      disabled={isBusy}
-                      style={{
-                        width: "100%",
-                        padding: "10px 12px",
-                        background: l.enabled ? "white" : "#008060",
-                        color: l.enabled ? "#dc2626" : "white",
-                        border: l.enabled ? "1px solid #fca5a5" : "1px solid #008060",
-                        borderRadius: 8,
-                        fontSize: 13,
-                        fontWeight: 600,
-                        cursor: isBusy ? "default" : "pointer",
-                        opacity: isBusy ? 0.6 : 1,
-                      }}
-                    >
-                      {isBusy ? "Saving…" : l.enabled ? "Disable" : "Enable"}
-                    </button>
-                  </fetcher.Form>
+                  {canUseAI && (
+                    <fetcher.Form method="post" style={{ margin: 0, flex: 1 }}>
+                      <input type="hidden" name="intent" value="toggle" />
+                      <input type="hidden" name="layoutId" value={l.id} />
+                      <input type="hidden" name="disable" value={l.enabled ? "true" : "false"} />
+                      <button
+                        type="submit"
+                        disabled={isBusy}
+                        style={{
+                          width: "100%",
+                          padding: "10px 12px",
+                          background: l.enabled ? "white" : "#008060",
+                          color: l.enabled ? "#dc2626" : "white",
+                          border: l.enabled ? "1px solid #fca5a5" : "1px solid #008060",
+                          borderRadius: 8,
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: isBusy ? "default" : "pointer",
+                          opacity: isBusy ? 0.6 : 1,
+                        }}
+                      >
+                        {isBusy ? "Saving…" : l.enabled ? "Disable" : "Enable"}
+                      </button>
+                    </fetcher.Form>
+                  )}
                 </div>
 
                 <a
@@ -777,6 +791,7 @@ export default function QaLayouts() {
           device={device}
           brand={brand}
           showPoweredBy={showPoweredBy}
+          canUseAI={canUseAI}
           previewUrl={previewUrl}
           onSetIndex={setPreviewIndex}
           onSetDevice={setDevice}
