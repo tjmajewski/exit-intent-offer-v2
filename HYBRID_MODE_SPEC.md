@@ -13,14 +13,21 @@
 ## 1. What we're building (one paragraph)
 
 A third optimization mode that sits between **Manual** (merchant sets
-everything) and **AI / Autopilot** (AI sets everything). In **Hybrid**, the
-merchant **pins the offer** — e.g. "always 15% off" or "always $50 off" — and
-the AI does everything else: **who to show it to, when in the session, which
-copy, which layout.** The pinned offer is served to **every eligible shopper**
-with no margin-based suppression (predictable, like a flat exit offer merchants
-already trust). The engine keeps learning the whole time, and silently logs
-what full AI *would* have offered so we can show the merchant a **"margin left
-on the table"** report — the built-in upsell to full AI.
+everything) and **AI / Autopilot** (AI sets everything). Hybrid's promise:
+**the merchant keeps control of the promo — one fixed, independent offer for
+everyone — and hands the AI the levers they're comfortable automating: copy,
+placement, timing, and targeting.** It is the comfort bridge for a merchant who
+wants AI's optimization but will **not** let a machine hand different discounts
+to different people.
+
+The pinned offer is **ReSpark's own independent code** (never tied to another
+app's promo), served to every eligible shopper with no margin-based
+suppression. Critically, ReSpark fires **because** it judges a shopper is about
+to abandon — meaning whatever offers they already had were **not enough** — so
+ReSpark's code is designed to **stack on top by default** (see §2b). The engine
+keeps learning the whole time, and silently logs what full AI *would* have
+offered so we can surface a **"margin left on the table"** report — a quiet
+upsell to full AI, not Hybrid's reason to exist.
 
 ---
 
@@ -36,10 +43,65 @@ on the table"** report — the built-in upsell to full AI.
 | 6 | $0 pinned offer? | **Announce-only** (`pure_reminder` baseline). Behaves exactly like AI aggression = 0. |
 | 7 | Learning continuity? | **Preserved.** Hybrid runs through the same learning writes as AI, so flipping to full AI later starts warm. |
 | 8 | Upsell mechanic? | **Shadow log + "Margin Opportunity" report.** Log what full AI would have offered; surface the aggregate delta as the upgrade CTA. |
+| 9 | Discount code source? | **Independent.** ReSpark mints/owns its own code — never tied to another app's promo. Merchant sets the value; ReSpark owns the rules. |
+| 10 | Stack with the shopper's existing discounts? | **Stack by default.** ReSpark fires *because* the shopper is abandoning despite what they had, so its offer is meant to sit on top. ⚠️ Bounded by Shopify's discount-combination limits — see §2b. |
+| 11 | Abandonment signals into the decision? | **`promoInCart` + `failedCoupon` are first-class inputs.** A shopper abandoning *with* a code applied, or who *tried a code that failed*, is the clearest "current offer wasn't enough" signal — feed both into show/skip + copy. |
 
 **Naming:** internal `mode` value is **`"hybrid"`** (never change this — it's the
 code contract). Customer-facing name is **"Guided"** (alt: "Guided AI"). Keep the
 two decoupled so a marketing rename never touches code.
+
+**Positioning:** Hybrid is a **first-class mode** — "AI for delivery, you for the
+discount" — **not** merely a trial for full AI. Most brand-/margin-protective
+stores may live here permanently. The margin-opportunity upsell runs quietly
+underneath for the stores that *are* open to letting AI touch the discount.
+
+---
+
+## 2b. Stacking, independence & abandonment signals
+
+**The selling point:** ReSpark only intervenes when the orchestrator judges a
+shopper is about to abandon — which means whatever they had so far (browsing
+freely, or even a discount already applied) **wasn't enough** to convert them.
+ReSpark's offer is therefore the *additional* nudge, and it is designed to
+**stack on top of** whatever the shopper already has. "ReSpark earns its keep by
+closing the shoppers your existing offers couldn't" is the pay-for-performance
+narrative — lean on it.
+
+**Signals to use (already in the engine):**
+- **`promoInCart`** — the shopper is abandoning *with a discount code already
+  applied*. Strongest possible "current offer insufficient" signal → prime
+  moment to intervene, and copy should acknowledge it ("here's a little
+  more...").
+- **`failedCoupon`** (already a `triggerReason` in the engine) — the shopper
+  *tried* a code that failed (expired/invalid). High-intent + frustrated + has
+  clearly signaled they want a discount → top-priority intervention.
+- Both should feed the show/skip decision AND the copy/variant selection.
+
+> ⚠️ **HARD PLATFORM CONSTRAINT — verify before promising "stacking".** Shopify
+> does **not** freely allow two discount **codes** to stack. Discounts combine
+> only per Shopify's **discount-combination** rules, across *classes* (Product /
+> Order / Shipping), and each discount must be explicitly marked combinable.
+> Two "% off order" codes (the common case: the store's `WELCOME15` is an Order
+> discount, and a naive ReSpark % code is too) generally **cannot** both apply.
+> Implications for the build session:
+> - ReSpark's code likely must be issued as a **Product-class** (or automatic)
+>   discount marked *combinable*, so it can layer onto an existing Order-class
+>   code — and even then the *other* app's code must permit combination, which
+>   ReSpark does not control.
+> - **Do not ship "we stack on top" as a guaranteed claim until this is proven
+>   on a real store with a real competing code.** Where stacking isn't possible,
+>   the graceful fallback is reminder-only (the shopper already has a discount →
+>   ReSpark reminds them to complete, no second code).
+> - This is the #1 build-time unknown. Validate it in the QA pass (§11).
+
+**Margin exposure note:** stack-by-default + honor-the-pin + no margin guard +
+every-eligible-shopper means total discount depth is uncapped by ReSpark. The
+mitigant is **targeting quality** — the AI's show/skip only intervening on
+genuine abandoners. So in Hybrid the show/skip decision carries more weight than
+in AI mode. The Margin Opportunity report (§5.2) must also surface **total
+discount given** (ReSpark's offer, stacked), not just ReSpark's slice, so the
+merchant sees real exposure.
 
 ---
 
@@ -312,6 +374,13 @@ Run after implementation. **Expected result in bold.**
 ### Discount codes
 - [ ] Guided generic: one reusable code whose value **matches the pinned amount** (no "Save 25%" vs 15% drift).
 - [ ] Guided unique: fresh per-shopper code, correct amount, 24h expiry.
+- [ ] Code is **independent** (ReSpark-owned), not read from any other app.
+
+### Stacking (§2b) — highest-risk verification
+- [ ] Put a competing Order-class code (e.g. `WELCOME15`) on the store. Confirm whether ReSpark's code **actually stacks** at checkout, per Shopify's combination rules.
+- [ ] ReSpark's code is issued in a class/config that **permits combination** (Product-class or automatic + combinable).
+- [ ] When stacking is impossible, ReSpark falls back to **reminder-only** (no failed second code, no broken checkout).
+- [ ] `promoInCart` and `failedCoupon` shoppers get the intended treatment (intervene + acknowledging copy).
 
 ### Client / storefront
 - [ ] Guided uses the AI trigger path (calls `ai-decision`), **no flash of manual content**.
@@ -350,6 +419,7 @@ Steps 1–5 are the shippable core; 6–8 make it sell; 9 gates release.
 3. **Enterprise Guided timing:** v1 uses the Pro AI trigger path for all plans (no enterprise surface-arm/pill in Guided). Confirm acceptable, or scope enterprise timing into Guided later.
 4. **Shadow formula precision:** `HYBRID_SHADOW_AGGRESSION = 5` reference is an estimate for the upsell number. Confirm we present it as "~estimate," not a guaranteed figure.
 5. **Starter Guided (growth option, §9):** explicitly out of v1. Confirm as a tracked follow-up, not a launch blocker.
+6. **Discount stacking (§2b) — HIGHEST-RISK ITEM.** "Stack by default" is the intended behavior, but Shopify's discount-combination rules may block two same-class codes from stacking. Build session must prove real-world stacking (ReSpark code + a competing Order-class code) before the "stacks on top" claim ships; design the code's discount class for combinability, with reminder-only as the fallback when stacking is impossible.
 
 ---
 
