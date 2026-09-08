@@ -129,6 +129,13 @@ model Shop {
   aiGenericDiscountCode String? // The generic code for AI mode
   aiDiscountCodePrefix  String? @default("EXIT") // Prefix for unique codes in AI mode
 
+  // Hybrid ("Guided") Mode — merchant pins the offer, AI does the rest
+  hybridOfferType           String  @default("percentage") // "percentage" | "fixed"
+  hybridOfferAmount         Float   @default(15)            // pinned value (15 => 15% or $15)
+  hybridDiscountCodeMode    String  @default("generic")     // "generic" | "unique"
+  hybridGenericDiscountCode String? // The generic code for hybrid mode
+  hybridDiscountCodePrefix  String? @default("EXIT") // Prefix for unique codes in hybrid mode
+
   // DEPRECATED: Old shared fields (kept for backwards compatibility, can be removed after migration)
   discountCodeMode    String? @default("unique")
   genericDiscountCode String?
