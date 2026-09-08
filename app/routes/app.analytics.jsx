@@ -8,13 +8,74 @@ import AppLayout from "../components/AppLayout";
 import db from "../db.server";
 
 export async function action({ request }) {
-  const { admin } = await authenticate.admin(request);
-  
+  const { admin, session } = await authenticate.admin(request);
+
   try {
     const formData = await request.formData();
     const action = formData.get("action");
     console.log('Action received:', action);
-    
+
+    // Switch Guided (Hybrid) → full AI (Autopilot). Preserves ALL learning
+    // history — no variants, stats, or thresholds are reset. Writes the settings
+    // metafield first (the serving source of truth), then the DB row, so the two
+    // never disagree on mode. Never attaches a savings figure (spec §5.2).
+    if (action === "switchToAutopilot") {
+      const shopResponse = await admin.graphql(`
+        query {
+          shop {
+            id
+            settings: metafield(namespace: "exit_intent", key: "settings") { value }
+          }
+        }
+      `);
+      const shopData = await shopResponse.json();
+      const shopId = shopData.data.shop.id;
+      const currentSettings = shopData.data.shop?.settings?.value
+        ? JSON.parse(shopData.data.shop.settings.value)
+        : null;
+
+      if (!currentSettings || currentSettings.mode !== 'hybrid') {
+        return { success: false, message: 'Guided mode is not active.' };
+      }
+
+      // Plan gate: Autopilot requires Pro or Enterprise, same as Guided.
+      const canonicalPlan = await getShopPlan(session);
+      if (canonicalPlan.tier === 'starter') {
+        return { success: false, message: 'Autopilot requires the Pro or Enterprise plan.' };
+      }
+
+      currentSettings.mode = 'ai';
+
+      const metafieldResult = await admin.graphql(`
+        mutation SetSettings($ownerId: ID!, $value: String!) {
+          metafieldsSet(metafields: [{
+            ownerId: $ownerId
+            namespace: "exit_intent"
+            key: "settings"
+            value: $value
+            type: "json"
+          }]) {
+            userErrors { field message }
+          }
+        }
+      `, { variables: { ownerId: shopId, value: JSON.stringify(currentSettings) } });
+
+      const mfData = await metafieldResult.json();
+      const userErrors = mfData?.data?.metafieldsSet?.userErrors || [];
+      if (userErrors.length > 0) {
+        console.error('[Switch to Autopilot] Metafield write failed:', userErrors);
+        return { success: false, message: 'Could not switch to Autopilot. Please try again.' };
+      }
+
+      // Metafield (serving source of truth) is now on ai — align the DB row.
+      await db.shop.update({
+        where: { shopifyDomain: session.shop },
+        data: { mode: 'ai' }
+      });
+
+      return { success: true, message: 'Switched to Autopilot. Your learning history is preserved.' };
+    }
+
     if (action === "testConversion") {
       const revenue = parseFloat(formData.get("testRevenue") || "100");
       
@@ -277,11 +338,20 @@ export async function loader({ request }) {
           modalLibrary: metafield(namespace: "exit_intent", key: "modal_library") {
             value
           }
+          settings: metafield(namespace: "exit_intent", key: "settings") {
+            value
+          }
         }
       }
     `);
 
     const data = await response.json();
+
+    // Current optimization mode drives the Guided → Autopilot upsell CTA.
+    const settingsMetafield = data.data.shop?.settings?.value
+      ? JSON.parse(data.data.shop.settings.value)
+      : null;
+    const mode = settingsMetafield?.mode || 'manual';
 
     // DB is the single source of truth for plan tier (see utils/plan.server.js).
     const canonicalPlan = await getShopPlan(session);
@@ -397,22 +467,24 @@ export async function loader({ request }) {
     }
 
     console.log('Loader returning variants:', liveVariants?.length || 0);
-    return { plan, modalLibrary, dateRange, liveVariants, incrementality };
+    return { plan, modalLibrary, dateRange, liveVariants, incrementality, mode };
   } catch (error) {
     console.error("Error loading analytics:", error);
     return {
       plan: { tier: "starter" },
       modalLibrary: getDefaultModalLibrary(),
       liveVariants: [],
-      incrementality: null
+      incrementality: null,
+      mode: 'manual'
     };
   }
 }
 
 
 export default function Performance() {
-  const { plan, modalLibrary, dateRange: loaderDateRange, liveVariants, incrementality } = useLoaderData();
+  const { plan, modalLibrary, dateRange: loaderDateRange, liveVariants, incrementality, mode } = useLoaderData();
   const fetcher = useFetcher();
+  const autopilotFetcher = useFetcher();
   const navigate = useNavigate();
   const canAccessPerformance = plan && (plan.tier === 'pro' || plan.tier === 'enterprise');
   const canAccessAIVariants = plan && plan.tier === 'enterprise';
@@ -612,6 +684,69 @@ export default function Performance() {
           Compare performance across all your modal campaigns
         </p>
         </div>
+
+      {/* Switch to Autopilot — Guided-mode-only upsell. Capability copy, NO
+          savings/dollar figure (that counterfactual is unmeasurable — spec §5.2).
+          Flips mode to full AI, preserving the warm learning history. */}
+      {mode === 'hybrid' && (
+        <div style={{
+          background: "linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)",
+          border: "1px solid #ddd6fe",
+          borderRadius: 12,
+          padding: 24,
+          marginBottom: 32,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 24,
+          flexWrap: "wrap"
+        }}>
+          <div style={{ flex: 1, minWidth: 280 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#7c3aed", letterSpacing: 0.5, marginBottom: 6 }}>
+              YOU'RE ON GUIDED
+            </div>
+            <h3 style={{ fontSize: 20, margin: "0 0 8px 0", color: "#1f2937" }}>
+              Ready to let AI size the offer too?
+            </h3>
+            <p style={{ fontSize: 15, color: "#4b5563", margin: 0, maxWidth: 620 }}>
+              Autopilot also sizes each offer per shopper, giving less where less will do,
+              to protect your margin automatically. Your learning history carries over,
+              so it starts warm.
+            </p>
+          </div>
+          <autopilotFetcher.Form method="post">
+            <input type="hidden" name="action" value="switchToAutopilot" />
+            <button
+              type="submit"
+              disabled={autopilotFetcher.state !== 'idle'}
+              style={{
+                padding: "14px 28px",
+                background: autopilotFetcher.state === 'idle' ? "#8B5CF6" : "#9ca3af",
+                color: "white",
+                border: "none",
+                borderRadius: 8,
+                fontSize: 16,
+                fontWeight: 600,
+                cursor: autopilotFetcher.state === 'idle' ? "pointer" : "not-allowed",
+                whiteSpace: "nowrap"
+              }}
+            >
+              {autopilotFetcher.state === 'idle' ? "Switch to Autopilot →" : "Switching..."}
+            </button>
+          </autopilotFetcher.Form>
+        </div>
+      )}
+
+      {autopilotFetcher.data?.success && (
+        <div style={{ padding: "12px 16px", background: "#d1fae5", color: "#065f46", borderRadius: 8, marginBottom: 24, fontSize: 14, fontWeight: 500 }}>
+          {autopilotFetcher.data.message}
+        </div>
+      )}
+      {autopilotFetcher.data && autopilotFetcher.data.success === false && (
+        <div style={{ padding: "12px 16px", background: "#fee2e2", color: "#991b1b", borderRadius: 8, marginBottom: 24, fontSize: 14, fontWeight: 500 }}>
+          {autopilotFetcher.data.message}
+        </div>
+      )}
 
       {/* Tab Navigation */}
       <div style={{ 
