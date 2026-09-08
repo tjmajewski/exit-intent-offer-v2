@@ -301,7 +301,31 @@ This tab provides a detailed log of every conversion:
 
 ---
 
-## Using AI Mode: Step-by-Step Guide
+## Three Levels of Control: Manual → Guided → Autopilot
+
+Pro gives you a spectrum of control, not a binary switch:
+
+- **Manual** — you set the offer, copy, and triggers yourself.
+- **Guided** — you pin one offer for every eligible shopper; the AI decides who sees it, when, and how (copy, placement, timing). Your margin exposure is exactly what you set.
+- **Autopilot (full AI)** — the AI optimizes everything, including sizing the discount per shopper to protect margin.
+
+You can move up the spectrum whenever you're ready. The engine keeps learning the whole time, so switching from Guided to Autopilot starts warm.
+
+## Guided Mode (recommended starting point)
+
+Guided is the low-risk on-ramp to AI: **keep your offer, let AI optimize delivery.**
+
+1. Go to **Settings** → **Quick Setup** and choose **Guided**.
+2. Pin your offer: pick Percentage or Fixed, and set the amount (e.g. 15%). Set it to 0 to run reminder-only.
+3. Choose a discount code type: the same code for everyone, or a unique code per shopper.
+4. Save. Every eligible shopper now gets your exact offer, while the AI optimizes copy, placement, timing, and targeting.
+
+Notes:
+- There is **no aggression slider** in Guided — pinning the number is your setting. The slider is AI-mode only.
+- Resparq only fires when a shopper looks likely to abandon, so its code is designed to stack on top of your existing offers where Shopify's discount rules allow.
+- When you're ready to let AI size the offer too, the **Switch to Autopilot** button on the Performance page flips you to full AI without losing your learning history.
+
+## Using AI Mode (Autopilot): Step-by-Step Guide
 
 AI mode is one of the most powerful features of Pro. Here's how to use it effectively:
 

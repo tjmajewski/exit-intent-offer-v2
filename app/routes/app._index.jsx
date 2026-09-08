@@ -896,16 +896,17 @@ export default function Dashboard() {
   const completedSteps = {
     themeExtension: hasImpression,
     configureOffer: modalLibrary?.modals?.length > 0,
-    // Use persisted flag so switching back to manual doesn't un-check this
-    configureAI: onboarding?.configureAI || settings?.mode === "ai",
+    // Use persisted flag so switching back to manual doesn't un-check this.
+    // Guided (hybrid) counts too — it runs the AI decisioning engine.
+    configureAI: onboarding?.configureAI || settings?.mode === "ai" || settings?.mode === "hybrid",
     enableModal: isEnabled,
     firstImpression: hasImpression,
   };
   const showOnboarding = !onboarding?.dismissed && !onboarding?.completed;
 
-  // Persist configureAI completion so it survives mode switches
+  // Persist configureAI completion so it survives mode switches (Guided or AI)
   useEffect(() => {
-    if (settings?.mode === "ai" && !onboarding?.configureAI) {
+    if ((settings?.mode === "ai" || settings?.mode === "hybrid") && !onboarding?.configureAI) {
       fetcher.submit(
         { actionType: "onboardingAction", onboardingField: "configureAI", onboardingValue: "true" },
         { method: "post" }

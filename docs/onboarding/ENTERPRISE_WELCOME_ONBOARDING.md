@@ -148,6 +148,16 @@ No "Usage Stats" section (you have unlimited impressions!)
 
 Enterprise settings provide complete control over every aspect.
 
+### Three Levels of Control: Manual → Guided → Autopilot
+
+Enterprise supports the full control spectrum:
+
+- **Manual** — you set the offer, copy, and triggers yourself.
+- **Guided** — you pin one offer for every eligible shopper; the AI optimizes copy, placement, timing, and targeting. Your margin exposure is exactly what you set. (No aggression slider — pinning the number is your setting.)
+- **Autopilot (full AI)** — the AI optimizes everything, including sizing the discount per shopper, and Enterprise keeps its full AI Control System and manual variant overrides.
+
+Guided is available on Enterprise as a lower-risk on-ramp; Enterprise still gets the complete AI engine, per-variant controls, and overrides in Autopilot. The engine keeps learning across modes, so moving Guided → Autopilot starts warm.
+
 ### Quick Setup Tab
 
 Configure baseline modal elements:

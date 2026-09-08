@@ -36,7 +36,8 @@ This document explains:
 | **Simultaneous Variants** | 2 | Up to 20 |
 | **AI Algorithm** | Basic A/B testing | Genetic algorithm evolution |
 | **Optimization Goal** | Revenue or Conversions | Revenue or Conversions |
-| **Aggression Control** | 0-10 scale | 0-10 scale |
+| **Guided Mode (pin the offer, AI does the rest)** | Yes | Yes |
+| **Aggression Control** | 0-10 scale (AI mode only) | 0-10 scale (AI mode only) |
 | **Discount Code Mode** | Generic or Unique | Generic or Unique |
 | **Budget Caps** | Yes | Yes |
 | **Innovation Speed Control** | Fixed (50%) | 0-100% (customizable) |
@@ -857,11 +858,31 @@ This groups all Resparq metafields together.
   "timeDelay": 30,
   "minCartValue": 25,
   "maxCartValue": 500,
-  "redirectDestination": "checkout"
+  "redirectDestination": "checkout",
+  "mode": "hybrid",
+  "hybridOfferType": "percentage",
+  "hybridOfferAmount": 15,
+  "hybridDiscountCodeMode": "generic",
+  "hybridGenericDiscountCode": "YOURSTORE15",
+  "hybridDiscountCodePrefix": "EXIT"
 }
 ```
 
 **Purpose**: Store current modal configuration
+
+**`mode`** is `manual`, `hybrid` (Guided), or `ai` (Autopilot). This is the serving source of truth — the decision endpoint reads `mode` from this metafield, not from the database row (the two are always written together).
+
+**Guided (`hybrid`) fields** carry the merchant's pinned offer, mirrored on the `Shop` database row:
+
+| Field | Meaning |
+|-------|---------|
+| `hybridOfferType` | `percentage` or `fixed` |
+| `hybridOfferAmount` | The pinned value (15 = 15% or $15). `0` = reminder-only. |
+| `hybridDiscountCodeMode` | `generic` (one shared code) or `unique` (per-shopper) |
+| `hybridGenericDiscountCode` | The reusable code when generic; the code name encodes the amount, so changing the pin re-derives a new correctly-valued code |
+| `hybridDiscountCodePrefix` | Prefix for unique codes (default `EXIT`) |
+
+In Guided, the AI still owns copy, layout, timing, and targeting (same engine as Autopilot); only the offer amount is frozen. There is no `aggression` in Guided — pinning the number is the setting.
 
 #### 2. `plan` Metafield
 **Type**: JSON

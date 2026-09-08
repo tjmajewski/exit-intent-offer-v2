@@ -40,8 +40,8 @@ const STEPS = {
     },
     {
       key: "configureAI",
-      label: "Configure AI decisioning",
-      description: "Set up AI mode to automatically optimize your offers for maximum revenue.",
+      label: "Configure AI or Guided mode",
+      description: "Pick Guided (you set the offer, AI does the rest) or full AI, so Resparq can optimize your offers automatically.",
       actionLabel: "Go to Settings",
       actionType: "link",
       href: "/app/settings",

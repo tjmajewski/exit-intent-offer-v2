@@ -168,6 +168,10 @@ Want more detailed insights? Upgrade to Pro or Enterprise to unlock:
 - **AI Variant Testing**: Automatically test different offers (Pro: 2 variants, Enterprise: 10 variants)
 - **Export to Excel**: Download all conversion data (Enterprise only)
 
+### Want AI to optimize your fixed offer? Upgrade to Pro for Guided mode
+
+On Starter you set everything yourself. **Guided mode** (Pro and Enterprise) lets you keep control of the offer while the AI does the rest: you pin one discount for every eligible shopper, and Resparq decides who sees it, when, and how, to maximize conversions. It's the low-risk way to get AI working on the offer you already trust, with no aggression slider to manage. Upgrade to Pro to unlock Guided (and full AI when you're ready).
+
 ---
 
 ## Best Practices for Starter Plan Success

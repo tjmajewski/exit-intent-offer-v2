@@ -22,7 +22,7 @@ When a merchant first opens the app, the checklist appears above the dashboard h
 | # | Step | Completion Trigger |
 |---|------|--------------------|
 | 1 | Install the app in your theme | Merchant clicks "Open Theme Editor" button |
-| 2 | Configure AI decisioning | `settings.mode === "ai"` (AI mode selected and saved) |
+| 2 | Configure AI or Guided mode | `settings.mode === "ai" \|\| settings.mode === "hybrid"` (AI or Guided selected and saved) |
 | 3 | Enable your modal | `status.enabled === true` (dashboard toggle is on) |
 | 4 | Get your first impression | `analytics.impressions > 0` (lifetime or 30-day) |
 
@@ -47,7 +47,7 @@ Only two fields are stored explicitly:
 
 All other step completions are derived from existing data at load time:
 - **Configure offer:** Derived from `exit_intent/modal_library` metafield
-- **Configure AI:** Derived from `exit_intent/settings` metafield (`mode` field)
+- **Configure AI/Guided:** Derived from `exit_intent/settings` metafield (`mode` field is `ai` or `hybrid`)
 - **Enable modal:** Derived from `exit_intent/status` metafield
 - **First impression:** Derived from `exit_intent/analytics` metafield
 
