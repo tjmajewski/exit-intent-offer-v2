@@ -39,7 +39,12 @@ export async function loader({ request }) {
         orderCount: true,
         customerCount: true,
         avgRating: true,
-        reviewCount: true
+        reviewCount: true,
+        hybridOfferType: true,
+        hybridOfferAmount: true,
+        hybridDiscountCodeMode: true,
+        hybridGenericDiscountCode: true,
+        hybridDiscountCodePrefix: true
       }
     });
     
@@ -123,6 +128,14 @@ export async function loader({ request }) {
       settings.customerCount = shopRecord.customerCount;
       settings.avgRating = shopRecord.avgRating;
       settings.reviewCount = shopRecord.reviewCount;
+      // Guided (Hybrid) — hydrate from DB so the form reflects saved values even
+      // if the metafield hasn't been written with them yet. DB value → metafield
+      // value → default. Amount 0 is valid, so use ?? not ||.
+      settings.hybridOfferType = shopRecord.hybridOfferType || settings.hybridOfferType || "percentage";
+      settings.hybridOfferAmount = shopRecord.hybridOfferAmount ?? settings.hybridOfferAmount ?? 15;
+      settings.hybridDiscountCodeMode = shopRecord.hybridDiscountCodeMode || settings.hybridDiscountCodeMode || "generic";
+      settings.hybridGenericDiscountCode = shopRecord.hybridGenericDiscountCode ?? settings.hybridGenericDiscountCode ?? null;
+      settings.hybridDiscountCodePrefix = shopRecord.hybridDiscountCodePrefix || settings.hybridDiscountCodePrefix || "EXIT";
     }
 
     // Load AI variants for Enterprise users
@@ -170,6 +183,9 @@ export async function action({ request }) {
   const formData = await request.formData();
 
   const mode = formData.get("mode") || "manual";
+  // Guided (Hybrid) hands timing to the AI just like AI mode: exit-intent on,
+  // time-delay off. aiLike captures "AI owns the trigger."
+  const aiLike = mode === "ai" || mode === "hybrid";
 
   // Frequency thresholds: fall back to the default on missing/garbage input
   // instead of silently collapsing to 0 (which would mean "show every session").
@@ -184,8 +200,8 @@ export async function action({ request }) {
     ctaButton: formData.get("ctaButton"),
     // AI Mode: Auto-enable exit intent (primary trigger), disable time delays
     // Manual Mode: Use form values from trigger settings
-    exitIntentEnabled: mode === "ai" ? true : formData.get("exitIntentEnabled") === "on",
-    timeDelayEnabled: mode === "ai" ? false : formData.get("timeDelayEnabled") === "on",
+    exitIntentEnabled: aiLike ? true : formData.get("exitIntentEnabled") === "on",
+    timeDelayEnabled: aiLike ? false : formData.get("timeDelayEnabled") === "on",
     timeDelaySeconds: parseInt(formData.get("timeDelaySeconds") || "30"),
     cartValueEnabled: formData.get("cartValueEnabled") === "on",
     cartValueMin: parseFloat(formData.get("cartValueMin") || "0"),
@@ -216,6 +232,16 @@ export async function action({ request }) {
     aiDiscountCodeMode: formData.get("aiDiscountCodeMode") || "unique",
     aiGenericDiscountCode: formData.get("aiGenericDiscountCode") || null,
     aiDiscountCodePrefix: formData.get("aiDiscountCodePrefix") || "EXIT",
+    // Hybrid ("Guided") mode: merchant pins the offer. Fields may be absent when
+    // saving from a tab that doesn't mount the Guided inputs — resolved against
+    // the existing DB row below so a cross-tab save can't wipe them.
+    hybridOfferType: formData.get("hybridOfferType") || undefined,
+    hybridOfferAmount: formData.get("hybridOfferAmount") != null && formData.get("hybridOfferAmount") !== ""
+      ? Math.max(0, Math.floor(parseFloat(formData.get("hybridOfferAmount"))) || 0)
+      : undefined,
+    hybridDiscountCodeMode: formData.get("hybridDiscountCodeMode") || undefined,
+    hybridGenericDiscountCode: formData.get("hybridGenericDiscountCode") || undefined,
+    hybridDiscountCodePrefix: formData.get("hybridDiscountCodePrefix") || undefined,
     redirectDestination: formData.get("redirectDestination") || "checkout",
     template: formData.get("template") || "discount",
     manualTemplateId: formData.get("manualTemplateId") || "classic-card",
@@ -226,8 +252,8 @@ export async function action({ request }) {
     budgetAmount: parseFloat(formData.get("budgetAmount") || "500"),
     budgetPeriod: formData.get("budgetPeriod") || "month",
     triggers: {
-      exitIntent: mode === "ai" ? true : formData.get("exitIntentEnabled") === "on",
-      timeDelay: mode === "ai" ? false : formData.get("timeDelayEnabled") === "on",
+      exitIntent: aiLike ? true : formData.get("exitIntentEnabled") === "on",
+      timeDelay: aiLike ? false : formData.get("timeDelayEnabled") === "on",
       timeDelaySeconds: parseInt(formData.get("timeDelaySeconds") || "30"),
       cartValue: formData.get("cartValueEnabled") === "on",
       minCartValue: parseFloat(formData.get("cartValueMin") || "0"),
@@ -266,7 +292,12 @@ export async function action({ request }) {
         brandSecondaryColor: true,
         brandAccentColor: true,
         brandFont: true,
-        showProductImages: true
+        showProductImages: true,
+        hybridOfferType: true,
+        hybridOfferAmount: true,
+        hybridDiscountCodeMode: true,
+        hybridGenericDiscountCode: true,
+        hybridDiscountCodePrefix: true
       }
     });
 
@@ -279,9 +310,29 @@ export async function action({ request }) {
     settings.brandFont = settings.brandFont || existingShop?.brandFont || "system";
     settings.showProductImages = settings.showProductImages ?? existingShop?.showProductImages ?? false;
 
+    // Resolve Guided (Hybrid) pinned-offer fields the same way — a save from a
+    // tab that doesn't mount the Guided inputs must not wipe the pin. Note:
+    // hybridOfferAmount 0 is a valid value (reminder-only), so use ?? not ||.
+    settings.hybridOfferType = settings.hybridOfferType || existingShop?.hybridOfferType || "percentage";
+    settings.hybridOfferAmount = settings.hybridOfferAmount ?? existingShop?.hybridOfferAmount ?? 15;
+    settings.hybridDiscountCodeMode = settings.hybridDiscountCodeMode || existingShop?.hybridDiscountCodeMode || "generic";
+    settings.hybridDiscountCodePrefix = settings.hybridDiscountCodePrefix || existingShop?.hybridDiscountCodePrefix || "EXIT";
+    settings.hybridGenericDiscountCode = settings.hybridGenericDiscountCode ?? existingShop?.hybridGenericDiscountCode ?? null;
+
     // Apply tier-based population size limits
     let populationSize = parseInt(formData.get("populationSize")) || 10;
     const planTier = existingShop?.plan || 'starter';
+
+    // Server-side plan gate: Guided requires Pro or Enterprise (spec §7.1, §9).
+    // Never trust the client to hide the card — a Starter POSTing mode=hybrid
+    // must be refused and the saved mode left unchanged. Gate BEFORE any DB or
+    // metafield write so the two can never disagree on mode.
+    if (mode === 'hybrid' && planTier === 'starter') {
+      return {
+        success: false,
+        message: "Guided mode requires the Pro or Enterprise plan. Upgrade to enable it."
+      };
+    }
 
     if (planTier === 'pro') {
       // Pro tier: max 2 variants
@@ -348,6 +399,34 @@ export async function action({ request }) {
       console.log('Discount not enabled');
     }
 
+    // Guided (Hybrid) generic code: mint independently of settings.discountEnabled
+    // (that toggle is a manual-mode concept). Hybrid mints its own code whenever
+    // the pin is generic and > 0. The code name encodes the amount, so changing
+    // the pin re-derives a new correctly-valued code (spec §7.1 item 7 — the
+    // live code always matches the current pin; a stale value can't be served).
+    // Unique-per-shopper and $0 (reminder-only) mint nothing here.
+    if (settings.mode === "hybrid") {
+      if (settings.hybridDiscountCodeMode === "generic" && settings.hybridOfferAmount > 0) {
+        const shopPrefix = derivePrefixFromShop(session.shop);
+        const autoCode = settings.hybridOfferType === "percentage"
+          ? `${shopPrefix}${settings.hybridOfferAmount}`
+          : `${shopPrefix}SAVE${settings.hybridOfferAmount}`;
+
+        console.log('[Hybrid] Creating/reusing generic discount code:', autoCode);
+        const result = await createGenericDiscountCode(
+          admin,
+          autoCode,
+          settings.hybridOfferType,
+          settings.hybridOfferAmount
+        );
+        settings.hybridGenericDiscountCode = result.code;
+        console.log('[Hybrid] Generic code ready:', result.code, result.exists ? '(reused)' : '(created)');
+      } else {
+        // Unique or $0 — no pre-minted generic code to reference.
+        settings.hybridGenericDiscountCode = null;
+      }
+    }
+
     // Update or create shop record in database (after discount creation)
     await db.shop.upsert({
       where: { shopifyDomain: shopDomain },
@@ -387,6 +466,11 @@ export async function action({ request }) {
         aiDiscountCodeMode: settings.aiDiscountCodeMode,
         aiGenericDiscountCode: settings.aiGenericDiscountCode,
         aiDiscountCodePrefix: settings.aiDiscountCodePrefix,
+        hybridOfferType: settings.hybridOfferType,
+        hybridOfferAmount: settings.hybridOfferAmount,
+        hybridDiscountCodeMode: settings.hybridDiscountCodeMode,
+        hybridGenericDiscountCode: settings.hybridGenericDiscountCode,
+        hybridDiscountCodePrefix: settings.hybridDiscountCodePrefix,
         socialProofEnabled: formData.get("socialProofEnabled") === "on",
         socialProofType: formData.get("socialProofType") || "orders",
         socialProofMinimum: parseInt(formData.get("socialProofMinimum") || "100"),
@@ -429,6 +513,11 @@ export async function action({ request }) {
         aiDiscountCodeMode: settings.aiDiscountCodeMode,
         aiGenericDiscountCode: settings.aiGenericDiscountCode,
         aiDiscountCodePrefix: settings.aiDiscountCodePrefix,
+        hybridOfferType: settings.hybridOfferType,
+        hybridOfferAmount: settings.hybridOfferAmount,
+        hybridDiscountCodeMode: settings.hybridDiscountCodeMode,
+        hybridGenericDiscountCode: settings.hybridGenericDiscountCode,
+        hybridDiscountCodePrefix: settings.hybridDiscountCodePrefix,
         socialProofEnabled: formData.get("socialProofEnabled") === "on",
         socialProofType: formData.get("socialProofType") || "orders",
         socialProofMinimum: parseInt(formData.get("socialProofMinimum") || "100")
@@ -674,6 +763,11 @@ export default function Settings() {
   const [offerType, setOfferType] = useState(settings.offerType || "percentage");
   const [discountPercentage, setDiscountPercentage] = useState(settings.discountPercentage || 10);
   const [discountAmount, setDiscountAmount] = useState(settings.discountAmount || 10);
+  // Guided (Hybrid) pinned-offer state — lifted here so the live preview updates
+  // as the merchant edits. Amount 0 is valid (reminder-only), so use ??.
+  const [hybridOfferType, setHybridOfferType] = useState(settings.hybridOfferType || "percentage");
+  const [hybridOfferAmount, setHybridOfferAmount] = useState(settings.hybridOfferAmount ?? 15);
+  const [hybridDiscountCodeMode, setHybridDiscountCodeMode] = useState(settings.hybridDiscountCodeMode || "generic");
      
 
 
@@ -755,7 +849,12 @@ export default function Settings() {
     brandAccentColor,
     brandFont,
     customCSS,
-    selectedLayout
+    selectedLayout,
+    // Guided (Hybrid) pinned offer — lets the preview show the fixed offer
+    // instead of a manual template or an AI placeholder.
+    hybridOfferType,
+    hybridOfferAmount,
+    hybridDiscountCodeMode
   };
 
   return (
@@ -938,6 +1037,12 @@ export default function Settings() {
           setCrossoverRate={setCrossoverRate}
           selectionPressure={selectionPressure}
           setSelectionPressure={setSelectionPressure}
+          hybridOfferType={hybridOfferType}
+          setHybridOfferType={setHybridOfferType}
+          hybridOfferAmount={hybridOfferAmount}
+          setHybridOfferAmount={setHybridOfferAmount}
+          hybridDiscountCodeMode={hybridDiscountCodeMode}
+          setHybridDiscountCodeMode={setHybridDiscountCodeMode}
         />
       )}
 

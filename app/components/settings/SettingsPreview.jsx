@@ -25,7 +25,11 @@ export default function SettingsPreview({
   customCSS,
   plan,
   aggressionLevel,
-  selectedLayout = "classic-card"
+  selectedLayout = "classic-card",
+  // Guided (Hybrid): merchant pins the offer, AI owns copy/layout/timing.
+  hybridOfferType = "percentage",
+  hybridOfferAmount = 15,
+  hybridDiscountCodeMode = "generic"
 }) {
   const planTier = plan?.tier || 'starter';
   const showPoweredBy = planTier !== 'enterprise';
@@ -52,15 +56,24 @@ export default function SettingsPreview({
   if (variant === "modal" && !isOpen) return null;
 
   const isAIMode = optimizationMode === 'ai';
-  const displayHeadline = isAIMode
+  const isHybrid = optimizationMode === 'hybrid';
+  // In both AI and Guided, the AI generates copy — so the preview shows the same
+  // AI-copy placeholders. Guided differs only in the offer (pinned, below).
+  const aiOwnsCopy = isAIMode || isHybrid;
+  const displayHeadline = aiOwnsCopy
     ? "AI will generate optimized copy"
     : (modalHeadline || "Wait! Don't leave yet ");
-  const displayBody = isAIMode
+  const displayBody = aiOwnsCopy
     ? "The AI will test different headlines, body text, and CTAs to find what converts best for your audience."
     : (modalBody || "Your items are waiting for you. Complete your purchase now!");
-  const displayCTA = isAIMode
+  const displayCTA = aiOwnsCopy
     ? "AI-Generated CTA"
     : (ctaButton || "Complete My Order");
+
+  // Effective offer values for display: Guided uses the single pinned amount.
+  const effOfferType = isHybrid ? hybridOfferType : offerType;
+  const effPercentage = isHybrid ? hybridOfferAmount : discountPercentage;
+  const effAmount = isHybrid ? hybridOfferAmount : discountAmount;
 
   const features = [];
   const triggers = [];
@@ -78,7 +91,16 @@ export default function SettingsPreview({
   // Discount feature line — AI mode is driven by the aggression slider
   // (0 = announcement only; >0 = AI will offer discounts). Manual mode is
   // driven by the explicit discountEnabled toggle.
-  if (isAIMode) {
+  if (isHybrid) {
+    // Guided: the pinned offer is fixed; AI decides who/when/how.
+    if (hybridOfferAmount > 0) {
+      const label = hybridOfferType === 'fixed' ? `$${hybridOfferAmount}` : `${hybridOfferAmount}%`;
+      features.push({ label: `Pinned ${label} Offer (Guided)` });
+    } else {
+      features.push({ label: "No Discount (Announcement Only)" });
+    }
+    features.push({ label: "AI optimizes delivery" });
+  } else if (isAIMode) {
     if (aggressionLevel && aggressionLevel > 0) {
       features.push({ label: `AI Discount Active (Aggression: ${aggressionLevel}/10)` });
     } else {
@@ -113,7 +135,9 @@ export default function SettingsPreview({
   // Compute the customer-facing discount label ("15%" / "$10") when discount
   // is enabled — so the amount the merchant typed shows up in the preview.
   let amountText = null;
-  if (!isAIMode && discountEnabled) {
+  if (isHybrid && hybridOfferAmount > 0) {
+    amountText = hybridOfferType === 'fixed' ? `$${hybridOfferAmount}` : `${hybridOfferAmount}%`;
+  } else if (!isAIMode && !isHybrid && discountEnabled) {
     if (offerType === 'fixed' && discountAmount) {
       amountText = `$${discountAmount}`;
     } else if (discountPercentage) {
@@ -135,7 +159,7 @@ export default function SettingsPreview({
   // extensions/exit-intent-modal/assets/modal-templates.js. JSX duplicates
   // the renderer for preview-time React rendering.
   const ModalCard = ({ scale = 1, compact = false }) => {
-    const layoutId = isAIMode ? 'classic-card' : selectedLayout;
+    const layoutId = (isAIMode || isHybrid) ? 'classic-card' : selectedLayout;
     switch (layoutId) {
       case 'cart-preservation':
         return <CartPreservationPreview {...cardProps} scale={scale} compact={compact} />;
@@ -145,9 +169,9 @@ export default function SettingsPreview({
         return <BottomSheetPreview {...cardProps} scale={scale} compact={compact} />;
       case 'coupon-ticket':
         return <CouponTicketPreview {...cardProps} scale={scale} compact={compact}
-                                    discountPercentage={discountPercentage}
-                                    discountAmount={discountAmount}
-                                    offerType={offerType} />;
+                                    discountPercentage={effPercentage}
+                                    discountAmount={effAmount}
+                                    offerType={effOfferType} />;
       case 'split-hero':
         return <SplitHeroPreview {...cardProps} scale={scale} compact={compact} />;
       case 'timer-front':

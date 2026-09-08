@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { MODAL_TEMPLATES, getAvailableLayouts } from "../../../utils/templates";
 import AISettingsTab from "./AISettingsTab";
+import HybridSettingsTab from "./HybridSettingsTab";
 
 export default function QuickSetupTab({
   settings,
@@ -40,7 +41,14 @@ export default function QuickSetupTab({
   crossoverRate,
   setCrossoverRate,
   selectionPressure,
-  setSelectionPressure
+  setSelectionPressure,
+  // Hybrid ("Guided") pinned-offer state (lifted to parent for the live preview)
+  hybridOfferType,
+  setHybridOfferType,
+  hybridOfferAmount,
+  setHybridOfferAmount,
+  hybridDiscountCodeMode,
+  setHybridDiscountCodeMode
 }) {
   // State for discount code mode to show/hide input fields
   const [manualDiscountCodeMode, setManualDiscountCodeMode] = useState(
@@ -59,16 +67,16 @@ export default function QuickSetupTab({
       }}>
         <h2 style={{ fontSize: 20, marginBottom: 8 }}>How do you want to manage your offers?</h2>
         <p style={{ fontSize: 14, color: "#666", marginBottom: 20 }}>
-          Choose between full manual control or AI-powered optimization
+          Three levels of control: set everything yourself, pin the offer and let AI do the rest, or let AI optimize everything.
         </p>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
           {/* Manual Mode */}
-          <label style={{ 
-            display: "flex", 
+          <label style={{
+            display: "flex",
             flexDirection: "column",
             cursor: "pointer",
-            padding: 20,
+            padding: 16,
             border: optimizationMode === "manual" ? "2px solid #8B5CF6" : "1px solid #e5e7eb",
             borderRadius: 8,
             background: optimizationMode === "manual" ? "#f5f3ff" : "white"
@@ -79,21 +87,55 @@ export default function QuickSetupTab({
                 value="manual"
                 checked={optimizationMode === "manual"}
                 onChange={(e) => { setOptimizationMode(e.target.value); setFormChanged(true); }}
-                style={{ marginRight: 12 }}
+                style={{ marginRight: 10 }}
               />
-              <div style={{ fontWeight: 600, fontSize: 16 }}>Manual Mode</div>
+              <div style={{ fontWeight: 600, fontSize: 15 }}>Manual</div>
             </div>
-            <div style={{ fontSize: 14, color: "#666", marginLeft: 28 }}>
-              Full control over templates, copy, and triggers. Perfect for testing specific offers.
+            <div style={{ fontSize: 13, color: "#666", marginLeft: 24 }}>
+              Full control over templates, copy, and triggers. You set everything.
+            </div>
+          </label>
+
+          {/* Guided (Hybrid) Mode — gated to Pro+ like AI */}
+          <label style={{
+            display: "flex",
+            flexDirection: "column",
+            cursor: canUseAIMode ? "pointer" : "not-allowed",
+            padding: 16,
+            border: optimizationMode === "hybrid" ? "2px solid #8B5CF6" : "1px solid #e5e7eb",
+            borderRadius: 8,
+            background: optimizationMode === "hybrid" ? "#f5f3ff" : "white",
+            opacity: canUseAIMode ? 1 : 0.6
+          }}>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+              <input
+                type="radio"
+                value="hybrid"
+                checked={optimizationMode === "hybrid"}
+                onChange={(e) => { setOptimizationMode(e.target.value); setFormChanged(true); }}
+                disabled={!canUseAIMode}
+                style={{ marginRight: 10 }}
+              />
+              <div style={{ fontWeight: 600, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}>
+                Guided
+                {!canUseAIMode && (
+                  <span style={{ padding: "2px 6px", background: "#8B5CF6", color: "white", borderRadius: 4, fontSize: 10, fontWeight: 600 }}>
+                    PRO
+                  </span>
+                )}
+              </div>
+            </div>
+            <div style={{ fontSize: 13, color: "#666", marginLeft: 24 }}>
+              You set the offer. AI decides who sees it, when, and how — for maximum conversions.
             </div>
           </label>
 
           {/* AI Mode */}
-          <label style={{ 
-            display: "flex", 
+          <label style={{
+            display: "flex",
             flexDirection: "column",
             cursor: canUseAIMode ? "pointer" : "not-allowed",
-            padding: 20,
+            padding: 16,
             border: optimizationMode === "ai" ? "2px solid #8B5CF6" : "1px solid #e5e7eb",
             borderRadius: 8,
             background: optimizationMode === "ai" ? "#f5f3ff" : "white",
@@ -106,26 +148,19 @@ export default function QuickSetupTab({
                 checked={optimizationMode === "ai"}
                 onChange={(e) => { setOptimizationMode(e.target.value); setFormChanged(true); }}
                 disabled={!canUseAIMode}
-                style={{ marginRight: 12 }}
+                style={{ marginRight: 10 }}
               />
-              <div style={{ fontWeight: 600, fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}>
-                AI Mode
+              <div style={{ fontWeight: 600, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}>
+                AI
                 {!canUseAIMode && (
-                  <span style={{ 
-                    padding: "2px 8px", 
-                    background: "#8B5CF6", 
-                    color: "white", 
-                    borderRadius: 4, 
-                    fontSize: 11,
-                    fontWeight: 600 
-                  }}>
+                  <span style={{ padding: "2px 6px", background: "#8B5CF6", color: "white", borderRadius: 4, fontSize: 10, fontWeight: 600 }}>
                     PRO
                   </span>
                 )}
               </div>
             </div>
-            <div style={{ fontSize: 14, color: "#666", marginLeft: 28 }}>
-              AI automatically tests and optimizes to maximize results. Configure in AI Settings tab.
+            <div style={{ fontSize: 13, color: "#666", marginLeft: 24 }}>
+              AI optimizes everything, including the offer size. Configure in AI Settings tab.
             </div>
           </label>
         </div>
@@ -139,13 +174,27 @@ export default function QuickSetupTab({
             fontSize: 14,
             textAlign: "center"
           }}>
-             <strong>Upgrade to Pro</strong> to unlock AI Mode with automatic optimization.{" "}
+             <strong>Upgrade to Pro</strong> to unlock Guided and AI modes with automatic optimization.{" "}
             <a href="/app/upgrade" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
               Learn more →
             </a>
           </div>
         )}
       </div>
+
+      {/* Guided (Hybrid) Mode Active - pinned offer + code type only (no aggression slider) */}
+      {optimizationMode === "hybrid" && (
+        <HybridSettingsTab
+          settings={settings}
+          setFormChanged={setFormChanged}
+          hybridOfferType={hybridOfferType}
+          setHybridOfferType={setHybridOfferType}
+          hybridOfferAmount={hybridOfferAmount}
+          setHybridOfferAmount={setHybridOfferAmount}
+          hybridDiscountCodeMode={hybridDiscountCodeMode}
+          setHybridDiscountCodeMode={setHybridDiscountCodeMode}
+        />
+      )}
 
       {/* AI Mode Active - Inline AI Settings */}
       {optimizationMode === "ai" && (
