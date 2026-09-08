@@ -103,6 +103,52 @@ in AI mode. The Margin Opportunity report (§5.2) must also surface **total
 discount given** (ReSpark's offer, stacked), not just ReSpark's slice, so the
 merchant sees real exposure.
 
+### 2b.1 Shopify stacking — technical appendix (good news: mostly already built)
+
+The earlier "two codes can't stack" warning was too pessimistic. Actual Shopify
+combination model + what the codebase already does:
+
+**How Shopify combines discounts.** Every discount has a **class** — `ORDER`,
+`PRODUCT`, or `SHIPPING` — plus a `combinesWith { orderDiscounts,
+productDiscounts, shippingDiscounts }` boolean set. Two discounts stack at
+checkout only if they are **different classes** AND **each** permits the other's
+class. Two discounts of the **same class never stack** (two ORDER codes can't
+both apply; two PRODUCT codes can't either).
+
+**What ReSpark already issues** (`app/utils/discount-codes.js`,
+`createPercentageDiscount` / `createFixedDiscount`, and `createGenericDiscountCode`):
+```
+customerGets: { value: {...}, items: { all: true } }   // → PRODUCT-class discount
+combinesWith: { orderDiscounts: true, productDiscounts: true, shippingDiscounts: true }
+```
+Because it targets `items.all` (not the order subtotal), ReSpark's code is
+already a **PRODUCT-class** discount and already marked combinable with
+everything. So it *is* built to layer on top of a store's typical
+`WELCOME15`-style **ORDER-class** "amount off order" code. Little-to-no new code
+needed here — the plumbing exists.
+
+**The two things that actually block stacking (call these out to merchants):**
+1. **The other app's code must permit product discounts** —
+   `combinesWith.productDiscounts: true` on *their* code. ReSpark cannot set
+   this; it's the merchant's/other app's config. If it's off, they won't stack.
+2. **Same-class collision** — if the competing code is *also* product-class
+   (an "amount off products" code, not "off order"), the two can't stack no
+   matter what.
+
+**Design/build actions:**
+- Use `getDiscountCodeDetails` (already exists) to **inspect a competing code's
+  class + combinesWith** where detectable, and predict stackability.
+- Keep ReSpark's code **PRODUCT-class + combinesWith all-true** (already the
+  case) — do not "fix" it to an order-subtotal discount, which would *reduce*
+  stackability.
+- **Fallback = reminder-only:** when the engine sees a `promoInCart` whose code
+  won't combine (same class, or non-combinable), don't mint a doomed second
+  code — show the reminder variant instead.
+- **Pitch honestly:** "stacks on top of your existing offers" is true for the
+  common case (ORDER-class code + ReSpark PRODUCT-class), false when the other
+  code is product-class or non-combinable. QA must confirm on a real store
+  before the claim ships (§11 Stacking rows).
+
 ---
 
 ## 3. Architecture context (why this is small)
