@@ -88,11 +88,14 @@ export async function action({ request }) {
     
     const settings = JSON.parse(settingsValue);
     
-    // Check if AI mode is enabled
-    if (settings.mode !== 'ai') {
+    // Check if AI or Hybrid ("Guided") mode is enabled. Both run this same
+    // engine (propensity, targeting, variant selection, learning). Hybrid only
+    // freezes the offer amount — see isHybrid branches below.
+    if (settings.mode !== 'ai' && settings.mode !== 'hybrid') {
       return json({ error: "AI mode not enabled" }, { status: 400 });
     }
-    
+    const isHybrid = settings.mode === 'hybrid';
+
     const {
       aiGoal,
       aggression,
@@ -102,7 +105,13 @@ export async function action({ request }) {
       aiDiscountCodeMode,
       aiGenericDiscountCode,
       aiDiscountCodePrefix,
-      offerType
+      offerType,
+      // Hybrid ("Guided") — merchant pins the offer, AI does the rest.
+      hybridOfferType,
+      hybridOfferAmount,
+      hybridDiscountCodeMode,
+      hybridGenericDiscountCode,
+      hybridDiscountCodePrefix
     } = settings;
     
     // Find or create shop in database
@@ -170,11 +179,13 @@ export async function action({ request }) {
     // Plan gate: AI mode requires Pro or Enterprise.
     // Settings.mode='ai' could be set on a Starter shop (e.g. downgrade after
     // upgrade), but the AI engine must not run for Starter. Treat as not-enabled.
+    // Plan gate applies to Hybrid too — it runs the same AI engine (spec §9).
     const shopPlan = shopRecord.plan || 'starter';
     if (shopPlan === 'starter') {
-      console.log(`[AI Decision] Blocked: shop ${shop} on Starter plan — AI mode requires Pro or Enterprise`);
+      const modeLabel = isHybrid ? 'Guided' : 'AI';
+      console.log(`[AI Decision] Blocked: shop ${shop} on Starter plan — ${modeLabel} mode requires Pro or Enterprise`);
       return json({
-        error: "AI mode requires Pro or Enterprise plan",
+        error: `${modeLabel} mode requires Pro or Enterprise plan`,
         plan: shopPlan,
         upgradeRequired: true
       }, { status: 403 });
@@ -385,7 +396,18 @@ export async function action({ request }) {
     // device-lift / promo upsell surfaces it elsewhere). Test mode skips promo
     // intelligence so merchant self-tests always reach the engine.
     let effectiveAggression = aggression;
-    if (isEnterprisePlan && !isTestMode) {
+    if (isHybrid) {
+      // Hybrid: the pinned number IS the aggression setting. Max aggression
+      // means "always discount, no size cap, no margin suppression"; 0 means
+      // announce-only (same as AI aggression 0 → pure_reminder). The propensity
+      // show/skip (targeting) below still runs — that's eligibility, which
+      // Hybrid keeps; only the margin/size suppression is removed.
+      effectiveAggression = hybridOfferAmount > 0 ? 10 : 0;
+    }
+    // Enterprise site-wide promo intelligence adjusts/pauses aggression for
+    // margin. Skipped in Hybrid: the merchant deliberately pinned the offer and
+    // Resparq honors it (spec §2 #1). isHybrid guards it out.
+    if (isEnterprisePlan && !isTestMode && !isHybrid) {
       const activePromo = await db.promotion.findFirst({
         where: {
           shopId: shopRecord.id,
@@ -545,6 +567,16 @@ export async function action({ request }) {
     // Step 1: Determine which baseline to use (revenue/conversion × discount/no-discount)
     let baseline = selectBaseline(signals, aiGoal);
 
+    // Hybrid forces a flat-discount decision. Pin > 0 → conversion_with_discount
+    // (flat %/$ copy pool); pin == 0 → pure_reminder (announce-only). Revenue
+    // (threshold) baselines are intentionally NOT used: threshold offers are out
+    // of scope for Hybrid v1 (spec §4), and their "spend $X more, save $Y" copy
+    // would misdescribe a flat pinned offer.
+    if (isHybrid) {
+      baseline = hybridOfferAmount > 0 ? 'conversion_with_discount' : 'pure_reminder';
+      console.log(`[Hybrid] Forced baseline: ${baseline} (pinned ${hybridOfferType} ${hybridOfferAmount})`);
+    }
+
     // AGGRESSION CONTROLS:
     // 1. Frequency — aggression acts as a probability ceiling for discount offers.
     //    Aggression 5 → ~50% of visitors get a discount baseline, rest get no-discount copy.
@@ -556,7 +588,10 @@ export async function action({ request }) {
     if (effectiveAggression === 0) {
       baseline = 'pure_reminder';
       console.log(`[Variant Selection] Aggression = 0 → forcing pure_reminder baseline`);
-    } else if (baseline.includes('with_discount')) {
+    } else if (!isHybrid && baseline.includes('with_discount')) {
+      // Hybrid skips the discount-vs-reminder arm entirely: the pin already
+      // decided "always discount" for eligible shoppers. Only AI runs the
+      // evidence gate / exploration roll that can downgrade to no-discount.
       // Phase 6a: evidence-gated discount decision. When this shop's
       // propensity bucket has mature discount/no-discount arm stats (>= 50
       // outcomes each), the choice is deterministic: discount only when
@@ -675,7 +710,13 @@ export async function action({ request }) {
     // Aggression acts as a ceiling: aggression 5 → max 50% of pool max, aggression 10 → full max.
     // The AI can always choose LESS than the cap, but never more.
     let cappedOfferAmount = selectedVariant.offerAmount;
-    if (baseline.includes('with_discount') && selectedVariant.offerAmount > 0) {
+    if (isHybrid) {
+      // Honor the pin: no aggression size-cap, no margin guard. The merchant
+      // deliberately set this depth and accepts it (spec §2 #1, #3). The
+      // margin guard's announce-only downgrade must NOT run here.
+      cappedOfferAmount = hybridOfferAmount;
+      console.log(`[Hybrid] Pinned offer honored: ${hybridOfferType} ${hybridOfferAmount} (no cap, no margin guard)`);
+    } else if (baseline.includes('with_discount') && selectedVariant.offerAmount > 0) {
       const pool = (await import('../utils/gene-pools.js')).genePools[baseline];
       const poolMax = Math.max(...pool.offerAmounts);
       const maxAllowed = Math.round(poolMax * aggressionNormalized);
@@ -806,11 +847,15 @@ export async function action({ request }) {
         : null;
 
     const decision = {
-      type: baseline.includes('revenue') ? 'threshold' : 'percentage',
+      // Hybrid: type is the merchant's pinned offer type (percentage | fixed),
+      // never threshold (hybrid forces conversion_with_discount, so this is
+      // already non-revenue — the override just carries a 'fixed' pin through).
+      type: isHybrid ? hybridOfferType : (baseline.includes('revenue') ? 'threshold' : 'percentage'),
       amount: cappedOfferAmount,
       // Threshold is capped against the FINAL discount (post margin guard) so
       // the ask stays proportionate to the reward. See capThresholdByDiscount.
-      threshold: baseline.includes('revenue')
+      // Never set for Hybrid (flat offer, no threshold).
+      threshold: (!isHybrid && baseline.includes('revenue'))
         ? capThresholdByDiscount(
             signals.cartValue || 0,
             recommendedThreshold(signals.cartValue || 0),
@@ -967,13 +1012,20 @@ export async function action({ request }) {
       });
     }
     
-    // Create discount code based on type and mode
+    // Create discount code based on type and mode. Hybrid uses its own
+    // independent discount settings (spec §2 #9); AI uses the ai* settings.
+    // Resparq owns/mints the code either way — never read from another app.
     let discountResult;
     let offerAmount = decision.amount;
 
-    // MODE: Generic - Reuse the same code for all customers (AI mode uses AI-specific settings)
-    if (aiDiscountCodeMode === 'generic' && aiGenericDiscountCode) {
-      console.log(`[AI Mode] Using generic discount code: ${aiGenericDiscountCode}`);
+    const codeMode    = isHybrid ? hybridDiscountCodeMode    : aiDiscountCodeMode;
+    const genericCode = isHybrid ? hybridGenericDiscountCode : aiGenericDiscountCode;
+    const codePrefix  = isHybrid ? hybridDiscountCodePrefix  : aiDiscountCodePrefix;
+    const modeLabel   = isHybrid ? 'Hybrid' : 'AI Mode';
+
+    // MODE: Generic - Reuse the same code for all customers.
+    if (codeMode === 'generic' && genericCode) {
+      console.log(`[${modeLabel}] Using generic discount code: ${genericCode}`);
 
       // For generic codes, the merchant's code already exists in Shopify with
       // its own fixed discount value. The AI/variant engine, however, picked
@@ -991,12 +1043,12 @@ export async function action({ request }) {
       //     gets the code, but never sees a number that disagrees with reality.
       //   - Code missing / unsupported shape (free shipping, BXGY) → same
       //     neutral-copy fallback.
-      const realDetails = await getDiscountCodeDetails(admin, aiGenericDiscountCode);
+      const realDetails = await getDiscountCodeDetails(admin, genericCode);
 
       if (realDetails && realDetails.type === decision.type) {
         if (realDetails.amount !== decision.amount) {
           console.warn(
-            `[AI Mode] Generic code amount drift on "${aiGenericDiscountCode}" — ` +
+            `[${modeLabel}] Generic code amount drift on "${genericCode}" — ` +
             `aligning copy. was: ${decision.amount}, now: ${realDetails.amount}`
           );
           decision.amount    = realDetails.amount;
@@ -1006,7 +1058,7 @@ export async function action({ request }) {
       } else {
         // Cannot safely show amount-bearing copy. Strip placeholders.
         console.error(
-          `[AI Mode] Generic code "${aiGenericDiscountCode}" mismatch — ` +
+          `[${modeLabel}] Generic code "${genericCode}" mismatch — ` +
           `decision wanted ${decision.type}/${decision.amount}, ` +
           `code is ${realDetails ? `${realDetails.type}/${realDetails.amount}` : 'not found / unsupported'}. ` +
           `Falling back to neutral copy.`
@@ -1030,14 +1082,14 @@ export async function action({ request }) {
       }
 
       discountResult = {
-        code: aiGenericDiscountCode,
+        code: genericCode,
         expiresAt: null // Generic codes don't expire
       };
     }
     // MODE: Unique - Create new code with 24h expiry (default behavior)
     else {
-      const prefix = aiDiscountCodePrefix || 'EXIT';
-      console.log(`[AI Mode] Creating unique discount code with prefix: ${prefix}`);
+      const prefix = codePrefix || 'EXIT';
+      console.log(`[${modeLabel}] Creating unique discount code with prefix: ${prefix}`);
 
       if (decision.type === 'percentage') {
         discountResult = await createPercentageDiscount(admin, decision.amount, prefix);
@@ -1058,7 +1110,7 @@ export async function action({ request }) {
         amount: offerAmount,
         cartValue: signals.cartValue,
         expiresAt: discountResult.expiresAt,
-        mode: aiDiscountCodeMode === 'generic' ? 'generic' : 'unique',
+        mode: codeMode === 'generic' ? 'generic' : 'unique',
         redeemed: false
       }
     });
