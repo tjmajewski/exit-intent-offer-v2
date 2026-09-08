@@ -773,15 +773,18 @@
           console.log('[Enterprise AI] Cart empty, waiting for add-to-cart to evaluate');
           this.watchForAddToCart('enterprise');
         }
-      } else if (this.settings.mode === 'ai') {
-        // Pro AI: AI determines WHAT to show and WHEN via evolved trigger genes
+      } else if (this.settings.mode === 'ai' || this.settings.mode === 'hybrid') {
+        // Pro AI + Guided (Hybrid): AI determines WHAT to show and WHEN via
+        // evolved trigger genes. Hybrid uses this Pro AI path on ALL plans in v1
+        // (no Enterprise surface-arm/pill in Guided — see spec §6, §13.3); it
+        // only freezes the offer amount server-side.
         const hasItems = await this.hasItemsInCart();
         if (hasItems) {
-          console.log('[Pro AI] Using AI-optimized offers with evolved triggers');
+          console.log(`[${this.settings.mode === 'hybrid' ? 'Guided' : 'Pro AI'}] Using AI-optimized delivery with evolved triggers`);
           this.setupAITriggers();
         } else {
           // Cart is empty now — watch for add-to-cart then set up AI
-          console.log('[Pro AI] Cart empty, waiting for add-to-cart to activate');
+          console.log(`[${this.settings.mode === 'hybrid' ? 'Guided' : 'Pro AI'}] Cart empty, waiting for add-to-cart to activate`);
           this.watchForAddToCart('pro');
         }
       } else {
@@ -2241,8 +2244,10 @@
           return;
         }
       }
-      // Otherwise if AI mode is enabled, get AI decision on demand
-      else if (this.settings.mode === 'ai') {
+      // Otherwise if AI or Guided (Hybrid) mode is enabled, get the decision on
+      // demand. Hybrid shares the AI decision path (timing/copy/layout); only
+      // the offer amount is pinned server-side.
+      else if (this.settings.mode === 'ai' || this.settings.mode === 'hybrid') {
         await this.getAIDecision();
         if (this.aiDecidedNoIntervention) {
           console.log('[AI Mode] No intervention — modal will not be shown');
@@ -2530,6 +2535,16 @@
         });
         
         const result = await response.json();
+
+        // Fail closed on any non-OK response — most importantly a 403
+        // `upgradeRequired` when the shop's plan lapsed to Starter while the
+        // saved mode is still ai/hybrid. The server plan gate is the source of
+        // truth (spec §6): show nothing, no modal, no console error, no retry.
+        if (!response.ok || result.upgradeRequired) {
+          console.log('[AI Mode] Decision unavailable (plan gate or error) — treating as no intervention');
+          this.aiDecidedNoIntervention = true;
+          return;
+        }
 
         // Enhanced console logging for transparency
         console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');

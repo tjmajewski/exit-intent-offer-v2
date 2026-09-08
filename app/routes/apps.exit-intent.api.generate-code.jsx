@@ -45,7 +45,10 @@ export async function action({ request }) {
       return json({ error: "Discounts not enabled" }, { status: 400 });
     }
 
-    // Determine which settings to use based on app mode
+    // Determine which settings to use based on app mode.
+    // NOTE: Hybrid ("Guided") mode never reaches this endpoint — its codes are
+    // minted server-side inside apps.exit-intent.api.ai-decision (like AI mode),
+    // so only manual vs ai are handled here.
     const discountCodeMode = shopRecord.mode === "ai"
       ? shopRecord.aiDiscountCodeMode
       : shopRecord.manualDiscountCodeMode;
