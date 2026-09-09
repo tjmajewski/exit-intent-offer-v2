@@ -6,6 +6,66 @@
 
 ---
 
+## Build Status (updated 2026-09-08)
+
+App-side build **complete (Phases 1–7)**, all committed and pushed to `main`. QA
+(Phase 8) and the website (`resparqwebsite`, §10) are **not yet done**.
+
+| Phase | Status | Commit |
+|-------|--------|--------|
+| 1 — Data layer (schema + migration) | ✅ Done | `b348dd1` |
+| 2 — Server serving path (`ai-decision`) | ✅ Done | `6ee9e60` |
+| 3 — Admin UI (3-card selector + settings) | ✅ Done | `c2275b8` |
+| 4 — Storefront client (AI trigger path + 403 fail-closed) | ✅ Done | `a0731b5` |
+| 5 — End-to-end on dev store | ⏳ Deferred (part of your QA) | — |
+| 6 — Switch to Autopilot CTA | ✅ Done | `94ee13a` |
+| 7 — Onboarding docs | ✅ Done | `eed8076` |
+| 8 — Full QA + release gate | ⏳ **Pending (you)** | — |
+| Website (§10, separate repo) | ⏳ **Pending (separate session)** | — |
+
+### Files changed (this repo)
+- `prisma/schema.prisma` + `prisma/migrations/20260908000000_add_hybrid_guided_mode_settings/`
+- `app/routes/apps.exit-intent.api.ai-decision.jsx` (core serving)
+- `app/routes/app.settings.jsx`, `app/components/settings/tabs/QuickSetupTab.jsx`,
+  `app/components/settings/tabs/HybridSettingsTab.jsx` (new),
+  `app/components/settings/SettingsPreview.jsx`
+- `extensions/exit-intent-modal/assets/exit-intent-modal.js`,
+  `app/routes/apps.exit-intent.api.generate-code.jsx` (comment only)
+- `app/routes/app.analytics.jsx` (Switch to Autopilot CTA)
+- `ONBOARDING.md`, `app/components/OnboardingChecklist.jsx`, `app/routes/app._index.jsx`,
+  `docs/onboarding/*.md`
+
+### Important notes & deviations from spec
+1. **Baseline forced to `conversion_with_discount`** (deviation from §5's "keep the
+   revenue/conversion split"). Revenue baselines carry threshold copy ("spend $X
+   more, save $Y"), which misdescribes a flat pinned %/$ offer, and threshold
+   offers are out of scope for v1 (§4). Guided always uses the flat
+   `conversion_with_discount` (PERCENT_DISCOUNT) pool; `$0` pin → `pure_reminder`.
+2. **Discount update-on-pin-change** is handled implicitly: the generic code name
+   encodes the amount (`STORE15` → `STORE20`), so changing the pin mints a fresh
+   correctly-valued code and re-points to it. No stale value can be served; no
+   separate Shopify discount-update call is needed (simpler than §7.1 item 7's
+   "update the existing discount", same guarantee).
+3. **Metafield is the serving source of truth** for `mode`. Both the settings
+   action and the Switch-to-Autopilot flip write the metafield first, then the DB
+   row, so serving and admin can never disagree. Plan gate runs before any write.
+4. **403 fail-closed** was added to the storefront `getAIDecision` (Phase 4) — it
+   previously fell through and could show a modal on a non-OK response. Now any
+   non-OK / `upgradeRequired` → show nothing, no retry. This also hardens AI mode.
+5. **Enterprise Guided uses the Pro AI path** on all plans in v1 (no Enterprise
+   surface-arm/pill in Guided) — matches §13.3.
+6. **No unit-test harness exists** in the repo. Phase 2/3/4/6 were verified by
+   `node --check` / `npx react-router build` (clean) and branch tracing. Real
+   behavior is proven in Phase 8 QA on the dev store.
+7. **`.docx` onboarding exports** in `docs/onboarding/` were left untouched (binary
+   generated files) — re-export them from the updated `.md` siblings.
+8. **Highest-risk open item: Shopify stacking (§2b).** Resparq's code is already
+   PRODUCT-class + combinesWith all-true, so it should stack on typical ORDER-class
+   store codes. This must be proven on a real store in QA before the "stacks on
+   top" claim ships anywhere. Reminder-only fallback path is unchanged.
+
+---
+
 ## Part A — Implementation Plan
 
 ### Phase 0 — Pre-flight (0.5 day)
