@@ -61,3 +61,17 @@ export default async function handleRequest(
     setTimeout(abort, streamTimeout + 1000);
   });
 }
+
+// Custom error handler so we don't spam Sentry with non-bugs. Shopify's
+// authenticate.admin() throws a Response (redirect/4xx) when an unauthenticated
+// request — bots or direct browser hits to /app with no session — comes in.
+// Those, and aborted requests, are expected. Only real thrown Errors reach Sentry.
+export function handleError(error, { request }) {
+  if (request.signal.aborted) return;
+
+  // Thrown Responses are React Router control flow (redirects, 4xx), not bugs.
+  if (error instanceof Response) return;
+
+  Sentry.captureRemixServerException(error, "remix.server", request);
+  console.error(error);
+}
