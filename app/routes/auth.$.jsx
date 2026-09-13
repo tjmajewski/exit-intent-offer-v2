@@ -1,6 +1,7 @@
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getDefaultPlan } from "../utils/featureGates";
+import { sendNotify } from "../utils/notify.server";
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
@@ -55,6 +56,12 @@ export const loader = async ({ request }) => {
       });
 
       console.log(" Default plan set:", defaultPlan.tier);
+
+      // New install: no prior plan metafield existed for this shop.
+      await sendNotify(
+        `✅ Resparq installed: ${session.shop}`,
+        `${session.shop} installed Resparq at ${new Date().toISOString()}. Plan: ${defaultPlan.tier}.`
+      );
     } else {
       console.log(" Existing plan found");
     }
