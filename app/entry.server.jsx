@@ -12,7 +12,7 @@ Sentry.init({
 
 import { PassThrough } from "stream";
 import { renderToPipeableStream } from "react-dom/server";
-import { ServerRouter } from "react-router";
+import { ServerRouter, isRouteErrorResponse } from "react-router";
 import { createReadableStreamFromReadable } from "@react-router/node";
 import { isbot } from "isbot";
 import { addDocumentResponseHeaders } from "./shopify.server";
@@ -70,7 +70,10 @@ export function handleError(error, { request }) {
   if (request.signal.aborted) return;
 
   // Thrown Responses are React Router control flow (redirects, 4xx), not bugs.
+  // React Router also wraps some throws into ErrorResponse objects
+  // ({ status, statusText, data, internal }) — skip 4xx of those too.
   if (error instanceof Response) return;
+  if (isRouteErrorResponse(error) && error.status < 500) return;
 
   Sentry.captureRemixServerException(error, "remix.server", request);
   console.error(error);
