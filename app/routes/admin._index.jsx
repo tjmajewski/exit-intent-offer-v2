@@ -18,6 +18,12 @@ export function headers() {
   return ADMIN_RESPONSE_HEADERS;
 }
 
+// Bots probe POST /admin looking for exposed panels. No form posts here —
+// return 405 instead of throwing "did not provide an action".
+export function action() {
+  return new Response("Method Not Allowed", { status: 405 });
+}
+
 export async function loader({ request }) {
   requireSuperAdmin(request);
 
