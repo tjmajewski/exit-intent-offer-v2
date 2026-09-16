@@ -347,7 +347,11 @@ export default function AdminShopDetail() {
               <InfoPopover info={METRIC_INFO.shopPerformance} />
             </InlineStack>
             <Card>
-              <InlineGrid columns={5} gap="400">
+              {/* Funnel order, widest first: decisions is the top of it. If
+                  decisions stop, nothing downstream can move, so it's the first
+                  thing to read when a store looks dead. */}
+              <InlineGrid columns={6} gap="400">
+                <StatCell label="AI decisions" value={perf.decisions.toLocaleString()} />
                 <StatCell label="Impressions" value={perf.impressions.toLocaleString()} />
                 <StatCell label="Clicks" value={perf.clicks.toLocaleString()} />
                 <StatCell label="Conversions" value={perf.conversions.toLocaleString()} />

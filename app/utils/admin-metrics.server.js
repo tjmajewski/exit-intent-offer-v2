@@ -333,8 +333,15 @@ export async function getLeaderboard(filter, shops) {
   const where = impressionWhere(filter);
   const oWhere = outcomeWhere(filter);
 
-  const [imprByShop, convByShop, shownByShop, shownConvByShop, holdoutByShop, holdoutConvByShop, skipThresholds] =
+  const [decisionsByShop, imprByShop, convByShop, shownByShop, shownConvByShop, holdoutByShop, holdoutConvByShop, skipThresholds] =
     await Promise.all([
+      // AIDecision is keyed on createdAt, not timestamp — it is not one of the
+      // outcome tables, so it can't reuse outcomeWhere().
+      db.aIDecision.groupBy({
+        by: ["shopId"],
+        where: { shopId: { in: filter.shopIds }, createdAt: { gte: filter.from, lt: filter.to } },
+        _count: { _all: true },
+      }),
       db.variantImpression.groupBy({
         by: ["shopId"], where, _count: { _all: true }, _sum: { profit: true },
       }),
@@ -346,7 +353,9 @@ export async function getLeaderboard(filter, shops) {
       }),
       db.interventionOutcome.groupBy({
         by: ["shopId"],
-        where: { ...oWhere, wasShown: true, isHoldout: false, converted: true },
+        // rendered, like the shown count above it — without it a conversion on
+        // a prefetched-never-displayed row pushed this store's CVR over 100%.
+        where: { ...oWhere, wasShown: true, rendered: true, isHoldout: false, converted: true },
         _count: { _all: true },
       }),
       db.interventionOutcome.groupBy({
@@ -363,6 +372,7 @@ export async function getLeaderboard(filter, shops) {
     ]);
 
   const toMap = (rows) => new Map(rows.map((row) => [row.shopId, row]));
+  const decisions = toMap(decisionsByShop);
   const impr = toMap(imprByShop);
   const conv = toMap(convByShop);
   const shown = toMap(shownByShop);
@@ -387,6 +397,7 @@ export async function getLeaderboard(filter, shops) {
         domain: shop.shopifyDomain,
         plan: shop.plan,
         mode: shop.mode,
+        decisions: decisions.get(shop.id)?._count._all || 0,
         impressions,
         conversions,
         cvr: impressions > 0 ? conversions / impressions : 0,

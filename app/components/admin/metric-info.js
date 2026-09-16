@@ -153,8 +153,8 @@ export const METRIC_INFO = {
     importance:
       "The exact numbers the merchant sees on their own dashboard. Both surfaces read one module (app/utils/shop-metrics.server.js), so anything quoted here can be quoted to them verbatim.",
     meaning:
-      "This store's impressions → clicks → conversions → revenue → profit for the selected window, plus how often the AI chose to stay quiet.",
+      "This store's decisions → impressions → clicks → conversions → revenue → profit for the selected window, plus how often the AI chose to stay quiet.",
     calculation:
-      "Impressions = InterventionOutcome rows with wasShown AND rendered (AI/Guided) or StarterImpression rows (manual). Decisions are minted at prefetch, before any trigger fires, so unrendered rows are excluded — a raw row count overstates shows. Orders, revenue and discount cost come from the Conversion table, written once per attributed order whether or not a code was redeemed. Profit = revenue − discount granted. Holdouts are excluded from every figure above and reported separately.",
+      "Decisions = AIDecision rows in the window — the top of the funnel; every impression below it started as one, so decisions flowing while impressions sit flat is a render or trigger problem, and both flat is a traffic or tracking problem. Impressions = InterventionOutcome rows with wasShown AND rendered (AI/Guided) or StarterImpression rows (manual). Decisions are minted at prefetch, before any trigger fires, so unrendered rows are excluded — a raw row count overstates shows. Orders, revenue and discount cost come from the Conversion table, written once per attributed order whether or not a code was redeemed. Profit = revenue − discount granted. Holdouts are excluded from every figure above and reported separately.",
   },
 };

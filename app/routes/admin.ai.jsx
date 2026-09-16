@@ -476,13 +476,14 @@ export default function AdminAIDashboard() {
           <BlockStack gap="300">
             <ChartTitle info={METRIC_INFO.leaderboard}>Customer leaderboard</ChartTitle>
             <DataTable
-              columnContentTypes={["text", "text", "numeric", "numeric", "numeric", "numeric", "text", "numeric"]}
-              headings={["Store", "Plan", "Impressions", "Conversions", "CVR", "Profit", "Holdout lift", "Skip buckets"]}
+              columnContentTypes={["text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "numeric"]}
+              headings={["Store", "Plan", "Decisions", "Impressions", "Conversions", "CVR", "Profit", "Holdout lift", "Skip buckets"]}
               rows={leaderboard.map((row) => [
                 <Link key={row.shopId} to={`/admin/shops/${row.shopId}`}>
                   {row.domain}
                 </Link>,
                 <Badge key={`${row.shopId}-plan`}>{row.plan}</Badge>,
+                row.decisions.toLocaleString(),
                 row.impressions.toLocaleString(),
                 row.conversions.toLocaleString(),
                 `${(row.cvr * 100).toFixed(1)}%`,
@@ -494,8 +495,10 @@ export default function AdminAIDashboard() {
               ])}
             />
             <Text as="p" tone="subdued" variant="bodySm">
-              Impressions/CVR/profit from VariantImpression; holdout lift from InterventionOutcome (same source as the
-              merchant dashboard&apos;s lift card). Skip buckets = threshold buckets currently set to no-show.
+              Decisions from AIDecision; impressions/CVR/profit from VariantImpression; holdout lift from
+              InterventionOutcome (same source as the merchant dashboard&apos;s lift card). Skip buckets = threshold
+              buckets currently set to no-show. Decisions far above impressions means the AI is preparing offers that
+              never reach a shopper.
             </Text>
           </BlockStack>
         </Card>
