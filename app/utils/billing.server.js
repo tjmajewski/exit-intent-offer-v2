@@ -38,13 +38,21 @@ const PROMO_CONFIGS = {
   },
   EARLYACCESS: {
     targetTier: "pro",
-    monthlyPrice: 29,
-    annualPrice: 24.65,
-    annualTotal: 296,
+    monthlyPrice: 25,
+    annualPrice: 21.25,
+    annualTotal: 255,
     // Early-access merchants get a 2-month free trial (vs the standard 14
     // days). Shopify Billing charges nothing until these days elapse, then
     // bills the discounted price above on a recurring basis.
     trialDays: 60,
+  },
+  // Same 50% off as EARLYACCESS, but no extended trial. Omitting trialDays
+  // falls back to the standard 14 days everywhere it's read (`?? 14`).
+  RESPARQ50OFF: {
+    targetTier: "pro",
+    monthlyPrice: 25,
+    annualPrice: 21.25,
+    annualTotal: 255,
   },
 };
 
