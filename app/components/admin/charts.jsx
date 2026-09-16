@@ -10,6 +10,7 @@ import {
   Area,
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -106,25 +107,67 @@ export function StackedAreaSeries({ data, series }) {
 }
 
 /**
- * Horizontal bars for breakdowns — single sequential hue (magnitude, not
- * identity), 4px rounded data-ends, direct value labels via tooltip.
- * Negative values flip to the critical status color.
+ * A segment needs at least this many impressions before its rate is drawn at
+ * full strength. Below it the bar is dimmed: one conversion out of two
+ * impressions is a 50% CVR and means nothing, but it would otherwise top the
+ * chart and read as a finding.
  */
-export function BreakdownBars({ data, valueKey = "profit", yFormatter, height }) {
+export const MIN_SEGMENT_VOLUME = 30;
+
+/**
+ * Tooltip for the breakdown bars: the whole funnel for the hovered segment,
+ * because the bar itself is a rate and a rate without its denominator is not
+ * actionable.
+ */
+function FunnelTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0].payload;
+  const line = (label, value) => (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+      <span style={{ opacity: 0.7 }}>{label}</span>
+      <span>{value}</span>
+    </div>
+  );
+  return (
+    <div style={{ ...tooltipStyle, padding: 10, fontSize: 12, lineHeight: 1.6 }}>
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>{row.key}</div>
+      {line("Impressions", row.impressions.toLocaleString())}
+      {line("Clicks", `${row.clicks.toLocaleString()} (${row.clickRate.toFixed(1)}%)`)}
+      {line("Conversions", row.conversions.toLocaleString())}
+      {line("CVR", `${row.cvr.toFixed(1)}%`)}
+      {line("$ / impression", `$${row.profitPerImpression.toFixed(3)}`)}
+      {row.impressions < MIN_SEGMENT_VOLUME && (
+        <div style={{ marginTop: 6, opacity: 0.7 }}>
+          Under {MIN_SEGMENT_VOLUME} impressions — not yet a signal.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Horizontal bars for breakdowns — single sequential hue (magnitude, not
+ * identity), 4px rounded data-ends, funnel detail via tooltip. Segments below
+ * MIN_SEGMENT_VOLUME are dimmed rather than hidden: "mobile has barely any
+ * traffic" is itself worth seeing.
+ */
+export function BreakdownBars({ data, valueKey = "cvr", yFormatter, height }) {
   return (
     <Frame height={height || Math.max(120, data.length * 36 + 40)}>
       <BarChart data={data} layout="vertical" margin={{ top: 4, right: 24, left: 8, bottom: 0 }}>
         <CartesianGrid stroke={GRID} horizontal={false} />
         <XAxis type="number" {...axisProps} tickFormatter={yFormatter} />
         <YAxis type="category" dataKey="key" {...axisProps} fontSize={10} width={140} />
-        <Tooltip contentStyle={tooltipStyle} formatter={(value) => (yFormatter ? yFormatter(value) : value)} />
-        <Bar
-          dataKey={valueKey}
-          fill={SERIES[0]}
-          radius={[0, 4, 4, 0]}
-          maxBarSize={18}
-          isAnimationActive={false}
-        />
+        <Tooltip content={<FunnelTooltip />} cursor={{ fill: GRID, opacity: 0.3 }} />
+        <Bar dataKey={valueKey} radius={[0, 4, 4, 0]} maxBarSize={18} isAnimationActive={false}>
+          {data.map((row) => (
+            <Cell
+              key={row.key}
+              fill={SERIES[0]}
+              fillOpacity={row.impressions >= MIN_SEGMENT_VOLUME ? 1 : 0.35}
+            />
+          ))}
+        </Bar>
       </BarChart>
     </Frame>
   );

@@ -110,13 +110,13 @@ export const METRIC_INFO = {
       "InterventionOutcome grouped by scoreBucket × wasShown; profit ÷ count per arm. Skip-arm profit is full-margin natural purchases (no discount cost). This is the data Thompson Sampling uses to set each store's thresholds.",
   },
   breakdown: {
-    title: "Profit breakdowns",
+    title: "Conversion breakdowns",
     importance:
-      "Where the money concentrates — and where it leaks. A segment that's large in impressions but tiny in profit is where to tune next.",
+      "Which kinds of visitor the offer actually converts. A total-money bar can't answer that — it rewards whichever segment simply has the most traffic. A rate puts a low-volume segment that converts brilliantly next to a high-volume one that doesn't.",
     meaning:
-      "Total profit in the window split by the named dimension (plan tier, device, traffic source, trigger reason, or offer archetype).",
+      "Conversion rate within each segment (plan tier, device, traffic source, trigger reason, or offer archetype), sorted best first. Hover for that segment's whole funnel: impressions → clicks → conversions, plus $ per impression.",
     calculation:
-      "VariantImpression rows grouped by the dimension, summing profit. Plan tier is joined from each shop's record; top 8 groups shown.",
+      "Rendered VariantImpression rows grouped by the dimension: CVR = converted ÷ impressions, click rate = clicked ÷ impressions, $/impression = profit ÷ impressions. Plan tier is joined from each shop's record; top 8 groups shown. Bars under 30 impressions are dimmed — at n=2 a single conversion is a 50% CVR and would otherwise top the chart. Note these dimensions live only on VariantImpression, so pill-opener surfaces (which have no such row by design) are invisible here.",
   },
 
   // ── Tables / strips ──────────────────────────────────────────────────

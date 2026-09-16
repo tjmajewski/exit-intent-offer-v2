@@ -34,6 +34,7 @@ import {
   BreakdownBars,
   ScoreBucketBars,
   SERIES,
+  MIN_SEGMENT_VOLUME,
 } from "../components/admin/charts.jsx";
 import InfoPopover from "../components/admin/InfoPopover.jsx";
 import { METRIC_INFO } from "../components/admin/metric-info.js";
@@ -437,9 +438,15 @@ export default function AdminAIDashboard() {
           ].map(([title, rows]) => (
             <Card key={title}>
               <BlockStack gap="300">
-                <ChartTitle info={METRIC_INFO.breakdown}>{`${title} — profit`}</ChartTitle>
+                <ChartTitle info={METRIC_INFO.breakdown}>{`${title} — conversion rate`}</ChartTitle>
                 {rows.length ? (
-                  <BreakdownBars data={rows.slice(0, 8)} yFormatter={money} />
+                  <>
+                    <BreakdownBars data={rows.slice(0, 8)} yFormatter={(value) => `${value.toFixed(1)}%`} />
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      Hover for the funnel. Bars under {MIN_SEGMENT_VOLUME} impressions are dimmed — too
+                      thin to read as a difference.
+                    </Text>
+                  </>
                 ) : (
                   <Text as="p" tone="subdued">
                     No data in window.

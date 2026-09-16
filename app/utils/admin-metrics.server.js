@@ -244,23 +244,42 @@ export async function getBreakdowns(filter, shops) {
   if (!filter.shopIds.length) {
     return { byPlan: [], byDevice: [], byTraffic: [], byTrigger: [], byArchetype: [], byScoreBucket: [] };
   }
-  const where = impressionWhere(filter);
+  // The breakdowns answer "how does this segment convert", so every group
+  // carries its whole funnel — impressions → clicks → conversions — not just a
+  // money total. A single profit bar can't distinguish a segment that converts
+  // well from one that merely gets a lot of traffic.
+  //
+  // Raw SQL: three counts per group in one pass. The Prisma equivalent is a
+  // groupBy per count (three round trips per dimension, fifteen for the page).
+  // `field` is allowlisted before being inlined as an identifier.
+  const FUNNEL_FIELDS = new Set(["deviceType", "trafficSource", "triggerReason", "archetype", "shopId"]);
+  const deviceClause = filter.deviceType
+    ? Prisma.sql`AND "deviceType" = ${filter.deviceType}`
+    : Prisma.empty;
+  const trafficClause = filter.trafficSource
+    ? Prisma.sql`AND "trafficSource" = ${filter.trafficSource}`
+    : Prisma.empty;
 
-  const groupOn = (field) =>
-    db.variantImpression.groupBy({
-      by: [field],
-      where,
-      _count: { _all: true },
-      _sum: { profit: true },
-    });
+  const groupOn = (field) => {
+    if (!FUNNEL_FIELDS.has(field)) throw new Error(`Unsupported breakdown field: ${field}`);
+    const column = Prisma.raw(`"${field}"`);
+    return db.$queryRaw`
+      SELECT ${column} AS key,
+             COUNT(*)::int AS impressions,
+             COUNT(*) FILTER (WHERE clicked)::int AS clicks,
+             COUNT(*) FILTER (WHERE converted)::int AS conversions,
+             COALESCE(SUM(revenue), 0)::float AS revenue,
+             COALESCE(SUM(profit), 0)::float AS profit
+      FROM "VariantImpression"
+      WHERE "shopId" IN (${Prisma.join(filter.shopIds)})
+        AND "timestamp" >= ${filter.from} AND "timestamp" < ${filter.to}
+        AND "rendered"
+        ${deviceClause} ${trafficClause}
+      GROUP BY 1`;
+  };
 
   const [byShop, byDevice, byTraffic, byTrigger, byArchetype, byBucketArm] = await Promise.all([
-    db.variantImpression.groupBy({
-      by: ["shopId"],
-      where,
-      _count: { _all: true },
-      _sum: { profit: true },
-    }),
+    groupOn("shopId"),
     groupOn("deviceType"),
     groupOn("trafficSource"),
     groupOn("triggerReason"),
@@ -278,22 +297,34 @@ export async function getBreakdowns(filter, shops) {
   const planByShopId = new Map(shops.map((shop) => [shop.id, shop.plan]));
   const byPlanMap = new Map();
   for (const row of byShop) {
-    const plan = planByShopId.get(row.shopId) || "unknown";
-    const entry = byPlanMap.get(plan) || { key: plan, impressions: 0, profit: 0 };
-    entry.impressions += row._count._all;
-    entry.profit += row._sum.profit || 0;
+    const plan = planByShopId.get(row.key) || "unknown";
+    const entry = byPlanMap.get(plan) ||
+      { key: plan, impressions: 0, clicks: 0, conversions: 0, revenue: 0, profit: 0 };
+    entry.impressions += row.impressions;
+    entry.clicks += row.clicks;
+    entry.conversions += row.conversions;
+    entry.revenue += row.revenue;
+    entry.profit += row.profit;
     byPlanMap.set(plan, entry);
   }
 
+  // Derived rates live here, not in the component: the chart and any future
+  // export must not each decide what "CVR for this segment" means.
+  const withRates = (row) => ({
+    ...row,
+    cvr: row.impressions > 0 ? (row.conversions / row.impressions) * 100 : 0,
+    clickRate: row.impressions > 0 ? (row.clicks / row.impressions) * 100 : 0,
+    profitPerImpression: row.impressions > 0 ? row.profit / row.impressions : 0,
+  });
+
+  // Sorted by conversion rate — the question these charts answer is which
+  // segments convert, not which are biggest. Volume rides along on each row so
+  // a 1-of-1 segment can be read (and dimmed) for what it is.
   const shape = (rows) =>
     rows
-      .map((row) => ({
-        key: Object.values(row).find((value) => typeof value === "string") || "unknown",
-        impressions: row._count._all,
-        profit: row._sum.profit || 0,
-      }))
-      .filter((row) => row.key !== "unknown")
-      .sort((a, b) => b.profit - a.profit);
+      .filter((row) => row.key)
+      .map(withRates)
+      .sort((a, b) => b.cvr - a.cvr || b.impressions - a.impressions);
 
   // Score buckets: show-arm vs skip-arm profit per impression.
   const bucketMap = new Map();
@@ -316,7 +347,7 @@ export async function getBreakdowns(filter, shops) {
   );
 
   return {
-    byPlan: [...byPlanMap.values()].sort((a, b) => b.profit - a.profit),
+    byPlan: shape([...byPlanMap.values()]),
     byDevice: shape(byDevice),
     byTraffic: shape(byTraffic),
     byTrigger: shape(byTrigger),
