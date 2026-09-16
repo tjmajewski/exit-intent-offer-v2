@@ -216,6 +216,72 @@ export const genePools = {
     templateIds: TEMPLATE_IDS
   },
 
+  // CONVERSION + FIXED DISCOUNT: flat $ off to prevent cart abandonment.
+  //
+  // Sibling to PERCENT_DISCOUNT, not a replacement. Both are "unconditional
+  // money off what's already in the cart" — the shape a leaving, low-intent
+  // visitor responds to — and which one lands better is a store-by-store
+  // question (a $10 off reads bigger than 10% on a $40 cart, and smaller on a
+  // $400 one). The bandit picks between them per segment instead of us
+  // guessing.
+  //
+  // offerAmounts here are DOLLARS, unlike PERCENT_DISCOUNT where they are
+  // percent. The storefront formats {{amount}} as currency whenever
+  // decision.type is 'fixed' (see amountTextFor in exit-intent-modal.js), and
+  // the margin guard converts its percentage ceiling into dollars before
+  // clamping — see the fixed branch in the decision endpoint.
+  conversion_with_fixed_discount: {
+    archetypeName: 'FIXED_DISCOUNT',
+    archetypeDescription: 'Convert hesitant cart via flat $ off discount code',
+    slots: ['headline', 'subhead', 'cta', 'discount_code'],
+    requiredSlots: ['headline', 'cta', 'discount_code'],
+    requires: { cartItemsMin: 1, discountCode: true },
+    copyBannedPatterns: UNIVERSAL_BANNED_PATTERNS,
+
+    offerAmounts: [5, 10, 15, 20],  // $ off — clamped by the margin guard
+
+    // No copy here may imply a qualifying spend. This archetype takes money
+    // off the cart as it stands; that is the entire point of routing
+    // low-intent visitors to it instead of to THRESHOLD_DISCOUNT.
+    headlines: [
+      'Take {{amount}} off your order',
+      'Your {{amount}} discount is ready',
+      'Save {{amount}} before you go'
+    ],
+
+    subheads: [
+      'Applied automatically at checkout',
+      'It comes straight off your current cart',
+      'One click and the discount is yours'
+    ],
+
+    headlinesWithUrgency: [
+      'Your {{amount}} discount expires in 24 hours',
+      '24 hours left to save {{amount}}',
+      'Limited time: {{amount}} off, just for you'
+    ],
+
+    subheadsWithUrgency: [
+      'This code was made just for you. It applies at checkout.',
+      'It comes straight off your current cart',
+      'One click and {{amount}} comes off your total'
+    ],
+
+    ctas: [
+      'Claim {{amount}} Off',
+      'Apply My Discount',
+      'Save {{amount}} Now'
+    ],
+
+    redirects: ['cart', 'checkout'],
+    urgency: [true, false],
+    showSubhead: [true, false],
+    showProductImages: [true, false],
+    triggerTypes: ['exit_intent', 'idle', 'exit_intent_or_idle'],
+    idleSeconds: [15, 30, 45, 60],
+    templateIds: TEMPLATE_IDS
+  },
+
   // CONVERSION + NO DISCOUNT: Convert without discount (social proof / trust focus)
   conversion_no_discount: {
     archetypeName: 'TRUST_REMINDER',

@@ -19,6 +19,8 @@
 // =============================================================================
 
 import { computePropensity } from './propensity.server.js';
+import { detectFunnelGoal } from './funnel-goal.js';
+import { thresholdFitsVisitor } from './baseline-selector.js';
 
 // =============================================================================
 // STAGE 3/4 — MARGIN-AWARE DISCOUNT CEILING
@@ -55,12 +57,32 @@ export function subscriptionAmortization(subShare = 0, expectedCycles = 3) {
   return (1 - share) + share / cycles;
 }
 
+/**
+ * Maximum share of the qualifying spend one offer may give away.
+ *
+ * `conditional` marks an offer that only pays out if the basket actually grows
+ * — today that means a threshold ("spend $X more, save $Y"). It changes one
+ * thing: the propensity taper is skipped.
+ *
+ * The taper exists to stop us buying conversions we already had. It drives the
+ * ceiling to zero above P≈80, which is correct for an unconditional discount —
+ * money off a cart someone was going to buy anyway is pure margin burn. It is
+ * backwards for a conditional one. A threshold shown to a high-intent shopper
+ * costs nothing unless they spend more than they meant to, which is the exact
+ * case we want to fund. Without this, routing high intent to thresholds would
+ * have produced a threshold whose discount had already been zeroed, i.e. a
+ * modal asking for more spend and offering nothing for it.
+ *
+ * Every margin cap still applies: the conditional path is exempt from the
+ * intent taper, not from the merchant's margin floor or aggression ceiling.
+ */
 export function offerCeilingPercent({
   propensity,
   aggression = 5,
   assumedGrossMargin = 0.40,
   subShare = 0,
-  expectedCycles = 3
+  expectedCycles = 3,
+  conditional = false
 } = {}) {
   const D_MIN = 5;   // below this an offer is ignorable / invisible -> announce
   const D_MAX = 25;  // absolute ceiling on any single exit offer
@@ -75,7 +97,11 @@ export function offerCeilingPercent({
 
   // Linear taper: bigger discount as propensity falls. NOT low-clamped, so the
   // curve passes below D_MIN around P>80 and becomes announce-only there.
-  const dRaw = D_MIN + (D_MAX - D_MIN) * (P_HI - P) / (P_HI - P_LO);
+  // A conditional offer skips the taper entirely and sits at the aggression
+  // level's own ceiling — it is not spending margin unless the basket grows.
+  const dRaw = conditional
+    ? D_MAX
+    : D_MIN + (D_MAX - D_MIN) * (P_HI - P) / (P_HI - P_LO);
   const dCurve = Math.max(0, Math.min(D_MAX, dRaw)) * (agg / 5);
 
   const amort = subscriptionAmortization(subShare, expectedCycles);
@@ -98,58 +124,9 @@ export function subShareFromSignals(signals = {}, cartValue = 0) {
   if (total <= 0 || subValue <= 0) return 0;
   return Math.min(1, subValue / total);
 }
-
-// Helper: Detect funnel stage to automatically choose revenue vs conversion goal.
-// The AI picks the strategy per customer based on their post-ATC position.
-function detectFunnelGoalFromSignals(signals) {
-  let revenueScore = 0;
-  let conversionScore = 0;
-
-  if (signals.exitPage === 'checkout') {
-    conversionScore += 40;
-  } else if (signals.exitPage === 'cart') {
-    conversionScore += 25;
-  } else if (signals.exitPage === 'product' || signals.exitPage === 'collection') {
-    revenueScore += 25;
-  }
-
-  if (signals.cartHesitation > 1) {
-    conversionScore += 20;
-  } else if (signals.cartHesitation === 0) {
-    revenueScore += 10;
-  }
-
-  if (signals.failedCouponAttempt) {
-    conversionScore += 30;
-  }
-
-  if (signals.cartAgeMinutes > 30) {
-    conversionScore += 15;
-  } else if (signals.cartAgeMinutes != null && signals.cartAgeMinutes < 10) {
-    revenueScore += 15;
-  }
-
-  if (signals.hasAbandonedBefore) {
-    conversionScore += 15;
-  }
-
-  if (signals.pageViews >= 5) {
-    revenueScore += 15;
-  } else if (signals.pageViews < 2) {
-    conversionScore += 5;
-  }
-
-  const cartValue = signals.cartValue || 0;
-  if (cartValue < 30) {
-    conversionScore += 10;
-  } else if (cartValue > 100) {
-    revenueScore += 10;
-  }
-
-  const goal = revenueScore >= conversionScore ? 'revenue' : 'conversion';
-  console.log(` [Funnel Stage] revenue=${revenueScore} conversion=${conversionScore} → ${goal}`);
-  return goal;
-}
+// Funnel-stage detection lives in funnel-goal.js — this file used to carry a
+// byte-identical second copy, which is the setup where one gets tuned and the
+// other silently does not.
 
 // Helper: Analyze cart composition to adjust strategy
 function analyzeCartComposition(signals) {
@@ -246,7 +223,7 @@ export async function decideOffer(signals, ctx = {}) {
   } = ctx;
 
   const cartValue = ctxCartValue ?? signals.cartValue ?? 0;
-  const aiGoal = detectFunnelGoalFromSignals(signals);
+  const aiGoal = detectFunnelGoal(signals);
   const cart = analyzeCartComposition(signals);
 
   // -------------------------------------------------------------------------
@@ -333,9 +310,15 @@ export async function decideOffer(signals, ctx = {}) {
   // STAGE 3/4 — margin-aware ceiling + concrete recommended offer
   // -------------------------------------------------------------------------
   const subShare = subShareFromSignals(signals, cartValue);
+  // Shape comes from intent, not funnel stage — same rule the live variant
+  // path uses (thresholdFitsVisitor). Funnel stage only breaks the tie in the
+  // middle band now. Computed before the ceiling because a threshold is
+  // conditional margin and is exempt from the propensity taper.
+  const servesThreshold = thresholdFitsVisitor({ ...signals, propensityScore: P }, aiGoal);
   const ceilingPercent = offerCeilingPercent({
     propensity: P, aggression, assumedGrossMargin,
-    subShare, expectedCycles: subscriptionExpectedCycles
+    subShare, expectedCycles: subscriptionExpectedCycles,
+    conditional: servesThreshold
   });
   if (subShare > 0) {
     const amort = subscriptionAmortization(subShare, subscriptionExpectedCycles);
@@ -364,8 +347,9 @@ export async function decideOffer(signals, ctx = {}) {
 
   const confidence = P > 60 ? 'high' : P > 40 ? 'medium' : 'low';
 
-  // REVENUE MODE: threshold (AOV) offer to grow the cart.
-  if (aiGoal === 'revenue' && cartValue > 20) {
+  // THRESHOLD (AOV) offer — grow the cart. Gated on intent + cart size, not on
+  // funnel stage alone; see thresholdFitsVisitor.
+  if (servesThreshold) {
     const mult = cart.isHighTicket && !cart.isMultiItem ? 1.25
                : cart.isMultiItem ? 1.3 : 1.25;
     const proposedThreshold = recommendedThreshold(cartValue, mult);
@@ -390,7 +374,9 @@ export async function decideOffer(signals, ctx = {}) {
     };
   }
 
-  // CONVERSION MODE: direct percentage discount at the margin-safe ceiling.
+  // FLAT DISCOUNT — money off the cart as it stands, at the margin-safe
+  // ceiling. This is where a leaving, low-intent visitor lands: no spend
+  // requirement attached to the offer.
   return {
     show: true,
     propensity: P,

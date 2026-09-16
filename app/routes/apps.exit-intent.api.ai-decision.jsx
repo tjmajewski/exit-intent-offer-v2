@@ -1,6 +1,7 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { createPercentageDiscount, createFixedDiscount, createThresholdDiscount, getDiscountCodeDetails } from "../utils/discount-codes";
+import { offerTypeForBaseline } from "../utils/baseline-selector.js";
 import { getMetaInsight, shouldUseMetaLearning } from "../utils/meta-learning.js";
 import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
 import { composeSegmentKey } from "../utils/segment-key.js";
@@ -645,6 +646,14 @@ export async function action({ request }) {
 
     console.log(`[Variant Selection] Baseline: ${baseline}`);
 
+    // The offer type the selected pool actually serves. Derived from the
+    // baseline by an explicit table rather than the old
+    // `baseline.includes('revenue')` substring test, which classified anything
+    // non-revenue as a percentage — and would therefore have served the new
+    // dollars-denominated fixed-discount pool as a percentage off.
+    const servedOfferType = offerTypeForBaseline(baseline);
+    console.log(`[Variant Selection] Offer type: ${servedOfferType}`);
+
     // Step 1.5: Determine segment (device-specific evolution)
     const deviceType = signals.deviceType || 'unknown';
     const segment = deviceType === 'mobile' ? 'mobile' :
@@ -752,17 +761,32 @@ export async function action({ request }) {
         aggression: effectiveAggression,
         assumedGrossMargin: settings.assumedGrossMargin,
         subShare: marginSubShare,
-        expectedCycles: shopRecord.subscriptionExpectedCycles
+        expectedCycles: shopRecord.subscriptionExpectedCycles,
+        // A threshold only costs margin if the basket actually grows, so it is
+        // exempt from the propensity taper. Without this the high-intent
+        // visitors now routed to thresholds would hit the taper's zero and be
+        // served a modal that asks for more spend and offers nothing back.
+        conditional: servedOfferType === 'threshold'
       });
-      const isRevenueBaseline = baseline.includes('revenue');
       if (ceilingPct === 0) {
         console.log(`[Margin Guard] P=${signals.propensityScore} → announce-only (no discount)`);
         cappedOfferAmount = 0;
-      } else if (isRevenueBaseline) {
+      } else if (servedOfferType === 'threshold') {
         const thr = recommendedThreshold(signals.cartValue || 0);
         const maxDollars = Math.floor(thr * ceilingPct / 100);
         if (cappedOfferAmount > maxDollars) {
           console.log(`[Margin Guard] Capping threshold discount from $${cappedOfferAmount} to $${maxDollars} (ceiling ${ceilingPct}%, P=${signals.propensityScore})`);
+          cappedOfferAmount = Math.max(maxDollars, 0);
+        }
+      } else if (servedOfferType === 'fixed') {
+        // The ceiling is a PERCENTAGE but this pool's amounts are DOLLARS, so
+        // the two are not comparable until the ceiling is converted against
+        // the cart. Without this, a $20 gene compared against a ceiling of 17
+        // would be capped to "$17" — a number that means nothing here and that
+        // happens to exceed the margin on a small cart.
+        const maxDollars = Math.floor((signals.cartValue || 0) * ceilingPct / 100);
+        if (cappedOfferAmount > maxDollars) {
+          console.log(`[Margin Guard] Capping fixed discount from $${cappedOfferAmount} to $${maxDollars} (ceiling ${ceilingPct}% of $${signals.cartValue}, P=${signals.propensityScore})`);
           cappedOfferAmount = Math.max(maxDollars, 0);
         }
       } else if (cappedOfferAmount > ceilingPct) {
@@ -860,13 +884,14 @@ export async function action({ request }) {
     const decision = {
       // Hybrid: type is the merchant's pinned offer type (percentage | fixed),
       // never threshold (hybrid forces conversion_with_discount, so this is
-      // already non-revenue — the override just carries a 'fixed' pin through).
-      type: isHybrid ? hybridOfferType : (baseline.includes('revenue') ? 'threshold' : 'percentage'),
+      // already a flat baseline — the override just carries a 'fixed' pin
+      // through).
+      type: isHybrid ? hybridOfferType : servedOfferType,
       amount: cappedOfferAmount,
       // Threshold is capped against the FINAL discount (post margin guard) so
       // the ask stays proportionate to the reward. See capThresholdByDiscount.
       // Never set for Hybrid (flat offer, no threshold).
-      threshold: (!isHybrid && baseline.includes('revenue'))
+      threshold: (!isHybrid && servedOfferType === 'threshold')
         ? capThresholdByDiscount(
             signals.cartValue || 0,
             recommendedThreshold(signals.cartValue || 0),
