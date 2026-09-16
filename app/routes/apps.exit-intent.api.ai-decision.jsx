@@ -227,77 +227,6 @@ export async function action({ request }) {
       console.log(` Budget check passed. Remaining: $${budgetCheck.remaining}`);
     }
     
-    // =========================================================================
-    // HOLDOUT GROUP: 5% of eligible traffic is randomly excluded from ALL
-    // intervention. This happens BEFORE hard overrides and Thompson Sampling
-    // so the holdout is unbiased. Holdout outcomes are recorded for
-    // incrementality measurement but never fed into the learning loop.
-    // =========================================================================
-    // STICKY per-visitor assignment: hash the stable visitorId so the same
-    // shopper is always in (or out of) the holdout for this shop. Per-request
-    // randomness flickered assignment across visits and contaminated the
-    // incrementality measurement in both directions. Old cached storefront
-    // scripts without visitorId fall back to per-request random.
-    const HOLDOUT_RATE = 0.05;
-    const holdoutVisitorId = (typeof signals.visitorId === 'string' && signals.visitorId.length > 0)
-      ? signals.visitorId
-      : null;
-    const isHoldout = !isTestMode && (holdoutVisitorId
-      ? (fnv1a(`${holdoutVisitorId}:${shopRecord.id}`) % 100) < HOLDOUT_RATE * 100
-      : Math.random() < HOLDOUT_RATE);
-
-    if (isHoldout) {
-      const holdoutDecision = {
-        type: 'holdout',
-        amount: 0,
-        reasoning: 'Randomly assigned to holdout group for incrementality measurement'
-      };
-
-      const aiDecisionRecord = await db.aIDecision.create({
-        data: {
-          shopId: shopRecord.id,
-          signals: JSON.stringify(signals),
-          decision: JSON.stringify(holdoutDecision)
-        }
-      });
-
-      // Record holdout outcome — excluded from threshold learning
-      const { recordInterventionOutcome: recordHoldout } = await import('../utils/intervention-threshold.server.js');
-      const holdoutSegment = (signals.deviceType === 'mobile') ? 'mobile'
-                           : (signals.deviceType === 'desktop') ? 'desktop' : 'all';
-      if (!devWriteSkip) await recordHoldout(db, {
-        shopId: shopRecord.id,
-        wasShown: false,
-        isHoldout: true,
-        propensityScore: signals.propensityScore ?? null,
-        cartValue: signals.cartValue,
-        deviceType: signals.deviceType,
-        trafficSource: signals.trafficSource,
-        segment: holdoutSegment,
-        aiDecisionId: aiDecisionRecord.id
-      }).catch(e => console.error('[Holdout] Failed to record holdout outcome:', e));
-
-      // Journey log: holdout suppression is a touch too — the visitor's
-      // journey record must show "we chose to show nothing" for sequencing.
-      if (!devWriteSkip) recordTouch(db, {
-        shopId: shopRecord.id,
-        visitorId: signals.visitorId,
-        surface: 'none',
-        response: 'holdout',
-        aiDecisionId: aiDecisionRecord.id,
-        propensityScore: signals.propensityScore ?? null
-      });
-
-      console.log(`[AI Decision] Holdout group for ${shop} — no intervention (incrementality measurement)`);
-
-      return json({
-        shouldShow: false,
-        isHoldout: true,
-        decision: holdoutDecision,
-        aiDecisionId: aiDecisionRecord.id
-      });
-    }
-
     // ---------------------------------------------------------------------
     // SERVER-SIDE SIGNAL ENRICHMENT: purchaseHistoryCount
     // The Pro intent score (determineOffer) reads signals.purchaseHistoryCount,
@@ -385,6 +314,88 @@ export async function action({ request }) {
       console.error('[AI Decision] Propensity model scoring failed (legacy served):', e.message);
     }
     console.log(`[AI Decision] Propensity P=${signals.propensityScore} (legacy=${legacyPropensity}${signals.propensityScoreModel !== undefined ? `, model=${signals.propensityScoreModel}${shopRecord.usePropensityModel ? ' SERVED' : ' shadow'}` : ''}, ${shopRecord.plan || 'pro'})`);
+
+    // ORDERING: signal enrichment + propensity MUST run before the holdout
+    // branch below. They used to run after it, so every holdout row was written
+    // with propensityScore null — and scoreToBucket falls back to 50 when the
+    // score is missing, which collapsed the whole control group into the 50-60
+    // bucket. The per-bucket "did shown beat skipped" comparison that drives
+    // threshold learning was reading a control arm that was empty in every
+    // other bucket and fabricated in that one. Holdout visitors now pay for the
+    // customer-enrichment lookup as well (5% of traffic) — that is the cost of
+    // scoring them on the same scale as everyone else, which is the entire
+    // point of having a control group.
+    // =========================================================================
+    // HOLDOUT GROUP: 5% of eligible traffic is randomly excluded from ALL
+    // intervention. This happens BEFORE hard overrides and Thompson Sampling
+    // so the holdout is unbiased. Holdout outcomes are recorded for
+    // incrementality measurement but never fed into the learning loop.
+    // =========================================================================
+    // STICKY per-visitor assignment: hash the stable visitorId so the same
+    // shopper is always in (or out of) the holdout for this shop. Per-request
+    // randomness flickered assignment across visits and contaminated the
+    // incrementality measurement in both directions. Old cached storefront
+    // scripts without visitorId fall back to per-request random.
+    const HOLDOUT_RATE = 0.05;
+    const holdoutVisitorId = (typeof signals.visitorId === 'string' && signals.visitorId.length > 0)
+      ? signals.visitorId
+      : null;
+    const isHoldout = !isTestMode && (holdoutVisitorId
+      ? (fnv1a(`${holdoutVisitorId}:${shopRecord.id}`) % 100) < HOLDOUT_RATE * 100
+      : Math.random() < HOLDOUT_RATE);
+
+    if (isHoldout) {
+      const holdoutDecision = {
+        type: 'holdout',
+        amount: 0,
+        reasoning: 'Randomly assigned to holdout group for incrementality measurement'
+      };
+
+      const aiDecisionRecord = await db.aIDecision.create({
+        data: {
+          shopId: shopRecord.id,
+          signals: JSON.stringify(signals),
+          decision: JSON.stringify(holdoutDecision)
+        }
+      });
+
+      // Record holdout outcome — excluded from threshold learning
+      const { recordInterventionOutcome: recordHoldout } = await import('../utils/intervention-threshold.server.js');
+      const holdoutSegment = (signals.deviceType === 'mobile') ? 'mobile'
+                           : (signals.deviceType === 'desktop') ? 'desktop' : 'all';
+      if (!devWriteSkip) await recordHoldout(db, {
+        shopId: shopRecord.id,
+        wasShown: false,
+        isHoldout: true,
+        propensityScore: signals.propensityScore ?? null,
+        cartValue: signals.cartValue,
+        deviceType: signals.deviceType,
+        trafficSource: signals.trafficSource,
+        segment: holdoutSegment,
+        aiDecisionId: aiDecisionRecord.id
+      }).catch(e => console.error('[Holdout] Failed to record holdout outcome:', e));
+
+      // Journey log: holdout suppression is a touch too — the visitor's
+      // journey record must show "we chose to show nothing" for sequencing.
+      if (!devWriteSkip) recordTouch(db, {
+        shopId: shopRecord.id,
+        visitorId: signals.visitorId,
+        surface: 'none',
+        response: 'holdout',
+        aiDecisionId: aiDecisionRecord.id,
+        propensityScore: signals.propensityScore ?? null
+      });
+
+      console.log(`[AI Decision] Holdout group for ${shop} — no intervention (incrementality measurement)`);
+
+      return json({
+        shouldShow: false,
+        isHoldout: true,
+        decision: holdoutDecision,
+        aiDecisionId: aiDecisionRecord.id
+      });
+    }
+
 
     // PRE-CHECK: the unified decideOffer engine determines whether intervention
     // is warranted (enables "no_intervention" as a learned outcome). Both tiers

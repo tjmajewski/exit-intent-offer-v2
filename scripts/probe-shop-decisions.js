@@ -6,7 +6,9 @@
 //
 // Writes nothing. Safe to run against production.
 
-const { PrismaClient } = require('@prisma/client');
+// ESM: package.json sets "type": "module", so require() is unavailable here.
+import { PrismaClient } from '@prisma/client';
+
 const db = new PrismaClient();
 
 const fragment = process.argv[2];
