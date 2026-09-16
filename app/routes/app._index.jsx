@@ -8,6 +8,40 @@ import { createCurrencyFormatter } from "../utils/currency";
 import AppLayout from "../components/AppLayout";
 import OnboardingChecklist from "../components/OnboardingChecklist";
 import db from "../db.server";
+import { getShopMetrics, getShopTrends, getDailyRevenue } from "../utils/shop-metrics.server.js";
+
+// Maps the canonical metrics shape onto the field names this dashboard's JSX
+// has always used. Kept as a translation layer rather than renaming the
+// module's fields, so the super-admin console and this page can share one
+// source without either having to adopt the other's vocabulary.
+function toDashboardShape(metrics) {
+  return {
+    totalRevenue: metrics.revenue,
+    conversionRate: round1(metrics.conversionRate),
+    clickRate: round1(metrics.clickRate),
+    revenuePerView: Math.round(metrics.revenuePerImpression * 100) / 100,
+    impressions: metrics.impressions,
+    clicks: metrics.clicks,
+    conversions: metrics.conversions,
+  };
+}
+
+function round1(n) {
+  return Math.round(n * 10) / 10;
+}
+
+function emptyAnalytics() {
+  const zero = {
+    totalRevenue: 0, conversionRate: 0, clickRate: 0, revenuePerView: 0,
+    impressions: 0, clicks: 0, conversions: 0,
+  };
+  return {
+    last30Days: { ...zero },
+    lifetime: { ...zero },
+    trends: { hasTrendData: false, revenueChange: null, conversionsChange: null, cvrChange: null },
+    dailyRevenue: [],
+  };
+}
 
 export async function loader({ request }) {
   const { admin, session } = await authenticate.admin(request);
@@ -163,139 +197,19 @@ export async function loader({ request }) {
       }
     }
 
-    // Load real analytics data
-    const analyticsResponse = await admin.graphql(`
-      query {
-        shop {
-          analytics: metafield(namespace: "exit_intent", key: "analytics") {
-            value
-          }
-        }
-      }
-    `);
-
-    const analyticsData = await analyticsResponse.json();
-    const analyticsRaw = analyticsData.data.shop?.analytics?.value 
-      ? JSON.parse(analyticsData.data.shop.analytics.value)
-      : { impressions: 0, clicks: 0, closeouts: 0, conversions: 0, revenue: 0, events: [] };
-
-    // Calculate 30-day rolling metrics
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const events = analyticsRaw.events || [];
-    const last30DaysEvents = events.filter(e => new Date(e.timestamp) > thirtyDaysAgo);
-
-    const impressions30d = last30DaysEvents.filter(e => e.type === 'impression').length;
-    const clicks30d = last30DaysEvents.filter(e => e.type === 'click').length;
-    const conversions30d = last30DaysEvents.filter(e => e.type === 'conversion').length;
-
-    const conversionRate30d = impressions30d > 0 
-      ? ((conversions30d / impressions30d) * 100).toFixed(1) 
-      : 0;
-
-    const revenue30d = last30DaysEvents
-      .filter(e => e.type === 'conversion')
-      .reduce((sum, e) => sum + (e.revenue || 0), 0);
-
-    const clickRate30d = impressions30d > 0
-      ? ((clicks30d / impressions30d) * 100).toFixed(1)
-      : 0;
-
-    const revenuePerView30d = impressions30d > 0
-      ? (revenue30d / impressions30d).toFixed(2)
-      : 0;
-
-    // Calculate 7-day trend indicators (current 7 days vs previous 7 days)
-    const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000);
-    const fourteenDaysAgo = new Date(now.getTime() - 14 * 86400000);
-
-    const last7Events = events.filter(e => new Date(e.timestamp) > sevenDaysAgo);
-    const prev7Events = events.filter(e => {
-      const d = new Date(e.timestamp);
-      return d > fourteenDaysAgo && d <= sevenDaysAgo;
-    });
-
-    const last7Revenue = last7Events.filter(e => e.type === 'conversion').reduce((s, e) => s + (e.revenue || 0), 0);
-    const prev7Revenue = prev7Events.filter(e => e.type === 'conversion').reduce((s, e) => s + (e.revenue || 0), 0);
-    const last7Conversions = last7Events.filter(e => e.type === 'conversion').length;
-    const prev7Conversions = prev7Events.filter(e => e.type === 'conversion').length;
-    const last7Impressions = last7Events.filter(e => e.type === 'impression').length;
-    const prev7Impressions = prev7Events.filter(e => e.type === 'impression').length;
-    const last7CVR = last7Impressions > 0 ? (last7Conversions / last7Impressions * 100) : 0;
-    const prev7CVR = prev7Impressions > 0 ? (prev7Conversions / prev7Impressions * 100) : 0;
-
-    const hasTrendData = prev7Events.length > 0;
-    const trends = {
-      hasTrendData,
-      revenueChange: hasTrendData && prev7Revenue > 0 ? ((last7Revenue - prev7Revenue) / prev7Revenue * 100) : null,
-      conversionsChange: hasTrendData && prev7Conversions > 0 ? ((last7Conversions - prev7Conversions) / prev7Conversions * 100) : null,
-      cvrChange: hasTrendData && prev7CVR > 0 ? (last7CVR - prev7CVR) : null,
-    };
-
-    // Calculate lifetime metrics (for Pro+)
-    const impressionsLifetime = analyticsRaw.impressions || 0;
-    const clicksLifetime = analyticsRaw.clicks || 0;
-    const conversionsLifetime = analyticsRaw.conversions || 0;
-    const revenueLifetime = analyticsRaw.revenue || 0;
-
-    const conversionRateLifetime = impressionsLifetime > 0 
-      ? ((conversionsLifetime / impressionsLifetime) * 100).toFixed(1) 
-      : 0;
-
-    const clickRateLifetime = impressionsLifetime > 0 
-      ? ((clicksLifetime / impressionsLifetime) * 100).toFixed(1) 
-      : 0;
-
-    const revenuePerViewLifetime = impressionsLifetime > 0 
-      ? (revenueLifetime / impressionsLifetime).toFixed(2) 
-      : 0;
-
-    // Build daily revenue data for the last 7 days (revenue timeline)
-    const dailyRevenue = [];
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(now);
-      date.setDate(date.getDate() - i);
-      const dateKey = date.toISOString().split('T')[0];
-      const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
-      const dayEvents = events.filter(e => {
-        return e.type === 'conversion' && e.timestamp && e.timestamp.startsWith(dateKey);
-      });
-      dailyRevenue.push({
-        day: dayName,
-        date: dateKey,
-        revenue: dayEvents.reduce((s, e) => s + (e.revenue || 0), 0),
-        conversions: dayEvents.length
-      });
-    }
-
-    const analytics = {
-      // 30-day metrics (everyone)
-      last30Days: {
-        totalRevenue: revenue30d,
-        conversionRate: parseFloat(conversionRate30d),
-        clickRate: parseFloat(clickRate30d),
-        revenuePerView: parseFloat(revenuePerView30d),
-        impressions: impressions30d,
-        clicks: clicks30d,
-        conversions: conversions30d
-      },
-      // Lifetime metrics (Pro+)
-      lifetime: {
-        totalRevenue: revenueLifetime,
-        conversionRate: parseFloat(conversionRateLifetime),
-        clickRate: parseFloat(clickRateLifetime),
-        revenuePerView: parseFloat(revenuePerViewLifetime),
-        impressions: impressionsLifetime,
-        clicks: clicksLifetime,
-        conversions: conversionsLifetime
-      },
-      // 7-day trends (all tiers)
-      trends,
-      // Daily revenue for timeline (Pro+)
-      dailyRevenue
-    };
+    // Analytics come from Prisma via getShopMetrics, NOT from the
+    // `exit_intent.analytics` metafield that used to back this block.
+    //
+    // The metafield is a read-modify-write on a single shared blob, so
+    // concurrent events silently drop increments; it is pruned to 90 days /
+    // 10k events; and it freezes outright once it exceeds Shopify's size
+    // limit. It could never be reconciled against the super-admin console,
+    // which meant the numbers a merchant saw and the numbers we saw while
+    // talking to them disagreed. Both surfaces now read the same module, so
+    // a figure quoted in a renewal conversation matches their dashboard
+    // exactly. The metafield is still written by the trackers — it remains
+    // useful as a raw event log — but nothing reads it for display.
+    let analytics = null;
 
     // PHASE 5: Check for active site-wide promotions (Pro tier upsell)
     let promoWarning = null;
@@ -304,8 +218,33 @@ export async function loader({ request }) {
     const shopDomain = session.shop;
     const shopRecord = await db.shop.findUnique({
       where: { shopifyDomain: shopDomain },
-      select: { id: true, populationSize: true, plan: true }
+      select: { id: true, populationSize: true, plan: true, mode: true }
     });
+
+    // Canonical performance figures. Shape is kept identical to what the old
+    // metafield block produced so the JSX below is untouched — only the source
+    // of the numbers changed.
+    const shopMode = settings?.mode || shopRecord?.mode || "manual";
+    // Hoisted: the AI-progress block below reuses this window's holdout figures
+    // rather than re-querying them.
+    let window30 = null;
+    if (shopRecord) {
+      const [metrics30, lifetimeMetrics, trends, dailyRevenue] = await Promise.all([
+        getShopMetrics({ shopId: shopRecord.id, days: 30, mode: shopMode }),
+        getShopMetrics({ shopId: shopRecord.id, days: null, mode: shopMode }),
+        getShopTrends({ shopId: shopRecord.id, days: 7, mode: shopMode }),
+        getDailyRevenue({ shopId: shopRecord.id, days: 7 }),
+      ]);
+      window30 = metrics30;
+      analytics = {
+        last30Days: toDashboardShape(window30),
+        lifetime: toDashboardShape(lifetimeMetrics),
+        trends,
+        dailyRevenue,
+      };
+    } else {
+      analytics = emptyAnalytics();
+    }
 
     // DB is the single source of truth for plan tier. Usage data still
     // lives on the metafield plan object (tracked per 30-day window).
@@ -430,51 +369,24 @@ export async function loader({ request }) {
         eliminated: (statusCounts['killed'] || 0) + (statusCounts['dead'] || 0)
       };
 
-      // Holdout-based incremental lift calculation (uses index [shopId, wasShown, converted])
-      const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
-      const [treatmentTotal, treatmentConverted, holdoutTotal, holdoutConverted, treatmentRevenue, holdoutRevenue] = await Promise.all([
-        db.interventionOutcome.count({
-          // rendered: prefetched-never-displayed decisions must not deflate treatment CVR
-          where: { shopId: shopRecord.id, isHoldout: false, wasShown: true, rendered: true, timestamp: { gte: new Date(thirtyDaysAgoISO) } }
-        }),
-        db.interventionOutcome.count({
-          where: { shopId: shopRecord.id, isHoldout: false, wasShown: true, converted: true, timestamp: { gte: new Date(thirtyDaysAgoISO) } }
-        }),
-        db.interventionOutcome.count({
-          where: { shopId: shopRecord.id, isHoldout: true, timestamp: { gte: new Date(thirtyDaysAgoISO) } }
-        }),
-        db.interventionOutcome.count({
-          where: { shopId: shopRecord.id, isHoldout: true, converted: true, timestamp: { gte: new Date(thirtyDaysAgoISO) } }
-        }),
-        db.interventionOutcome.aggregate({
-          where: { shopId: shopRecord.id, isHoldout: false, wasShown: true, converted: true, timestamp: { gte: new Date(thirtyDaysAgoISO) } },
-          _sum: { revenue: true }
-        }),
-        db.interventionOutcome.aggregate({
-          where: { shopId: shopRecord.id, isHoldout: true, converted: true, timestamp: { gte: new Date(thirtyDaysAgoISO) } },
-          _sum: { revenue: true }
-        })
-      ]);
-
-      if (treatmentTotal > 0 && holdoutTotal >= 10) {
-        const treatmentCVR = treatmentConverted / treatmentTotal;
-        const holdoutCVR = holdoutConverted / holdoutTotal;
-        const liftPct = holdoutCVR > 0 ? ((treatmentCVR - holdoutCVR) / holdoutCVR * 100) : (treatmentCVR > 0 ? 100 : 0);
-        const treatmentRev = treatmentRevenue._sum?.revenue || 0;
-        const holdoutRev = holdoutRevenue._sum?.revenue || 0;
-        // Extrapolate holdout revenue to treatment group size for apples-to-apples
-        const baselineRevenue = holdoutTotal > 0 ? (holdoutRev / holdoutTotal) * treatmentTotal : 0;
-        const incrementalRevenue = Math.max(0, treatmentRev - baselineRevenue);
-
+      // Incremental lift now comes from the shared metrics module — the same
+      // computation the super-admin console shows, so a lift figure quoted to
+      // a merchant matches what they see. The previous inline version also had
+      // a denominator bug: treatmentTotal filtered on rendered while
+      // treatmentConverted did not, so conversions from never-displayed
+      // decisions inflated the treatment CVR against a smaller base.
+      const holdout = window30?.holdout;
+      if (holdout) {
         holdoutLift = {
-          treatmentCVR: (treatmentCVR * 100).toFixed(2),
-          holdoutCVR: (holdoutCVR * 100).toFixed(2),
-          liftPct: liftPct.toFixed(1),
-          incrementalRevenue: Math.round(incrementalRevenue),
-          grossRevenue: Math.round(treatmentRev),
-          treatmentTotal,
-          holdoutTotal,
-          hasEnoughData: holdoutTotal >= 20
+          // JSX below formats these as strings; keep the contract.
+          treatmentCVR: holdout.treatmentCVR.toFixed(2),
+          holdoutCVR: holdout.holdoutCVR.toFixed(2),
+          liftPct: holdout.liftPct.toFixed(1),
+          incrementalRevenue: Math.round(holdout.incrementalRevenue),
+          grossRevenue: Math.round(holdout.grossRevenue),
+          treatmentTotal: holdout.treatmentTotal,
+          holdoutTotal: holdout.holdoutTotal,
+          hasEnoughData: holdout.hasEnoughData,
         };
       }
     }
@@ -502,28 +414,7 @@ export async function loader({ request }) {
       settings: null,
       status: { enabled: false },
       plan: earlyPlan,
-      analytics: {
-        last30Days: {
-          totalRevenue: 0,
-          conversionRate: 0,
-          clickRate: 0,
-          revenuePerView: 0,
-          impressions: 0,
-          clicks: 0,
-          conversions: 0
-        },
-        lifetime: {
-          totalRevenue: 0,
-          conversionRate: 0,
-          clickRate: 0,
-          revenuePerView: 0,
-          impressions: 0,
-          clicks: 0,
-          conversions: 0
-        },
-        trends: { hasTrendData: false, revenueChange: null, conversionsChange: null, cvrChange: null },
-        dailyRevenue: []
-      },
+      analytics: emptyAnalytics(),
       populationSize: 0,
       holdoutLift: null,
       isAIMode: false,

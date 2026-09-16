@@ -32,6 +32,7 @@ import { logAdminAction, diffFields } from "../utils/admin-audit.server.js";
 import InfoPopover from "../components/admin/InfoPopover.jsx";
 import { METRIC_INFO } from "../components/admin/metric-info.js";
 import db from "../db.server.js";
+import { getShopMetrics } from "../utils/shop-metrics.server.js";
 
 export function headers() {
   return ADMIN_RESPONSE_HEADERS;
@@ -119,25 +120,12 @@ export async function loader({ request, params }) {
 
   const url = new URL(request.url);
   const days = Math.min(parseInt(url.searchParams.get("days") || "30", 10) || 30, 365);
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-  const [
-    live,
-    impressionAgg,
-    variants,
-    outcomeShown,
-    outcomeSkipped,
-    starterAgg,
-    conversionAgg,
-    recentDecisions,
-    auditEntries,
-  ] = await Promise.all([
+  const [live, perf, variants, recentDecisions, auditEntries] = await Promise.all([
     fetchLiveShopify(shop.shopifyDomain),
-    db.variantImpression.aggregate({
-      where: { shopId: shop.id, timestamp: { gte: since } },
-      _count: { _all: true },
-      _sum: { revenue: true, profit: true },
-    }),
+    // Same module the merchant dashboard reads, so a number quoted here is the
+    // number the customer sees. Never re-derive metrics in this route.
+    getShopMetrics({ shopId: shop.id, days, mode: shop.mode }),
     db.variant.findMany({
       where: { shopId: shop.id },
       orderBy: { profitPerImpression: "desc" },
@@ -154,23 +142,6 @@ export async function loader({ request, params }) {
         profitPerImpression: true,
       },
     }),
-    db.interventionOutcome.aggregate({
-      where: { shopId: shop.id, wasShown: true, rendered: true, timestamp: { gte: since } },
-      _count: { _all: true },
-    }),
-    db.interventionOutcome.aggregate({
-      where: { shopId: shop.id, wasShown: false, timestamp: { gte: since } },
-      _count: { _all: true },
-    }),
-    db.starterImpression.aggregate({
-      where: { shopId: shop.id, timestamp: { gte: since } },
-      _count: { _all: true },
-    }),
-    db.conversion.aggregate({
-      where: { shopId: shop.id, orderedAt: { gte: since } },
-      _count: { _all: true },
-      _sum: { orderValue: true },
-    }),
     db.aIDecision.findMany({
       where: { shopId: shop.id },
       orderBy: { createdAt: "desc" },
@@ -184,29 +155,11 @@ export async function loader({ request, params }) {
     }),
   ]);
 
-  const convClicks = await db.variantImpression.count({
-    where: { shopId: shop.id, timestamp: { gte: since }, clicked: true },
-  });
-  const convCount = await db.variantImpression.count({
-    where: { shopId: shop.id, timestamp: { gte: since }, converted: true },
-  });
-
   return {
     shop,
     live,
     days,
-    perf: {
-      impressions: impressionAgg._count._all,
-      clicks: convClicks,
-      conversions: convCount,
-      revenue: impressionAgg._sum.revenue || 0,
-      profit: impressionAgg._sum.profit || 0,
-      shown: outcomeShown._count._all,
-      skipped: outcomeSkipped._count._all,
-      starterImpressions: starterAgg._count._all,
-      orders: conversionAgg._count._all,
-      orderRevenue: conversionAgg._sum.orderValue || 0,
-    },
+    perf,
     variants,
     recentDecisions,
     auditEntries,
@@ -395,10 +348,7 @@ export default function AdminShopDetail() {
             </InlineStack>
             <Card>
               <InlineGrid columns={5} gap="400">
-                <StatCell
-                  label={shop.mode === "ai" ? "AI impressions" : "Impressions"}
-                  value={(shop.mode === "ai" ? perf.impressions : perf.starterImpressions).toLocaleString()}
-                />
+                <StatCell label="Impressions" value={perf.impressions.toLocaleString()} />
                 <StatCell label="Clicks" value={perf.clicks.toLocaleString()} />
                 <StatCell label="Conversions" value={perf.conversions.toLocaleString()} />
                 <StatCell
@@ -413,14 +363,48 @@ export default function AdminShopDetail() {
             </Card>
             <Card>
               <InlineGrid columns={4} gap="400">
-                <StatCell label="AI: shown" value={perf.shown.toLocaleString()} />
                 <StatCell label="AI: skipped" value={perf.skipped.toLocaleString()} />
-                <StatCell label="Orders attributed" value={perf.orders.toLocaleString()} />
+                <StatCell label="Show rate" value={`${perf.showRate.toFixed(0)}%`} />
+                <StatCell label="Conv. rate" value={`${perf.conversionRate.toFixed(1)}%`} />
                 <StatCell
-                  label="Order revenue"
-                  value={`$${perf.orderRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                  label="Discount given"
+                  value={`$${perf.discountGiven.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
                 />
               </InlineGrid>
+            </Card>
+            {/* Incrementality is kept off the headline row on purpose: it answers
+                "did we cause this", not "what happened", and it stays hidden until
+                the control group is large enough for the number to mean anything. */}
+            <Card>
+              <BlockStack gap="300">
+                <Text as="h3" variant="headingMd">
+                  Incrementality (holdout)
+                </Text>
+                {perf.holdout ? (
+                  <>
+                    <InlineGrid columns={4} gap="400">
+                      <StatCell label="Treated CVR" value={`${perf.holdout.treatmentCVR.toFixed(2)}%`} />
+                      <StatCell label="Holdout CVR" value={`${perf.holdout.holdoutCVR.toFixed(2)}%`} />
+                      <StatCell label="Lift" value={`${perf.holdout.liftPct.toFixed(1)}%`} />
+                      <StatCell
+                        label="Incremental revenue"
+                        value={`$${perf.holdout.incrementalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                      />
+                    </InlineGrid>
+                    {!perf.holdout.hasEnoughData && (
+                      <Text as="p" tone="subdued" variant="bodySm">
+                        Directional only — {perf.holdout.holdoutTotal} holdout sessions.
+                        Don't quote this to the merchant yet.
+                      </Text>
+                    )}
+                  </>
+                ) : (
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    Not enough holdout data yet. Needs at least 10 control sessions
+                    in this window before a lift figure means anything.
+                  </Text>
+                )}
+              </BlockStack>
             </Card>
             <Card>
               <BlockStack gap="300">

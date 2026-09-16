@@ -151,10 +151,10 @@ export const METRIC_INFO = {
   shopPerformance: {
     title: "Store performance",
     importance:
-      "The same funnel the merchant sees, from the operator side — use it to verify a complaint or check on a store after changing its settings.",
+      "The exact numbers the merchant sees on their own dashboard. Both surfaces read one module (app/utils/shop-metrics.server.js), so anything quoted here can be quoted to them verbatim.",
     meaning:
-      "This store's impressions → clicks → conversions → revenue → profit for the selected window, plus AI shown/skipped counts and webhook-attributed orders.",
+      "This store's impressions → clicks → conversions → revenue → profit for the selected window, plus how often the AI chose to stay quiet.",
     calculation:
-      "VariantImpression aggregates (AI mode) or StarterImpression counts (manual mode); shown/skipped from InterventionOutcome; orders and order revenue from the Conversion table (order webhook). Totals can differ slightly from the merchant's analytics page, which reads live metafield counters.",
+      "Impressions = InterventionOutcome rows with wasShown AND rendered (AI/Guided) or StarterImpression rows (manual). Decisions are minted at prefetch, before any trigger fires, so unrendered rows are excluded — a raw row count overstates shows. Orders, revenue and discount cost come from the Conversion table, written once per attributed order whether or not a code was redeemed. Profit = revenue − discount granted. Holdouts are excluded from every figure above and reported separately.",
   },
 };

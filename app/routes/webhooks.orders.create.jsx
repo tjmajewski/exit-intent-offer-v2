@@ -99,8 +99,26 @@ export const action = async ({ request }) => {
       attr => attr.name === 'exit_intent_impression'
     );
 
-    if (exitIntentDiscount) {
-      console.log(`[Evolution] Exit intent discount found: ${exitIntentDiscount.code}`);
+    // Gate on ANY attribution signal, not just a redeemed discount code.
+    // Previously this branch was `if (exitIntentDiscount)`, so an order that
+    // converted through the cart-attribute path (customer saw the modal, went
+    // on to buy without using the code) updated InterventionOutcome and the
+    // Conversion table but left VariantImpression.converted false. The result
+    // was a shop page reading "Orders attributed 1 / $1,000" directly above
+    // "Conversions 0 / Revenue $0" — and, worse, the variant that earned the
+    // order got no fitness credit, so evolution learned nothing from it.
+    //
+    // devWriteSkip is honoured here for the first time. VariantImpression is a
+    // learning table (it feeds evolution fitness), and widening the gate above
+    // would otherwise let dev/test orders write into it — exactly what the
+    // flag exists to prevent.
+    const hasAttribution =
+      exitIntentDiscount || exitIntentAttribute || exitDiscountUsed || configuredDiscountUsed;
+
+    if (hasAttribution && !devWriteSkip) {
+      console.log(
+        `[Evolution] Attributed order (${exitIntentDiscount ? `code ${exitIntentDiscount.code}` : 'cart attribute'})`
+      );
 
       const shopRecord = await db.shop.findUnique({
         where: { shopifyDomain: shop }
@@ -124,16 +142,22 @@ export const action = async ({ request }) => {
           }
         }
 
-        // Fallback (legacy orders without the stamp): most recent clicked,
-        // unconverted impression. 24h window matches the discount-code expiry —
-        // without it an order could credit a weeks-old impression from a
-        // different visitor.
+        // Fallback (legacy orders without the stamp): most recent unconverted
+        // impression that actually rendered. 24h window matches the
+        // discount-code expiry — without it an order could credit a weeks-old
+        // impression from a different visitor.
+        //
+        // `clicked` is NOT required. Requiring it meant no-click conversions
+        // (saw the offer, closed it, checked out anyway) could never be
+        // attributed on the fallback path. `rendered` is required instead:
+        // impressions are minted at decision prefetch, so an unrendered row
+        // represents a modal the visitor never saw and must not take credit.
         if (!impression) {
           impression = await db.variantImpression.findFirst({
             where: {
               shopId: shopRecord.id,
               converted: false,
-              clicked: true, // Only count if they clicked the modal
+              rendered: true,
               timestamp: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
             },
             orderBy: { timestamp: 'desc' }
@@ -143,7 +167,13 @@ export const action = async ({ request }) => {
         if (impression) {
           const { recordConversion } = await import('../utils/variant-engine.js');
           const revenue = parseFloat(payload.total_price);
-          const discountAmount = parseFloat(payload.total_discounts);
+          // total_discounts covers every code on the order, including ones we
+          // didn't issue. Only count it against our margin when an exit-intent
+          // code was actually redeemed, otherwise a merchant's unrelated
+          // sitewide code would show up as Resparq's discount cost.
+          const discountAmount = (exitIntentDiscount || exitDiscountUsed || configuredDiscountUsed)
+            ? parseFloat(payload.total_discounts) || 0
+            : 0;
 
           await recordConversion(impression.id, revenue, discountAmount);
 
