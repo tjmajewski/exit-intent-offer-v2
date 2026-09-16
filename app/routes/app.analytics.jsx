@@ -4,6 +4,7 @@ import { authenticate } from "../shopify.server";
 import { hasFeature } from "../utils/featureGates";
 import { getDefaultModalLibrary } from "../utils/modalHash";
 import { getShopPlan } from "../utils/plan.server";
+import { getShopMetrics } from "../utils/shop-metrics.server.js";
 import AppLayout from "../components/AppLayout";
 import db from "../db.server";
 
@@ -466,8 +467,36 @@ export async function loader({ request }) {
       console.error("Error loading incrementality:", error);
     }
 
+    // Headline totals come from Prisma via getShopMetrics, NOT from summing the
+    // per-modal event arrays in the modal_library metafield.
+    //
+    // Those arrays are a read-modify-write on one shared blob (concurrent
+    // events silently drop increments), are pruned to 90 days / 10k events, and
+    // freeze once the metafield exceeds Shopify's size limit. Summing them gave
+    // this page a fourth, private definition of "impressions" — so a figure
+    // quoted to a merchant from the admin console disagreed with the page the
+    // merchant was looking at while we said it. Same module as the merchant
+    // dashboard and the super-admin console now, so all three reconcile.
+    let totals = null;
+    try {
+      const shopRow = await db.shop.findUnique({
+        where: { shopifyDomain: session.shop },
+        select: { id: true, mode: true }
+      });
+      if (shopRow) {
+        const days = dateRange === '7d' ? 7 : dateRange === 'all' ? null : 30;
+        totals = await getShopMetrics({
+          shopId: shopRow.id,
+          days,
+          mode: mode || shopRow.mode || 'manual'
+        });
+      }
+    } catch (error) {
+      console.error("Error loading canonical totals:", error);
+    }
+
     console.log('Loader returning variants:', liveVariants?.length || 0);
-    return { plan, modalLibrary, dateRange, liveVariants, incrementality, mode };
+    return { plan, modalLibrary, dateRange, liveVariants, incrementality, mode, totals };
   } catch (error) {
     console.error("Error loading analytics:", error);
     return {
@@ -475,14 +504,15 @@ export async function loader({ request }) {
       modalLibrary: getDefaultModalLibrary(),
       liveVariants: [],
       incrementality: null,
-      mode: 'manual'
+      mode: 'manual',
+      totals: null
     };
   }
 }
 
 
 export default function Performance() {
-  const { plan, modalLibrary, dateRange: loaderDateRange, liveVariants, incrementality, mode } = useLoaderData();
+  const { plan, modalLibrary, dateRange: loaderDateRange, liveVariants, incrementality, mode, totals } = useLoaderData();
   const fetcher = useFetcher();
   const autopilotFetcher = useFetcher();
   const navigate = useNavigate();
@@ -818,11 +848,18 @@ export default function Performance() {
         const bestModal = modalsWithRevenue.length > 0
           ? modalsWithRevenue.reduce((best, m) => m.stats.revenue > best.stats.revenue ? m : best)
           : null;
-        const totalRecovered = allModals.reduce((sum, m) => sum + (m.stats.revenue || 0), 0);
-        const totalImpressions = allModals.reduce((sum, m) => sum + (m.stats.impressions || 0), 0);
-        const totalClicks = allModals.reduce((sum, m) => sum + (m.stats.clicks || 0), 0);
-        const totalConversions = allModals.reduce((sum, m) => sum + (m.stats.conversions || 0), 0);
-        const overallCVR = totalImpressions > 0 ? (totalConversions / totalImpressions * 100) : 0;
+        // Canonical (Prisma) when available, falling back to the per-modal
+        // event sums only if the shop row or query failed. The per-modal table
+        // below still reads the metafield, so it can legitimately not add up to
+        // these — the note under it says so rather than leaving a merchant to
+        // spot the difference themselves.
+        const totalRecovered = totals ? totals.revenue : allModals.reduce((sum, m) => sum + (m.stats.revenue || 0), 0);
+        const totalImpressions = totals ? totals.impressions : allModals.reduce((sum, m) => sum + (m.stats.impressions || 0), 0);
+        const totalClicks = totals ? totals.clicks : allModals.reduce((sum, m) => sum + (m.stats.clicks || 0), 0);
+        const totalConversions = totals ? totals.conversions : allModals.reduce((sum, m) => sum + (m.stats.conversions || 0), 0);
+        const overallCVR = totals
+          ? totals.conversionRate
+          : (totalImpressions > 0 ? (totalConversions / totalImpressions * 100) : 0);
 
         // Generate insight
         let insight = null;
@@ -1068,7 +1105,15 @@ export default function Performance() {
           </tbody>
         </table>
       </div>
-      
+
+      {totals && (
+        <p style={{ fontSize: 12, color: '#6b7280', marginTop: 12, lineHeight: 1.5 }}>
+          Per-modal rows come from each modal&apos;s own event log, which is capped at 90 days and does not record
+          surfaces shown outside a saved modal. The summary totals above are measured separately and are the
+          authoritative figures, so these rows may not add up to them exactly.
+        </p>
+      )}
+
       {/* Modals Pagination */}
       {totalModalsPages > 1 && (
         <div style={{ 

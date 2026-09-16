@@ -24,7 +24,8 @@
     "graphql-codegen": "graphql-codegen",
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit",
-    "seed:screenshots": "node scripts/dev/seed-screenshot-data.mjs"
+    "seed:screenshots": "node scripts/dev/seed-screenshot-data.mjs",
+    "reconcile:metrics": "node --env-file=.env scripts/dev/reconcile-metrics.mjs"
   },
   "type": "module",
   "engines": {
