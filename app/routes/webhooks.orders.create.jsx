@@ -4,6 +4,44 @@ import { recordInterventionOutcome, recordInterventionConversion } from "../util
 import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
 import { pruneAnalyticsEvents } from "../utils/analytics-metafield.js";
 
+/**
+ * Discount cost Resparq is actually responsible for on this order.
+ *
+ * `total_discounts` is the order's ENTIRE discount, so charging it to us the
+ * moment one of our codes appears means a merchant's stacked sitewide code
+ * lands on Resparq's margin — profit reads low and the engine learns that a
+ * perfectly good offer was expensive. Shopify stamps a per-code `amount` on
+ * each discount_codes entry; sum only the entries we matched.
+ *
+ * Fallback: when Shopify omits `amount`, total_discounts is only safe if our
+ * code is the single code on the order. With several codes and no per-code
+ * amounts the split is unknowable, so charge nothing rather than over-charge.
+ *
+ * @param {object} payload        orders/create webhook body
+ * @param {Array}  matchedCodes   discount_codes entries we attributed (nulls ok)
+ * @returns {number} discount in order currency, 0 when none of it is ours
+ */
+function ourDiscountAmount(payload, matchedCodes) {
+  const seen = new Set();
+  const matched = [];
+  for (const dc of matchedCodes) {
+    // exitDiscountUsed is normalised to exitIntentDiscount/configuredDiscountUsed
+    // partway through the handler, so the same code arrives here twice.
+    if (!dc?.code) continue;
+    const key = dc.code.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    matched.push(dc);
+  }
+  if (matched.length === 0) return 0;
+
+  const summed = matched.reduce((total, dc) => total + (parseFloat(dc.amount) || 0), 0);
+  if (summed > 0) return summed;
+
+  const allCodes = payload.discount_codes || [];
+  return allCodes.length === 1 ? parseFloat(payload.total_discounts) || 0 : 0;
+}
+
 export const action = async ({ request }) => {
   try {
     const { topic, shop, session, payload, admin } = await authenticate.webhook(request);
@@ -167,13 +205,10 @@ export const action = async ({ request }) => {
         if (impression) {
           const { recordConversion } = await import('../utils/variant-engine.js');
           const revenue = parseFloat(payload.total_price);
-          // total_discounts covers every code on the order, including ones we
-          // didn't issue. Only count it against our margin when an exit-intent
-          // code was actually redeemed, otherwise a merchant's unrelated
-          // sitewide code would show up as Resparq's discount cost.
-          const discountAmount = (exitIntentDiscount || exitDiscountUsed || configuredDiscountUsed)
-            ? parseFloat(payload.total_discounts) || 0
-            : 0;
+          // Only the discount our own code granted — see ourDiscountAmount().
+          const discountAmount = ourDiscountAmount(payload, [
+            exitIntentDiscount, exitDiscountUsed, configuredDiscountUsed
+          ]);
 
           await recordConversion(impression.id, revenue, discountAmount);
 
@@ -358,12 +393,18 @@ export const action = async ({ request }) => {
           });
         }
 
-        // Fallback: most recent unconverted shown outcome (for legacy orders without ID)
+        // Fallback: most recent unconverted shown outcome (for legacy orders
+        // without ID). `rendered` is required here, unlike the exact match
+        // above: outcomes are minted at prefetch, and recordInterventionConversion
+        // backfills rendered on whatever row it is handed. Without the filter a
+        // fuzzy match could land on a prefetched decision the visitor never saw
+        // and mint it as an impression — a show that never happened.
         if (!recentOutcome) {
           recentOutcome = await db.interventionOutcome.findFirst({
             where: {
               shopId: shopRecord.id,
               wasShown: true,
+              rendered: true,
               converted: false,
               timestamp: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
             },
@@ -373,7 +414,9 @@ export const action = async ({ request }) => {
 
         if (recentOutcome) {
           const revenue = parseFloat(payload.total_price);
-          const discountAmount = parseFloat(payload.total_discounts) || 0;
+          const discountAmount = ourDiscountAmount(payload, [
+            exitIntentDiscount, exitDiscountUsed, configuredDiscountUsed
+          ]);
           await recordInterventionConversion(db, recentOutcome.id, revenue, discountAmount);
           console.log(`[Webhook] Intervention conversion recorded for outcome ${recentOutcome.id}`);
         }
@@ -502,7 +545,11 @@ export const action = async ({ request }) => {
       }
     }
 
-    await storeConversion(shop, payload, exitDiscountUsed, admin, attributedVariantId, subscriptionConversion);
+    await storeConversion(shop, payload, exitDiscountUsed, admin, attributedVariantId, subscriptionConversion, {
+      discountAmount: ourDiscountAmount(payload, [
+        exitIntentDiscount, exitDiscountUsed, configuredDiscountUsed
+      ])
+    });
     console.log(" Conversion stored in conversions table");
 
     return new Response(null, { status: 200 });
@@ -694,7 +741,7 @@ async function classifyPromotion(promoId) {
   console.log(` Promotion classified: ${promo.code} → ${classification} (${aiStrategy})`);
 }
 
-async function storeConversion(shop, orderPayload, discountUsed, admin, attributedVariantId = null, subscriptionConversion = false) {
+async function storeConversion(shop, orderPayload, discountUsed, admin, attributedVariantId = null, subscriptionConversion = false, { discountAmount = 0 } = {}) {
   try {
     // Find shop record
     const shopRecord = await db.shop.findUnique({
@@ -730,8 +777,9 @@ async function storeConversion(shop, orderPayload, discountUsed, admin, attribut
     // Determine if modal had discount enabled
     const modalHadDiscount = settings.discountEnabled === true || settings.discountEnabled === 'true';
 
-    // Calculate discount amount (if redeemed)
-    const discountAmount = discountUsed ? parseFloat(orderPayload.total_discounts) : 0;
+    // discountAmount arrives from the caller (ourDiscountAmount) so the
+    // Conversion table, VariantImpression and InterventionOutcome all charge
+    // Resparq the same figure — our code's share, never the order's total.
 
     // Store conversion
     await db.conversion.create({
