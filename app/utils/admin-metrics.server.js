@@ -78,7 +78,13 @@ export async function getKpis(filter) {
       db.interventionOutcome.count({
         where: { ...outcomeWhere(filter), isHoldout: true, converted: true },
       }),
-      db.interventionOutcome.count({ where: { ...outcomeWhere(filter), wasShown: false } }),
+      // isHoldout excluded to match shop-metrics.server.js: a suppressed
+      // holdout visit is a measurement control, not the AI choosing silence.
+      // Counting them here made the global show rate read lower than the same
+      // store's show rate on its own page.
+      db.interventionOutcome.count({
+        where: { ...outcomeWhere(filter), wasShown: false, isHoldout: false },
+      }),
     ]);
 
   const impressions = imprAgg._count._all;
@@ -158,13 +164,14 @@ export async function getTimeSeries(filter, bucket) {
       FROM "VariantImpression"
       WHERE "shopId" IN (${shopIdList})
         AND "timestamp" >= ${filter.from} AND "timestamp" < ${filter.to}
+        AND "rendered"
         ${deviceClauseImpr} ${trafficClauseImpr}
       GROUP BY 1 ORDER BY 1`,
     db.$queryRaw`
       SELECT date_trunc(${trunc}, "timestamp") AS bucket,
-             COUNT(*) FILTER (WHERE "wasShown" AND NOT "isHoldout")::int AS shown,
-             COUNT(*) FILTER (WHERE NOT "wasShown")::int AS skipped,
-             COUNT(*) FILTER (WHERE "wasShown" AND NOT "isHoldout" AND converted)::int AS "shownConverted",
+             COUNT(*) FILTER (WHERE "wasShown" AND NOT "isHoldout" AND "rendered")::int AS shown,
+             COUNT(*) FILTER (WHERE NOT "wasShown" AND NOT "isHoldout")::int AS skipped,
+             COUNT(*) FILTER (WHERE "wasShown" AND NOT "isHoldout" AND "rendered" AND converted)::int AS "shownConverted",
              COUNT(*) FILTER (WHERE "isHoldout")::int AS "holdoutTotal",
              COUNT(*) FILTER (WHERE "isHoldout" AND converted)::int AS "holdoutConverted"
       FROM "InterventionOutcome"
@@ -211,11 +218,21 @@ export async function getPerShopImpressionSeries(filter, bucket) {
   if (!filter.shopIds.length || filter.shopIds.length > 5) return [];
   if (!VALID_BUCKETS.has(bucket)) bucket = "day";
   const trunc = Prisma.raw(`'${bucket}'`);
+  // Same predicate as the total line (rendered + the device/traffic filters),
+  // or the overlay lines don't add up to the chart they sit inside.
+  const deviceClause = filter.deviceType
+    ? Prisma.sql`AND "deviceType" = ${filter.deviceType}`
+    : Prisma.empty;
+  const trafficClause = filter.trafficSource
+    ? Prisma.sql`AND "trafficSource" = ${filter.trafficSource}`
+    : Prisma.empty;
   return db.$queryRaw`
     SELECT "shopId", date_trunc(${trunc}, "timestamp") AS bucket, COUNT(*)::int AS impressions
     FROM "VariantImpression"
     WHERE "shopId" IN (${Prisma.join(filter.shopIds)})
       AND "timestamp" >= ${filter.from} AND "timestamp" < ${filter.to}
+      AND "rendered"
+      ${deviceClause} ${trafficClause}
     GROUP BY 1, 2 ORDER BY 2`;
 }
 
