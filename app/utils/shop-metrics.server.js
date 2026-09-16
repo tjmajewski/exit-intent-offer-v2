@@ -33,6 +33,48 @@ import db from "../db.server.js";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * The definitions above, as Prisma where-clauses.
+ *
+ * Exported because the cross-shop admin dashboard has to count the SAME rows
+ * this module counts per shop. It used to spell its own predicates out, and
+ * the two drifted: one store read 3 impressions / 2 conversions / $2,325 on
+ * its own page and 1 / 0 / $0 on the dashboard above it, from the same events.
+ * Anything that aggregates Resparq activity builds its queries from here.
+ *
+ * @param {object} args
+ *   shopIds  one or many — per-shop and cross-shop callers share the shape
+ *   from     window start (inclusive)
+ *   to       window end (exclusive); omit for "up to now"
+ *   extra    additional column filters (deviceType / trafficSource) applied to
+ *            the tables that carry those columns
+ */
+export function canonicalWhere({ shopIds, from, to = null, extra = {} }) {
+  const period = to ? { gte: from, lt: to } : { gte: from };
+  const outcome = { shopId: { in: shopIds }, timestamp: period, ...extra };
+  const shown = { ...outcome, wasShown: true, rendered: true, isHoldout: false };
+  return {
+    // Displayed surfaces. Counts InterventionOutcome, not VariantImpression:
+    // pill openers have no VariantImpression by design and would go uncounted.
+    shown,
+    shownConverted: { ...shown, converted: true },
+    // AI actively chose silence. A suppressed holdout is a measurement
+    // control, not a decision to stay quiet, so it is not a skip.
+    skipped: { ...outcome, wasShown: false, isHoldout: false },
+    holdout: { ...outcome, isHoldout: true },
+    holdoutConverted: { ...outcome, isHoldout: true, converted: true },
+    // Clicks live on VariantImpression; rendered is required so clicks can
+    // never exceed impressions.
+    clicks: { shopId: { in: shopIds }, timestamp: period, rendered: true, clicked: true, ...extra },
+    // Manual/Starter mode writes no InterventionOutcome rows at all.
+    starter: { shopId: { in: shopIds }, timestamp: period, ...extra },
+    // Money. Period-based (order date in window), which is what "revenue in
+    // the last 30 days" means to a merchant — and deliberately NOT the same
+    // cohort as the CVR numerator. See the conversionRate note below.
+    conversions: { shopId: { in: shopIds }, orderedAt: period },
+  };
+}
+
+/**
  * Canonical metrics for one shop over a rolling window.
  *
  * @param {object}  args
@@ -48,6 +90,7 @@ export async function getShopMetrics({ shopId, days = 30, mode = "ai" }) {
   const window = lifetime ? null : Math.max(1, Math.min(365, Number(days) || 30));
   const since = lifetime ? new Date(0) : new Date(Date.now() - window * DAY_MS);
   const isAI = mode === "ai" || mode === "hybrid";
+  const W = canonicalWhere({ shopIds: [shopId], from: since });
 
   const [
     shown,
@@ -64,52 +107,19 @@ export async function getShopMetrics({ shopId, days = 30, mode = "ai" }) {
     orderAgg,
     decisions,
   ] = await Promise.all([
-    // Displayed surfaces. Holdouts are wasShown:false so they are excluded.
-    db.interventionOutcome.count({
-      where: { shopId, wasShown: true, rendered: true, timestamp: { gte: since } },
-    }),
-    // AI actively chose not to intervene. isHoldout is excluded — a suppressed
-    // holdout visit is a measurement control, not a decision to stay silent.
-    db.interventionOutcome.count({
-      where: { shopId, wasShown: false, isHoldout: false, timestamp: { gte: since } },
-    }),
-    db.interventionOutcome.count({
-      where: { shopId, isHoldout: true, timestamp: { gte: since } },
-    }),
-    db.interventionOutcome.count({
-      where: { shopId, isHoldout: true, converted: true, timestamp: { gte: since } },
-    }),
-    db.interventionOutcome.aggregate({
-      where: { shopId, isHoldout: true, converted: true, timestamp: { gte: since } },
-      _sum: { revenue: true },
-    }),
-    db.interventionOutcome.count({
-      where: {
-        shopId, isHoldout: false, wasShown: true, rendered: true,
-        converted: true, timestamp: { gte: since },
-      },
-    }),
-    db.interventionOutcome.aggregate({
-      where: {
-        shopId, isHoldout: false, wasShown: true, rendered: true,
-        converted: true, timestamp: { gte: since },
-      },
-      _sum: { revenue: true },
-    }),
-    // Clicks live on VariantImpression; `clicked` implies the surface rendered,
-    // but filter on rendered anyway so the number can never exceed impressions.
-    db.variantImpression.count({
-      where: { shopId, rendered: true, clicked: true, timestamp: { gte: since } },
-    }),
-    db.starterImpression.count({ where: { shopId, timestamp: { gte: since } } }),
-    db.starterImpression.count({
-      where: { shopId, clicked: true, timestamp: { gte: since } },
-    }),
-    db.starterImpression.count({
-      where: { shopId, converted: true, timestamp: { gte: since } },
-    }),
+    db.interventionOutcome.count({ where: W.shown }),
+    db.interventionOutcome.count({ where: W.skipped }),
+    db.interventionOutcome.count({ where: W.holdout }),
+    db.interventionOutcome.count({ where: W.holdoutConverted }),
+    db.interventionOutcome.aggregate({ where: W.holdoutConverted, _sum: { revenue: true } }),
+    db.interventionOutcome.count({ where: W.shownConverted }),
+    db.interventionOutcome.aggregate({ where: W.shownConverted, _sum: { revenue: true } }),
+    db.variantImpression.count({ where: W.clicks }),
+    db.starterImpression.count({ where: W.starter }),
+    db.starterImpression.count({ where: { ...W.starter, clicked: true } }),
+    db.starterImpression.count({ where: { ...W.starter, converted: true } }),
     db.conversion.aggregate({
-      where: { shopId, orderedAt: { gte: since } },
+      where: W.conversions,
       _count: { _all: true },
       _sum: { orderValue: true, discountAmount: true },
     }),

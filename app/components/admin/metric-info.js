@@ -28,27 +28,27 @@ export const METRIC_INFO = {
     importance:
       "The engine's pulse. Flat or falling impressions with steady traffic = something is blocking modals (settings, budget, thresholds, or a broken theme extension).",
     meaning: "Total modal displays across all customers in the current filter.",
-    calculation: "Count of VariantImpression rows in the window (dev/test stores excluded unless toggled on).",
+    calculation: "InterventionOutcome rows with wasShown AND rendered, holdouts excluded — plus StarterImpression rows for manual-mode stores, which write no outcome rows. Identical to each store's own page (both build their queries from canonicalWhere in shop-metrics.server.js), so a figure here reconciles against the shop view. Dev/test stores excluded unless toggled on.",
   },
   cvr: {
     title: "CVR — conversion rate",
     importance:
       "The core quality measure: of the people we interrupted, how many bought. Falling CVR with rising impressions means the AI is showing to the wrong people.",
     meaning: "Share of modal impressions that ended in a purchase attributed to that impression.",
-    calculation: "converted VariantImpression rows ÷ all VariantImpression rows in the window.",
+    calculation: "Conversions belonging to impressions shown in this window ÷ those impressions (InterventionOutcome). Both sides are the same cohort on purpose: the Revenue tile is period-based (order date in window), and dividing period orders by cohort impressions drifts at the window edge and can exceed 100%.",
   },
   revenue: {
     title: "Revenue",
     importance: "The gross top-line the modals recovered — the number that justifies the product.",
     meaning: "Order value from purchases attributed to modal impressions, before subtracting discount cost.",
-    calculation: "Sum of VariantImpression.revenue (stamped by the order webhook when a conversion is matched).",
+    calculation: "Sum of Conversion.orderValue for orders placed in the window — the same table the store's own page reads, written once per attributed order whether or not a code was redeemed. Under an active device/traffic filter it falls back to attributed impressions, since orders carry no such column; the tile says so when that happens.",
   },
   profit: {
     title: "Profit",
     importance:
       "Better than revenue: a modal that converts by giving away a 30% discount can be a net loss. Profit is what the engine actually optimizes.",
     meaning: "Recovered revenue minus the discount cost it took to recover it.",
-    calculation: "Sum of VariantImpression.profit, where profit = revenue − discountAmount per converted impression.",
+    calculation: "Revenue minus Conversion.discountAmount over the same orders. Discount cost is only our own code's share, never the order's whole discount. No COGS, shipping, fees, or refunds are in it — this is revenue net of discount, not margin.",
   },
   profitPerImpression: {
     title: "$ / impression",
@@ -75,7 +75,7 @@ export const METRIC_INFO = {
     meaning:
       "Modal displays per time bucket. With ≤5 shops in the filter, one line per shop so a single flatlined store can't hide inside a healthy total.",
     calculation:
-      "VariantImpression rows grouped by hour/day/week/month (bucket selector). Pair with the shown-vs-skipped chart: decisions flowing but impressions flat = render problem; both flat = traffic/tracking problem.",
+      "Rendered InterventionOutcome shows grouped by hour/day/week/month (bucket selector) — the same rows as the Impressions tile. Pair with the shown-vs-skipped chart: decisions flowing but impressions flat = render problem; both flat = traffic/tracking problem.",
   },
   shownSkipped: {
     title: "Decisions: shown vs skipped",
@@ -98,7 +98,7 @@ export const METRIC_INFO = {
     importance:
       "The money trend, and the gap between the lines is your discount spend. A widening gap means conversions are being bought with increasingly expensive offers.",
     meaning: "Recovered revenue and net profit (revenue minus discount cost) per time bucket.",
-    calculation: "Sum of VariantImpression.revenue and .profit per bucket for converted impressions.",
+    calculation: "Conversion rows bucketed by order date: revenue = sum of orderValue, profit = that minus discount granted. Segment filters don't apply to this chart — orders carry no device or traffic column.",
   },
   scoreBuckets: {
     title: "Threshold learning by score bucket",
@@ -127,7 +127,7 @@ export const METRIC_INFO = {
     meaning:
       "Every customer in the filter ranked by profit, with their impressions, CVR, holdout lift, and how many threshold buckets are currently set to never show.",
     calculation:
-      "Per shop: impressions/CVR/profit from VariantImpression; holdout lift from InterventionOutcome (needs ≥10 holdout samples, else n/a); skip buckets = InterventionThreshold rows with shouldShow = false.",
+      "Per shop, built from the same canonical predicates as that store's own page: impressions from InterventionOutcome (or StarterImpression in manual mode), orders and profit from the Conversion table, CVR cohort-based. Holdout lift needs ≥10 holdout samples, else n/a; skip buckets = InterventionThreshold rows with shouldShow = false.",
   },
   engineHealth: {
     title: "Engine health",

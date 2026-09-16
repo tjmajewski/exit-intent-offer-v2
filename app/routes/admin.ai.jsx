@@ -108,8 +108,8 @@ export async function loader({ request }) {
 
   const [current, previous, series, perShopSeries, currentBreakdowns, previousBreakdowns, leaderboard, health] =
     await Promise.all([
-      getKpis(filter),
-      getKpis(prevFilter),
+      getKpis(filter, shops),
+      getKpis(prevFilter, shops),
       getTimeSeries(filter, bucket),
       getPerShopImpressionSeries(filter, bucket),
       getBreakdowns(filter, shops),
@@ -356,6 +356,18 @@ export default function AdminAIDashboard() {
               info={METRIC_INFO.holdoutLift}
             />
           </InlineGrid>
+          <BlockStack gap="100">
+            <Text as="p" tone="subdued" variant="bodySm">
+              Same definitions as each store&apos;s own page — impressions are rendered surfaces, money comes from
+              attributed orders. A number here can be quoted against that page.
+            </Text>
+            {current.moneySource !== "orders" && (
+              <Text as="p" tone="caution" variant="bodySm">
+                A segment filter is active. Orders carry no device or traffic column, so revenue and profit fall back to
+                attributed impressions for this view and will read lower than the unfiltered total.
+              </Text>
+            )}
+          </BlockStack>
         </Card>
 
         {/* Impressions over time — primary troubleshooting chart */}

@@ -8,6 +8,7 @@
 import { Prisma } from "@prisma/client";
 import db from "../db.server.js";
 import { isDevShop } from "./dev-shop-guard.server.js";
+import { canonicalWhere } from "./shop-metrics.server.js";
 
 /**
  * Resolve filter dimensions to concrete shop rows.
@@ -33,76 +34,100 @@ export async function resolveShops({ plans = [], verticals = [], shopIds = [], i
   return includeDevShops ? shops : shops.filter((shop) => !isDevShop(shop.shopifyDomain));
 }
 
-function impressionWhere({ shopIds, from, to, deviceType, trafficSource }) {
-  // rendered: impressions are minted at decision prefetch; only rows the
-  // client confirmed as displayed count as shows anywhere in the console.
-  const where = { shopId: { in: shopIds }, timestamp: { gte: from, lt: to }, rendered: true };
-  if (deviceType) where.deviceType = deviceType;
-  if (trafficSource) where.trafficSource = trafficSource;
-  return where;
-}
-
-function outcomeWhere({ shopIds, from, to, deviceType, trafficSource }) {
-  const where = { shopId: { in: shopIds }, timestamp: { gte: from, lt: to } };
-  if (deviceType) where.deviceType = deviceType;
-  if (trafficSource) where.trafficSource = trafficSource;
-  return where;
+// Segment filters, in the shape canonicalWhere() takes as `extra`.
+function segmentExtra({ deviceType, trafficSource }) {
+  const extra = {};
+  if (deviceType) extra.deviceType = deviceType;
+  if (trafficSource) extra.trafficSource = trafficSource;
+  return extra;
 }
 
 /**
  * Core KPIs for one window. Returned shape feeds both the tiles and the
  * trend summary (which calls this twice: current + previous period).
  */
-export async function getKpis(filter) {
+export async function getKpis(filter, shops = []) {
   if (!filter.shopIds.length) return emptyKpis();
 
-  const [decisions, imprAgg, imprConverted, imprClicked, shown, shownConverted, holdout, holdoutConverted, skipped] =
-    await Promise.all([
-      db.aIDecision.count({
-        where: { shopId: { in: filter.shopIds }, createdAt: { gte: filter.from, lt: filter.to } },
-      }),
-      db.variantImpression.aggregate({
-        where: impressionWhere(filter),
-        _count: { _all: true },
-        _sum: { revenue: true, profit: true, discountAmount: true },
-      }),
-      db.variantImpression.count({ where: { ...impressionWhere(filter), converted: true } }),
-      db.variantImpression.count({ where: { ...impressionWhere(filter), clicked: true } }),
-      db.interventionOutcome.count({
-        where: { ...outcomeWhere(filter), wasShown: true, rendered: true, isHoldout: false },
-      }),
-      db.interventionOutcome.count({
-        where: { ...outcomeWhere(filter), wasShown: true, rendered: true, isHoldout: false, converted: true },
-      }),
-      db.interventionOutcome.count({ where: { ...outcomeWhere(filter), isHoldout: true } }),
-      db.interventionOutcome.count({
-        where: { ...outcomeWhere(filter), isHoldout: true, converted: true },
-      }),
-      // isHoldout excluded to match shop-metrics.server.js: a suppressed
-      // holdout visit is a measurement control, not the AI choosing silence.
-      // Counting them here made the global show rate read lower than the same
-      // store's show rate on its own page.
-      db.interventionOutcome.count({
-        where: { ...outcomeWhere(filter), wasShown: false, isHoldout: false },
-      }),
-    ]);
+  // Same predicates the merchant-facing module uses, so a store's numbers here
+  // are the numbers on its own page. Never re-spell these locally.
+  const W = canonicalWhere({
+    shopIds: filter.shopIds, from: filter.from, to: filter.to, extra: segmentExtra(filter),
+  });
 
-  const impressions = imprAgg._count._all;
-  const revenue = imprAgg._sum.revenue || 0;
-  const profit = imprAgg._sum.profit || 0;
-  const cvr = impressions > 0 ? imprConverted / impressions : 0;
+  // Manual/Starter stores write no InterventionOutcome rows — their shop page
+  // falls back to StarterImpression, so the dashboard must too or they read as
+  // dead stores up here. Split the id list once and query each side.
+  const isAIMode = (shop) => shop.mode === "ai" || shop.mode === "hybrid";
+  const manualSet = new Set(shops.filter((shop) => !isAIMode(shop)).map((shop) => shop.id));
+  const manualIds = filter.shopIds.filter((id) => manualSet.has(id));
+  // Shops the caller didn't describe are assumed AI — the historical default.
+  const aiIds = filter.shopIds.filter((id) => !manualSet.has(id));
+  const scopeTo = (where, ids) => ({ ...where, shopId: { in: ids } });
+
+  const [
+    decisions, shown, shownConverted, skipped, holdout, holdoutConverted,
+    clicks, starterImpr, starterClicks, starterConverted, orderAgg, outcomeMoney,
+  ] = await Promise.all([
+    db.aIDecision.count({
+      where: { shopId: { in: filter.shopIds }, createdAt: { gte: filter.from, lt: filter.to } },
+    }),
+    db.interventionOutcome.count({ where: scopeTo(W.shown, aiIds) }),
+    db.interventionOutcome.count({ where: scopeTo(W.shownConverted, aiIds) }),
+    db.interventionOutcome.count({ where: scopeTo(W.skipped, aiIds) }),
+    db.interventionOutcome.count({ where: scopeTo(W.holdout, aiIds) }),
+    db.interventionOutcome.count({ where: scopeTo(W.holdoutConverted, aiIds) }),
+    db.variantImpression.count({ where: scopeTo(W.clicks, aiIds) }),
+    db.starterImpression.count({ where: scopeTo(W.starter, manualIds) }),
+    db.starterImpression.count({ where: { ...scopeTo(W.starter, manualIds), clicked: true } }),
+    db.starterImpression.count({ where: { ...scopeTo(W.starter, manualIds), converted: true } }),
+    db.conversion.aggregate({
+      where: W.conversions,
+      _count: { _all: true },
+      _sum: { orderValue: true, discountAmount: true },
+    }),
+    // Only read when a device/traffic filter is on — see moneySource below.
+    db.interventionOutcome.aggregate({
+      where: scopeTo(W.shownConverted, aiIds),
+      _sum: { revenue: true, discountAmount: true },
+    }),
+  ]);
+
+  const impressions = shown + starterImpr;
+  const cohortConverted = shownConverted + starterConverted;
+
+  // The Conversion table is canonical for money, but it carries no device or
+  // traffic columns — there is nothing to filter it by. Rather than show
+  // unfiltered revenue under an active segment filter (the number would simply
+  // be wrong), fall back to the outcome rows, which do carry those columns.
+  // The tile reports which source it used.
+  const segmentFiltered = Boolean(filter.deviceType || filter.trafficSource);
+  const revenue = segmentFiltered
+    ? outcomeMoney._sum.revenue || 0
+    : orderAgg._sum.orderValue || 0;
+  const discountGiven = segmentFiltered
+    ? outcomeMoney._sum.discountAmount || 0
+    : orderAgg._sum.discountAmount || 0;
+  const conversions = segmentFiltered ? cohortConverted : orderAgg._count._all;
+  const profit = revenue - discountGiven;
+
   const shownCVR = shown > 0 ? shownConverted / shown : 0;
   const holdoutCVR = holdout > 0 ? holdoutConverted / holdout : 0;
 
   return {
     decisions,
     impressions,
-    clicks: imprClicked,
-    conversions: imprConverted,
+    clicks: clicks + starterClicks,
+    conversions,
     revenue,
+    discountGiven,
     profit,
     profitPerImpression: impressions > 0 ? profit / impressions : 0,
-    cvr,
+    // Both sides of this ratio are cohort-based (surfaces shown in the window
+    // and the conversions belonging to them), unlike the money above. Dividing
+    // period-based orders by cohort impressions drifts at the window edge and
+    // can exceed 100% — see the note in shop-metrics.server.js.
+    cvr: impressions > 0 ? cohortConverted / impressions : 0,
     shown,
     skipped,
     showRate: shown + skipped > 0 ? shown / (shown + skipped) : 0,
@@ -111,12 +136,14 @@ export async function getKpis(filter) {
     holdoutTotal: holdout,
     // Percentage-point lift; null until the holdout group has a usable sample.
     holdoutLiftPts: holdout >= 10 ? (shownCVR - holdoutCVR) * 100 : null,
+    moneySource: segmentFiltered ? "attributed impressions" : "orders",
   };
 }
 
 function emptyKpis() {
   return {
-    decisions: 0, impressions: 0, clicks: 0, conversions: 0, revenue: 0, profit: 0,
+    decisions: 0, impressions: 0, clicks: 0, conversions: 0, revenue: 0,
+    discountGiven: 0, profit: 0, moneySource: "orders",
     profitPerImpression: 0, cvr: 0, shown: 0, skipped: 0, showRate: 0,
     shownCVR: 0, holdoutCVR: 0, holdoutTotal: 0, holdoutLiftPts: null,
   };
@@ -154,22 +181,14 @@ export async function getTimeSeries(filter, bucket) {
     ? Prisma.sql`AND "trafficSource" = ${filter.trafficSource}`
     : Prisma.empty;
 
-  const [impressionRows, outcomeRows] = await Promise.all([
+  // One query: impressions and the shown/skipped split are the same rows under
+  // different filters. Reading impressions off VariantImpression here while the
+  // tile counted InterventionOutcome is what let the chart and the tile above
+  // it disagree about the same window.
+  const [outcomeRows, moneyRows] = await Promise.all([
     db.$queryRaw`
       SELECT date_trunc(${trunc}, "timestamp") AS bucket,
-             COUNT(*)::int AS impressions,
-             COUNT(*) FILTER (WHERE converted)::int AS conversions,
-             COALESCE(SUM(revenue), 0)::float AS revenue,
-             COALESCE(SUM(profit), 0)::float AS profit
-      FROM "VariantImpression"
-      WHERE "shopId" IN (${shopIdList})
-        AND "timestamp" >= ${filter.from} AND "timestamp" < ${filter.to}
-        AND "rendered"
-        ${deviceClauseImpr} ${trafficClauseImpr}
-      GROUP BY 1 ORDER BY 1`,
-    db.$queryRaw`
-      SELECT date_trunc(${trunc}, "timestamp") AS bucket,
-             COUNT(*) FILTER (WHERE "wasShown" AND NOT "isHoldout" AND "rendered")::int AS shown,
+             COUNT(*) FILTER (WHERE "wasShown" AND NOT "isHoldout" AND "rendered")::int AS impressions,
              COUNT(*) FILTER (WHERE NOT "wasShown" AND NOT "isHoldout")::int AS skipped,
              COUNT(*) FILTER (WHERE "wasShown" AND NOT "isHoldout" AND "rendered" AND converted)::int AS "shownConverted",
              COUNT(*) FILTER (WHERE "isHoldout")::int AS "holdoutTotal",
@@ -179,32 +198,47 @@ export async function getTimeSeries(filter, bucket) {
         AND "timestamp" >= ${filter.from} AND "timestamp" < ${filter.to}
         ${deviceClauseImpr} ${trafficClauseImpr}
       GROUP BY 1 ORDER BY 1`,
+    // Money by order date, from the same table the tiles use. Segment filters
+    // can't apply — Conversion carries no device/traffic columns — so the
+    // revenue line is whole-population whenever one is active. getKpis reports
+    // that through moneySource; the chart footnote says the same.
+    db.$queryRaw`
+      SELECT date_trunc(${trunc}, "orderedAt") AS bucket,
+             COUNT(*)::int AS conversions,
+             COALESCE(SUM("orderValue"), 0)::float AS revenue,
+             COALESCE(SUM("orderValue") - SUM(COALESCE("discountAmount", 0)), 0)::float AS profit
+      FROM "Conversion"
+      WHERE "shopId" IN (${shopIdList})
+        AND "orderedAt" >= ${filter.from} AND "orderedAt" < ${filter.to}
+      GROUP BY 1 ORDER BY 1`,
   ]);
+
+  const blank = (bucket) => ({
+    bucket,
+    impressions: 0, conversions: 0, revenue: 0, profit: 0,
+    shown: 0, skipped: 0, shownConverted: 0, holdoutTotal: 0, holdoutConverted: 0,
+  });
 
   // Merge the two series on bucket.
   const merged = new Map();
-  for (const row of impressionRows) {
-    merged.set(row.bucket.toISOString(), {
-      bucket: row.bucket,
-      impressions: row.impressions,
-      conversions: row.conversions,
-      revenue: row.revenue,
-      profit: row.profit,
-      shown: 0, skipped: 0, shownConverted: 0, holdoutTotal: 0, holdoutConverted: 0,
-    });
-  }
   for (const row of outcomeRows) {
-    const key = row.bucket.toISOString();
-    const entry = merged.get(key) || {
-      bucket: row.bucket,
-      impressions: 0, conversions: 0, revenue: 0, profit: 0,
-      shown: 0, skipped: 0, shownConverted: 0, holdoutTotal: 0, holdoutConverted: 0,
-    };
-    entry.shown = row.shown;
+    const entry = blank(row.bucket);
+    entry.impressions = row.impressions;
+    // shown and impressions are the same count — both names are read by
+    // downstream charts, so keep them in lockstep rather than picking one.
+    entry.shown = row.impressions;
     entry.skipped = row.skipped;
     entry.shownConverted = row.shownConverted;
     entry.holdoutTotal = row.holdoutTotal;
     entry.holdoutConverted = row.holdoutConverted;
+    merged.set(row.bucket.toISOString(), entry);
+  }
+  for (const row of moneyRows) {
+    const key = row.bucket.toISOString();
+    const entry = merged.get(key) || blank(row.bucket);
+    entry.conversions = row.conversions;
+    entry.revenue = row.revenue;
+    entry.profit = row.profit;
     merged.set(key, entry);
   }
   return [...merged.values()].sort((a, b) => a.bucket - b.bucket);
@@ -228,10 +262,10 @@ export async function getPerShopImpressionSeries(filter, bucket) {
     : Prisma.empty;
   return db.$queryRaw`
     SELECT "shopId", date_trunc(${trunc}, "timestamp") AS bucket, COUNT(*)::int AS impressions
-    FROM "VariantImpression"
+    FROM "InterventionOutcome"
     WHERE "shopId" IN (${Prisma.join(filter.shopIds)})
       AND "timestamp" >= ${filter.from} AND "timestamp" < ${filter.to}
-      AND "rendered"
+      AND "wasShown" AND "rendered" AND NOT "isHoldout"
       ${deviceClause} ${trafficClause}
     GROUP BY 1, 2 ORDER BY 2`;
 }
@@ -288,7 +322,12 @@ export async function getBreakdowns(filter, shops) {
       by: ["scoreBucket", "wasShown"],
       // rendered: true excludes prefetched-never-displayed shown rows;
       // wasShown=false rows are created rendered=true, so they all pass.
-      where: { ...outcomeWhere(filter), rendered: true },
+      where: {
+        shopId: { in: filter.shopIds },
+        timestamp: { gte: filter.from, lt: filter.to },
+        rendered: true,
+        ...segmentExtra(filter),
+      },
       _count: { _all: true },
       _sum: { profit: true },
     }),
@@ -361,64 +400,55 @@ export async function getBreakdowns(filter, shops) {
  */
 export async function getLeaderboard(filter, shops) {
   if (!filter.shopIds.length) return [];
-  const where = impressionWhere(filter);
-  const oWhere = outcomeWhere(filter);
+  // Canonical predicates, then grouped per shop — a row here must match that
+  // store's own page exactly, since the domain is a link straight to it.
+  const W = canonicalWhere({
+    shopIds: filter.shopIds, from: filter.from, to: filter.to, extra: segmentExtra(filter),
+  });
+  const group = (model, where, sums) =>
+    db[model].groupBy({ by: ["shopId"], where, _count: { _all: true }, ...(sums ? { _sum: sums } : {}) });
 
-  const [decisionsByShop, imprByShop, convByShop, shownByShop, shownConvByShop, holdoutByShop, holdoutConvByShop, skipThresholds] =
+  const [decisionsByShop, shownByShop, shownConvByShop, starterByShop, starterConvByShop,
+         holdoutByShop, holdoutConvByShop, moneyByShop, skipThresholds] =
     await Promise.all([
       // AIDecision is keyed on createdAt, not timestamp — it is not one of the
-      // outcome tables, so it can't reuse outcomeWhere().
-      db.aIDecision.groupBy({
-        by: ["shopId"],
-        where: { shopId: { in: filter.shopIds }, createdAt: { gte: filter.from, lt: filter.to } },
-        _count: { _all: true },
-      }),
-      db.variantImpression.groupBy({
-        by: ["shopId"], where, _count: { _all: true }, _sum: { profit: true },
-      }),
-      db.variantImpression.groupBy({
-        by: ["shopId"], where: { ...where, converted: true }, _count: { _all: true },
-      }),
-      db.interventionOutcome.groupBy({
-        by: ["shopId"], where: { ...oWhere, wasShown: true, rendered: true, isHoldout: false }, _count: { _all: true },
-      }),
-      db.interventionOutcome.groupBy({
-        by: ["shopId"],
-        // rendered, like the shown count above it — without it a conversion on
-        // a prefetched-never-displayed row pushed this store's CVR over 100%.
-        where: { ...oWhere, wasShown: true, rendered: true, isHoldout: false, converted: true },
-        _count: { _all: true },
-      }),
-      db.interventionOutcome.groupBy({
-        by: ["shopId"], where: { ...oWhere, isHoldout: true }, _count: { _all: true },
-      }),
-      db.interventionOutcome.groupBy({
-        by: ["shopId"], where: { ...oWhere, isHoldout: true, converted: true }, _count: { _all: true },
-      }),
-      db.interventionThreshold.groupBy({
-        by: ["shopId"],
-        where: { shopId: { in: filter.shopIds }, shouldShow: false },
-        _count: { _all: true },
-      }),
+      // outcome tables, so it can't reuse the canonical window clause.
+      group("aIDecision", { shopId: { in: filter.shopIds }, createdAt: { gte: filter.from, lt: filter.to } }),
+      group("interventionOutcome", W.shown),
+      group("interventionOutcome", W.shownConverted),
+      // Manual/Starter stores have no outcome rows; without these they read as
+      // dead stores on a list their own dashboards contradict.
+      group("starterImpression", W.starter),
+      group("starterImpression", { ...W.starter, converted: true }),
+      group("interventionOutcome", W.holdout),
+      group("interventionOutcome", W.holdoutConverted),
+      group("conversion", W.conversions, { orderValue: true, discountAmount: true }),
+      group("interventionThreshold", { shopId: { in: filter.shopIds }, shouldShow: false }),
     ]);
 
   const toMap = (rows) => new Map(rows.map((row) => [row.shopId, row]));
   const decisions = toMap(decisionsByShop);
-  const impr = toMap(imprByShop);
-  const conv = toMap(convByShop);
   const shown = toMap(shownByShop);
   const shownConv = toMap(shownConvByShop);
+  const starter = toMap(starterByShop);
+  const starterConv = toMap(starterConvByShop);
   const holdout = toMap(holdoutByShop);
   const holdoutConv = toMap(holdoutConvByShop);
+  const money = toMap(moneyByShop);
   const skips = toMap(skipThresholds);
 
   return shops
     .map((shop) => {
-      const impressions = impr.get(shop.id)?._count._all || 0;
-      const conversions = conv.get(shop.id)?._count._all || 0;
-      const profit = impr.get(shop.id)?._sum.profit || 0;
+      const isAI = shop.mode === "ai" || shop.mode === "hybrid";
       const shownTotal = shown.get(shop.id)?._count._all || 0;
       const shownConverted = shownConv.get(shop.id)?._count._all || 0;
+      const impressions = isAI ? shownTotal : starter.get(shop.id)?._count._all || 0;
+      const cohortConverted = isAI ? shownConverted : starterConv.get(shop.id)?._count._all || 0;
+      // Orders and money are period-based, from the Conversion table — same as
+      // the store's own page. CVR stays cohort-based, also same as that page.
+      const conversions = money.get(shop.id)?._count._all || 0;
+      const revenue = money.get(shop.id)?._sum.orderValue || 0;
+      const profit = revenue - (money.get(shop.id)?._sum.discountAmount || 0);
       const holdoutTotal = holdout.get(shop.id)?._count._all || 0;
       const holdoutConverted = holdoutConv.get(shop.id)?._count._all || 0;
       const shownCVR = shownTotal > 0 ? shownConverted / shownTotal : 0;
@@ -431,7 +461,8 @@ export async function getLeaderboard(filter, shops) {
         decisions: decisions.get(shop.id)?._count._all || 0,
         impressions,
         conversions,
-        cvr: impressions > 0 ? conversions / impressions : 0,
+        cvr: impressions > 0 ? cohortConverted / impressions : 0,
+        revenue,
         profit,
         holdoutLiftPts: holdoutTotal >= 10 ? (shownCVR - holdoutCVR) * 100 : null,
         skipBuckets: skips.get(shop.id)?._count._all || 0,
