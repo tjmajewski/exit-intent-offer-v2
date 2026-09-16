@@ -3002,6 +3002,10 @@
           headline, subhead, cta, showSubhead, showSecondary, secondaryCta,
           showProductImages: decision.variant.showProductImages === true,
           code: discountCode, amountText: amountTextFor(decision),
+          // Raw served amount, so the pill and cart banner can name the saving
+          // without re-parsing a formatted currency string. This is the live AI
+          // path — the Pro-default return below needs it for the same reason.
+          offerAmount: decision.amount,
           offerType, discountCode, redirectDestination, thresholdOffer,
           firstOrderDisclosure,
           socialProof: decision.socialProof || null
