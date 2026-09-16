@@ -255,6 +255,12 @@ export async function decideOffer(signals, ctx = {}) {
   const P = (signals.propensityScore != null)
     ? signals.propensityScore
     : computePropensity(signals);
+  // Stamp it back. The decision endpoint sets this before calling (so this is
+  // a no-op there), but the cart-update webhook and idle-cart pickup pass raw
+  // signals and then persist them on AIDecision — without this their rows
+  // carried no propensity at all, which is why 91% of one shop's logged
+  // decisions had no score to analyse. Same scale everywhere, one write.
+  signals.propensityScore = P;
 
   // Shared, ordered trigger reason (drives variant evolution + reasoning copy).
   // Same priority for both tiers so a given customer gets the same triggerReason
