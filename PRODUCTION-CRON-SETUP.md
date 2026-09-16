@@ -56,15 +56,28 @@ machines spend most of their time in `stopped` and only spin up at their tick.
 
 Fly does not auto-update scheduled machines. If a cron script changed:
 
+There is no `:latest` tag on this registry — `fly deploy` pushes a
+`deployment-<id>` tag and does not move `latest`. Passing `:latest` fails with
+"Could not find image", and because the destroy has already succeeded by then
+you are left with NO scheduled machine for that job. Look the tag up first, and
+re-create before destroying anything else.
+
 ```bash
-# Find the machine ID for the job you want to refresh
+# 1. Current image tag (the app machine always runs the newest deploy)
+flyctl status -a resparq | grep -i image
+#    Image │ resparq:deployment-01M2N3QG5674QSZB5E43YWJ17F
+
+# 2. Machine ID for the job you want to refresh
 flyctl m list -a resparq
+flyctl m status <machine-id> -a resparq | grep Command   # confirm which job it runs
 
-# Destroy the old scheduled machine
+# 3. Destroy, then immediately re-create with the tag from step 1
 flyctl m destroy <machine-id> -a resparq --force
+flyctl m run -a resparq --schedule <hourly|daily|weekly> \
+  registry.fly.io/resparq:deployment-<id> node app/cron/<file>.js
 
-# Re-create with the new image
-flyctl m run -a resparq --schedule <hourly|daily|weekly> registry.fly.io/resparq:latest node app/cron/<file>.js
+# 4. Verify the job is actually registered again
+flyctl m list -a resparq
 ```
 
 ---
