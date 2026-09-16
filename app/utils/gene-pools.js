@@ -230,7 +230,7 @@ export const genePools = {
   // decision.type is 'fixed' (see amountTextFor in exit-intent-modal.js), and
   // the margin guard converts its percentage ceiling into dollars before
   // clamping — see the fixed branch in the decision endpoint.
-  conversion_with_fixed_discount: {
+  conversion_with_discount_fixed: {
     archetypeName: 'FIXED_DISCOUNT',
     archetypeDescription: 'Convert hesitant cart via flat $ off discount code',
     slots: ['headline', 'subhead', 'cta', 'discount_code'],

@@ -175,9 +175,21 @@
     }
   }
 
+  // "Still want..." only makes sense to someone who has already turned the
+  // offer down. The pill has two entry points: it can be the OPENER the AI
+  // chose instead of interrupting with a modal (the customer has seen nothing
+  // at that point), or it can appear after the modal was dismissed. The offer
+  // record carries alreadySeen so the same pill can say the right thing in
+  // both, including when it re-mounts from sessionStorage pages later.
   function buildPillHeadline(offer) {
-    if (offer.savingsText) return `Still want your ${offer.savingsText}?`;
-    return 'Still want your discount?';
+    const saving = offer.savingsText;
+    if (offer.alreadySeen) {
+      return saving ? `Still want your ${saving}?` : 'Still want your offer?';
+    }
+    // First exposure. savingsText is deliberately blank for threshold offers,
+    // whose saving is conditional on spending more, so naming an amount here
+    // would promise money off the cart as it stands.
+    return saving ? `Your ${saving} is ready` : 'Your offer is ready';
   }
 
   function mountOfferPill(offer) {
@@ -2282,7 +2294,8 @@
             this.pillOpenerStamped = true;
           }
           try { sessionStorage.setItem(this.sessionKey, 'true'); } catch (_) {}
-          const offer = this.buildPendingOfferData();
+          // Pill as opener: this is the customer's FIRST sight of the offer.
+          const offer = this.buildPendingOfferData({ alreadySeen: false });
           try {
             sessionStorage.setItem(PILL_OFFER_KEY, JSON.stringify(offer));
             sessionStorage.removeItem(PILL_DISMISSED_KEY);
@@ -2719,6 +2732,7 @@
         
         this.settings.discountCode = decision.code;
         this.settings.offerType = decision.type;
+        this.currentOfferAmount = decision.amount;
 
         // For no-discount offers, derive redirect from the CTA text so they always align.
         // The redirect gene is independent and can conflict (e.g., "See What Pairs Well" + checkout).
@@ -2812,11 +2826,13 @@
         body.textContent = 'Complete your purchase now and save!';
         this.settings.discountCode = decision.code;
         this.settings.offerType = 'percentage';
+        this.currentOfferAmount = decision.amount;
       } else if (decision.type === 'fixed') {
         headline.textContent = `Get ${formatCurrency(decision.amount)} Off Your Order!`;
         body.textContent = 'Complete your purchase now and save!';
         this.settings.discountCode = decision.code;
         this.settings.offerType = 'fixed';
+        this.currentOfferAmount = decision.amount;
       } else if (decision.type === 'threshold') {
         const defaultCartValue = await this.getCartValue();
         const defaultRemaining = Math.ceil((decision.threshold - defaultCartValue) / 5) * 5;
@@ -2829,6 +2845,7 @@
         }
         this.settings.discountCode = decision.code;
         this.settings.offerType = 'threshold';
+        this.currentOfferAmount = decision.amount;
 
         // Show secondary button for threshold offers
         const secondaryBtn = modal.querySelector('#modal-secondary-cta');
@@ -3042,6 +3059,9 @@
       return {
         headline, subhead, cta, showSubhead: true, showSecondary, secondaryCta,
         code: discountCode, amountText, offerType, discountCode,
+        // Raw served amount (not the formatted amountText) so the pill and the
+        // cart banner can name the saving without re-parsing a currency string.
+        offerAmount: decision.amount,
         redirectDestination: s.redirectDestination, thresholdOffer,
         firstOrderDisclosure,
         socialProof: decision.socialProof || null
@@ -3059,6 +3079,7 @@
       // Side-effects, split out of the pure resolver
       this.settings.discountCode = content.discountCode;
       this.settings.offerType = content.offerType;
+      this.currentOfferAmount = content.offerAmount;
       this.settings.redirectDestination = content.redirectDestination;
       if (content.thresholdOffer) {
         sessionStorage.setItem('exitIntentThresholdOffer', JSON.stringify(content.thresholdOffer));
@@ -3162,15 +3183,23 @@
      * this to re-mount itself on subsequent page loads. Keeps everything
      * needed for redemption + branded rendering.
      */
-    buildPendingOfferData() {
+    buildPendingOfferData({ alreadySeen = true } = {}) {
       const offerType = this.settings.offerType;
+      // discountPercentage / discountAmount are MANUAL-mode settings — the AI
+      // path never writes them, so every AI offer fell through to the generic
+      // "Still want your discount?" on the pill and the cart banner. Read the
+      // live decision first and keep the manual settings as the fallback.
+      const aiAmount = this.currentOfferAmount;
       let savingsText = '';
-      if (offerType === 'percentage' && this.settings.discountPercentage) {
-        savingsText = `${this.settings.discountPercentage}% off`;
-      } else if (offerType === 'fixed' && this.settings.discountAmount) {
-        savingsText = `${formatCurrency(this.settings.discountAmount)} off`;
-      } else if (offerType === 'threshold' && this.settings.discountAmount) {
-        savingsText = `${formatCurrency(this.settings.discountAmount)} off`;
+      if (offerType === 'percentage') {
+        const pct = aiAmount ?? this.settings.discountPercentage;
+        if (pct) savingsText = `${pct}% off`;
+      } else if (offerType === 'fixed' || offerType === 'threshold') {
+        const amt = aiAmount ?? this.settings.discountAmount;
+        // A threshold's saving is conditional on spending more, so naming the
+        // amount alone would promise money off the cart as it stands. The
+        // generic line is the honest one for that shape.
+        if (amt && offerType === 'fixed') savingsText = `${formatCurrency(amt)} off`;
       }
       return {
         code: this.settings.discountCode,
@@ -3179,6 +3208,9 @@
         aiDecisionId: this.currentAiDecisionId || null,
         impressionId: this.currentImpressionId || null,
         savingsText,
+        // Has the customer already turned this offer down? Drives whether the
+        // pill and the cart banner say "Still want..." or introduce the offer.
+        alreadySeen,
         timestamp: Date.now()
       };
     }

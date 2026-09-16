@@ -13,6 +13,7 @@
 
 import db from '../db.server.js';
 import { genePools, getAllBaselines } from '../utils/gene-pools.js';
+import { offerTypeForBaseline } from '../utils/baseline-selector.js';
 import {
   validateCandidate, generationEnabled, GENERATED_COPY_INSIGHT_TYPE
 } from '../utils/generated-copy.server.js';
@@ -21,8 +22,29 @@ import { writeClusterInsight } from '../utils/cluster-priors.server.js';
 const MODEL = 'claude-sonnet-5';
 const MAX_TOKENS = 2000;
 
+// What {{amount}} will actually be replaced with at render time, so the
+// generated copy is written around the right shape. The storefront substitutes
+// a bare number for percentage offers (the % lives in the copy) and a formatted
+// currency string for fixed and threshold offers. A single hardcoded "%"
+// example here would have produced "Take $10% off" in the fixed pool.
+function placeholderRule(baseline) {
+  switch (offerTypeForBaseline(baseline)) {
+    case 'percentage':
+      return 'Use the literal placeholder {{amount}} where the discount number goes, and write the % yourself right after it (e.g. "Take {{amount}}% off"). CTAs must NOT contain placeholders.';
+    case 'fixed':
+      return 'Use the literal placeholder {{amount}} where the discount goes. It is replaced with a formatted currency amount such as "$10", so do NOT write a currency symbol or a % sign next to it (e.g. "Take {{amount}} off"). CTAs must NOT contain placeholders.';
+    case 'threshold':
+      // The threshold pool is the one place where an amount alone is
+      // misleading: it names a reward that is conditional on extra spend. Only
+      // {{amount}} survives validateCandidate, so copy that cannot state the
+      // requirement must at least not imply the discount is unconditional.
+      return 'Use the literal placeholder {{amount}} where the discount goes. It is replaced with a formatted currency amount such as "$10", so do NOT write a currency symbol or a % sign next to it. This offer is UNLOCKED BY SPENDING MORE, so never imply the discount applies to the cart as it stands — no "take {{amount}} off your order". Phrase it as something to reach or unlock. CTAs must NOT contain placeholders.';
+    default:
+      return 'NO placeholders of any kind — this archetype makes no discount offer.';
+  }
+}
+
 function buildPrompt(baseline, pool) {
-  const discount = baseline.includes('with_discount');
   return `You are writing exit-intent popup copy for e-commerce cart recovery.
 
 Archetype: ${pool.archetypeName} (baseline: ${baseline})
@@ -33,9 +55,7 @@ Existing winning examples (match their intent and energy, do NOT copy them):
 
 Rules (violations are discarded automatically):
 - Headlines <= 70 characters, subheads <= 110, CTAs <= 28
-- ${discount
-    ? 'Use the literal placeholder {{amount}} where the discount number goes (e.g. "Take {{amount}}% off"). CTAs must NOT contain placeholders.'
-    : 'NO placeholders of any kind — this archetype makes no discount offer.'}
+- ${placeholderRule(baseline)}
 - Never promise free shipping, product recommendations, or anything the popup cannot deliver
 - Never invent statistics, customer counts, or reviews
 - At most one exclamation mark per line; no all-caps shouting

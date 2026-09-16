@@ -84,7 +84,14 @@ export function offerTypeForBaseline(baseline) {
   switch (baseline) {
     case 'revenue_with_discount': return 'threshold';
     case 'conversion_with_discount': return 'percentage';
-    case 'conversion_with_fixed_discount': return 'fixed';
+    case 'conversion_with_discount_fixed': return 'fixed';
+    // NOTE on the name: the `_fixed` suffix comes AFTER `with_discount` on
+    // purpose. Five places across the bandit, the decision endpoint and the
+    // copy-generation cron test `baseline.includes('with_discount')` to mean
+    // "this baseline hands out a discount". A name like
+    // conversion_with_fixed_discount breaks that substring and would have been
+    // silently classified as a no-discount baseline — wrong bandit arm, and
+    // generated copy forbidden from carrying an amount.
     default: return 'no-discount';
   }
 }
@@ -103,7 +110,7 @@ function flatDiscountBaseline(signals) {
   }
   return (Math.abs(hash) % 2 === 0)
     ? 'conversion_with_discount'        // % off
-    : 'conversion_with_fixed_discount'; // $ off
+    : 'conversion_with_discount_fixed'; // $ off
 }
 
 /**
@@ -166,7 +173,7 @@ export function explainBaseline(baseline) {
     revenue_with_discount: 'Upselling with discount incentive to increase cart value',
     revenue_no_discount: 'Upselling without discount (customer is ready to buy more)',
     conversion_with_discount: 'Converting abandoners with discount incentive',
-    conversion_with_fixed_discount: 'Converting abandoners with a flat $ off incentive',
+    conversion_with_discount_fixed: 'Converting abandoners with a flat $ off incentive',
     conversion_no_discount: 'Converting abandoners with social proof (no discount needed)'
   };
 

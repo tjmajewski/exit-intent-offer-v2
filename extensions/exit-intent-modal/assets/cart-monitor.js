@@ -533,9 +533,17 @@
     // text-only inline line instead of a full banner.
     // ============================================================
 
+    // Mirrors buildPillHeadline in exit-intent-modal.js. This surface usually
+    // follows a dismissal, but it reads the same sessionStorage record the
+    // pill writes — and the AI can open with a pill instead of a modal, in
+    // which case the customer has never turned anything down and "Still
+    // want..." reads as nonsense. alreadySeen on the record settles it.
     buildFlatOfferLabel(offer) {
-      if (offer.savingsText) return `Still want your ${offer.savingsText}?`;
-      return 'Still want your discount?';
+      const saving = offer.savingsText;
+      if (offer.alreadySeen === false) {
+        return saving ? `Your ${saving} is ready` : 'Your offer is ready';
+      }
+      return saving ? `Still want your ${saving}?` : 'Still want your offer?';
     }
 
     applyFlatOffer(offer) {
