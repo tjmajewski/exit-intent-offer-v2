@@ -125,14 +125,21 @@ function contextOf(decision, signals) {
 // triggerReason (WHY the visitor was flagged) which the context line carries.
 // Rows from the cart webhook and idle sweep have no variant, so they carry
 // determineOffer's coarser `timing` instead.
+// On mobile the exit-intent listener is never registered at all — every
+// mouseout site in the storefront extension is behind !isMobileDevice(),
+// because mouseout does not fire there. So a mobile row must not claim exit
+// intent as a trigger: what actually armed was the idle timer, capped to 15s
+// when the gene asked for exit intent alone.
 const TRIGGER_TYPES = {
   exit_intent: (seconds, isMobile) =>
     isMobile
-      // Mobile has no mouseout, so the storefront adds a capped idle fallback.
-      ? `on exit intent, or after ${Math.min(seconds, 15)}s idle (mobile has no exit signal)`
+      ? `after ${Math.min(seconds, 15)}s idle (exit intent can't fire on mobile)`
       : "on exit intent",
   idle: (seconds) => `after ${seconds}s idle`,
-  exit_intent_or_idle: (seconds) => `on exit intent, or after ${seconds}s idle`,
+  exit_intent_or_idle: (seconds, isMobile) =>
+    isMobile
+      ? `after ${seconds}s idle (exit intent can't fire on mobile)`
+      : `on exit intent, or after ${seconds}s idle`,
 };
 
 const TIMINGS = {
