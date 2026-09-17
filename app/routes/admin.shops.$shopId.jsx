@@ -63,6 +63,11 @@ const EDITABLE_FIELDS = {
   budgetEnabled: "bool",
   budgetAmount: "float",
   budgetPeriod: "string",
+  // The pinned Guided offer. Safe to edit here: changing the type or amount
+  // creates no Shopify-side resource, unlike the discount CODE fields, which
+  // stay excluded.
+  hybridOfferType: "string",
+  hybridOfferAmount: "float",
   exitIntentEnabled: "bool",
   timeDelayEnabled: "bool",
   timeDelaySeconds: "int",
@@ -97,6 +102,118 @@ function parseField(type, raw) {
       return raw ? String(raw) : null;
     default:
       return String(raw ?? "");
+  }
+}
+
+// Fields the DECISION ENGINE and storefront read off the exit_intent.settings
+// metafield rather than the Shop row (see the destructure at the top of
+// apps.exit-intent.api.ai-decision.jsx). Editing the row alone leaves the
+// storefront on the old value, so each of these has to be written to both.
+// Anything not listed here is served from the DB by
+// apps.exit-intent.api.shop-settings.jsx and needs no metafield write.
+const METAFIELD_FIELDS = new Set([
+  "mode",
+  "aiGoal",
+  "aggression",
+  "budgetEnabled",
+  "budgetAmount",
+  "budgetPeriod",
+  "hybridOfferType",
+  "hybridOfferAmount",
+  "exitIntentEnabled",
+  "timeDelayEnabled",
+  "timeDelaySeconds",
+  "cartValueEnabled",
+  "cartValueMin",
+  "cartValueMax",
+  "modalHeadline",
+  "modalBody",
+  "ctaButton",
+  "redirectDestination",
+]);
+
+// The metafield stores the triggers twice — flat, and again under `triggers`
+// with different key names. The merchant app writes both; so must we, or the
+// storefront reads one shape while the engine reads the other.
+const TRIGGER_MIRROR = {
+  exitIntentEnabled: "exitIntent",
+  timeDelayEnabled: "timeDelay",
+  timeDelaySeconds: "timeDelaySeconds",
+  cartValueEnabled: "cartValue",
+  cartValueMin: "minCartValue",
+  cartValueMax: "maxCartValue",
+};
+
+// Merge the console's edits into the live settings metafield and write it back.
+// Read-modify-write, because the metafield holds much more than this form edits
+// (brand, discount codes, templates, frequency) and none of it may be lost.
+//
+// `desired` is the whole submitted form, not a diff against the Shop row: the
+// row and the metafield can already disagree (that is exactly the bug this
+// fixes), so the delta that matters is against the metafield itself. A save
+// therefore also heals drift left by earlier row-only edits.
+async function writeSettingsMetafield(shopifyDomain, desired) {
+  const candidates = Object.keys(desired).filter((field) => METAFIELD_FIELDS.has(field));
+  if (candidates.length === 0) return { ok: true, fields: [] };
+
+  try {
+    const { unauthenticated } = await import("../shopify.server.js");
+    const { admin } = await unauthenticated.admin(shopifyDomain);
+
+    const readResponse = await admin.graphql(`
+      query {
+        shop {
+          id
+          metafield(namespace: "exit_intent", key: "settings") { value }
+        }
+      }
+    `);
+    const shopData = (await readResponse.json()).data?.shop;
+    const ownerId = shopData?.id;
+    const raw = shopData?.metafield?.value;
+    if (!ownerId) return { ok: false, error: "Could not read the shop id from Shopify." };
+    if (!raw) {
+      return {
+        ok: false,
+        error:
+          "This store has no settings metafield yet — the merchant has to save once in the app before the console can edit it.",
+      };
+    }
+
+    const settings = JSON.parse(raw);
+    const fields = candidates.filter((field) => settings[field] !== desired[field]);
+    if (fields.length === 0) return { ok: true, fields: [] };
+
+    for (const field of fields) {
+      settings[field] = desired[field];
+      const mirrored = TRIGGER_MIRROR[field];
+      if (mirrored) {
+        settings.triggers = { ...(settings.triggers || {}), [mirrored]: desired[field] };
+      }
+    }
+
+    const writeResponse = await admin.graphql(
+      `mutation SetSettings($ownerId: ID!, $value: String!) {
+        metafieldsSet(metafields: [{
+          ownerId: $ownerId
+          namespace: "exit_intent"
+          key: "settings"
+          value: $value
+          type: "json"
+        }]) {
+          metafields { id }
+          userErrors { field message }
+        }
+      }`,
+      { variables: { ownerId, value: JSON.stringify(settings) } }
+    );
+    const errors = (await writeResponse.json()).data?.metafieldsSet?.userErrors || [];
+    if (errors.length > 0) {
+      return { ok: false, error: errors.map((error) => error.message).join("; ") };
+    }
+    return { ok: true, fields };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error) };
   }
 }
 
@@ -288,17 +405,55 @@ export async function action({ request, params }) {
   }
 
   const changed = diffFields(shop, update);
-  if (Object.keys(changed).length === 0) {
+
+  // The metafield is the storefront's source of truth for the fields in
+  // METAFIELD_FIELDS, so it is synced even when the row already matched —
+  // that is how a row-only edit from before this existed gets healed.
+  const metafield = await writeSettingsMetafield(shop.shopifyDomain, update);
+
+  if (Object.keys(changed).length === 0 && metafield.ok && metafield.fields.length === 0) {
     return { success: true, message: "No changes." };
   }
 
-  await db.shop.update({ where: { id: shop.id }, data: update });
+  // If the storefront could not be updated, do not update the row either.
+  // A one-sided write is what produced the drift this whole path exists to
+  // remove, and a failed save the admin can retry beats a silent divergence.
+  if (!metafield.ok) {
+    await logAdminAction(request, "settings_update_failed", {
+      shopId: shop.id,
+      payload: { shopifyDomain: shop.shopifyDomain, attempted: changed, error: metafield.error },
+    });
+    return {
+      success: false,
+      message: `Nothing was saved. The live storefront could not be updated, so our records were left alone to avoid drift: ${metafield.error}`,
+    };
+  }
+
+  if (Object.keys(changed).length > 0) {
+    await db.shop.update({ where: { id: shop.id }, data: update });
+  }
   await logAdminAction(request, "settings_update", {
     shopId: shop.id,
-    payload: { shopifyDomain: shop.shopifyDomain, changed },
+    payload: {
+      shopifyDomain: shop.shopifyDomain,
+      changed,
+      liveSettingsUpdated: metafield.fields,
+    },
   });
 
-  return { success: true, message: `Saved ${Object.keys(changed).length} field(s).` };
+  // The two counts are independent: a field can already match our row while
+  // still being stale on the storefront (that is drift being healed), and
+  // DB-only fields never reach the metafield at all.
+  const parts = [];
+  if (Object.keys(changed).length > 0) {
+    parts.push(`Updated ${Object.keys(changed).length} field(s) in our records.`);
+  }
+  parts.push(
+    metafield.fields.length
+      ? `Pushed ${metafield.fields.length} field(s) live to the storefront: ${metafield.fields.join(", ")}.`
+      : "The storefront was already up to date."
+  );
+  return { success: true, message: parts.join(" ") };
 }
 
 function StatCell({ label, value }) {
@@ -537,9 +692,16 @@ export default function AdminShopDetail() {
   ];
   const selectedTab = Math.max(0, tabs.findIndex((t) => t.id === tabParam));
 
+  // Seed from the live metafield wherever it owns the field, so the form opens
+  // showing what the merchant last saved and what the storefront is serving —
+  // not our mirror of it, which is what made this form misleading.
   const [form, setForm] = useState(() => {
     const initial = {};
-    for (const field of Object.keys(EDITABLE_FIELDS)) initial[field] = shop[field];
+    for (const field of Object.keys(EDITABLE_FIELDS)) {
+      initial[field] = liveSettings && liveSettings[field] !== undefined
+        ? liveSettings[field]
+        : shop[field];
+    }
     return initial;
   });
   const set = (field) => (value) => setForm((prev) => ({ ...prev, [field]: value }));
@@ -747,9 +909,11 @@ export default function AdminShopDetail() {
           <Form method="post">
             <BlockStack gap="400">
               <Banner tone="warning">
-                Edits apply immediately to the live storefront and are audit-logged. Plan,
-                discount-code, and branding changes are excluded — those must go through the
-                merchant app.
+                This is what the merchant last saved, read from the live settings
+                metafield. Editing here writes both that metafield and our records, so
+                changes take effect on the storefront immediately and are audit-logged.
+                Plan, discount-code, and branding changes are excluded — those create
+                Shopify-side resources and must go through the merchant app.
               </Banner>
               <Card>
                 <BlockStack gap="300">
@@ -775,7 +939,12 @@ export default function AdminShopDetail() {
                     <Select
                       label="AI goal"
                       name="aiGoal"
+                      // "auto" is what the merchant app actually writes (it
+                      // picks revenue vs conversion per visitor from funnel
+                      // stage), so it has to be selectable or this dropdown
+                      // misreports every AI store the same way Mode did.
                       options={[
+                        { label: "Auto (per visitor)", value: "auto" },
                         { label: "Revenue", value: "revenue" },
                         { label: "Conversion", value: "conversion" },
                         { label: "Profit", value: "profit" },
@@ -790,8 +959,38 @@ export default function AdminShopDetail() {
                       value={String(form.aggression)}
                       onChange={setNum("aggression")}
                       autoComplete="off"
+                      helpText={
+                        form.mode === "hybrid"
+                          ? "Ignored in Guided mode — the pinned offer below wins."
+                          : "Drives the discount ceiling together with the store's assumed margin."
+                      }
                     />
                   </InlineGrid>
+                  {form.mode === "hybrid" && (
+                    <InlineGrid columns={3} gap="400">
+                      <Select
+                        label="Pinned offer type"
+                        name="hybridOfferType"
+                        options={[
+                          { label: "Percentage", value: "percentage" },
+                          { label: "Fixed amount", value: "fixed" },
+                        ]}
+                        value={form.hybridOfferType}
+                        onChange={set("hybridOfferType")}
+                      />
+                      <TextField
+                        label="Pinned offer amount"
+                        name="hybridOfferAmount"
+                        type="number"
+                        value={String(form.hybridOfferAmount)}
+                        onChange={setNum("hybridOfferAmount")}
+                        autoComplete="off"
+                        prefix={form.hybridOfferType === "fixed" ? "$" : null}
+                        suffix={form.hybridOfferType === "fixed" ? null : "%"}
+                        helpText="Honored exactly — no margin guard, no propensity taper."
+                      />
+                    </InlineGrid>
+                  )}
                   <InlineGrid columns={3} gap="400">
                     <Checkbox
                       label="Budget enabled"
