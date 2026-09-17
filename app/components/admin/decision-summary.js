@@ -260,10 +260,15 @@ export function describeResult(result, source = null) {
         "Decided at prefetch, but the trigger never fired — the visitor never actually saw this.",
     };
   }
+  // "yet" is load-bearing: the order webhook attributes on an exact
+  // aiDecisionId match with no deadline, and falls back to a 24h window, so a
+  // recent row can still flip to converted.
   return {
-    label: result.clicked ? "Clicked, no order" : "Seen, no order",
+    label: result.clicked ? "Clicked, no order yet" : "Seen, no order yet",
     tone: "info",
-    detail: null,
+    detail: result.clicked
+      ? "Took the offer but no order has attributed to it."
+      : "Shown and ignored so far.",
   };
 }
 

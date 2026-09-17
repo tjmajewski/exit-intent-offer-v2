@@ -32,6 +32,15 @@ import { logAdminAction, diffFields } from "../utils/admin-audit.server.js";
 import InfoPopover from "../components/admin/InfoPopover.jsx";
 import { METRIC_INFO } from "../components/admin/metric-info.js";
 import {
+  describeMode,
+  makesAIDecisions,
+  describeOffer,
+  describeTriggers,
+  describeBudget,
+  describeFrequency,
+  settingsDrift,
+} from "../components/admin/live-config.js";
+import {
   summarizeDecision,
   describeResult,
   tallyResults,
@@ -39,6 +48,7 @@ import {
 } from "../components/admin/decision-summary.js";
 import db from "../db.server.js";
 import { getShopMetrics } from "../utils/shop-metrics.server.js";
+import { offerCeilingPercent } from "../utils/ai-decision.server.js";
 
 export function headers() {
   return ADMIN_RESPONSE_HEADERS;
@@ -102,6 +112,7 @@ async function fetchLiveShopify(shopifyDomain) {
         }
         shop {
           planMetafield: metafield(namespace: "exit_intent", key: "plan") { value }
+          settingsMetafield: metafield(namespace: "exit_intent", key: "settings") { value }
         }
       }
     `);
@@ -111,6 +122,14 @@ async function fetchLiveShopify(shopifyDomain) {
       subscriptions: data?.currentAppInstallation?.activeSubscriptions || [],
       planMetafield: data?.shop?.planMetafield?.value
         ? JSON.parse(data.shop.planMetafield.value)
+        : null,
+      // The settings metafield is what the storefront and the decision engine
+      // actually read (see apps.exit-intent.api.ai-decision.jsx, which pulls
+      // mode/aggression/budget/hybrid straight off it). The DB row is a mirror
+      // the merchant app keeps in sync — authoritative only until someone
+      // edits the row without the metafield. Show the metafield.
+      settings: data?.shop?.settingsMetafield?.value
+        ? JSON.parse(data.shop.settingsMetafield.value)
         : null,
     };
   } catch (error) {
@@ -209,9 +228,31 @@ export async function loader({ request, params }) {
     });
   }
 
+  // AI mode has no single discount — the engine recomputes it per visitor.
+  // Walk the propensity axis with the store's own aggression and margin so the
+  // console can quote the real ceiling instead of "it depends".
+  const liveSettings = live.ok ? live.settings : null;
+  let aiRange = null;
+  if (liveSettings?.mode === "ai") {
+    const args = {
+      aggression: liveSettings.aggression ?? 5,
+      assumedGrossMargin: liveSettings.assumedGrossMargin ?? 0.4,
+    };
+    let max = 0;
+    let announceAbove = null;
+    for (let p = 0; p <= 100; p += 1) {
+      const percent = offerCeilingPercent({ ...args, propensity: p });
+      if (percent > max) max = percent;
+      if (percent === 0 && announceAbove === null && max > 0) announceAbove = p;
+    }
+    aiRange = { max, announceAbove };
+  }
+
   return {
     shop,
     live,
+    liveSettings,
+    aiRange,
     days,
     perf,
     variants,
@@ -273,9 +314,129 @@ function StatCell({ label, value }) {
   );
 }
 
+function Fact({ label, children }) {
+  return (
+    <BlockStack gap="050">
+      <Text as="span" tone="subdued" variant="bodySm">
+        {label}
+      </Text>
+      {children}
+    </BlockStack>
+  );
+}
+
+// What the store is running right now, straight off the settings metafield.
+// This is deliberately the first thing on the page: every other number here
+// only means something once you know which mode produced it.
+function LiveConfig({ settings, aiRange, shop, live }) {
+  if (!live.ok) {
+    return (
+      <Banner tone="critical" title="Could not read the live settings">
+        <Text as="p" variant="bodySm">
+          {live.error || "Shopify did not answer."} Everything below comes from our
+          database copy, which may not be what the storefront is serving.
+        </Text>
+      </Banner>
+    );
+  }
+  if (!settings) {
+    return (
+      <Banner tone="warning" title="No settings metafield on this store">
+        <Text as="p" variant="bodySm">
+          The storefront reads exit_intent.settings and it is missing or empty, so the
+          modal is not running. The merchant has to save settings once in the app.
+        </Text>
+      </Banner>
+    );
+  }
+
+  const mode = describeMode(settings.mode);
+  const offer = describeOffer(settings, aiRange);
+  const drift = settingsDrift(settings, shop);
+
+  return (
+    <BlockStack gap="300">
+      <Card>
+        <BlockStack gap="400">
+          <InlineStack gap="200" blockAlign="center">
+            <Badge tone={mode.tone} size="large">
+              {mode.label}
+            </Badge>
+            <Text as="span" tone="subdued" variant="bodySm">
+              {mode.blurb}
+            </Text>
+          </InlineStack>
+
+          <InlineGrid columns={{ xs: 1, md: 3 }} gap="400">
+            <Fact label="Offer on the live modal">
+              <Text as="p" variant="headingSm">
+                {offer.headline}
+              </Text>
+              {offer.lines.map((line) => (
+                <Text key={line} as="p" tone="subdued" variant="bodySm">
+                  {line}
+                </Text>
+              ))}
+            </Fact>
+            <Fact label="Shows">
+              <Text as="p" variant="headingSm">
+                {describeTriggers(settings).join(", ")}
+              </Text>
+              {describeFrequency(settings) && (
+                <Text as="p" tone="subdued" variant="bodySm">
+                  {describeFrequency(settings)}
+                </Text>
+              )}
+            </Fact>
+            <Fact label="Budget">
+              <Text as="p" variant="headingSm">
+                {describeBudget(settings)}
+              </Text>
+              <Text as="p" tone="subdued" variant="bodySm">
+                Spend counts codes issued, not codes redeemed.
+              </Text>
+            </Fact>
+          </InlineGrid>
+
+          <Divider />
+
+          <Fact label="Copy on the live modal">
+            <Text as="p" variant="bodyMd">
+              {settings.modalHeadline || "(no headline)"}
+            </Text>
+            <Text as="p" tone="subdued" variant="bodySm">
+              {settings.modalBody || "(no body)"}
+            </Text>
+            <Text as="p" tone="subdued" variant="bodySm">
+              Button: {settings.ctaButton || "(none)"} → {settings.redirectDestination || "checkout"}
+            </Text>
+          </Fact>
+        </BlockStack>
+      </Card>
+
+      {drift.length > 0 && (
+        <Banner tone="warning" title="The live settings and our copy disagree">
+          <BlockStack gap="100">
+            <Text as="p" variant="bodySm">
+              The storefront is using the live column. Our row was edited without the
+              metafield — most likely from the Settings tab below, which writes the row
+              only.
+            </Text>
+            {drift.map((field) => (
+              <Text key={field.label} as="p" variant="bodySm">
+                {field.label}: live <b>{field.live}</b>, our copy <b>{field.stored}</b>
+              </Text>
+            ))}
+          </BlockStack>
+        </Banner>
+      )}
+    </BlockStack>
+  );
+}
+
 // Recent AI decisions, written for a person. The raw JSON is one click away
 // because that is what you paste into a query when something looks wrong.
-function DecisionLog({ decisions }) {
+function DecisionLog({ decisions, mode }) {
   const [showRaw, setShowRaw] = useState(false);
   const [showUntracked, setShowUntracked] = useState(true);
   const all = decisions.map((decision) => {
@@ -307,6 +468,13 @@ function DecisionLog({ decisions }) {
           {tally.converted} converted · {tally.preDecisions} pre-decisions that never
           surfaced · {tally.untracked} untracked
         </Text>
+
+        {!makesAIDecisions(mode) && (
+          <Banner tone="info">
+            This store is on {describeMode(mode).label}, so the AI makes no decisions.
+            Anything listed below predates the mode change.
+          </Banner>
+        )}
 
         {rows.length === 0 && (
           <Text as="p" tone="subdued" variant="bodySm">
@@ -355,7 +523,8 @@ function DecisionLog({ decisions }) {
 }
 
 export default function AdminShopDetail() {
-  const { shop, live, days, perf, variants, recentDecisions, auditEntries } = useLoaderData();
+  const { shop, live, liveSettings, aiRange, days, perf, variants, recentDecisions, auditEntries } =
+    useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -391,6 +560,7 @@ export default function AdminShopDetail() {
         {actionData?.message && (
           <Banner tone={actionData.success ? "success" : "critical"}>{actionData.message}</Banner>
         )}
+        <LiveConfig settings={liveSettings} aiRange={aiRange} shop={shop} live={live} />
         <Tabs
           tabs={tabs}
           selected={selectedTab}
@@ -569,7 +739,7 @@ export default function AdminShopDetail() {
                 />
               </BlockStack>
             </Card>
-            <DecisionLog decisions={recentDecisions} />
+            <DecisionLog decisions={recentDecisions} mode={liveSettings?.mode ?? shop.mode} />
           </BlockStack>
         )}
 
