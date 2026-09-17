@@ -1851,11 +1851,22 @@
     }
 
     async evaluateEnterpriseCustomer() {
+      // One evaluation per page load — a second pass would persist another
+      // AIDecision row for the same visitor on the same page.
+      if (this.enterpriseEvaluated) {
+        console.log('[Enterprise AI] Already evaluated this page — skipping');
+        return;
+      }
+      this.enterpriseEvaluated = true;
+
       console.log('[Enterprise AI] Evaluating customer...');
       
       // Check if cart has items first
       const hasItems = await this.hasItemsInCart();
       if (!hasItems) {
+        // Nothing was evaluated — release the guard so a later add-to-cart
+        // can still activate the AI on this page.
+        this.enterpriseEvaluated = false;
         console.log('[Enterprise AI] Cart is empty, not evaluating');
         return;
       }
@@ -2007,10 +2018,22 @@
     }
 
     async setupAITriggers() {
+      // One setup per page load. A second call would fetch a second decision
+      // (an extra AIDecision row for the same visitor on the same page) and
+      // register a duplicate mouseout listener.
+      if (this.aiTriggersSetUp) {
+        console.log('[Pro AI] Triggers already set up — skipping duplicate setup');
+        return;
+      }
+      this.aiTriggersSetUp = true;
+
       // Pro AI Mode: Pre-fetch AI decision, then use the AI's trigger gene to decide WHEN to show.
       // This lets the evolution system learn which trigger strategy converts best.
       const hasItems = await this.hasItemsInCart();
       if (!hasItems) {
+        // Nothing was set up, so release the guard — a later add-to-cart
+        // should still be able to activate the AI on this page.
+        this.aiTriggersSetUp = false;
         console.log('[Pro AI] Cart is empty, skipping AI trigger setup');
         return;
       }
@@ -2102,18 +2125,29 @@
      */
     watchForAddToCart(aiMode) {
       let activated = false;
+      // Three sources call activate(): cart:updated (+300ms), an add-to-cart
+      // click (+800ms) and the 3s poll. `activated` can only be set after the
+      // awaited cart fetch, so without this in-flight flag all three cross the
+      // guard while the others are still awaiting and each one activates the
+      // AI — one page load, three AIDecision rows seconds apart.
+      let checking = false;
       const activate = async () => {
-        if (activated || this.modalShown) return;
-        const hasItems = await this.hasItemsInCart();
-        if (!hasItems) return;
-        activated = true;
+        if (activated || checking || this.modalShown) return;
+        checking = true;
+        try {
+          const hasItems = await this.hasItemsInCart();
+          if (!hasItems) return;
+          activated = true;
 
-        console.log(`[${aiMode === 'enterprise' ? 'Enterprise AI' : 'Pro AI'}] Cart now has items — activating AI`);
+          console.log(`[${aiMode === 'enterprise' ? 'Enterprise AI' : 'Pro AI'}] Cart now has items — activating AI`);
 
-        if (aiMode === 'enterprise') {
-          await this.evaluateEnterpriseCustomer();
-        } else {
-          await this.setupAITriggers();
+          if (aiMode === 'enterprise') {
+            await this.evaluateEnterpriseCustomer();
+          } else {
+            await this.setupAITriggers();
+          }
+        } finally {
+          checking = false;
         }
       };
 
