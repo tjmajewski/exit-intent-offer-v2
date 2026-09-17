@@ -38,6 +38,7 @@ import {
   describeTriggers,
   describeBudget,
   describeFrequency,
+  describeCopy,
   settingsDrift,
 } from "../components/admin/live-config.js";
 import {
@@ -507,6 +508,7 @@ function LiveConfig({ settings, aiRange, shop, live }) {
 
   const mode = describeMode(settings.mode);
   const offer = describeOffer(settings, aiRange);
+  const copy = describeCopy(settings);
   const drift = settingsDrift(settings, shop);
 
   return (
@@ -555,16 +557,15 @@ function LiveConfig({ settings, aiRange, shop, live }) {
 
           <Divider />
 
-          <Fact label="Copy on the live modal">
+          <Fact label={copy.label}>
             <Text as="p" variant="bodyMd">
-              {settings.modalHeadline || "(no headline)"}
+              {copy.headline}
             </Text>
-            <Text as="p" tone="subdued" variant="bodySm">
-              {settings.modalBody || "(no body)"}
-            </Text>
-            <Text as="p" tone="subdued" variant="bodySm">
-              Button: {settings.ctaButton || "(none)"} → {settings.redirectDestination || "checkout"}
-            </Text>
+            {copy.lines.map((line) => (
+              <Text key={line} as="p" tone="subdued" variant="bodySm">
+                {line}
+              </Text>
+            ))}
           </Fact>
         </BlockStack>
       </Card>

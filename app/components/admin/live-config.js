@@ -121,6 +121,35 @@ export function describeFrequency(settings) {
   }.`;
 }
 
+// Who writes the words on the modal. Only manual mode uses the stored copy:
+// in ai/hybrid the variant engine picks headline, subhead and CTA per visitor
+// from the evolving gene pool (see effectiveHeadline in the decision route),
+// and settings.modalHeadline is never read. Showing "(no headline)" for those
+// stores implied something was broken when nothing was.
+export function describeCopy(settings) {
+  if (!settings) return null;
+  if (makesAIDecisions(settings.mode)) {
+    return {
+      generated: true,
+      label: "Copy on the live modal",
+      headline: "Written per visitor by the variant engine",
+      lines: [
+        "Headline, subhead and CTA come from the evolving gene pool, not from saved copy — the stored fields below are unused in this mode.",
+        "The decision log on the Performance tab records the exact words each visitor saw.",
+      ],
+    };
+  }
+  return {
+    generated: false,
+    label: "Copy on the live modal",
+    headline: settings.modalHeadline || "(no headline set)",
+    lines: [
+      settings.modalBody || "(no body set)",
+      `Button: ${settings.ctaButton || "(none)"} → ${settings.redirectDestination || "checkout"}`,
+    ],
+  };
+}
+
 // Fields the console's own Settings form writes to the Shop row but which the
 // decision engine reads off the metafield. When these disagree, someone edited
 // the row directly and the storefront never heard about it.
