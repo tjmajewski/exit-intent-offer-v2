@@ -509,6 +509,7 @@ function LiveConfig({ settings, aiRange, shop, live }) {
   const mode = describeMode(settings.mode);
   const offer = describeOffer(settings, aiRange);
   const copy = describeCopy(settings);
+  const shows = describeTriggers(settings);
   const drift = settingsDrift(settings, shop);
 
   return (
@@ -537,8 +538,13 @@ function LiveConfig({ settings, aiRange, shop, live }) {
             </Fact>
             <Fact label="Shows">
               <Text as="p" variant="headingSm">
-                {describeTriggers(settings).join(", ")}
+                {shows.headline}
               </Text>
+              {shows.lines.map((line) => (
+                <Text key={line} as="p" tone="subdued" variant="bodySm">
+                  {line}
+                </Text>
+              ))}
               {describeFrequency(settings) && (
                 <Text as="p" tone="subdued" variant="bodySm">
                   {describeFrequency(settings)}

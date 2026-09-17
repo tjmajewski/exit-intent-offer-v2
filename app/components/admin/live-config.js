@@ -89,20 +89,42 @@ export function describeOffer(settings, aiRange = null) {
   return { headline: "Unknown mode", lines: [] };
 }
 
+// In ai/hybrid the stored trigger flags are not a merchant choice: the merchant
+// app hard-writes exitIntentEnabled true and timeDelayEnabled false for those
+// modes, and the real per-visitor timing comes from the variant's triggerType
+// gene (exit_intent | idle | exit_intent_or_idle) plus idleSeconds, which the
+// storefront reads off the decision. Reporting the stored flags as "on exit
+// intent" therefore described a setting nobody picked and hid what the AI is
+// actually doing.
 export function describeTriggers(settings) {
-  if (!settings) return [];
+  if (!settings) return { headline: "", lines: [] };
   const triggers = settings.triggers || settings;
+
+  const cartGate = (triggers.cartValue ?? settings.cartValueEnabled)
+    ? `Only carts ${money(triggers.minCartValue ?? settings.cartValueMin ?? 0)}–${money(
+        triggers.maxCartValue ?? settings.cartValueMax ?? 0
+      )}.`
+    : null;
+
+  if (makesAIDecisions(settings.mode)) {
+    return {
+      headline: "Timing decided per visitor",
+      lines: [
+        "The variant picks exit intent, idle, or either, and how many idle seconds — exit intent is always armed as the floor.",
+        cartGate,
+      ].filter(Boolean),
+    };
+  }
+
   const list = [];
   if (triggers.exitIntent ?? settings.exitIntentEnabled) list.push("on exit intent");
   if (triggers.timeDelay ?? settings.timeDelayEnabled) {
     list.push(`after ${triggers.timeDelaySeconds ?? settings.timeDelaySeconds ?? 30}s`);
   }
-  if (triggers.cartValue ?? settings.cartValueEnabled) {
-    const min = money(triggers.minCartValue ?? settings.cartValueMin ?? 0);
-    const max = money(triggers.maxCartValue ?? settings.cartValueMax ?? 0);
-    list.push(`carts ${min}–${max}`);
-  }
-  return list.length ? list : ["no trigger enabled"];
+  return {
+    headline: list.length ? list.join(", ") : "No trigger enabled",
+    lines: [cartGate].filter(Boolean),
+  };
 }
 
 export function describeBudget(settings) {
@@ -116,7 +138,9 @@ export function describeFrequency(settings) {
   const cooldown = settings.cooldownDays;
   const max = settings.maxShowsPer30d;
   if (cooldown === undefined && max === undefined) return null;
-  return `At most ${max ?? 5} shows per 30 days${
+  // Unlike the trigger flags, this cap is mode-independent — shouldShowCrossSession
+  // enforces it client-side in every mode, and the AI cannot spend past it.
+  return `Hard cap in every mode: at most ${max ?? 5} shows per 30 days${
     cooldown ? `, ${cooldown} day${cooldown === 1 ? "" : "s"} apart` : ", no cooldown between shows"
   }.`;
 }
