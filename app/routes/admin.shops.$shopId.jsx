@@ -589,9 +589,14 @@ export default function AdminShopDetail() {
                     <Select
                       label="Mode"
                       name="mode"
+                      // Hybrid is a real stored mode (see admin-metrics
+                      // isAIMode). Leaving it out made a hybrid shop render as
+                      // "AI" and silently downgrade the moment anyone touched
+                      // the dropdown.
                       options={[
                         { label: "Manual", value: "manual" },
                         { label: "AI", value: "ai" },
+                        { label: "Hybrid", value: "hybrid" },
                       ]}
                       value={form.mode}
                       onChange={set("mode")}
