@@ -121,11 +121,20 @@ export function summarizeDecision(row) {
   try {
     decision = JSON.parse(row.decision) || {};
   } catch {
+    // Early rows stored a bare label ("show_variant", "suppress_promo_active")
+    // rather than a JSON object. They are history, not corruption — read them
+    // as the label they are instead of flagging them red.
+    const legacy = String(row.decision || "").trim();
+    const isLabel = legacy.length > 0 && legacy.length <= 64 && !legacy.startsWith("{");
     return {
       id: row.id,
       createdAt: row.createdAt,
-      outcome: { label: "Unreadable record", tone: "critical" },
-      why: "The stored decision is not valid JSON.",
+      outcome: isLabel
+        ? { label: legacy.replace(/_/g, " "), tone: undefined }
+        : { label: "Unreadable record", tone: "critical" },
+      why: isLabel
+        ? "Logged before decisions carried their reasoning — the label is all this row holds."
+        : "The stored decision is not valid JSON.",
       context: [],
       shown: null,
       result: row.result ?? null,
