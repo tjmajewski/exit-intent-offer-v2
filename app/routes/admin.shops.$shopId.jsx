@@ -31,7 +31,12 @@ import { requireSuperAdmin, ADMIN_RESPONSE_HEADERS } from "../utils/admin-auth.s
 import { logAdminAction, diffFields } from "../utils/admin-audit.server.js";
 import InfoPopover from "../components/admin/InfoPopover.jsx";
 import { METRIC_INFO } from "../components/admin/metric-info.js";
-import { summarizeDecision, relativeTime } from "../components/admin/decision-summary.js";
+import {
+  summarizeDecision,
+  describeResult,
+  tallyResults,
+  relativeTime,
+} from "../components/admin/decision-summary.js";
 import db from "../db.server.js";
 import { getShopMetrics } from "../utils/shop-metrics.server.js";
 
@@ -156,13 +161,61 @@ export async function loader({ request, params }) {
     }),
   ]);
 
+  // What each decision actually came to. InterventionOutcome is the only
+  // record that links a decision to an impression and an order; a decision
+  // with no outcome row never entered the tracked path at all (budget block,
+  // promo pause, cart/idle pre-decision, or test traffic).
+  const outcomeRows = recentDecisions.length
+    ? await db.interventionOutcome.findMany({
+        where: { aiDecisionId: { in: recentDecisions.map((decision) => decision.id) } },
+        select: {
+          aiDecisionId: true,
+          wasShown: true,
+          rendered: true,
+          converted: true,
+          revenue: true,
+          profit: true,
+          impressionId: true,
+        },
+      })
+    : [];
+
+  // The click lives on the impression, not the outcome.
+  const impressionIds = [...new Set(outcomeRows.map((row) => row.impressionId).filter(Boolean))];
+  const impressions = impressionIds.length
+    ? await db.variantImpression.findMany({
+        where: { id: { in: impressionIds } },
+        select: { id: true, clicked: true },
+      })
+    : [];
+  const clickedById = new Map(impressions.map((impression) => [impression.id, impression.clicked]));
+
+  // One decision can own more than one outcome row — a holdout that converts
+  // gets a second row from the order webhook — so collapse to the furthest
+  // the visitor got.
+  const resultByDecision = new Map();
+  for (const row of outcomeRows) {
+    const prev = resultByDecision.get(row.aiDecisionId);
+    resultByDecision.set(row.aiDecisionId, {
+      wasShown: (prev?.wasShown ?? false) || row.wasShown,
+      rendered: (prev?.rendered ?? false) || row.rendered,
+      clicked: (prev?.clicked ?? false) || clickedById.get(row.impressionId) === true,
+      converted: (prev?.converted ?? false) || row.converted,
+      revenue: (prev?.revenue ?? 0) + (row.revenue || 0),
+      profit: (prev?.profit ?? 0) + (row.profit || 0),
+    });
+  }
+
   return {
     shop,
     live,
     days,
     perf,
     variants,
-    recentDecisions,
+    recentDecisions: recentDecisions.map((decision) => ({
+      ...decision,
+      result: resultByDecision.get(decision.id) || null,
+    })),
     auditEntries,
   };
 }
@@ -221,7 +274,13 @@ function StatCell({ label, value }) {
 // because that is what you paste into a query when something looks wrong.
 function DecisionLog({ decisions }) {
   const [showRaw, setShowRaw] = useState(false);
-  const rows = decisions.map(summarizeDecision);
+  const [showUntracked, setShowUntracked] = useState(true);
+  const all = decisions.map((decision) => {
+    const row = summarizeDecision(decision);
+    return { ...row, status: describeResult(row.result) };
+  });
+  const rows = showUntracked ? all : all.filter((row) => row.result);
+  const tally = tallyResults(all);
 
   return (
     <Card>
@@ -230,10 +289,20 @@ function DecisionLog({ decisions }) {
           <Text as="h3" variant="headingMd">
             Recent AI decisions
           </Text>
-          <Button variant="plain" onClick={() => setShowRaw((value) => !value)}>
-            {showRaw ? "Hide raw JSON" : "Show raw JSON"}
-          </Button>
+          <InlineStack gap="300">
+            <Button variant="plain" onClick={() => setShowUntracked((value) => !value)}>
+              {showUntracked ? "Hide untracked" : "Show all"}
+            </Button>
+            <Button variant="plain" onClick={() => setShowRaw((value) => !value)}>
+              {showRaw ? "Hide raw JSON" : "Show raw JSON"}
+            </Button>
+          </InlineStack>
         </InlineStack>
+
+        <Text as="p" tone="subdued" variant="bodySm">
+          Last {tally.total} decisions · {tally.rendered} actually shown ·{" "}
+          {tally.converted} converted · {tally.untracked} never entered the tracked path
+        </Text>
 
         {rows.length === 0 && (
           <Text as="p" tone="subdued" variant="bodySm">
@@ -244,8 +313,9 @@ function DecisionLog({ decisions }) {
         {rows.map((row, index) => (
           <BlockStack key={row.id} gap="150">
             {index > 0 && <Divider />}
-            <InlineStack gap="200" blockAlign="center" wrap={false}>
+            <InlineStack gap="200" blockAlign="center" wrap>
               <Badge tone={row.outcome.tone}>{row.outcome.label}</Badge>
+              <Badge tone={row.status.tone}>{row.status.label}</Badge>
               <Text as="span" tone="subdued" variant="bodySm">
                 {relativeTime(row.createdAt)} · {new Date(row.createdAt).toLocaleString()}
               </Text>
@@ -253,6 +323,11 @@ function DecisionLog({ decisions }) {
             <Text as="p" variant="bodyMd">
               {row.why}
             </Text>
+            {row.status.detail && (
+              <Text as="p" tone="subdued" variant="bodySm">
+                {row.status.detail}
+              </Text>
+            )}
             {row.shown && (
               <Text as="p" tone="subdued" variant="bodySm">
                 Visitor saw: {row.shown}

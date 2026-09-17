@@ -128,6 +128,7 @@ export function summarizeDecision(row) {
       why: "The stored decision is not valid JSON.",
       context: [],
       shown: null,
+      result: row.result ?? null,
       raw: row.decision,
     };
   }
@@ -151,6 +152,7 @@ export function summarizeDecision(row) {
           .filter(Boolean)
           .join(" · ")
       : null,
+    result: row.result ?? null,
     raw: row.decision,
   };
 }
@@ -167,4 +169,68 @@ export function relativeTime(value, now = Date.now()) {
   const days = Math.round(hours / 24);
   if (days < 30) return `${days}d ago`;
   return new Date(value).toLocaleDateString();
+}
+
+// What became of a decision, read off InterventionOutcome (+ the linked
+// VariantImpression for the click). `result` is null when no outcome row
+// exists at all — that is a real state, not missing data: budget blocks,
+// promo pauses, the cart/idle pre-decision writers and test traffic all mint
+// decisions without ever entering the tracked path.
+export function describeResult(result) {
+  if (!result) {
+    return {
+      label: "Not tracked",
+      tone: undefined,
+      detail:
+        "No impression record exists — minted outside the tracked path (budget block, promo pause, cart prefetch, or test traffic).",
+    };
+  }
+  if (!result.wasShown) {
+    return result.converted
+      ? {
+          label: `Bought anyway · ${money(result.revenue)}`,
+          tone: "success",
+          detail: "Nothing was shown to this visitor and the order came in regardless.",
+        }
+      : {
+          label: "No impression",
+          tone: undefined,
+          detail: "Nothing was shown, and no order followed.",
+        };
+  }
+  if (result.converted) {
+    return {
+      label: `Converted · ${money(result.revenue)}`,
+      tone: "success",
+      detail: Number.isFinite(result.profit)
+        ? `${money(result.profit)} left after the discount.`
+        : null,
+    };
+  }
+  if (!result.rendered) {
+    return {
+      label: "Never rendered",
+      tone: "warning",
+      detail:
+        "Decided at prefetch, but the trigger never fired — the visitor never actually saw this.",
+    };
+  }
+  return {
+    label: result.clicked ? "Seen, clicked, no order" : "Seen, no order",
+    tone: "info",
+    detail: null,
+  };
+}
+
+// Counts for the one-line header above the log.
+export function tallyResults(rows) {
+  const tally = { total: rows.length, rendered: 0, converted: 0, untracked: 0 };
+  for (const row of rows) {
+    if (!row.result) tally.untracked += 1;
+    else {
+      if (row.result.rendered && row.result.wasShown) tally.rendered += 1;
+      if (row.result.converted) tally.converted += 1;
+    }
+  }
+  return tally;
 }
