@@ -280,7 +280,7 @@ function DecisionLog({ decisions }) {
   const [showUntracked, setShowUntracked] = useState(true);
   const all = decisions.map((decision) => {
     const row = summarizeDecision(decision);
-    return { ...row, status: describeResult(row.result) };
+    return { ...row, status: describeResult(row.result, row.source) };
   });
   const rows = showUntracked ? all : all.filter((row) => row.result);
   const tally = tallyResults(all);
@@ -304,7 +304,8 @@ function DecisionLog({ decisions }) {
 
         <Text as="p" tone="subdued" variant="bodySm">
           Last {tally.total} decisions · {tally.rendered} actually shown ·{" "}
-          {tally.converted} converted · {tally.untracked} never entered the tracked path
+          {tally.converted} converted · {tally.preDecisions} pre-decisions that never
+          surfaced · {tally.untracked} untracked
         </Text>
 
         {rows.length === 0 && (

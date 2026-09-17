@@ -138,6 +138,7 @@ export function summarizeDecision(row) {
       context: [],
       shown: null,
       result: row.result ?? null,
+      source: null,
       raw: row.decision,
     };
   }
@@ -162,6 +163,7 @@ export function summarizeDecision(row) {
           .join(" · ")
       : null,
     result: row.result ?? null,
+    source: decision.source || null,
     raw: row.decision,
   };
 }
@@ -185,13 +187,24 @@ export function relativeTime(value, now = Date.now()) {
 // exists at all — that is a real state, not missing data: budget blocks,
 // promo pauses, the cart/idle pre-decision writers and test traffic all mint
 // decisions without ever entering the tracked path.
-export function describeResult(result) {
+export function describeResult(result, source = null) {
   if (!result) {
+    // A cart-webhook / idle-sweep row was never a surface in the first place:
+    // it is a speculative answer computed when the cart changed, kept so the
+    // storefront can pick it up later. Calling that "not tracked" reads like a
+    // failure when it is simply a different kind of record.
+    if (SOURCES[source]) {
+      return {
+        label: "Pre-decision, never surfaced",
+        tone: undefined,
+        detail: `Computed ahead of time (${SOURCES[source]}), not in response to a visitor leaving — no impression was ever meant to follow.`,
+      };
+    }
     return {
       label: "Not tracked",
       tone: undefined,
       detail:
-        "No impression record exists — minted outside the tracked path (budget block, promo pause, cart prefetch, or test traffic).",
+        "No impression record exists — minted outside the tracked path (budget block, promo pause, or test traffic).",
     };
   }
   if (!result.wasShown) {
@@ -256,10 +269,12 @@ export function describeResult(result) {
 
 // Counts for the one-line header above the log.
 export function tallyResults(rows) {
-  const tally = { total: rows.length, rendered: 0, converted: 0, untracked: 0 };
+  const tally = { total: rows.length, rendered: 0, converted: 0, untracked: 0, preDecisions: 0 };
   for (const row of rows) {
-    if (!row.result) tally.untracked += 1;
-    else {
+    if (!row.result) {
+      if (SOURCES[row.source]) tally.preDecisions += 1;
+      else tally.untracked += 1;
+    } else {
       if (row.result.rendered && row.result.wasShown) tally.rendered += 1;
       if (row.result.converted) tally.converted += 1;
     }
