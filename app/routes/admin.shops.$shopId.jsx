@@ -649,6 +649,14 @@ function DecisionLog({ decisions, mode }) {
             {index > 0 && <Divider />}
             <InlineStack gap="200" blockAlign="center" wrap>
               <Badge tone={row.outcome.tone}>{row.outcome.label}</Badge>
+              {/* The offer alone doesn't say what the decision was: 17% off on
+                  exit intent and 17% off after 30s idle are different calls the
+                  AI made, so the trigger sits with the amount, not below it. */}
+              {row.trigger && (
+                <Text as="span" variant="bodyMd">
+                  {row.trigger}
+                </Text>
+              )}
               <Badge tone={row.status.tone}>{row.status.label}</Badge>
               <Text as="span" tone="subdued" variant="bodySm">
                 {relativeTime(row.createdAt)} · {new Date(row.createdAt).toLocaleString()}

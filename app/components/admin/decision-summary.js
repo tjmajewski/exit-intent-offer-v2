@@ -87,10 +87,15 @@ function whyOf(decision, propensity) {
   return decision.headline ? `Showed: “${decision.headline}”` : "No reason recorded.";
 }
 
-const TRIGGERS = {
-  exit_intent: "leaving the page",
-  idle: "going idle",
-  scroll: "scrolling away",
+// WHY the visitor was flagged as worth an offer — a different axis from the
+// triggerType gene above, which is WHEN the modal fires. The values are the
+// ones VariantImpression.triggerReason documents; the earlier map here listed
+// surface names instead and so matched nothing but "general".
+const TRIGGER_REASONS = {
+  failedCoupon: "tried a coupon that failed",
+  checkoutExit: "leaving checkout",
+  cartHesitation: "hesitating over the cart",
+  staleCart: "sitting on an old cart",
   general: null,
 };
 
@@ -103,16 +108,47 @@ const SOURCES = {
 function contextOf(decision, signals) {
   const cart = money(signals.cartValue ?? decision.cartValue);
   const visits = signals.visitFrequency;
-  const trigger = TRIGGERS[decision.triggerReason || signals.triggerReason] || null;
+  const reason = TRIGGER_REASONS[decision.triggerReason || signals.triggerReason] || null;
   return [
     signals.deviceType ? `${signals.deviceType} visitor` : null,
     cart ? `${cart} cart` : null,
     signals.trafficSource ? `from ${signals.trafficSource}` : null,
     Number.isFinite(visits) ? (visits <= 1 ? "first visit" : `visit ${visits}`) : null,
-    trigger ? `caught ${trigger}` : null,
+    reason ? `flagged for ${reason}` : null,
     decision.confidence ? `${decision.confidence} confidence` : null,
     SOURCES[decision.source] || null,
   ].filter(Boolean);
+}
+
+// WHEN the modal was set to fire. This is the variant's triggerType gene plus
+// its idleSeconds — the thing the AI actually chose, distinct from
+// triggerReason (WHY the visitor was flagged) which the context line carries.
+// Rows from the cart webhook and idle sweep have no variant, so they carry
+// determineOffer's coarser `timing` instead.
+const TRIGGER_TYPES = {
+  exit_intent: (seconds, isMobile) =>
+    isMobile
+      // Mobile has no mouseout, so the storefront adds a capped idle fallback.
+      ? `on exit intent, or after ${Math.min(seconds, 15)}s idle (mobile has no exit signal)`
+      : "on exit intent",
+  idle: (seconds) => `after ${seconds}s idle`,
+  exit_intent_or_idle: (seconds) => `on exit intent, or after ${seconds}s idle`,
+};
+
+const TIMINGS = {
+  immediate: "immediately — the visitor was already at a decision point",
+  exit_intent: "on exit intent",
+};
+
+function triggerOf(decision, signals) {
+  const type = decision.triggerType;
+  if (!type) {
+    return TIMINGS[decision.timing] || (decision.timing ? String(decision.timing).replace(/_/g, " ") : null);
+  }
+  const describe = TRIGGER_TYPES[type];
+  const seconds = Number.isFinite(decision.idleSeconds) ? decision.idleSeconds : 30;
+  if (!describe) return String(type).replace(/_/g, " ");
+  return describe(seconds, signals.deviceType === "mobile");
 }
 
 export function summarizeDecision(row) {
@@ -136,6 +172,7 @@ export function summarizeDecision(row) {
         ? "Logged before decisions carried their reasoning — the label is all this row holds."
         : "The stored decision is not valid JSON.",
       context: [],
+      trigger: null,
       shown: null,
       result: row.result ?? null,
       source: null,
@@ -154,6 +191,7 @@ export function summarizeDecision(row) {
     id: row.id,
     createdAt: row.createdAt,
     outcome: outcomeOf(decision),
+    trigger: triggerOf(decision, signals),
     why: whyOf(decision, P),
     context: contextOf(decision, signals),
     // What the visitor actually read, when this decision produced a modal.
