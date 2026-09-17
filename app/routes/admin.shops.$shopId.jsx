@@ -31,6 +31,7 @@ import { requireSuperAdmin, ADMIN_RESPONSE_HEADERS } from "../utils/admin-auth.s
 import { logAdminAction, diffFields } from "../utils/admin-audit.server.js";
 import InfoPopover from "../components/admin/InfoPopover.jsx";
 import { METRIC_INFO } from "../components/admin/metric-info.js";
+import { summarizeDecision, relativeTime } from "../components/admin/decision-summary.js";
 import db from "../db.server.js";
 import { getShopMetrics } from "../utils/shop-metrics.server.js";
 
@@ -146,7 +147,7 @@ export async function loader({ request, params }) {
       where: { shopId: shop.id },
       orderBy: { createdAt: "desc" },
       take: 50,
-      select: { id: true, decision: true, createdAt: true },
+      select: { id: true, decision: true, signals: true, createdAt: true },
     }),
     db.adminAuditLog.findMany({
       where: { shopId: shop.id },
@@ -213,6 +214,64 @@ function StatCell({ label, value }) {
         {value}
       </Text>
     </BlockStack>
+  );
+}
+
+// Recent AI decisions, written for a person. The raw JSON is one click away
+// because that is what you paste into a query when something looks wrong.
+function DecisionLog({ decisions }) {
+  const [showRaw, setShowRaw] = useState(false);
+  const rows = decisions.map(summarizeDecision);
+
+  return (
+    <Card>
+      <BlockStack gap="300">
+        <InlineStack align="space-between" blockAlign="center">
+          <Text as="h3" variant="headingMd">
+            Recent AI decisions
+          </Text>
+          <Button variant="plain" onClick={() => setShowRaw((value) => !value)}>
+            {showRaw ? "Hide raw JSON" : "Show raw JSON"}
+          </Button>
+        </InlineStack>
+
+        {rows.length === 0 && (
+          <Text as="p" tone="subdued" variant="bodySm">
+            No decisions recorded yet.
+          </Text>
+        )}
+
+        {rows.map((row, index) => (
+          <BlockStack key={row.id} gap="150">
+            {index > 0 && <Divider />}
+            <InlineStack gap="200" blockAlign="center" wrap={false}>
+              <Badge tone={row.outcome.tone}>{row.outcome.label}</Badge>
+              <Text as="span" tone="subdued" variant="bodySm">
+                {relativeTime(row.createdAt)} · {new Date(row.createdAt).toLocaleString()}
+              </Text>
+            </InlineStack>
+            <Text as="p" variant="bodyMd">
+              {row.why}
+            </Text>
+            {row.shown && (
+              <Text as="p" tone="subdued" variant="bodySm">
+                Visitor saw: {row.shown}
+              </Text>
+            )}
+            {row.context.length > 0 && (
+              <Text as="p" tone="subdued" variant="bodySm">
+                {row.context.join(" · ")}
+              </Text>
+            )}
+            {showRaw && (
+              <Text as="p" tone="subdued" variant="bodySm" breakWord>
+                <code>{row.raw}</code>
+              </Text>
+            )}
+          </BlockStack>
+        ))}
+      </BlockStack>
+    </Card>
   );
 }
 
@@ -431,23 +490,7 @@ export default function AdminShopDetail() {
                 />
               </BlockStack>
             </Card>
-            <Card>
-              <BlockStack gap="300">
-                <Text as="h3" variant="headingMd">
-                  Recent AI decisions
-                </Text>
-                <DataTable
-                  columnContentTypes={["text", "text"]}
-                  headings={["When", "Decision"]}
-                  rows={recentDecisions.map((decision) => [
-                    new Date(decision.createdAt).toLocaleString(),
-                    decision.decision.length > 160
-                      ? `${decision.decision.slice(0, 160)}…`
-                      : decision.decision,
-                  ])}
-                />
-              </BlockStack>
-            </Card>
+            <DecisionLog decisions={recentDecisions} />
           </BlockStack>
         )}
 
