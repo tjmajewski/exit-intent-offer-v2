@@ -199,13 +199,36 @@ export function describeResult(result) {
         };
   }
   if (result.converted) {
-    return {
-      label: `Converted · ${money(result.revenue)}`,
-      tone: "success",
-      detail: Number.isFinite(result.profit)
-        ? `${money(result.profit)} left after the discount.`
-        : null,
-    };
+    // The cart attribute is stamped at render, not at click (see the modal
+    // extension), so an order can attribute to a modal the visitor dismissed.
+    // That is weaker evidence than a click and must not read the same.
+    const margin = Number.isFinite(result.profit)
+      ? `${money(result.profit)} left after the discount.`
+      : null;
+    if (!result.hasImpression) {
+      // Pill openers mint no VariantImpression, so there is no click to read.
+      return {
+        label: `Converted · ${money(result.revenue)}`,
+        tone: "success",
+        detail: margin,
+      };
+    }
+    return result.clicked
+      ? {
+          label: `Clicked, converted · ${money(result.revenue)}`,
+          tone: "success",
+          detail: margin,
+        }
+      : {
+          label: `Converted without clicking · ${money(result.revenue)}`,
+          tone: "success",
+          detail: [
+            "Shown but never clicked — attributed by the cart attribute stamped at render, so the visitor may have checked out on their own.",
+            margin,
+          ]
+            .filter(Boolean)
+            .join(" "),
+        };
   }
   if (!result.rendered) {
     return {
@@ -216,7 +239,7 @@ export function describeResult(result) {
     };
   }
   return {
-    label: result.clicked ? "Seen, clicked, no order" : "Seen, no order",
+    label: result.clicked ? "Clicked, no order" : "Seen, no order",
     tone: "info",
     detail: null,
   };

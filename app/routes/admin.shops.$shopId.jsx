@@ -199,6 +199,9 @@ export async function loader({ request, params }) {
     resultByDecision.set(row.aiDecisionId, {
       wasShown: (prev?.wasShown ?? false) || row.wasShown,
       rendered: (prev?.rendered ?? false) || row.rendered,
+      // No impression row means no click to read (pill openers mint none), so
+      // "not clicked" and "unknown" have to stay distinguishable.
+      hasImpression: (prev?.hasImpression ?? false) || clickedById.has(row.impressionId),
       clicked: (prev?.clicked ?? false) || clickedById.get(row.impressionId) === true,
       converted: (prev?.converted ?? false) || row.converted,
       revenue: (prev?.revenue ?? 0) + (row.revenue || 0),
