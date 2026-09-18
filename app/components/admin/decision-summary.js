@@ -12,6 +12,8 @@
 //   utils/idle-cart-pickup.server.js      same shapes + source: idle_cart_pickup
 // An unrecognized type degrades to the raw type string — never to a crash.
 
+import { fmtDate } from "../../utils/format.js";
+
 function money(n) {
   const value = Number(n);
   if (!Number.isFinite(value)) return null;
@@ -224,7 +226,7 @@ export function relativeTime(value, now = Date.now()) {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.round(hours / 24);
   if (days < 30) return `${days}d ago`;
-  return new Date(value).toLocaleDateString();
+  return fmtDate(value);
 }
 
 // What became of a decision, read off InterventionOutcome (+ the linked

@@ -38,6 +38,7 @@ import {
 } from "../components/admin/charts.jsx";
 import InfoPopover from "../components/admin/InfoPopover.jsx";
 import { METRIC_INFO } from "../components/admin/metric-info.js";
+import { fmtNum, fmtMoney } from "../utils/format.js";
 
 export function headers() {
   return ADMIN_RESPONSE_HEADERS;
@@ -48,12 +49,12 @@ const RANGE_PRESETS = { "24h": 1, "7d": 7, "30d": 30, "90d": 90 };
 function bucketLabel(date, bucket) {
   const d = new Date(date);
   if (bucket === "hour") {
-    return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric" });
+    return d.toLocaleString("en-US", { timeZone: "UTC", month: "short", day: "numeric", hour: "numeric" });
   }
   if (bucket === "month") {
-    return d.toLocaleString(undefined, { month: "short", year: "numeric" });
+    return d.toLocaleString("en-US", { timeZone: "UTC", month: "short", year: "numeric" });
   }
-  return d.toLocaleString(undefined, { month: "short", day: "numeric" });
+  return d.toLocaleString("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
 }
 
 export async function loader({ request }) {
@@ -223,7 +224,7 @@ function ChartTitle({ children, info }) {
   );
 }
 
-const money = (value) => `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+const money = (value) => fmtMoney(value);
 
 export default function AdminAIDashboard() {
   const data = useLoaderData();
@@ -343,9 +344,9 @@ export default function AdminAIDashboard() {
         {/* KPI tiles */}
         <Card>
           <InlineGrid columns={{ xs: 2, md: 4, lg: 8 }} gap="400">
-            <Kpi label="AI decisions" value={current.decisions.toLocaleString()} current={current.decisions} previous={previous.decisions} info={METRIC_INFO.decisions} />
+            <Kpi label="AI decisions" value={fmtNum(current.decisions)} current={current.decisions} previous={previous.decisions} info={METRIC_INFO.decisions} />
             <Kpi label="Show rate" value={`${(current.showRate * 100).toFixed(0)}%`} current={current.showRate} previous={previous.showRate} info={METRIC_INFO.showRate} />
-            <Kpi label="Impressions" value={current.impressions.toLocaleString()} current={current.impressions} previous={previous.impressions} info={METRIC_INFO.impressions} />
+            <Kpi label="Impressions" value={fmtNum(current.impressions)} current={current.impressions} previous={previous.impressions} info={METRIC_INFO.impressions} />
             <Kpi label="CVR" value={`${(current.cvr * 100).toFixed(1)}%`} current={current.cvr} previous={previous.cvr} info={METRIC_INFO.cvr} />
             <Kpi label="Revenue" value={money(current.revenue)} current={current.revenue} previous={previous.revenue} info={METRIC_INFO.revenue} />
             <Kpi label="Profit" value={money(current.profit)} current={current.profit} previous={previous.profit} info={METRIC_INFO.profit} />
@@ -502,9 +503,9 @@ export default function AdminAIDashboard() {
                   {row.domain}
                 </Link>,
                 <Badge key={`${row.shopId}-plan`}>{row.plan}</Badge>,
-                row.decisions.toLocaleString(),
-                row.impressions.toLocaleString(),
-                row.conversions.toLocaleString(),
+                fmtNum(row.decisions),
+                fmtNum(row.impressions),
+                fmtNum(row.conversions),
                 `${(row.cvr * 100).toFixed(1)}%`,
                 money(row.profit),
                 row.holdoutLiftPts === null

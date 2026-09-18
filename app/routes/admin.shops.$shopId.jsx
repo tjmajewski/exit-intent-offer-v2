@@ -41,6 +41,7 @@ import {
   describeCopy,
   settingsDrift,
 } from "../components/admin/live-config.js";
+import { fmtDate, fmtDateTime, fmtNum } from "../utils/format.js";
 import {
   summarizeDecision,
   describeResult,
@@ -423,6 +424,10 @@ export async function loader({ request, params }) {
       result: resultByDecision.get(decision.id) || null,
     })),
     auditEntries,
+    // One server-side clock for every relative timestamp on this page. Computing
+    // `now` during render instead would give the server and the client two
+    // different values and re-break hydration the moment a "2m ago" ticks over.
+    now: Date.now(),
   };
 }
 
@@ -753,7 +758,7 @@ function DecisionLog({ decisions, mode }) {
               )}
               <Badge tone={row.status.tone}>{row.status.label}</Badge>
               <Text as="span" tone="subdued" variant="bodySm">
-                {relativeTime(row.createdAt)} · {new Date(row.createdAt).toLocaleString()}
+                {relativeTime(row.createdAt, now)} · {fmtDateTime(row.createdAt)}
               </Text>
             </InlineStack>
             <Text as="p" variant="bodyMd">
@@ -789,7 +794,7 @@ function DecisionLog({ decisions, mode }) {
 export default function AdminShopDetail() {
   const {
     shop, live, liveSettings, aiRange, days, perf, variants,
-    triggerPerformance, recentDecisions, auditEntries,
+    triggerPerformance, recentDecisions, auditEntries, now,
   } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
@@ -825,7 +830,7 @@ export default function AdminShopDetail() {
   return (
     <Page
       title={shop.shopifyDomain}
-      subtitle={`Installed ${new Date(shop.createdAt).toLocaleDateString()}`}
+      subtitle={`Installed ${fmtDate(shop.createdAt)}`}
       backAction={{ content: "Customers", url: "/admin" }}
       fullWidth
     >
@@ -868,7 +873,7 @@ export default function AdminShopDetail() {
                   <StatCell label="Promo code" value={shop.promoCode || "—"} />
                   <StatCell
                     label="Promo applied"
-                    value={shop.promoAppliedAt ? new Date(shop.promoAppliedAt).toLocaleDateString() : "—"}
+                    value={fmtDate(shop.promoAppliedAt)}
                   />
                 </InlineGrid>
               </BlockStack>
@@ -896,7 +901,7 @@ export default function AdminShopDetail() {
                           ? live.subscriptions.map((sub) => [
                               sub.name,
                               sub.status,
-                              new Date(sub.createdAt).toLocaleDateString(),
+                              fmtDate(sub.createdAt),
                               sub.test ? "yes" : "no",
                             ])
                           : [["No active subscriptions", "—", "—", "—"]]
@@ -932,28 +937,28 @@ export default function AdminShopDetail() {
                   decisions stop, nothing downstream can move, so it's the first
                   thing to read when a store looks dead. */}
               <InlineGrid columns={6} gap="400">
-                <StatCell label="AI decisions" value={perf.decisions.toLocaleString()} />
-                <StatCell label="Impressions" value={perf.impressions.toLocaleString()} />
-                <StatCell label="Clicks" value={perf.clicks.toLocaleString()} />
-                <StatCell label="Conversions" value={perf.conversions.toLocaleString()} />
+                <StatCell label="AI decisions" value={fmtNum(perf.decisions)} />
+                <StatCell label="Impressions" value={fmtNum(perf.impressions)} />
+                <StatCell label="Clicks" value={fmtNum(perf.clicks)} />
+                <StatCell label="Conversions" value={fmtNum(perf.conversions)} />
                 <StatCell
                   label="Revenue"
-                  value={`$${perf.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                  value={`$${fmtNum(perf.revenue, { maximumFractionDigits: 0 })}`}
                 />
                 <StatCell
                   label="Profit"
-                  value={`$${perf.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                  value={`$${fmtNum(perf.profit, { maximumFractionDigits: 0 })}`}
                 />
               </InlineGrid>
             </Card>
             <Card>
               <InlineGrid columns={4} gap="400">
-                <StatCell label="AI: skipped" value={perf.skipped.toLocaleString()} />
+                <StatCell label="AI: skipped" value={fmtNum(perf.skipped)} />
                 <StatCell label="Show rate" value={`${perf.showRate.toFixed(0)}%`} />
                 <StatCell label="Conv. rate" value={`${perf.conversionRate.toFixed(1)}%`} />
                 <StatCell
                   label="Discount given"
-                  value={`$${perf.discountGiven.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                  value={`$${fmtNum(perf.discountGiven, { maximumFractionDigits: 0 })}`}
                 />
               </InlineGrid>
             </Card>
@@ -979,7 +984,7 @@ export default function AdminShopDetail() {
                       <StatCell label="Lift" value={`${perf.holdout.liftPct.toFixed(1)}%`} />
                       <StatCell
                         label="Incremental revenue"
-                        value={`$${perf.holdout.incrementalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                        value={`$${fmtNum(perf.holdout.incrementalRevenue, { maximumFractionDigits: 0 })}`}
                       />
                     </InlineGrid>
                     {perf.holdout.liftPct < 0 && perf.holdout.hasEnoughData && (
@@ -1397,7 +1402,7 @@ export default function AdminShopDetail() {
                 columnContentTypes={["text", "text", "text", "text"]}
                 headings={["When", "Action", "IP", "Changes"]}
                 rows={auditEntries.map((entry) => [
-                  new Date(entry.createdAt).toLocaleString(),
+                  fmtDateTime(entry.createdAt),
                   entry.action,
                   entry.ip || "—",
                   entry.payload.length > 200 ? `${entry.payload.slice(0, 200)}…` : entry.payload,

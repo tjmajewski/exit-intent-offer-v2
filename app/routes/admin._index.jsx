@@ -13,6 +13,7 @@ import {
 import { requireSuperAdmin, ADMIN_RESPONSE_HEADERS } from "../utils/admin-auth.server.js";
 import { isDevShop } from "../utils/dev-shop-guard.server.js";
 import db from "../db.server.js";
+import { fmtDate, fmtNum, fmtMoney } from "../utils/format.js";
 
 export function headers() {
   return ADMIN_RESPONSE_HEADERS;
@@ -162,11 +163,11 @@ export default function AdminCustomers() {
               </IndexTable.Cell>
               <IndexTable.Cell>{shop.mode}</IndexTable.Cell>
               <IndexTable.Cell>{shop.storeVertical || "—"}</IndexTable.Cell>
-              <IndexTable.Cell>{new Date(shop.createdAt).toLocaleDateString()}</IndexTable.Cell>
-              <IndexTable.Cell>{shop.impressions30d.toLocaleString()}</IndexTable.Cell>
-              <IndexTable.Cell>{shop.conversions30d.toLocaleString()}</IndexTable.Cell>
+              <IndexTable.Cell>{fmtDate(shop.createdAt)}</IndexTable.Cell>
+              <IndexTable.Cell>{fmtNum(shop.impressions30d)}</IndexTable.Cell>
+              <IndexTable.Cell>{fmtNum(shop.conversions30d)}</IndexTable.Cell>
               <IndexTable.Cell>
-                ${shop.revenue30d.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                {fmtMoney(shop.revenue30d)}
               </IndexTable.Cell>
             </IndexTable.Row>
           ))}

@@ -1,3 +1,4 @@
+import { fmtNum } from "../../utils/format.js";
 // Thin Recharts wrappers for the super admin dashboard so every chart shares
 // the same palette, grid, and tooltip. Categorical slots are assigned in
 // FIXED order (slot order is the colorblind-safety mechanism — never cycle
@@ -131,9 +132,9 @@ function FunnelTooltip({ active, payload }) {
   return (
     <div style={{ ...tooltipStyle, padding: 10, fontSize: 12, lineHeight: 1.6 }}>
       <div style={{ fontWeight: 600, marginBottom: 4 }}>{row.key}</div>
-      {line("Impressions", row.impressions.toLocaleString())}
-      {line("Clicks", `${row.clicks.toLocaleString()} (${row.clickRate.toFixed(1)}%)`)}
-      {line("Conversions", row.conversions.toLocaleString())}
+      {line("Impressions", fmtNum(row.impressions))}
+      {line("Clicks", `${fmtNum(row.clicks)} (${row.clickRate.toFixed(1)}%)`)}
+      {line("Conversions", fmtNum(row.conversions))}
       {line("CVR", `${row.cvr.toFixed(1)}%`)}
       {line("$ / impression", `$${row.profitPerImpression.toFixed(3)}`)}
       {row.impressions < MIN_SEGMENT_VOLUME && (
