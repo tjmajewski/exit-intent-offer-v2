@@ -697,7 +697,7 @@ function TriggerPerformance({ rows }) {
 
 // Recent AI decisions, written for a person. The raw JSON is one click away
 // because that is what you paste into a query when something looks wrong.
-function DecisionLog({ decisions, mode }) {
+function DecisionLog({ decisions, mode, now }) {
   const [showRaw, setShowRaw] = useState(false);
   const [showUntracked, setShowUntracked] = useState(true);
   const all = decisions.map((decision) => {
@@ -1080,7 +1080,7 @@ export default function AdminShopDetail() {
               </BlockStack>
             </Card>
             <TriggerPerformance rows={triggerPerformance} />
-            <DecisionLog decisions={recentDecisions} mode={liveSettings?.mode ?? shop.mode} />
+            <DecisionLog decisions={recentDecisions} mode={liveSettings?.mode ?? shop.mode} now={now} />
           </BlockStack>
         )}
 
