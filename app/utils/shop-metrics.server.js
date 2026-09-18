@@ -27,6 +27,27 @@
 //
 // Holdout figures stay separate: they answer "did we cause this", not "what
 // happened", and must never be folded into the headline counts.
+//
+// LIFT IS INTENTION-TO-TREAT (2026-09-17). The holdout coin is flipped at
+// apps.exit-intent.api.ai-decision.jsx:344 — before decideOffer runs, before
+// any trigger fires. So the group randomised into treatment is every
+// non-holdout session, including the ones the AI then chose to skip and the
+// ones where the modal never rendered.
+//
+// Lift used to compare only {wasShown, rendered} against the holdout. That
+// drops sessions AFTER randomisation, on grounds correlated with the outcome:
+// a high-propensity visitor is skipped and leaves treatment, but their
+// identical twin in the control group still counts. The two arms stop being
+// comparable and the number stops meaning "did Resparq cause this".
+//
+// The honest question is the merchant's question — of everyone we were free to
+// act on, did more of them order than the control? A decision to fire on exit
+// intent that the visitor never triggers is not a neutral non-event; it is
+// Resparq failing to act, and it belongs in the denominator.
+//
+// The old per-protocol figure is still returned as `perProtocol`, because
+// "did the modal work when it was seen" is a real diagnostic — it just is not
+// the measure of whether the product works.
 
 import db from "../db.server.js";
 
@@ -62,6 +83,11 @@ export function canonicalWhere({ shopIds, from, to = null, extra = {} }) {
     skipped: { ...outcome, wasShown: false, isHoldout: false },
     holdout: { ...outcome, isHoldout: true },
     holdoutConverted: { ...outcome, isHoldout: true, converted: true },
+    // Intention-to-treat: everyone the holdout coin sent to treatment, whatever
+    // happened afterwards — shown, skipped, or decided-but-never-rendered.
+    // This is the only group that is a like-for-like match with `holdout`.
+    treated: { ...outcome, isHoldout: false },
+    treatedConverted: { ...outcome, isHoldout: false, converted: true },
     // Clicks live on VariantImpression; rendered is required so clicks can
     // never exceed impressions.
     clicks: { shopId: { in: shopIds }, timestamp: period, rendered: true, clicked: true, ...extra },
@@ -99,7 +125,9 @@ export async function getShopMetrics({ shopId, days = 30, mode = "ai" }) {
     holdoutConverted,
     holdoutRevenue,
     shownConverted,
-    shownRevenue,
+    treatedTotal,
+    treatedConverted,
+    treatedRevenue,
     clicks,
     starterImpressions,
     starterClicks,
@@ -113,7 +141,9 @@ export async function getShopMetrics({ shopId, days = 30, mode = "ai" }) {
     db.interventionOutcome.count({ where: W.holdoutConverted }),
     db.interventionOutcome.aggregate({ where: W.holdoutConverted, _sum: { revenue: true } }),
     db.interventionOutcome.count({ where: W.shownConverted }),
-    db.interventionOutcome.aggregate({ where: W.shownConverted, _sum: { revenue: true } }),
+    db.interventionOutcome.count({ where: W.treated }),
+    db.interventionOutcome.count({ where: W.treatedConverted }),
+    db.interventionOutcome.aggregate({ where: W.treatedConverted, _sum: { revenue: true } }),
     db.variantImpression.count({ where: W.clicks }),
     db.starterImpression.count({ where: W.starter }),
     db.starterImpression.count({ where: { ...W.starter, clicked: true } }),
@@ -157,9 +187,11 @@ export async function getShopMetrics({ shopId, days = 30, mode = "ai" }) {
     skipped,
     decisions,
     holdout: computeHoldout({
-      treatmentTotal: shown,
-      treatmentConverted: shownConverted,
-      treatmentRevenue: shownRevenue._sum?.revenue || 0,
+      treatmentTotal: treatedTotal,
+      treatmentConverted: treatedConverted,
+      treatmentRevenue: treatedRevenue._sum?.revenue || 0,
+      shownTotal: shown,
+      shownConverted,
       holdoutTotal,
       holdoutConverted,
       holdoutRevenue: holdoutRevenue._sum?.revenue || 0,
@@ -205,6 +237,7 @@ function buildResult({
  */
 function computeHoldout({
   treatmentTotal, treatmentConverted, treatmentRevenue,
+  shownTotal, shownConverted,
   holdoutTotal, holdoutConverted, holdoutRevenue,
 }) {
   if (treatmentTotal === 0 || holdoutTotal < 10) return null;
@@ -228,6 +261,20 @@ function computeHoldout({
     treatmentTotal,
     holdoutTotal,
     hasEnoughData: holdoutTotal >= 20,
+    // Diagnostic only — "did the modal work when it was actually seen".
+    // Selected on a post-randomisation event, so it is NOT evidence that
+    // Resparq caused anything and must never be quoted as lift.
+    perProtocol: shownTotal > 0
+      ? {
+          shownCVR: (shownConverted / shownTotal) * 100,
+          shownTotal,
+          shownConverted,
+          // How much of the treatment arm ever saw a surface. A low number
+          // here with flat lift is the signal that the AI is deciding but not
+          // reaching anyone.
+          reachPct: (shownTotal / treatmentTotal) * 100,
+        }
+      : null,
   };
 }
 

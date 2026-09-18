@@ -375,6 +375,12 @@ export async function loader({ request }) {
       // a denominator bug: treatmentTotal filtered on rendered while
       // treatmentConverted did not, so conversions from never-displayed
       // decisions inflated the treatment CVR against a smaller base.
+      //
+      // That figure is now intention-to-treat: the denominator is every
+      // non-holdout session, not just the ones that got a modal. Not
+      // necessarily the smaller number — unshown sessions bring their own
+      // conversions with them — but the only one that answers "is Resparq
+      // worth having installed". See the note in shop-metrics.server.js.
       const holdout = window30?.holdout;
       if (holdout) {
         holdoutLift = {
@@ -1581,7 +1587,7 @@ export default function Dashboard() {
                 color: "#6b7280",
                 marginBottom: 32
               }}>
-                Measured from {holdoutLift.holdoutTotal.toLocaleString()} holdout visitors vs {holdoutLift.treatmentTotal.toLocaleString()} who saw AI-optimized offers
+                Measured from {holdoutLift.holdoutTotal.toLocaleString()} holdout visitors vs {holdoutLift.treatmentTotal.toLocaleString()} Resparq was free to act on — counting every one of them, including visitors it chose to stay quiet for
               </div>
             </>
           ) : (

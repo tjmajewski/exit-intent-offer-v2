@@ -967,6 +967,12 @@ export default function AdminShopDetail() {
                 </Text>
                 {perf.holdout ? (
                   <>
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      Everyone the holdout coin sent to treatment ({perf.holdout.treatmentTotal})
+                      against the control ({perf.holdout.holdoutTotal}) — including the
+                      visitors Resparq chose to stay quiet for and the ones whose trigger
+                      never fired. Deciding not to reach someone is a result, not an excuse.
+                    </Text>
                     <InlineGrid columns={4} gap="400">
                       <StatCell label="Treated CVR" value={`${perf.holdout.treatmentCVR.toFixed(2)}%`} />
                       <StatCell label="Holdout CVR" value={`${perf.holdout.holdoutCVR.toFixed(2)}%`} />
@@ -976,11 +982,32 @@ export default function AdminShopDetail() {
                         value={`$${perf.holdout.incrementalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
                       />
                     </InlineGrid>
+                    {perf.holdout.liftPct < 0 && perf.holdout.hasEnoughData && (
+                      <Banner tone="critical">
+                        Treatment is converting BELOW control. Resparq is costing this
+                        store orders, not winning them.
+                      </Banner>
+                    )}
                     {!perf.holdout.hasEnoughData && (
                       <Text as="p" tone="subdued" variant="bodySm">
                         Directional only — {perf.holdout.holdoutTotal} holdout sessions.
                         Don't quote this to the merchant yet.
                       </Text>
+                    )}
+                    {perf.holdout.perProtocol && (
+                      <>
+                        <Divider />
+                        <Text as="p" tone="subdued" variant="bodySm">
+                          Diagnostics, not evidence. A surface reached{" "}
+                          <b>{perf.holdout.perProtocol.reachPct.toFixed(0)}%</b> of the
+                          treatment group ({perf.holdout.perProtocol.shownTotal} of{" "}
+                          {perf.holdout.treatmentTotal}), and those sessions converted at{" "}
+                          <b>{perf.holdout.perProtocol.shownCVR.toFixed(2)}%</b>. That
+                          second number is selected on something that happened after the
+                          coin flip, so it is not lift — a high figure next to flat lift
+                          means the modal works but is not reaching anyone.
+                        </Text>
+                      </>
                     )}
                   </>
                 ) : (
