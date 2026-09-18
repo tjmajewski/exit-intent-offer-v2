@@ -62,6 +62,14 @@ for m in json.load(sys.stdin):
 '
 }
 
+# Compare image references by tag, ignoring any @sha256 digest.
+#
+# `fly machine update --image <tag>` stores the resolved, digest-pinned
+# reference (repo:tag@sha256:...), while `fly status` reports the app machine's
+# image as a bare repo:tag. A literal string comparison therefore reports every
+# freshly-updated machine as "stale" — which it did, on the first real run.
+image_tag() { printf '%s' "${1%%@*}"; }
+
 require_image() {
   local img; img="$(current_image)"
   # set -e does not catch an empty capture. Without this, `refresh` would run
@@ -78,7 +86,7 @@ cmd_status() {
   while IFS=$'\t' read -r id name sched image command; do
     [ "$sched" = "-" ] && continue   # skip the web machine
     local mark="stale"
-    [ "$image" = "$img" ] && mark="ok"
+    [ "$(image_tag "$image")" = "$(image_tag "$img")" ] && mark="ok"
     printf '%-16s %-22s %-9s %-7s %s\n' "$id" "$name" "$sched" "$mark" "$command"
   done < <(machines)
 
@@ -98,7 +106,7 @@ cmd_refresh() {
   echo "target image: $img"
   while IFS=$'\t' read -r id name sched image command; do
     [ "$sched" = "-" ] && continue
-    if [ "$image" = "$img" ]; then
+    if [ "$(image_tag "$image")" = "$(image_tag "$img")" ]; then
       echo "ok      $name ($command)"
       continue
     fi
