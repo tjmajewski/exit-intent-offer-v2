@@ -317,6 +317,49 @@ export async function loader({ request, params }) {
       })
     : [];
 
+  // Trigger performance. The learning loop scores a variant on
+  // conversions/renderedImpressions, so a trigger that is chosen constantly but
+  // rarely fires costs it nothing — its misses are simply absent from the
+  // denominator. Nothing in the engine reports that, so report it here: per
+  // trigger gene, how often a decision led to a render at all.
+  const shopVariants = await db.variant.findMany({
+    where: { shopId: shop.id },
+    select: { id: true, triggerType: true },
+  });
+  const triggerByVariant = new Map(shopVariants.map((v) => [v.id, v.triggerType]));
+  const variantIds = shopVariants.map((v) => v.id);
+
+  const countBy = async (where) =>
+    variantIds.length
+      ? db.variantImpression.groupBy({
+          by: ["variantId"],
+          where: { variantId: { in: variantIds }, ...where },
+          _count: { id: true },
+        })
+      : [];
+  const [decidedRows, renderedRows, convertedRows] = await Promise.all([
+    countBy({}),
+    countBy({ rendered: true }),
+    countBy({ converted: true }),
+  ]);
+
+  const triggerPerformance = {};
+  const fold = (rows, key) => {
+    for (const row of rows) {
+      const trigger = triggerByVariant.get(row.variantId) || "unknown";
+      triggerPerformance[trigger] = triggerPerformance[trigger] || {
+        trigger,
+        decided: 0,
+        rendered: 0,
+        converted: 0,
+      };
+      triggerPerformance[trigger][key] += row._count.id;
+    }
+  };
+  fold(decidedRows, "decided");
+  fold(renderedRows, "rendered");
+  fold(convertedRows, "converted");
+
   // The click lives on the impression, not the outcome.
   const impressionIds = [...new Set(outcomeRows.map((row) => row.impressionId).filter(Boolean))];
   const impressions = impressionIds.length
@@ -374,6 +417,7 @@ export async function loader({ request, params }) {
     days,
     perf,
     variants,
+    triggerPerformance: Object.values(triggerPerformance).sort((a, b) => b.decided - a.decided),
     recentDecisions: recentDecisions.map((decision) => ({
       ...decision,
       result: resultByDecision.get(decision.id) || null,
@@ -596,6 +640,56 @@ function LiveConfig({ settings, aiRange, shop, live }) {
   );
 }
 
+// Does the trigger the AI keeps picking actually fire?
+//
+// Selection and evolution both score a variant on conversions per RENDERED
+// impression (betaSample takes alpha=conversions, beta=impressions-conversions,
+// and Variant.impressions only moves in confirmImpressionRender). A trigger
+// that is chosen constantly but seldom fires is therefore not penalised — the
+// sessions it missed never enter the denominator. This table is the only place
+// that gap is visible, so it states it rather than leaving it to be inferred.
+function TriggerPerformance({ rows }) {
+  if (rows.length === 0) return null;
+  const worst = rows.reduce((a, b) =>
+    (a.decided ? a.rendered / a.decided : 1) < (b.decided ? b.rendered / b.decided : 1) ? a : b
+  );
+  const worstRate = worst.decided ? worst.rendered / worst.decided : 1;
+
+  return (
+    <Card>
+      <BlockStack gap="300">
+        <Text as="h3" variant="headingMd">
+          Does each trigger actually fire?
+        </Text>
+        <DataTable
+          columnContentTypes={["text", "numeric", "numeric", "numeric", "numeric"]}
+          headings={["Trigger", "Chosen", "Actually shown", "Show rate", "Converted"]}
+          rows={rows.map((row) => [
+            row.trigger.replace(/_/g, " "),
+            row.decided,
+            row.rendered,
+            row.decided ? `${Math.round((row.rendered / row.decided) * 100)}%` : "—",
+            row.converted,
+          ])}
+        />
+        <Text as="p" tone="subdued" variant="bodySm">
+          The AI learns from conversions per modal <b>shown</b>, not per decision made.
+          A trigger it picks constantly but that rarely fires costs it nothing in the
+          scoring, so it will keep picking it. Show rate is the only signal that
+          catches this, and nothing acts on it automatically yet.
+        </Text>
+        {worstRate < 0.5 && (
+          <Banner tone="warning">
+            {worst.trigger.replace(/_/g, " ")} fires on{" "}
+            {Math.round(worstRate * 100)}% of the decisions that choose it. Those
+            missed sessions are invisible to the learning loop.
+          </Banner>
+        )}
+      </BlockStack>
+    </Card>
+  );
+}
+
 // Recent AI decisions, written for a person. The raw JSON is one click away
 // because that is what you paste into a query when something looks wrong.
 function DecisionLog({ decisions, mode }) {
@@ -693,8 +787,10 @@ function DecisionLog({ decisions, mode }) {
 }
 
 export default function AdminShopDetail() {
-  const { shop, live, liveSettings, aiRange, days, perf, variants, recentDecisions, auditEntries } =
-    useLoaderData();
+  const {
+    shop, live, liveSettings, aiRange, days, perf, variants,
+    triggerPerformance, recentDecisions, auditEntries,
+  } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -916,6 +1012,7 @@ export default function AdminShopDetail() {
                 />
               </BlockStack>
             </Card>
+            <TriggerPerformance rows={triggerPerformance} />
             <DecisionLog decisions={recentDecisions} mode={liveSettings?.mode ?? shop.mode} />
           </BlockStack>
         )}
