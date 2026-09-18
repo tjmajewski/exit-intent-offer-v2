@@ -32,7 +32,23 @@ export const MIN_STORE_ROWS_FOR_INTERCEPT = 50;
 // Fixed feature order. Never reorder or remove entries — append only, and
 // bump VERSION when the vector changes so a stale model can't score a
 // mismatched vector.
-export const MODEL_VERSION = 1;
+//
+// v2 (2026-09-18): the vector's SHAPE is unchanged, but the MEANING of three
+// features moved, so a v1 model's coefficients no longer describe a v2 vector:
+//   scrollDepth    — a page too short to scroll used to report 100% and pin the
+//                    session maximum there; it now reports nothing.
+//   logRepeatVisits/firstVisit — visit frequency counted page loads and never
+//                    reset; it now counts sessions in a trailing 30 days.
+// Both deflate the input distribution substantially. Bumping the version
+// invalidates models trained on v1 signals rather than letting them score a
+// population they were never fit to.
+export const MODEL_VERSION = 2;
+
+// The signal-semantics generation this model's features are defined against.
+// Emitted by the storefront (see collectCustomerSignals) and carried on every
+// signals payload; rows without it predate v2. Training filters on this so a
+// model is never fit to one generation and labelled as another.
+export const SIGNALS_VERSION = 2;
 export const FEATURE_NAMES = [
   'logPurchases', 'logCLV', 'loggedIn', 'guest',
   'logTimeOnSite', 'quickExit', 'logPageViews', 'scrollDepth', 'logDwell',

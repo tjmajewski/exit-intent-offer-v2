@@ -20,8 +20,61 @@ function money(n) {
   return `$${value % 1 === 0 ? value.toFixed(0) : value.toFixed(2)}`;
 }
 
+// Types whose amount is 0 by definition and which have their own label below.
+const UNINSTRUMENTED_TYPES = new Set(["no_intervention", "holdout", "budget-exhausted"]);
+
 function outcomeOf(decision) {
   const amount = decision.amount;
+
+  // Gate on the OUTCOME, not the type. A margin-guarded or floored offer keeps
+  // its original type (`percentage` / `fixed` / `threshold`) with amount 0, so
+  // keying the no-offer labels on `type === "no-discount"` rendered those as
+  // "0% off" with a success badge — the opposite of what happened.
+  // Types with their own canonical label below take it, even when they also
+  // carry a suppression record. budget-exhausted does: without this guard its
+  // badge read the generic "a cap bound" while whyOf — which already excludes
+  // the type — printed the specific budget sentence, so label and reason
+  // disagreed on the same row. Keep the two exclusion lists in step.
+  const kind = UNINSTRUMENTED_TYPES.has(decision.type)
+    ? null
+    : decision.offerSuppression?.kind;
+  if (kind) {
+    if (kind === "failure") return { label: "Reminder only — offer failed", tone: "critical" };
+    if (kind === "exploration") return { label: "Reminder only — still testing", tone: "attention" };
+    if (kind === "config") return { label: "Reminder only — store setting", tone: "warning" };
+    if (kind === "limit") return { label: "Reminder only — a cap bound", tone: "warning" };
+    if (kind === "judgement") return { label: "Reminder only — chose not to discount", tone: "info" };
+  }
+
+  // A zero-amount offer with no suppression record. Only the live decision path
+  // writes those records, so "missing" usually means the row came from
+  // somewhere else or predates the feature — not that a path needs
+  // instrumenting. Flagging all of those amber buried the real gaps under the
+  // entire historical corpus.
+  if (amount === 0 && !UNINSTRUMENTED_TYPES.has(decision.type)) {
+    const knownWriter = decision.source === "cart_webhook" || decision.source === "idle_cart_pickup";
+    if (decision.type === "no-discount" || knownWriter) {
+      return { label: "Reminder only, no discount", tone: "info" };
+    }
+    // A typed offer (percentage/fixed/threshold) that served nothing and left
+    // no record IS a genuine gap in the live path. This is the narrow case the
+    // amber badge was meant for.
+    return { label: "Reminder only — reason not recorded", tone: "attention" };
+  }
+
+  // A pre-decision, not something a shopper saw. These writers mint a
+  // recommendation ahead of any visit — the cart webhook's rows in particular
+  // now carry a real offer rather than 'no_intervention', because the
+  // accidental-visit skip no longer fires on their sentinel signals. Rendering
+  // "15% off" with a success badge would imply an impression that never
+  // happened, on a path that shows no modal at all.
+  if (decision.source === "cart_webhook" || decision.source === "idle_cart_pickup") {
+    const offer = amount > 0
+      ? (decision.type === "percentage" ? `${amount}% off` : `${money(amount)} off`)
+      : "no discount";
+    return { label: `Pre-decided: ${offer} (not shown yet)`, tone: "info" };
+  }
+
   switch (decision.type) {
     case "percentage":
       return { label: `${amount}% off`, tone: "success" };
@@ -35,6 +88,7 @@ function outcomeOf(decision) {
         tone: "success",
       };
     case "no-discount":
+      // Reached only by decisions minted before offerSuppression existed.
       return { label: "Reminder only, no discount", tone: "info" };
     case "no_intervention":
       return { label: "Showed nothing", tone: undefined };
@@ -54,6 +108,26 @@ function whyOf(decision, propensity) {
   const reasoning = String(decision.reasoning || "");
   const P = propensity;
   const intent = P === null ? "" : ` Buy-intent scored ${P} out of 100.`;
+
+  // When a suppression record exists it is the most specific answer available —
+  // it names the branch that actually zeroed the offer, rather than inferring
+  // from a reasoning string written for a different purpose.
+  // These have their own canonical wording below and must not be overwritten
+  // by a generic suppression line.
+  const sup = ["holdout", "no_intervention", "budget-exhausted"].includes(decision.type)
+    ? null
+    : decision.offerSuppression;
+  if (sup && sup.detail) {
+    const PREFIX = {
+      judgement: "Chose not to discount",
+      exploration: "Withheld to keep testing",
+      config: "A store setting stopped the discount",
+      limit: "A cap stopped the discount",
+      failure: "The offer did not make it to the shopper",
+    };
+    const prefix = PREFIX[sup.kind] || "No discount";
+    return `${prefix}: ${sup.detail}.${intent}`;
+  }
 
   switch (decision.type) {
     case "holdout":

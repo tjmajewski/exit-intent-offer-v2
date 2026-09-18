@@ -62,6 +62,36 @@ function betaSample(alpha, beta) {
  * @returns {{ shouldShow: boolean, isExploring: boolean, bucket: string }}
  */
 export async function shouldIntervene(db, shopId, score, segment = 'all', clusterPrior = null) {
+  // KNOWN AND ACCEPTED (2026-09-18): these counters straddle the propensity
+  // semantics change (signalsVersion 1 -> 2). They are monotonic, unwindowed,
+  // and keyed by score bucket, so a visitor who scored 78 before the change and
+  // 55 after now lands in a bucket holding a posterior built from a different
+  // population.
+  //
+  // Accepted rather than reset, deliberately:
+  //   - The skip arm is nearly empty on every bucket. It only accrues via the
+  //     5% EXPLORATION_FLOOR, so skipImpressions stays small, skipPPI is
+  //     usually 0, and skipValue collapses to U(0,1) * 0.01 — which loses to
+  //     almost any show arm carrying real profit. Contaminated buckets
+  //     therefore still resolve to "show" in practice.
+  //   - Namespacing `segment` is the obvious reset, and `segment` is also the
+  //     join key for cross-store cluster priors (cluster-priors.server.js
+  //     builds `${key}::${scoreBucket}::${segment}`). Prefixing it here would
+  //     silently orphan this shop from its cluster-mates — trading a
+  //     self-healing bias for a permanent one. A data-only reset or a
+  //     generation column would both work; neither is worth it at one store.
+  //   - MIN_OUTCOMES_FOR_LEARNING is 10, so buckets re-earn their posteriors
+  //     within weeks of normal traffic.
+  //
+  // NOT the reason, though it reads like one: the "always show" return further
+  // down is the cold-start branch for buckets BELOW that threshold, and with a
+  // cluster prior even that branch Thompson-samples. Contamination lives in
+  // buckets at or above 10 outcomes, which take the sampling path below and
+  // can return shouldShow: false. Do not re-derive safety from that return.
+  //
+  // Revisit if a store ever accumulates enough per-bucket history that weeks of
+  // re-learning is expensive. The clean fix is a generation column on this
+  // table, not a mangled segment string.
   const bucket = scoreToBucket(score);
 
   // Try to find a learned threshold for this bucket + segment

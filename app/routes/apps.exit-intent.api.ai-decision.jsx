@@ -49,6 +49,20 @@ export async function action({ request }) {
       return json({ error: "Missing shop or signals" }, { status: 400 });
     }
 
+    // Signal-semantics generation, as reported BY THE STOREFRONT.
+    //
+    // Do not stamp a literal here. The version describes what the client's
+    // signals MEAN, and the meaning changed without the shape changing
+    // (scrollDepth, visitFrequency — see collectCustomerSignals). A server-side
+    // literal would tag v1 payloads from any storefront still serving cached
+    // extension JS as v2, which is a deploy timestamp masquerading as a
+    // semantic version — worse than no tag, because it reads as authoritative.
+    //
+    // Absent means a pre-v2 storefront, which is the honest reading. This must
+    // stay above every `signals: JSON.stringify(signals)` below, the
+    // budget-exhausted early return included.
+    signals.signalsVersion = signals.signalsVersion ?? 1;
+
     // Merchant self-test (?resparq_test=1): force an offer and do NOT feed this
     // visit into threshold/holdout learning. Prevents the merchant's own
     // non-converting clicks from training the AI to stop showing the modal.
@@ -209,7 +223,12 @@ export async function action({ request }) {
             decision: JSON.stringify({
               type: 'budget-exhausted',
               amount: 0,
-              reasoning: 'Budget cap reached'
+              reasoning: 'Budget cap reached',
+              offerSuppression: {
+                kind: 'limit',
+                code: 'budget_exhausted',
+                detail: 'The discount budget for this period was already committed',
+              }
             })
           }
         });
@@ -450,13 +469,43 @@ export async function action({ request }) {
           }
 
           if (override.type === 'force_zero') {
+            const forceZeroDecision = {
+              type: 'no-discount',
+              amount: 0,
+              code: null,
+              message: `Merchant override: announcement mode during ${activePromo.code}`,
+              offerSuppression: {
+                kind: 'config',
+                code: 'merchant_force_zero',
+                detail: `The merchant set announcement-only mode for the duration of promo ${activePromo.code}`,
+              }
+            };
+            // This path used to show a modal and persist NOTHING, so the
+            // operator console had no row to explain — the largest hole in
+            // "account for every zero".
+            //
+            // Swallow a write failure: this was a write-free path, and the
+            // outer catch turns any throw into a 500, which would suppress a
+            // modal that always rendered before. Losing a log row is a far
+            // smaller harm than losing the intervention.
+            try {
+              await db.aIDecision.create({
+                data: {
+                  shopId: shopRecord.id,
+                  signals: JSON.stringify(signals),
+                  decision: JSON.stringify(forceZeroDecision)
+                }
+              });
+            } catch (e) {
+              console.error('[force_zero] Could not record decision:', e.message);
+            }
             return json({
               shouldShow: true,
               decision: {
                 type: 'no-discount',
                 amount: 0,
                 code: null,
-                message: `Merchant override: announcement mode during ${activePromo.code}`
+                message: forceZeroDecision.message
               }
             });
           }
@@ -579,6 +628,29 @@ export async function action({ request }) {
     // Step 1: Determine which baseline to use (revenue/conversion × discount/no-discount)
     let baseline = selectBaseline(signals, aiGoal);
 
+    // WHY this visitor ends up with no offer.
+    //
+    // Several unrelated paths all land on `type: 'no-discount', amount: 0`, and
+    // from the payload alone they are indistinguishable: a deliberate decision
+    // to protect margin looks exactly like a failure to produce a code. That
+    // ambiguity is why a store showing nothing but cart reminders went
+    // undiagnosed. This records which path was taken so the console can say so.
+    //
+    // Kinds: 'judgement' (the engine chose not to spend), 'exploration' (the
+    // bandit is sampling), 'limit' (a merchant-set cap bound), 'failure'
+    // (something did not work). Null means an offer was made.
+    let offerSuppression = null;
+    const suppress = (kind, code, detail) => {
+      // First writer wins: the earliest branch is the real cause; anything
+      // downstream is operating on an already-zeroed decision.
+      if (!offerSuppression) offerSuppression = { kind, code, detail: detail || null };
+    };
+    // NOTE: nothing is recorded here. The baseline at this point is not final —
+    // hybrid overrides it below, and so does aggression 0. Recording now made
+    // the console print "chose not to discount" over hybrid decisions that went
+    // on to serve a real discount. The baseline verdict is recorded after every
+    // override has run, further down.
+
     // Hybrid forces a flat-discount decision. Pin > 0 → conversion_with_discount
     // (flat %/$ copy pool); pin == 0 → pure_reminder (announce-only). Revenue
     // (threshold) baselines are intentionally NOT used: threshold offers are out
@@ -599,6 +671,18 @@ export async function action({ request }) {
 
     if (effectiveAggression === 0) {
       baseline = 'pure_reminder';
+      if (isHybrid) {
+        // effectiveAggression was forced to 0 by the pin, not set by the
+        // merchant — their aggression dial may well read 7. Saying "aggression
+        // is 0" here is the single most misleading thing this log could print.
+        suppress(
+          'config',
+          'hybrid_pin_zero',
+          'Guided mode is pinned to a $0 offer, so every visitor gets a reminder regardless of the aggression dial'
+        );
+      } else {
+        suppress('config', 'aggression_zero', 'Discount aggression is set to 0 for this store');
+      }
       console.log(`[Variant Selection] Aggression = 0 → forcing pure_reminder baseline`);
     } else if (!isHybrid && baseline.includes('with_discount')) {
       // Hybrid skips the discount-vs-reminder arm entirely: the pin already
@@ -624,6 +708,11 @@ export async function action({ request }) {
       if (evidence.evidenceBased) {
         if (!evidence.useDiscount) {
           const noDiscountBaseline = baseline.replace('with_discount', 'no_discount');
+          suppress(
+            'judgement',
+            'arm_evidence',
+            `Discount arm won only ${(evidence.pWin * 100).toFixed(0)}% of simulations, below the ${(evidence.bar * 100).toFixed(0)}% bar set by aggression ${effectiveAggression}`
+          );
           console.log(`[Variant Selection] Evidence: P(discount wins)=${evidence.pWin.toFixed(2)} < bar ${evidence.bar.toFixed(2)} (aggression ${effectiveAggression}/10) → ${noDiscountBaseline}`);
           baseline = noDiscountBaseline;
         } else {
@@ -636,12 +725,32 @@ export async function action({ request }) {
         if (discountRoll > aggressionNormalized) {
           // Downgrade to no-discount version of the same goal
           const noDiscountBaseline = baseline.replace('with_discount', 'no_discount');
+          suppress(
+            'exploration',
+            'cold_start_roll',
+            `Arms not yet mature, so the engine is still sampling: at aggression ${effectiveAggression} it withholds a discount ${Math.round((1 - aggressionNormalized) * 100)}% of the time`
+          );
           console.log(`[Variant Selection] Aggression ${effectiveAggression}/10 — roll ${discountRoll.toFixed(2)} > ${aggressionNormalized.toFixed(2)} → downgrading to ${noDiscountBaseline} (exploration, arms not mature)`);
           baseline = noDiscountBaseline;
         } else {
           console.log(`[Variant Selection] Aggression ${effectiveAggression}/10 — roll ${discountRoll.toFixed(2)} ≤ ${aggressionNormalized.toFixed(2)} → keeping discount baseline (exploration, arms not mature)`);
         }
       }
+    }
+
+    // Baseline is final here — every override has run. If it carries no
+    // discount and no more specific branch above already explained why, the
+    // cause is selectBaseline's own verdict on this visitor. Recorded last so
+    // the more actionable codes above always win.
+    if (!baseline.includes('with_discount')) {
+      const P = signals.propensityScore;
+      suppress(
+        'judgement',
+        'baseline_no_discount',
+        signals.hasPromoActive
+          ? 'A site-wide promo is already running, so stacking another discount was skipped'
+          : `Buy-intent of ${P} is at or above the high-intent bar and the cart is too small to carry a "spend more" offer, so it showed a reminder and spent nothing`
+      );
     }
 
     console.log(`[Variant Selection] Baseline: ${baseline}`);
@@ -756,7 +865,9 @@ export async function action({ request }) {
       // expectedCycles of full-price renewals. Pure one-time carts: subShare 0,
       // formula degenerates to the previous behavior.
       const marginSubShare = subShareFromSignals(signals, signals.cartValue || 0);
+      const ceilingDiag = {};
       const ceilingPct = offerCeilingPercent({
+        out: ceilingDiag,
         propensity: signals.propensityScore,
         aggression: effectiveAggression,
         assumedGrossMargin: settings.assumedGrossMargin,
@@ -769,6 +880,14 @@ export async function action({ request }) {
         conditional: servedOfferType === 'threshold'
       });
       if (ceilingPct === 0) {
+        // The ceiling can be pinned to zero by any of five constraints. Naming
+        // buy-intent unconditionally was wrong — a low-margin store hitting the
+        // margin floor got told its shopper looked too keen to need a discount.
+        suppress(
+          'limit',
+          'margin_guard_announce_only',
+          `No discount fit: ${ceilingDiag.bindingConstraint} (buy-intent ${signals.propensityScore})`
+        );
         console.log(`[Margin Guard] P=${signals.propensityScore} → announce-only (no discount)`);
         cappedOfferAmount = 0;
       } else if (servedOfferType === 'threshold') {
@@ -777,6 +896,15 @@ export async function action({ request }) {
         if (cappedOfferAmount > maxDollars) {
           console.log(`[Margin Guard] Capping threshold discount from $${cappedOfferAmount} to $${maxDollars} (ceiling ${ceilingPct}%, P=${signals.propensityScore})`);
           cappedOfferAmount = Math.max(maxDollars, 0);
+          if (cappedOfferAmount === 0) {
+            // Same shape as the fixed lane below, which had this and this did
+            // not: a "spend $X more, save $Y" where Y floors to nothing.
+            suppress(
+              'limit',
+              'threshold_offer_floored',
+              `A "spend $${thr}+" offer floors to $0 at a ${ceilingPct}% ceiling, so there was nothing to promise`
+            );
+          }
         }
       } else if (servedOfferType === 'fixed') {
         // The ceiling is a PERCENTAGE but this pool's amounts are DOLLARS, so
@@ -788,6 +916,16 @@ export async function action({ request }) {
         if (cappedOfferAmount > maxDollars) {
           console.log(`[Margin Guard] Capping fixed discount from $${cappedOfferAmount} to $${maxDollars} (ceiling ${ceilingPct}% of $${signals.cartValue}, P=${signals.propensityScore})`);
           cappedOfferAmount = Math.max(maxDollars, 0);
+          if (cappedOfferAmount === 0) {
+            // A dollars-off offer on a cart small enough that the percentage
+            // ceiling floors to $0. The visitor gets a reminder, but nothing
+            // about that was a judgement call — it is the cart being tiny.
+            suppress(
+              'limit',
+              'fixed_offer_floored',
+              `A dollars-off offer on a $${signals.cartValue} cart floors to $0 at a ${ceilingPct}% ceiling`
+            );
+          }
         }
       } else if (cappedOfferAmount > ceilingPct) {
         console.log(`[Margin Guard] Capping discount from ${cappedOfferAmount}% to ${ceilingPct}% (P=${signals.propensityScore})`);
@@ -913,7 +1051,9 @@ export async function action({ request }) {
       variantPublicId: selectedVariant.variantId,
       baseline: baseline,
       archetype: archetypeName,
-      confidence: selectedVariant.impressions > 100 ? 0.8 : 0.5
+      confidence: selectedVariant.impressions > 100 ? 0.8 : 0.5,
+      // Null whenever an offer was actually made. See `suppress()` above.
+      offerSuppression
     };
     
     console.log('[Variant Engine] Decision:', decision);
@@ -1102,6 +1242,10 @@ export async function action({ request }) {
         // Neutral copy: no {{amount}}, no %/$ claims. Code is still delivered
         // to the customer at checkout via decision.code — they just won't see
         // a specific promise about its value.
+        // Captured before the overwrite below — the whole point of the record
+        // is what the engine WANTED to serve.
+        const wantedType = decision.type;
+        const wantedAmount = decision.amount;
         decision.headline    = 'You left something in your cart';
         decision.subhead     = 'Your discount is waiting at checkout';
         decision.cta         = 'Complete My Order';
@@ -1115,6 +1259,17 @@ export async function action({ request }) {
         decision.amount      = 0;
         decision.threshold   = null;
         offerAmount          = 0;
+        // Not a judgement: the engine picked an offer and could not describe it
+        // because the merchant's generic code is a different shape. The code is
+        // still delivered, so the margin is spent with none of the persuasion.
+        // Assign onto `decision` directly: the object was built earlier in this
+        // request and already captured the value of `offerSuppression`, so
+        // reassigning the variable here would never reach the payload.
+        decision.offerSuppression = {
+          kind: 'failure',
+          code: 'generic_code_mismatch',
+          detail: `Wanted ${wantedType}/${wantedAmount} but the generic code "${genericCode}" is ${realDetails ? `${realDetails.type}/${realDetails.amount}` : 'missing or an unsupported type'} — copy stripped, code still delivered`,
+        };
       }
 
       discountResult = {

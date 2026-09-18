@@ -17,7 +17,7 @@ export default function AISettingsTab({
 }) {
   // State for discount code mode to show/hide input fields
   const [aiDiscountCodeMode, setAiDiscountCodeMode] = useState(
-    settings.aiDiscountCodeMode || "unique"
+    settings.aiDiscountCodeMode ?? "unique"
   );
 
   // ---- Social Proof local state (live preview + threshold status) ----
@@ -181,6 +181,13 @@ export default function AISettingsTab({
           <p style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>
             How aggressive should discounts be?
           </p>
+          {/* Presence marker. This whole tab only mounts on Quick Setup in AI
+              mode, and an unmounted tab submits nothing — so without this the
+              action cannot tell "merchant set budget off" from "the budget
+              checkbox was not on screen", and a save from Advanced or Branding
+              would reset aggression to 5 and the budget cap to off. Same
+              pattern as showProductImagesPresent on QuickSetupTab. */}
+          <input type="hidden" name="aiSettingsPresent" value="1" />
           <input
             type="range"
             name="aggression"

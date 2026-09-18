@@ -399,6 +399,13 @@ export default function QuickSetupTab({
               value={selectedLayout === "cart-preservation" ? "on" : "off"}
             />
             <input type="hidden" name="showProductImagesPresent" value="1" />
+            {/* Marks that the MANUAL OFFER INPUTS rendered — this block is
+                inside {optimizationMode === "manual"}, so it is narrower than
+                "the Quick Setup tab was submitted". The action relies on that
+                narrower meaning: discountEnabled and the offer fields all live
+                in here, and the mint gate keys off it. Do not move this input
+                out of the conditional. */}
+            <input type="hidden" name="offerInputsPresent" value="1" />
 
           </div>
 

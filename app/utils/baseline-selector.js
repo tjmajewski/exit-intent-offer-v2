@@ -188,6 +188,15 @@ export function explainBaseline(baseline) {
 export function needsIncentive(signals) {
   const propensityScore = signals.propensityScore ?? 50;
   const cartAbandonmentCount = signals.cartAbandonmentCount || 0;
+  // NOTE: needsIncentive() currently has NO callers anywhere in the repo, and
+  // the isFirstVisit branch below cannot change its result either way — the
+  // fall-through `return propensityScore < 60` already returns true for every
+  // P < 50. So the signalsVersion-2 widening of `visitFrequency === 1` (it now
+  // means "anywhere in the first session" rather than "first page load") is
+  // inert here. Left as-is rather than adjusted to match the accidental-visit
+  // skip in ai-decision.server.js, because adjusting dead code invites the
+  // belief that it was reasoned about. If this is ever wired up, decide then
+  // which meaning of "first visit" it wants.
   const isFirstVisit = signals.accountStatus === 'guest' && signals.visitFrequency === 1;
 
   // High propensity customers don't need incentive

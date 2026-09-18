@@ -16,7 +16,7 @@
 import db from '../db.server.js';
 import {
   extractFeatures, trainLogistic, fitStoreIntercept, computeAUC,
-  MODEL_VERSION, FEATURE_NAMES,
+  MODEL_VERSION, SIGNALS_VERSION, FEATURE_NAMES,
   PROPENSITY_MODEL_INSIGHT_TYPE, PROPENSITY_MODEL_SEGMENT,
   MIN_TRAINING_ROWS, MIN_TRAINING_CONVERSIONS, MIN_STORE_ROWS_FOR_INTERCEPT
 } from '../utils/propensity-model.server.js';
@@ -69,9 +69,25 @@ export async function calibratePropensity() {
 
   // Assemble the dataset
   const rows = [];
+  let droppedStaleSemantics = 0;
   for (const o of outcomes) {
     const signals = signalsById.get(o.aiDecisionId);
     if (!signals) continue;
+    // Only train on rows whose signals mean what this model version assumes.
+    //
+    // MODEL_VERSION guards the READ path — a stale model is refused. It does
+    // not guard training. Without this filter the first run after a semantics
+    // change trains on up to LOOKBACK_DAYS of old-meaning rows and stamps the
+    // NEW featureVersion on the result, producing a model that passes the
+    // version check while being fit to a population it will never see. That is
+    // strictly worse than the stale model the bump just evicted.
+    //
+    // Consequence: after a bump, training correctly refuses to run until
+    // enough rows carry the new version. That is the intended behaviour.
+    if ((signals.signalsVersion ?? 1) !== SIGNALS_VERSION) {
+      droppedStaleSemantics++;
+      continue;
+    }
     rows.push({
       id: o.id,
       shopId: o.shopId,
@@ -80,9 +96,25 @@ export async function calibratePropensity() {
     });
   }
   console.log(` Usable rows after signal join: ${rows.length}`);
-  if (rows.length < MIN_TRAINING_ROWS) {
-    console.log(' Too few rows survived the signal join. Skipping.');
-    return { trained: false, rows: rows.length, conversions };
+  if (droppedStaleSemantics > 0) {
+    console.log(` Dropped ${droppedStaleSemantics} rows from an older signal generation (want v${SIGNALS_VERSION}).`);
+  }
+
+  // Re-apply ALL THREE gates against the surviving rows, not just the row
+  // count. The gates above ran on the pre-filter set, and the version filter
+  // makes a large, time-correlated drop the expected case on the first runs
+  // after a semantics bump. Conversions are the rarer class, so they thin out
+  // first: without this a run could survive with 300+ v2 rows and a handful of
+  // conversions among them, and publish a model fit to a near-degenerate label
+  // set — stamped featureVersion 2, which loadPropensityModel then accepts.
+  // That is exactly what the filter above exists to prevent.
+  const v2Conversions = rows.filter((r) => r.y === 1).length;
+  const v2NonConversions = rows.length - v2Conversions;
+  if (rows.length < MIN_TRAINING_ROWS ||
+      v2Conversions < MIN_TRAINING_CONVERSIONS ||
+      v2NonConversions < MIN_TRAINING_CONVERSIONS) {
+    console.log(` Below training gates after the signal join (rows ${rows.length}/${MIN_TRAINING_ROWS}, conv ${v2Conversions}/${MIN_TRAINING_CONVERSIONS}, non-conv ${v2NonConversions}/${MIN_TRAINING_CONVERSIONS}). Skipping — legacy curve stays authoritative.`);
+    return { trained: false, rows: rows.length, conversions: v2Conversions };
   }
 
   // Eval AUC on a deterministic held-out 20% (train on 80%), then train the
@@ -153,7 +185,10 @@ export async function calibratePropensity() {
     auc: evalAuc,
     inSampleAuc,
     sampleSize: rows.length,
-    conversions,
+    // Post-filter count. `conversions` above is the pre-join figure and would
+    // overstate this model's provenance to anyone reading the row.
+    conversions: v2Conversions,
+    signalsVersion: SIGNALS_VERSION,
     trainedAt: new Date().toISOString()
   };
 
@@ -189,7 +224,7 @@ export async function calibratePropensity() {
 
   console.log('='.repeat(80));
   console.log(` [Propensity Calibration] Model v${MODEL_VERSION} stored (${rows.length} rows, held-out AUC ${evalAuc?.toFixed(3) ?? 'n/a'}, in-sample ${inSampleAuc?.toFixed(3) ?? 'n/a'})`);
-  return { trained: true, rows: rows.length, conversions, auc: evalAuc, inSampleAuc };
+  return { trained: true, rows: rows.length, conversions: v2Conversions, auc: evalAuc, inSampleAuc };
 }
 
 // If running directly (for testing)

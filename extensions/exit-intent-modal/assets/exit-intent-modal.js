@@ -1,11 +1,15 @@
 (function() {
   'use strict';
 
-  // IMMEDIATELY check if we should redirect to checkout with discount
-  const discountCode = sessionStorage.getItem('exitIntentDiscount');
+  // IMMEDIATELY check if we should redirect to checkout with discount.
+  // Guarded by hand: this runs before the `store` helper below is defined, and
+  // an unguarded read here throws out of the whole IIFE — no modal, no
+  // tracking, nothing — in any context where storage access itself throws.
+  let discountCode = null;
+  try { discountCode = sessionStorage.getItem('exitIntentDiscount'); } catch (e) { /* storage blocked */ }
   if (discountCode && window.location.pathname === '/cart') {
     console.log('[Exit Intent] Redirecting from cart to checkout with discount');
-    sessionStorage.removeItem('exitIntentDiscount');
+    try { sessionStorage.removeItem('exitIntentDiscount'); } catch (e) { /* storage blocked */ }
     // Use Shopify's session-based redemption endpoint — more reliable than URL params,
     // especially with Checkout 2.0 / checkout.shopify.com
     window.location.replace(`/discount/${encodeURIComponent(discountCode)}?redirect=/checkout`);
@@ -22,6 +26,40 @@
   const LIVE_AI_RENDER = true;
 
   // Mobile detection helper
+  // ===========================================================================
+  // STORAGE — every access on the signal path, and on the init path that gates
+  // it, goes through here. The one exception is the redirect check at the top
+  // of this IIFE, which runs before this object exists and is guarded by hand.
+  //
+  // sessionStorage/localStorage throw outright in some storage-partitioned and
+  // privacy-restricted contexts; they do not merely return null. An unguarded
+  // read anywhere on this path takes the whole signal collection down with an
+  // unhandled rejection, which is how a previous round of per-site try/catch
+  // ended up being dead code: two functions were hardened and the first
+  // unguarded read sat six lines above them.
+  // ===========================================================================
+  const store = {
+    get(area, key) {
+      try { return window[area].getItem(key); } catch (e) { return null; }
+    },
+    set(area, key, value) {
+      try { window[area].setItem(key, value); return true; } catch (e) { return false; }
+    },
+    // Real deletion. Writing '' instead would read back as '' rather than
+    // null — identical under a truthiness guard, which is what every current
+    // reader uses, but not under `=== null`, `!= null` or a length check. Use
+    // this so a future reader cannot be surprised.
+    remove(area, key) {
+      try { window[area].removeItem(key); return true; } catch (e) { return false; }
+    },
+    // Reads an integer, clamped, with a default for missing/NaN/garbage.
+    int(area, key, fallback = 0, min = -Infinity, max = Infinity) {
+      const n = parseInt(this.get(area, key), 10);
+      if (!Number.isFinite(n)) return fallback;
+      return Math.max(min, Math.min(max, n));
+    },
+  };
+
   function isMobileDevice() {
     return window.innerWidth <= 768 || /mobile/i.test(navigator.userAgent);
   }
@@ -820,9 +858,21 @@
     }
 
     async collectCustomerSignals() {
+      // 0. Signal semantics generation. MUST be emitted here, by the code that
+      // actually produces the signals — the server cannot tell a v1 storefront
+      // from a v2 one, because nothing about the payload's SHAPE changed, only
+      // the meaning of two numbers. A server-side stamp would record the deploy
+      // time and be read as if it recorded semantics.
+      //
+      //   v2 (2026-09-18): scrollDepth stopped reporting 100% for pages too
+      //   short to scroll; visitFrequency went from an ever-growing page-load
+      //   counter to a 30-day session count.
+      //
+      // Bump whenever the MEANING of any signal changes, shape or no shape.
+      const signalsVersion = 2;
+
       // 1. Visit frequency
-      const visits = parseInt(localStorage.getItem('exitIntentVisits') || '0') + 1;
-      localStorage.setItem('exitIntentVisits', visits);
+      const visits = this.recordAndCountVisits();
       
       // 2. Cart value and item count
       const cart = await fetch('/cart.js').then(r => r.json());
@@ -864,8 +914,8 @@
       const timeOnSite = (Date.now() - window.sessionStartTime) / 1000;
       
       // 7. Page views
-      const pageViews = parseInt(sessionStorage.getItem('pageViews') || '0') + 1;
-      sessionStorage.setItem('pageViews', pageViews);
+      const pageViews = store.int('sessionStorage', 'pageViews', 0, 0) + 1;
+      store.set('sessionStorage', 'pageViews', pageViews);
       
       // 8. Abandoned before
       const hasAbandonedBefore = document.cookie.includes('abandonedCart=true');
@@ -874,7 +924,7 @@
       const scrollDepth = this.getScrollDepth();
       
       // 10. Cart abandonment history (NEW - Enterprise signal)
-      const abandonmentCount = parseInt(localStorage.getItem('exitIntentAbandonments') || '0');
+      const abandonmentCount = store.int('localStorage', 'exitIntentAbandonments', 0, 0);
       
       // 11. Add-to-cart hesitation (NEW - Enterprise signal)
       const cartHesitation = this.getCartHesitation();
@@ -918,6 +968,7 @@
         : null;
 
       return {
+        signalsVersion,
         visitorId,
         modalShowCount,
         modalIgnoreStreak,
@@ -955,7 +1006,7 @@
       // Session entry params (gclid/utm on the landing URL) trump referrer
       // classification — see the capture block at script init.
       try {
-        const entrySource = sessionStorage.getItem('resparqEntrySource');
+        const entrySource = store.get('sessionStorage', 'resparqEntrySource');
         if (entrySource) return entrySource;
       } catch (_) {}
       const ref = document.referrer;
@@ -965,20 +1016,90 @@
       return 'referral';
     }
     
+    // Sessions this visitor has started in the trailing 30 days.
+    //
+    // This was a bare counter incremented on every call — i.e. on every page
+    // load with a cart — and never reset. A single ten-page browse scored as
+    // ten "visits" (+11.5 propensity, near the +12 ceiling) and the number only
+    // ever grew, so tenure was being read as purchase intent. It now counts
+    // one visit per session and forgets anything older than the window.
+    recordAndCountVisits() {
+      const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+      const KEY = 'exitIntentVisitLog';
+      const SESSION_FLAG = 'exitIntentVisitCounted';
+      const now = Date.now();
+
+      let log;
+      try {
+        log = JSON.parse(store.get('localStorage', KEY));
+      } catch (e) {
+        log = null;
+      }
+      if (!Array.isArray(log)) {
+        // First run on this browser, or migrating off the old integer counter.
+        // The old value counted page loads, not sessions, so it is not
+        // convertible — start clean rather than carry the inflation forward.
+        log = [];
+      }
+
+      // Drop anything outside the window, and any junk that survived parsing.
+      log = log.filter((t) => typeof t === 'number' && now - t < WINDOW_MS);
+
+      // One entry per session. sessionStorage is per-tab, which is the closest
+      // thing the platform gives us to a session boundary.
+      const alreadyCounted = store.get('sessionStorage', SESSION_FLAG) === '1';
+
+      if (!alreadyCounted) {
+        // Only count this session if the flag can actually be persisted. A
+        // context where setItem silently fails would otherwise push a new
+        // timestamp on every page load — reinstating the very inflation this
+        // replaced, and now surviving 30 days in localStorage instead of dying
+        // with the tab. Better to undercount than to relive that.
+        const flagged = store.set('sessionStorage', SESSION_FLAG, '1')
+          && store.get('sessionStorage', SESSION_FLAG) === '1';
+        if (flagged) log.push(now);
+      }
+
+      // Keep the stored log bounded regardless of how chatty the browser is.
+      if (log.length > 100) log = log.slice(-100);
+
+      store.set('localStorage', KEY, JSON.stringify(log));
+
+      // Floor at 1, never 0. Where storage silently fails nothing is ever
+      // pushed, and a literal 0 is not a safe undercount: propensity.server.js
+      // tests `visitFrequency === 1` to spot a first-time visitor who
+      // nonetheless has purchase history, and suppresses the -8 first-visit
+      // penalty for them. A 0 misses that test, so a known repeat customer
+      // would take a penalty they are explicitly exempt from.
+      return Math.max(1, log.length);
+    }
+
     getScrollDepth() {
-      // Calculate how far down the page user has scrolled (0-100%)
+      // How far down the page the visitor has scrolled (0-100%), carried as a
+      // session-wide maximum.
+      //
+      // A page shorter than the viewport cannot be scrolled, so it carries no
+      // evidence either way. This used to report 100% for that case, and
+      // because the result is stored as a running session maximum, a single
+      // unscrollable page pinned every later page in the session at 100 — a
+      // permanent +8 propensity for doing nothing. Such a page now contributes
+      // nothing and leaves the stored maximum alone.
       const windowHeight = window.innerHeight;
       const documentHeight = document.documentElement.scrollHeight;
       const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-      
+
+      // Storage can be unavailable (private mode, blocked cookies) or hold junk.
+      // A throw here used to take the whole signal collection down, and
+      // parseInt('garbage') would have returned NaN straight into the score.
+      const currentMax = store.int('sessionStorage', 'maxScrollDepth', 0, 0, 100);
+
       const maxScroll = documentHeight - windowHeight;
-      const scrollPercent = maxScroll > 0 ? Math.round((scrollTop / maxScroll) * 100) : 100;
-      
-      // Track max scroll depth in session
-      const currentMax = parseInt(sessionStorage.getItem('maxScrollDepth') || '0');
-      const newMax = Math.max(currentMax, scrollPercent);
-      sessionStorage.setItem('maxScrollDepth', newMax);
-      
+      if (!Number.isFinite(maxScroll) || maxScroll <= 0) return currentMax;
+
+      const scrollPercent = Math.max(0, Math.min(100, Math.round((scrollTop / maxScroll) * 100)));
+      const newMax = Math.max(currentMax, Number.isFinite(scrollPercent) ? scrollPercent : 0);
+      store.set('sessionStorage', 'maxScrollDepth', newMax);
+
       return newMax;
     }
     
@@ -1037,7 +1158,7 @@
     getCartHesitation() {
       // Track add/remove events in session
       // Returns number of times items were added then removed
-      const hesitations = parseInt(sessionStorage.getItem('cartHesitations') || '0');
+      const hesitations = store.int('sessionStorage', 'cartHesitations', 0, 0);
       return hesitations;
     }
     
@@ -1048,13 +1169,13 @@
       // page in progress. Return it regardless of the CURRENT page — otherwise
       // dwell was lost whenever the exit happened off a product page (cart,
       // checkout, collection), which is the common case.
-      return parseInt(sessionStorage.getItem('totalProductDwell') || '0');
+      return store.int('sessionStorage', 'totalProductDwell', 0, 0);
     }
 
     // HIGH-VALUE SIGNAL: Failed coupon attempt detection
     getFailedCouponAttempt() {
       // Check if user tried to use a coupon code that failed
-      return sessionStorage.getItem('failedCouponAttempt') === 'true';
+      return store.get('sessionStorage', 'failedCouponAttempt') === 'true';
     }
 
     // Get the page context where exit intent triggered
@@ -1075,7 +1196,7 @@
 
     // Track how long items have been in cart
     getCartAge() {
-      const cartTimestamp = localStorage.getItem('cartFirstItemTimestamp');
+      const cartTimestamp = store.get('localStorage', 'cartFirstItemTimestamp');
 
       if (!cartTimestamp) return 0;
 
@@ -1119,21 +1240,21 @@
 
       // Start timer when page loads
       const pageStart = Date.now();
-      sessionStorage.setItem('productPageStart', pageStart);
+      store.set('sessionStorage', 'productPageStart', pageStart);
 
       // Update total dwell time every 5 seconds
       const dwellInterval = setInterval(() => {
         const elapsed = Math.floor((Date.now() - pageStart) / 1000);
-        const previousTotal = parseInt(sessionStorage.getItem('totalProductDwell') || '0');
-        sessionStorage.setItem('totalProductDwell', previousTotal + 5);
+        const previousTotal = store.int('sessionStorage', 'totalProductDwell', 0, 0);
+        store.set('sessionStorage', 'totalProductDwell', previousTotal + 5);
       }, 5000);
 
       // Clean up on page unload
       window.addEventListener('beforeunload', () => {
         clearInterval(dwellInterval);
         const elapsed = Math.floor((Date.now() - pageStart) / 1000);
-        const previousTotal = parseInt(sessionStorage.getItem('totalProductDwell') || '0');
-        sessionStorage.setItem('totalProductDwell', previousTotal + elapsed);
+        const previousTotal = store.int('sessionStorage', 'totalProductDwell', 0, 0);
+        store.set('sessionStorage', 'totalProductDwell', previousTotal + elapsed);
       });
     }
 
@@ -1160,14 +1281,14 @@
 
         if (discountInput && discountInput.value) {
           // Store that they attempted a code - we'll check for failure
-          sessionStorage.setItem('pendingCouponAttempt', discountInput.value);
+          store.set('sessionStorage', 'pendingCouponAttempt', discountInput.value);
           console.log('[Signal] Coupon attempt detected:', discountInput.value);
         }
       }, true);
 
       // Check for error messages that indicate failed coupon
       const checkForFailure = () => {
-        const pendingCode = sessionStorage.getItem('pendingCouponAttempt');
+        const pendingCode = store.get('sessionStorage', 'pendingCouponAttempt');
         if (!pendingCode) return;
 
         // Common error message patterns
@@ -1189,12 +1310,12 @@
         const urlHasError = window.location.search.includes('discount_error');
 
         if (hasError || urlHasError) {
-          sessionStorage.setItem('failedCouponAttempt', 'true');
+          store.set('sessionStorage', 'failedCouponAttempt', 'true');
           console.log('[Signal] Failed coupon attempt detected - HIGH VALUE SIGNAL');
         }
 
         // Clear pending after check
-        sessionStorage.removeItem('pendingCouponAttempt');
+        store.remove('sessionStorage', 'pendingCouponAttempt');
       };
 
       // Check periodically and on page changes
@@ -1210,13 +1331,13 @@
 
           if (cart.item_count > 0) {
             // If cart has items and we haven't tracked the timestamp yet
-            if (!localStorage.getItem('cartFirstItemTimestamp')) {
-              localStorage.setItem('cartFirstItemTimestamp', Date.now());
+            if (!store.get('localStorage', 'cartFirstItemTimestamp')) {
+              store.set('localStorage', 'cartFirstItemTimestamp', Date.now());
               console.log('[Signal] Cart age tracking started');
             }
           } else {
             // Cart is empty, clear the timestamp
-            localStorage.removeItem('cartFirstItemTimestamp');
+            store.remove('localStorage', 'cartFirstItemTimestamp');
           }
         } catch (error) {
           console.error('[Signal] Error tracking cart age:', error);
@@ -1240,8 +1361,8 @@
     //    counted as abandoned. Conversion is excluded for free.
     trackCartAbandonment() {
       const SESSION_KEY = 'exitIntentSessionStarted';
-      const isNewSession = !sessionStorage.getItem(SESSION_KEY);
-      sessionStorage.setItem(SESSION_KEY, '1');
+      const isNewSession = !store.get('sessionStorage', SESSION_KEY);
+      store.set('sessionStorage', SESSION_KEY, '1');
 
       // Only evaluate once, at the start of each new session.
       if (!isNewSession) return;
@@ -1254,18 +1375,18 @@
 
           // No age stamp means the cart was created during THIS session by
           // trackCartAge → still actively shopping, not an abandonment.
-          const ts = localStorage.getItem('cartFirstItemTimestamp');
+          const ts = store.get('localStorage', 'cartFirstItemTimestamp');
           if (!ts) return;
 
           // Guard against double-counting the same physical cart across multiple
           // return visits. We only count a given cart (identified by its
           // first-item timestamp) once. A new cart gets a new timestamp.
-          const counted = localStorage.getItem('exitIntentAbandonCountedFor');
+          const counted = store.get('localStorage', 'exitIntentAbandonCountedFor');
           if (counted === ts) return;
 
-          const next = parseInt(localStorage.getItem('exitIntentAbandonments') || '0') + 1;
-          localStorage.setItem('exitIntentAbandonments', next);
-          localStorage.setItem('exitIntentAbandonCountedFor', ts);
+          const next = store.int('localStorage', 'exitIntentAbandonments', 0, 0) + 1;
+          store.set('localStorage', 'exitIntentAbandonments', next);
+          store.set('localStorage', 'exitIntentAbandonCountedFor', ts);
 
           // 30-day cookie powers the hasAbandonedBefore boolean signal.
           document.cookie = 'abandonedCart=true; path=/; max-age=' + (60 * 60 * 24 * 30);

@@ -82,7 +82,10 @@ export function offerCeilingPercent({
   assumedGrossMargin = 0.40,
   subShare = 0,
   expectedCycles = 3,
-  conditional = false
+  conditional = false,
+  // Optional sink for diagnostics. Pass `{}` to learn which cap bound; the
+  // function writes `bindingConstraint` onto it. Ignored when omitted.
+  out = null
 } = {}) {
   const D_MIN = 5;   // below this an offer is ignorable / invisible -> announce
   const D_MAX = 25;  // absolute ceiling on any single exit offer
@@ -90,7 +93,12 @@ export function offerCeilingPercent({
   const P_HI = 80;
 
   const agg = Math.max(0, Math.min(10, Number.isFinite(aggression) ? aggression : 5));
-  if (agg <= 0) return 0; // aggression 0 short-circuits to announce-only everywhere
+  if (agg <= 0) {
+    // Report on the early return too — a caller reading `out` after this path
+    // would otherwise see whatever the previous call left there, or nothing.
+    if (out) out.bindingConstraint = 'discount aggression is set to 0';
+    return 0;
+  }
 
   const P = Math.max(0, Math.min(100, Number.isFinite(propensity) ? propensity : 50));
   const agm = (assumedGrossMargin > 0 && assumedGrossMargin < 1) ? assumedGrossMargin : 0.40;
@@ -110,8 +118,37 @@ export function offerCeilingPercent({
   const aggrCap = 10 + agg * 1.5;                 // merchant's hard ceiling (10-25%)
 
   const finalD = Math.min(dCurve, shareCap, floorCap, aggrCap, D_MAX);
+  // Which of the five actually bound. Recorded so callers can say WHY a
+  // visitor got no discount instead of guessing — a low-margin store hitting
+  // floorCap is a completely different conversation from a high-intent visitor
+  // tapering out on dCurve, and the two used to be reported identically.
   // Floor (not round) so the integer result never rounds UP through a cap.
-  return finalD < D_MIN ? 0 : Math.floor(finalD);
+  const percent = finalD < D_MIN ? 0 : Math.floor(finalD);
+  if (out) out.bindingConstraint = describeBinding({ dCurve, shareCap, floorCap, aggrCap, D_MAX, conditional });
+  return percent;
+}
+
+// Which cap actually bound, as a sentence for the decision log. Never an input
+// to a decision — purely so the console can say WHY a visitor got no discount
+// instead of asserting buy-intent for all five possible causes.
+//
+// Deliberately NOT module-level state read back after the call: this module is
+// a per-process singleton with a concurrent caller in the admin console, and
+// that design is only safe while no `await` ever appears between the call and
+// the read. Passing an `out` object makes the coupling explicit and local.
+function describeBinding({ dCurve, shareCap, floorCap, aggrCap, D_MAX, conditional }) {
+  const caps = [
+    // `conditional` removes the PROPENSITY taper from dCurve (dRaw = D_MAX),
+    // but dCurve survives as D_MAX * (agg/5) and is still a live candidate in
+    // finalD — so it must stay in this list or the diagnostic can name the
+    // wrong cap. Only its description changes.
+    [dCurve, conditional ? 'aggression dial ceiling' : 'buy-intent taper'],
+    [shareCap, 'offer would consume more than half the margin'],
+    [floorCap, 'post-discount margin would fall below 20%'],
+    [aggrCap, 'aggression dial ceiling'],
+    [D_MAX, 'absolute ceiling'],
+  ];
+  return caps.reduce((a, b) => (b[0] < a[0] ? b : a))[1];
 }
 
 // Subscription share of cart value, from the client signals shipped in 2.1.
@@ -269,8 +306,33 @@ export async function decideOffer(signals, ctx = {}) {
     // Force-skip: first-time quick exit with a tiny cart = accidental visit.
     // Only a low-intent 'general' exit can be accidental; an inferred trigger
     // (hesitation, stale cart, checkout exit) is a deliberate signal.
+    //
+    // `pageViews === 1` is load-bearing and was added with signalsVersion 2.
+    // visitFrequency used to count page loads, so `=== 1` meant "the very
+    // first page load this visitor has ever made" — which is what "accidental
+    // visit" means. It now counts SESSIONS, so `=== 1` is true for the whole
+    // of a visitor's first session. Without the pageViews guard this skip
+    // widened to "any exit during the first session with a small cart and
+    // under 30s on the current page" — and timeOnSite measures the CURRENT
+    // page (window.sessionStartTime resets on every navigation), so a shopper
+    // eight pages into their first visit would be silently denied a modal.
+    //
+    // SECOND EFFECT, intended: webhooks.carts.update.jsx sends `pageViews: 0`
+    // and `timeOnSite: 0` as SENTINELS — there is no browser session behind a
+    // cart webhook at all. Under the old test it satisfied
+    // `visitFrequency === 1 && timeOnSite < 30` automatically, so a webhook
+    // pre-decision on a sub-$50 cart was discarded as an "accidental visit"
+    // when what actually happened was a shopper adding items and leaving.
+    // Requiring pageViews === 1 excludes that sentinel by construction. An
+    // "accidental visit" is a browser-session concept and that path is not a
+    // browser session.
+    //
+    // idle-cart-pickup.server.js is NOT affected and never was: it sets
+    // exitPage 'checkout', so triggerReason resolves to 'checkoutExit' and this
+    // branch (which requires 'general') was already unreachable for it.
+    const isFirstEverPageLoad = signals.visitFrequency === 1 && signals.pageViews === 1;
     if (triggerReason === 'general'
-        && signals.visitFrequency === 1 && signals.timeOnSite < 30 && cartValue < 50) {
+        && isFirstEverPageLoad && signals.timeOnSite < 30 && cartValue < 50) {
       console.log(`[Offer Engine] Accidental visit (P=${P}) — no intervention`);
       return null;
     }

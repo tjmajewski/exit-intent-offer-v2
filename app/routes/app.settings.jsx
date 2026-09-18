@@ -211,27 +211,58 @@ export async function action({ request }) {
     cooldownDays: freqNumber(formData.get("cooldownDays"), 3, 0),
     maxShowsPer30d: Math.floor(freqNumber(formData.get("maxShowsPer30d"), 5, 1)),
     postPurchaseDays: freqNumber(formData.get("postPurchaseDays"), 30, 0),
-    discountEnabled: formData.get("discountEnabled") === "on",
+    // Quick Setup tab only. Without its presence marker an unmounted tab looks
+    // identical to an unchecked box, so this would silently switch off every
+    // merchant's discount on a save from Advanced or Branding.
+    discountEnabled: formData.get("offerInputsPresent")
+      ? formData.get("discountEnabled") === "on"
+      : undefined,
     // Checkbox lives on the Quick Setup tab only — without its presence marker
     // a save from another tab would wipe the stored value (resolved against
     // the existing DB row below, same pattern as the brand fields).
     showProductImages: formData.get("showProductImagesPresent")
       ? formData.get("showProductImages") === "on"
       : undefined,
+    // NOT absent-aware, deliberately. Making this resolve from the row while
+    // discountPercentage/discountAmount cannot (they live only in the
+    // metafield, read too late here) produced a worse state than the bug:
+    // offerType "fixed" from the row paired with amount 10 from an absent
+    // form, i.e. "$10 off" for a merchant who configured 25%. The three offer
+    // fields now stay wrong *together* and self-consistent until the manifest
+    // refactor resolves them from the metafield as a set.
     offerType: formData.get("offerType") || "percentage",
     // Discount amounts are whole-number only (UI is locked to integers).
     // Floor any decimal that slips through and clamp to a sensible minimum.
+    // NOT absent-aware: these live only in the settings metafield, which this
+    // action does not read until line ~600, long after the resolve block. They
+    // are still wiped to 10 by a cross-tab save — a pre-existing bug shared with
+    // ~9 other fields (modalHeadline, socialProofEnabled, cooldownDays, ...).
+    // Fixing that class properly needs the field manifest, not another ternary.
+    // The minting block below is gated so this cannot mint a wrong-valued code.
     discountPercentage: Math.min(100, Math.max(1, Math.floor(parseFloat(formData.get("discountPercentage") || "10")) || 10)),
     discountAmount: Math.max(1, Math.floor(parseFloat(formData.get("discountAmount") || "10")) || 10),
     discountCode: null,
     // Manual mode discount settings
-    manualDiscountCodeMode: formData.get("manualDiscountCodeMode") || "unique",
-    manualGenericDiscountCode: formData.get("manualGenericDiscountCode") || null,
-    manualDiscountCodePrefix: formData.get("manualDiscountCodePrefix") || "EXIT",
-    // AI mode discount settings
-    aiDiscountCodeMode: formData.get("aiDiscountCodeMode") || "unique",
-    aiGenericDiscountCode: formData.get("aiGenericDiscountCode") || null,
-    aiDiscountCodePrefix: formData.get("aiDiscountCodePrefix") || "EXIT",
+    // Absent-aware for the same reason as discountEnabled: these radios live in
+    // the manual block, which unmounts wholesale in AI/Guided mode and on every
+    // other tab. Guarding AROUND this (as the discountCode carry-forward first
+    // tried) does not work — the guard reads the pre-save row while this line
+    // overwrites the row in the same request.
+    manualDiscountCodeMode: formData.get("offerInputsPresent")
+      ? (formData.get("manualDiscountCodeMode") || "unique")
+      : undefined,
+    manualGenericDiscountCode: formData.get("offerInputsPresent")
+      ? (formData.get("manualGenericDiscountCode") || null)
+      : undefined,
+    manualDiscountCodePrefix: formData.get("offerInputsPresent")
+      ? (formData.get("manualDiscountCodePrefix") || "EXIT")
+      : undefined,
+    // AI mode discount settings. The code-type radios render only when
+    // aggression > 0 (AISettingsTab), so the field can be absent even with the
+    // tab mounted — resolve per-field rather than off the tab marker.
+    aiDiscountCodeMode: formData.get("aiDiscountCodeMode") || undefined,
+    aiGenericDiscountCode: formData.get("aiGenericDiscountCode") || undefined,
+    aiDiscountCodePrefix: formData.get("aiDiscountCodePrefix") || undefined,
     // Hybrid ("Guided") mode: merchant pins the offer. Fields may be absent when
     // saving from a tab that doesn't mount the Guided inputs — resolved against
     // the existing DB row below so a cross-tab save can't wipe them.
@@ -247,10 +278,23 @@ export async function action({ request }) {
     manualTemplateId: formData.get("manualTemplateId") || "classic-card",
     mode: formData.get("mode") || "manual",
     aiGoal: "auto", // Funnel-stage detection: AI auto-selects revenue vs conversion per customer
-    aggression: parseInt(formData.get("aggression") || "5"),
-    budgetEnabled: formData.get("budgetEnabled") === "on",
-    budgetAmount: parseFloat(formData.get("budgetAmount") || "500"),
-    budgetPeriod: formData.get("budgetPeriod") || "month",
+    // These four live on AISettingsTab, which mounts only on Quick Setup in AI
+    // mode. An unmounted tab submits nothing, so `parseInt(undefined || "5")`
+    // was rewriting the merchant's aggression to 5 and `=== "on"` was switching
+    // the budget cap off on every save from another tab. Resolved against the
+    // existing row below, same pattern as the Guided pinned-offer fields.
+    aggression: formData.get("aiSettingsPresent")
+      ? parseInt(formData.get("aggression") || "5")
+      : undefined,
+    budgetEnabled: formData.get("aiSettingsPresent")
+      ? formData.get("budgetEnabled") === "on"
+      : undefined,
+    budgetAmount: formData.get("aiSettingsPresent")
+      ? parseFloat(formData.get("budgetAmount") || "500")
+      : undefined,
+    budgetPeriod: formData.get("aiSettingsPresent")
+      ? (formData.get("budgetPeriod") || "month")
+      : undefined,
     triggers: {
       exitIntent: aiLike ? true : formData.get("exitIntentEnabled") === "on",
       timeDelay: aiLike ? false : formData.get("timeDelayEnabled") === "on",
@@ -297,7 +341,22 @@ export async function action({ request }) {
         hybridOfferAmount: true,
         hybridDiscountCodeMode: true,
         hybridGenericDiscountCode: true,
-        hybridDiscountCodePrefix: true
+        hybridDiscountCodePrefix: true,
+        // Read back for the cross-tab resolution below. Prisma returns ONLY
+        // selected columns, so anything resolved against `existingShop` must
+        // appear here or the resolve silently collapses to its literal default.
+        aggression: true,
+        budgetEnabled: true,
+        budgetAmount: true,
+        budgetPeriod: true,
+        aiDiscountCodeMode: true,
+        aiGenericDiscountCode: true,
+        aiDiscountCodePrefix: true,
+        discountEnabled: true,
+        discountCode: true,
+        manualDiscountCodeMode: true,
+        manualGenericDiscountCode: true,
+        manualDiscountCodePrefix: true
       }
     });
 
@@ -318,6 +377,32 @@ export async function action({ request }) {
     settings.hybridDiscountCodeMode = settings.hybridDiscountCodeMode || existingShop?.hybridDiscountCodeMode || "generic";
     settings.hybridDiscountCodePrefix = settings.hybridDiscountCodePrefix || existingShop?.hybridDiscountCodePrefix || "EXIT";
     settings.hybridGenericDiscountCode = settings.hybridGenericDiscountCode ?? existingShop?.hybridGenericDiscountCode ?? null;
+
+    // Resolve the AI dial, the budget cap and the discount toggle the same way.
+    // Use ?? throughout: aggression 0 ("announce only"), budgetEnabled false and
+    // discountEnabled false are all valid merchant choices that || would
+    // overwrite with the default.
+    settings.aggression = settings.aggression ?? existingShop?.aggression ?? 5;
+    settings.budgetEnabled = settings.budgetEnabled ?? existingShop?.budgetEnabled ?? false;
+    settings.budgetAmount = settings.budgetAmount ?? existingShop?.budgetAmount ?? 500;
+    settings.budgetPeriod = settings.budgetPeriod ?? existingShop?.budgetPeriod ?? "month";
+    settings.aiDiscountCodeMode = settings.aiDiscountCodeMode ?? existingShop?.aiDiscountCodeMode ?? "unique";
+    settings.aiGenericDiscountCode = settings.aiGenericDiscountCode ?? existingShop?.aiGenericDiscountCode ?? null;
+    settings.aiDiscountCodePrefix = settings.aiDiscountCodePrefix ?? existingShop?.aiDiscountCodePrefix ?? "EXIT";
+    settings.discountEnabled = settings.discountEnabled ?? existingShop?.discountEnabled ?? false;
+    // Carry the existing code forward. The minting block below is gated on the
+    // offer inputs being present, so a save from another tab skips it — and
+    // without this, `discountCode` stays null from the literal above while
+    // `discountEnabled` now resolves true from the row. The storefront would
+    // then read "discount on, no code" and show a discount modal with nothing
+    // to apply. Fixing over-minting must not create under-minting.
+    // The manual code fields now resolve from the row alongside the code
+    // itself, so mode and code always move together and cannot contradict.
+    settings.manualDiscountCodeMode = settings.manualDiscountCodeMode ?? existingShop?.manualDiscountCodeMode ?? "unique";
+    settings.manualGenericDiscountCode = settings.manualGenericDiscountCode ?? existingShop?.manualGenericDiscountCode ?? null;
+    settings.manualDiscountCodePrefix = settings.manualDiscountCodePrefix ?? existingShop?.manualDiscountCodePrefix ?? "EXIT";
+    settings.discountCode = settings.discountCode ?? existingShop?.discountCode ?? null;
+
 
     // Apply tier-based population size limits
     let populationSize = parseInt(formData.get("populationSize")) || 10;
@@ -348,7 +433,15 @@ export async function action({ request }) {
 
     // Create discount code in Shopify BEFORE saving to database
     // so the discountCode field is populated for the DB save
-    if (settings.discountEnabled) {
+    // GATE: mint only when the tab that owns the offer inputs was submitted.
+    //
+    // discountEnabled now resolves from the Shop row, which makes this block
+    // reachable from Advanced and Branding — tabs that never render offerType /
+    // discountPercentage / discountAmount. Without this gate a save from either
+    // would mint a code at the "percentage" / 10 defaults and overwrite the
+    // merchant's real generic code with it, in their live Shopify admin.
+    // A save that cannot see the offer fields has no business re-minting.
+    if (settings.discountEnabled && formData.get("offerInputsPresent")) {
       console.log('Creating discount code...');
 
       // Determine which settings to use based on app mode
@@ -744,7 +837,7 @@ export default function Settings() {
   const [showModalNaming, setShowModalNaming] = useState(false);
   const [modalName, setModalName] = useState("");
   const [optimizationMode, setOptimizationMode] = useState(settings.mode || "manual");
-  const [aggressionLevel, setAggressionLevel] = useState(settings.aggression || 5);
+  const [aggressionLevel, setAggressionLevel] = useState(settings.aggression ?? 5);
   const [mutationRate, setMutationRate] = useState(settings.mutationRate || 15);
   const [crossoverRate, setCrossoverRate] = useState(settings.crossoverRate || 70);
   const [selectionPressure, setSelectionPressure] = useState(settings.selectionPressure || 5);

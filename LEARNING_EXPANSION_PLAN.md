@@ -516,6 +516,36 @@ is established.
 Ship it in the same deploy as the ITT change; both alter the same endpoint and
 both are cheapest at one customer.
 
+### Later: size the holdout from the store's own early data (idea, not planned)
+
+Raised September 18. Not scheduled, recorded so it is not lost.
+
+The 20% argument above is a blunt instrument: one number for every store,
+chosen because the *first* store has no data. The better version sizes the
+holdout from what the store is actually doing — wide while volume is low and
+lift is unknown, narrowing as the interval tightens. A store doing 50 sessions
+a day needs a much bigger control share to answer the question this quarter
+than one doing 5,000.
+
+**The trap, specific to this implementation.** Assignment is
+`fnv1a(visitorId:shopId) % 100 < HOLDOUT_RATE * 100`
+(`apps.exit-intent.api.ai-decision.jsx:345`). The hash is stable per visitor but
+the *threshold* is what moves, so changing the rate REASSIGNS people. Going
+20% → 5% flips everyone in buckets 5-19 from control to treatment, carrying an
+unexposed history into the treated arm. They are contaminated for both arms,
+and nothing in the schema records that they switched.
+
+**So the clean shape is cohorts, not a dial.** Assign a visitor to a cohort at
+first contact and freeze it; each cohort is its own experiment with its own
+fixed rate; lift is computed per cohort and combined, rather than pooled over a
+period whose mix changed underneath it. That keeps the power benefit and drops
+the reassignment problem entirely.
+
+Needs, roughly: a stored per-visitor arm assignment (or a cohort id derived
+from first-seen date), a rate schedule per cohort, and a combined estimator in
+`computeHoldout()`. None of it is hard; all of it is wasted before there is
+more than one store to run it on.
+
 ### Reading the three slices
 
 Each has a distinct meaning when it sits *below* control:
