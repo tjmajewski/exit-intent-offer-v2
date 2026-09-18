@@ -2957,8 +2957,13 @@
             primaryBtn.textContent = cartValue >= decision.threshold ? 'Keep Shopping' : 'Add Items & Save';
           }
 
-          // Store threshold offer for cart monitor
-          sessionStorage.setItem('exitIntentThresholdOffer', JSON.stringify({
+          // Store threshold offer for cart monitor. Guarded: this sits upstream
+          // of the modal actually being displayed, and one caller awaits it
+          // outside a try — so a throw here used to mean no modal at all, for
+          // an offer the engine had already decided to make. Losing the
+          // cart-monitor handoff is the acceptable failure; losing the modal
+          // is not.
+          store.set('sessionStorage', 'exitIntentThresholdOffer', JSON.stringify({
             code: decision.code,
             threshold: decision.threshold,
             discount: decision.amount,
@@ -3017,8 +3022,9 @@
           primaryBtn.textContent = defaultCartValue >= decision.threshold ? 'Keep Shopping' : 'Add Items & Save';
         }
 
-        // 🆕 STORE THRESHOLD INFO FOR CART MONITORING
-        sessionStorage.setItem('exitIntentThresholdOffer', JSON.stringify({
+        // 🆕 STORE THRESHOLD INFO FOR CART MONITORING (guarded — see above:
+        // a throw here aborts showModal before the modal is displayed)
+        store.set('sessionStorage', 'exitIntentThresholdOffer', JSON.stringify({
           code: decision.code,
           threshold: decision.threshold,
           discount: decision.amount,
@@ -3243,7 +3249,10 @@
       this.currentOfferAmount = content.offerAmount;
       this.settings.redirectDestination = content.redirectDestination;
       if (content.thresholdOffer) {
-        sessionStorage.setItem('exitIntentThresholdOffer', JSON.stringify(content.thresholdOffer));
+        // Guarded: this is the default live-AI render path (LIVE_AI_RENDER is
+        // true), and showModal awaits its caller outside a try — an unguarded
+        // throw took the whole modal down along with its impression tracking.
+        store.set('sessionStorage', 'exitIntentThresholdOffer', JSON.stringify(content.thresholdOffer));
       }
 
       // timer-front deadline: real offer expiry when known, else a 24h window.
@@ -3633,11 +3642,23 @@
       if (destination === 'cart' && !alreadyOnCart) {
         // Not on the cart page yet — send them there first.
         // Store the discount so the cart page will forward them to checkout with it applied.
-        if (discountCode) {
-          sessionStorage.setItem('exitIntentDiscount', discountCode);
+        //
+        // This handoff is the ONLY thing carrying the code to /cart, and the
+        // modal has already closed by the time we get here. An unguarded throw
+        // used to abandon the shopper on a dead CTA — no navigation at all,
+        // discount gone. A silently failed WRITE is just as bad in a quieter
+        // way: they would land on /cart and autoApplyCartDiscount would find
+        // nothing. So check that the write actually stuck, and fall back to
+        // the storage-free redemption URL when it did not.
+        if (discountCode && store.set('sessionStorage', 'exitIntentDiscount', discountCode)) {
           console.log(`Redirecting to cart - will auto-apply discount: ${discountCode}`);
+          redirectUrl = '/cart';
+        } else if (discountCode) {
+          console.warn('[Exit Intent] Could not stash the discount for the cart page — redeeming directly instead.');
+          redirectUrl = `/discount/${encodeURIComponent(discountCode)}?redirect=/checkout`;
+        } else {
+          redirectUrl = '/cart';
         }
-        redirectUrl = '/cart';
       } else {
         // Either destination is 'checkout', or the customer is already on the cart page
         // (no point going to /cart again — skip straight to checkout with discount).
