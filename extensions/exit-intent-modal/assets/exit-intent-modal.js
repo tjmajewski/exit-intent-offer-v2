@@ -28,8 +28,10 @@
   // Mobile detection helper
   // ===========================================================================
   // STORAGE — every access on the signal path, and on the init path that gates
-  // it, goes through here. The one exception is the redirect check at the top
-  // of this IIFE, which runs before this object exists and is guarded by hand.
+  // it, goes through here. The sole exception is the redirect check at the very
+  // top of this IIFE, which runs before this object exists and is guarded by
+  // hand. If you add a storage read that runs at module scope, guard it: an
+  // unguarded throw there kills the entire script, not just that feature.
   //
   // sessionStorage/localStorage throw outright in some storage-partitioned and
   // privacy-restricted contexts; they do not merely return null. An unguarded
@@ -3860,13 +3862,13 @@
       const checkoutButton = e.target.closest('#CartDrawer-Checkout, button[name="checkout"]');
       
       if (checkoutButton) {
-        const code = sessionStorage.getItem('exitIntentDiscount');
+        const code = store.get('sessionStorage', 'exitIntentDiscount');
         if (code) {
           e.preventDefault();
           e.stopPropagation();
           e.stopImmediatePropagation();
           console.log(`[Exit Intent] Intercepted checkout click! Redirecting with discount: ${code}`);
-          sessionStorage.removeItem('exitIntentDiscount');
+          store.remove('sessionStorage', 'exitIntentDiscount');
           window.location.href = `/discount/${encodeURIComponent(code)}?redirect=/checkout`;
         }
       }
@@ -3875,8 +3877,15 @@
 
   // Auto-apply discount on cart page if flag is set
   function autoApplyCartDiscount() {
-    const discountCode = sessionStorage.getItem('exitIntentDiscount');
-    
+    // Guarded: this runs at module scope on EVERY page (the pathname check is
+    // below, not above), and the script is loaded `defer`, so the caller at the
+    // bottom of this file always executes it before ExitIntentModal is even
+    // constructed. An unguarded read here throws out of the whole IIFE and the
+    // modal never boots — the same failure the guard at the top of the file
+    // prevents, which that guard's own comment wrongly claimed was the only
+    // pre-helper storage access in the file.
+    const discountCode = store.get('sessionStorage', 'exitIntentDiscount');
+
     if (!discountCode) return;
     
     // Only run on cart page
@@ -3885,7 +3894,7 @@
     console.log('Attempting to auto-apply discount:', discountCode);
     
     // Clear the flag immediately to prevent repeated attempts
-    sessionStorage.removeItem('exitIntentDiscount');
+    store.remove('sessionStorage', 'exitIntentDiscount');
     
     // Common discount field selectors across different themes
     const selectors = [
