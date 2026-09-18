@@ -227,21 +227,42 @@ Current behaviour to fix while you are there: when lift is negative,
 `incrementalRevenue` clamps at `Math.max(0, …)` and the ROI line silently
 vanishes. The merchant sees `$0` with no explanation.
 
-### "Hard to imagine doing worse than control"
+### The 95 vs 5 panel is revenue-only. This is a product decision — keep it.
 
-Mostly true for *orders*, and genuinely possible for *profit*. Real mechanisms:
+**Decided September 18, 2026. Do not "improve" this by adding profit or margin
+to the holdout panel.** The premise the merchant buys is: Resparq gives away
+some discount in exchange for more revenue. The panel measures that bargain on
+its own terms.
 
-- **Discount cannibalization.** A visitor who would have bought at full price
-  buys at 17% off. Orders flat, revenue down, profit down more. This is the
-  likeliest way a healthy-looking store is losing money.
-- **Interruption cost on mobile**, where the modal covers the viewport and the
-  only trigger is an idle timer that can fire mid-browse.
-- **Trained discount-seeking** over repeat visits — abandoning to farm the offer.
+No code change was needed — `computeHoldout()` already returns only
+`incrementalRevenue`, `grossRevenue` and order-based CVRs. Top-level
+`buildResult()` still carries `profit` for the headline counts; that is a
+different block and stays.
 
-`computeHoldout()` measures revenue-based incremental, and the three slices are
-order-based. **A store can show positive order lift and negative profit lift
-simultaneously.** Worth surfacing profit lift explicitly rather than leaving it
-to be inferred.
+**The number is stronger than "revenue" makes it sound.** Attributed revenue is
+`parseFloat(payload.total_price)` (`webhooks.orders.create.jsx`), and Shopify's
+`total_price` is what the customer actually **paid — after the discount was
+applied**. So `incrementalRevenue` is already net of the discount granted. It is
+not a gross figure that ignores the giveaway; it is extra money in the till
+*after* the giveaway. That is exactly the claim the product makes.
+
+Two honest limits, neither a reason to add profit here:
+
+- `total_price` includes shipping and tax, which are not merchant margin. It is
+  therefore slightly generous as "money earned" — but *equally* generous in both
+  arms, and lift is a difference, so it largely cancels.
+- COGS is not in the data at all (`assumedGrossMargin` is a merchant-entered
+  guess used to cap discounts, not to measure outcomes). A true profit lift
+  figure is not currently computable from real data, only estimable from that
+  guess. One more reason the revenue framing is the defensible one.
+
+Residual risk the panel cannot show: **discount cannibalization** — a visitor
+who would have paid full price pays 17% less. Under ITT with a proper control
+this mostly *does* surface, because those visitors exist in both arms and the
+control arm captures what they would have paid. That is the holdout earning its
+keep. Other mechanisms worth remembering if a store ever does go negative:
+interruption cost on mobile (modal covers the viewport, idle timer can fire
+mid-browse), and trained discount-seeking across repeat visits.
 
 ---
 
@@ -259,6 +280,12 @@ the magnitude is not.
 Proposal: test ±5pp around the computed ceiling, inside the existing margin
 guard (which caps the downside automatically). Score on profit per *decision*,
 not per render, for the same reason as §2. Reuse the `discount-arm` structure.
+
+Note this is not in tension with §4's revenue-only display decision. Internally,
+`profit = revenue − discountAmount` is real data on `InterventionOutcome` and is
+the right thing to optimize against — spending margin to buy an order it would
+have got for free is exactly what the arm must avoid. §4 governs what the
+**merchant is shown**, not what the optimizer maximizes.
 
 Expected payoff is real: this is the most direct lever on close rate that does
 not require new storefront instrumentation. **Blocked until §2 lands.**
