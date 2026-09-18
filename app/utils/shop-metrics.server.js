@@ -88,6 +88,17 @@ export function canonicalWhere({ shopIds, from, to = null, extra = {} }) {
     // This is the only group that is a like-for-like match with `holdout`.
     treated: { ...outcome, isHoldout: false },
     treatedConverted: { ...outcome, isHoldout: false, converted: true },
+    // Treatment splits into exactly three disjoint slices that sum to `treated`,
+    // each a different thing Resparq did — or failed to do — to that visitor.
+    // All three get compared against the same control, because an order is an
+    // order whether or not a modal was involved.
+    //
+    //   shown          a surface was displayed        (already defined above)
+    //   skipped        the AI chose silence           (already defined above)
+    //   missed         the AI chose to show and the trigger never fired
+    skippedConverted: { ...outcome, wasShown: false, isHoldout: false, converted: true },
+    missed: { ...outcome, wasShown: true, rendered: false, isHoldout: false },
+    missedConverted: { ...outcome, wasShown: true, rendered: false, isHoldout: false, converted: true },
     // Clicks live on VariantImpression; rendered is required so clicks can
     // never exceed impressions.
     clicks: { shopId: { in: shopIds }, timestamp: period, rendered: true, clicked: true, ...extra },
@@ -128,6 +139,9 @@ export async function getShopMetrics({ shopId, days = 30, mode = "ai" }) {
     treatedTotal,
     treatedConverted,
     treatedRevenue,
+    skippedConverted,
+    missed,
+    missedConverted,
     clicks,
     starterImpressions,
     starterClicks,
@@ -144,6 +158,9 @@ export async function getShopMetrics({ shopId, days = 30, mode = "ai" }) {
     db.interventionOutcome.count({ where: W.treated }),
     db.interventionOutcome.count({ where: W.treatedConverted }),
     db.interventionOutcome.aggregate({ where: W.treatedConverted, _sum: { revenue: true } }),
+    db.interventionOutcome.count({ where: W.skippedConverted }),
+    db.interventionOutcome.count({ where: W.missed }),
+    db.interventionOutcome.count({ where: W.missedConverted }),
     db.variantImpression.count({ where: W.clicks }),
     db.starterImpression.count({ where: W.starter }),
     db.starterImpression.count({ where: { ...W.starter, clicked: true } }),
@@ -192,6 +209,10 @@ export async function getShopMetrics({ shopId, days = 30, mode = "ai" }) {
       treatmentRevenue: treatedRevenue._sum?.revenue || 0,
       shownTotal: shown,
       shownConverted,
+      skippedTotal: skipped,
+      skippedConverted,
+      missedTotal: missed,
+      missedConverted,
       holdoutTotal,
       holdoutConverted,
       holdoutRevenue: holdoutRevenue._sum?.revenue || 0,
@@ -238,6 +259,8 @@ function buildResult({
 function computeHoldout({
   treatmentTotal, treatmentConverted, treatmentRevenue,
   shownTotal, shownConverted,
+  skippedTotal, skippedConverted,
+  missedTotal, missedConverted,
   holdoutTotal, holdoutConverted, holdoutRevenue,
 }) {
   if (treatmentTotal === 0 || holdoutTotal < 10) return null;
@@ -275,6 +298,32 @@ function computeHoldout({
           reachPct: (shownTotal / treatmentTotal) * 100,
         }
       : null,
+    // The three disjoint slices of treatment, each against the same control.
+    // Every one of these is selected after randomisation, so none is causal on
+    // its own — they say WHERE the ITT number above came from, and each has a
+    // distinct reading when it sits below control:
+    //   shown   the modal itself is not persuading anyone
+    //   skipped the AI is staying quiet for people who needed a push
+    //   missed  the AI wanted to act and the trigger never fired
+    segments: [
+      segment("Modal shown", shownTotal, shownConverted, holdoutCVR),
+      segment("AI chose silence", skippedTotal, skippedConverted, holdoutCVR),
+      segment("Trigger never fired", missedTotal, missedConverted, holdoutCVR),
+    ].filter(Boolean),
+  };
+}
+
+function segment(label, total, converted, holdoutCVR) {
+  if (!total) return null;
+  const cvr = converted / total;
+  return {
+    label,
+    total,
+    converted,
+    cvr: cvr * 100,
+    // Percentage points against control, not relative lift: these slices get
+    // small, and a relative figure off six sessions invites overreading.
+    deltaPoints: (cvr - holdoutCVR) * 100,
   };
 }
 

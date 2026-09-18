@@ -994,19 +994,54 @@ export default function AdminShopDetail() {
                         Don't quote this to the merchant yet.
                       </Text>
                     )}
-                    {perf.holdout.perProtocol && (
+                    {perf.holdout.segments.length > 0 && (
                       <>
                         <Divider />
-                        <Text as="p" tone="subdued" variant="bodySm">
-                          Diagnostics, not evidence. A surface reached{" "}
-                          <b>{perf.holdout.perProtocol.reachPct.toFixed(0)}%</b> of the
-                          treatment group ({perf.holdout.perProtocol.shownTotal} of{" "}
-                          {perf.holdout.treatmentTotal}), and those sessions converted at{" "}
-                          <b>{perf.holdout.perProtocol.shownCVR.toFixed(2)}%</b>. That
-                          second number is selected on something that happened after the
-                          coin flip, so it is not lift — a high figure next to flat lift
-                          means the modal works but is not reaching anyone.
+                        <Text as="h4" variant="headingSm">
+                          Where that came from
                         </Text>
+                        <DataTable
+                          columnContentTypes={["text", "numeric", "numeric", "numeric", "numeric"]}
+                          headings={[
+                            "Treatment slice",
+                            "Sessions",
+                            "Orders",
+                            "CVR",
+                            "vs control",
+                          ]}
+                          rows={[
+                            ...perf.holdout.segments.map((slice) => [
+                              slice.label,
+                              slice.total,
+                              slice.converted,
+                              `${slice.cvr.toFixed(2)}%`,
+                              `${slice.deltaPoints >= 0 ? "+" : ""}${slice.deltaPoints.toFixed(2)} pts`,
+                            ]),
+                            [
+                              "Control (holdout)",
+                              perf.holdout.holdoutTotal,
+                              Math.round((perf.holdout.holdoutCVR / 100) * perf.holdout.holdoutTotal),
+                              `${perf.holdout.holdoutCVR.toFixed(2)}%`,
+                              "—",
+                            ],
+                          ]}
+                        />
+                        <Text as="p" tone="subdued" variant="bodySm">
+                          Each slice is selected on something that happened after the coin
+                          flip, so none of them is causal on its own — only the ITT lift
+                          above is. They say where it came from. Below control,{" "}
+                          <b>Modal shown</b> means the modal is not persuading anyone,{" "}
+                          <b>AI chose silence</b> means it stayed quiet for people who
+                          needed a push, and <b>Trigger never fired</b> means it wanted to
+                          act and never got the chance — the case for a trigger that fires
+                          more often.
+                        </Text>
+                        {perf.holdout.perProtocol && (
+                          <Text as="p" tone="subdued" variant="bodySm">
+                            A surface reached {perf.holdout.perProtocol.reachPct.toFixed(0)}%
+                            of the treatment group.
+                          </Text>
+                        )}
                       </>
                     )}
                   </>
