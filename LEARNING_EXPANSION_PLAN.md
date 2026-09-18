@@ -1,15 +1,241 @@
 # Resparq — Expanding What the AI Learns
 
 **Written:** September 17, 2026
+**Revised:** September 18, 2026 — §0 added, §2's fix recommendation reversed, §5 unblocked, §9 reordered.
 **Status:** Plan. Items marked SHIPPED are on `main` and not yet deployed at time of writing.
 **Successor to:** [AI_LEARNING_AUDIT.md](./AI_LEARNING_AUDIT.md) (July 10) — that doc audited what learns; this one covers a structural defect it did not catch, and the work queued behind fixing it.
 
-**Read this first if you are a future instance.** The single most important fact
-in this document is §2. Almost every "the AI keeps choosing X and X isn't
-working" symptom traces back to it, and several plausible-sounding fixes are
-actively wrong until it is resolved.
+**Read this first if you are a future instance.** Read §0, then §2, in that
+order. The September 17 draft of this document named §2 as the single most
+important fact in it. That was wrong, in two ways, and both were found on
+September 18:
+
+1. **§0 outranks it.** The engine is barely emitting offers at all. Scoring
+   which trigger reaches people is a second-order question while most of the
+   population being scored is seeing no-offer copy.
+2. **§2's own diagnosis is unsafe.** The trigger gene is not faithfully
+   executed by the storefront, so the arms it describes are not distinct
+   treatments. See §2's *Prerequisite* subsection. The fix it originally
+   recommended (Option B) has been reversed to A′.
+
+Both sections still hold that several plausible-sounding fixes are actively
+wrong until the underlying defect is resolved. That part was right.
 
 ---
+---
+
+## 0. The engine is barely emitting offers (September 18 — outranks everything below)
+
+Added after §2 was written. **Read this before §2.** §2 asks why the AI keeps
+picking a trigger that does not work. This section asks a prior question: why
+almost every modal that renders carries `amount: 0`. Until that is answered,
+§2's premise is not safe to build on, because the copy variants being scored
+are mostly no-offer variants.
+
+### Symptom
+
+On the one live store, with `aggression` reported as 7/10, every modal the
+merchant sees is a cart reminder with no discount in it.
+
+### Eight paths produce `amount: 0`. Four are intended. Four are failures.
+
+| # | Path | Moves with aggression? |
+|---|---|---|
+| 1 | High propensity + cart < $40 → `revenue_no_discount` | **No** |
+| 2 | Generic code type mismatch → neutral copy | **No** |
+| 3 | Budget exhausted (counter inflated 10–20×) | No — hard short-circuit |
+| 4 | Hybrid mode with a $0 pin | No — `effectiveAggression` overwritten to 0 |
+| 5 | Discount-arm bandit starved below the confidence bar | Fractionally |
+| 6 | Fixed-dollar lane floored to $0 on small carts | No |
+| 7 | `assumedGrossMargin <= 0.20` → global announce-only | No — kills every visitor |
+| 8 | Propensity ≥ ~85 → announce-only taper | **Yes** — the dial's intended job |
+
+Only #8 is the branch the aggression slider was designed to move. On #1–#4 the
+dial is inert, which is why turning it to 7 changed nothing.
+
+### #1 — verified
+
+`selectBaseline` runs *before* any aggression logic
+(`apps.exit-intent.api.ai-decision.jsx:581`):
+
+```js
+// app/utils/baseline-selector.js:155
+if (propensityScore >= highIntentBar) {
+  return 'revenue_no_discount';
+}
+```
+
+That pool is `offerAmounts: [0]` (`gene-pools.js:140`) with headlines
+*"Your cart is waiting for you"* / *"Your order is almost complete"* — the exact
+copy being reported. Because the baseline name does not contain
+`with_discount`, the entire aggression block (`:603-645`) and the margin guard
+(`:739-796`) are skipped.
+
+**Propensity is systematically inflated**, which makes this fire far more than
+intended:
+
+- `getScrollDepth()` returns **100** when the page does not scroll
+  (`exit-intent-modal.js:876` — `maxScroll > 0 ? … : 100`), a flat +8.
+- `visitFrequency` is a `localStorage` counter incremented on every signal
+  collection — every page load with a cart — and never reset
+  (`exit-intent-modal.js:824`), worth up to +12.
+- Logged-in +6, purchase history up to +20, desktop +2, from a base of 45
+  (`propensity.server.js:25`).
+
+An ordinary engaged desktop shopper lands at P=75–85 routinely. Above the bar
+with a sub-$40 cart there is exactly one outcome: zero.
+
+Both inflation sources are bugs in their own right. A page that does not scroll
+is not evidence of engagement, and a never-reset visit counter converts
+tenure into intent.
+
+### #2 — verified, and worse than it reads
+
+`ai-decision.jsx:1084` reconciles the merchant's generic code against the
+decision by **type equality**:
+
+```js
+if (realDetails && realDetails.type === decision.type) { …align amount… }
+else { decision.type = 'no-discount'; decision.amount = 0; … }
+```
+
+The AI picks its type per-visitor from three pools — `threshold`, `percentage`,
+`fixed` (`baseline-selector.js:84-96`). A merchant's generic code is one fixed
+shape. So a percentage code degrades every `threshold` and every `fixed`
+decision; a free-shipping / BXGY / deleted code returns `null` and degrades
+**100%** of them. The `null` is cached 5 minutes per code
+(`discount-codes.js:190`), so one transient Admin API failure blanks every offer
+for five minutes.
+
+The fallback copy is *"You left something in your cart"* / *"Your discount is
+waiting at checkout"* — a cart reminder, verbatim.
+
+**The discount is still granted.** Per the comment at `:1101`, `decision.code`
+still flows to checkout. So the store pays the full margin and buys none of the
+persuasion, because the modal never names the offer. This is the worst cell in
+the matrix and it is invisible from the payload.
+
+Compounding: `aiGenericDiscountCode` is only ever minted inside
+`if (settings.discountEnabled)` (`app.settings.jsx:350-390`), a *manual*-mode
+toggle, with a value derived from the manual `discountPercentage`. The stored
+code disagrees with the AI's three pools by construction.
+
+### #3 — budget exhaustion on an inflated counter
+
+`checkBudget()` (`ai-decision.server.js:443-459`) sums every `DiscountOffer`
+row created in a rolling month, redeemed or not, with no `redeemed` filter. At
+a realistic 5–10% redemption rate the counter runs 10–20× ahead of real spend.
+At the default `budgetAmount: 500` with ~20% offers on ~$120 carts, **~21
+impressions exhausts a month**. Once over, every request returns at `:217-225`
+with `{type:'no-discount', amount:0, code:null}` and **no `variant` object at
+all** — the client then renders the stock Pro copy
+(`exit-intent-modal.js:2853`), *"Wait! Don't leave yet"*.
+
+This is the only candidate that yields a clean 100% with no exceptions, and it
+has a distinct fingerprint: no evolved copy, no variant ID.
+
+Same finding as §6.1, promoted here because it does not merely mis-report
+spend — it silently disables the product.
+
+### #4 — hybrid with a $0 pin
+
+```js
+// apps.exit-intent.api.ai-decision.jsx:410
+if (isHybrid) effectiveAggression = hybridOfferAmount > 0 ? 10 : 0;
+```
+
+Then `:587-590` forces `baseline = 'pure_reminder'` (`offerAmounts: [0]`,
+`gene-pools.js:333`). The aggression slider is deliberately not rendered in
+Hybrid (`HybridSettingsTab.jsx:4-5`), and `effectiveAggression` overwrites the
+metafield value outright. So a Hybrid store with an unset pin shows a bare
+reminder on 100% of traffic **while the metafield still reads
+`aggression: 7`** — precisely the reported perception gap.
+
+### P0 — the settings form silently resets aggression and budget
+
+Independent of which path above is live, this corrupts the config itself.
+
+```js
+// app/routes/app.settings.jsx:250
+aggression:    parseInt(formData.get("aggression") || "5"),
+budgetEnabled: formData.get("budgetEnabled") === "on",
+budgetAmount:  parseFloat(formData.get("budgetAmount") || "500"),
+mode:          formData.get("mode") || "manual",
+```
+
+The aggression slider only mounts on the Quick tab in AI mode
+(`AISettingsTab.jsx:186`, gated by `QuickSetupTab.jsx:200`). One `<Form>` wraps
+every tab (`app.settings.jsx:994`), and unmounted tabs submit nothing. So **any
+save from the Advanced or Branding tab rewrites aggression to 5**,
+`budgetEnabled` to `false`, `aiDiscountCodeMode` to `"unique"` — and `mode`
+to `"manual"`.
+
+The fix already exists in the same file, fifteen lines above, for the hybrid
+fields:
+
+```js
+// Fields may be absent when saving from a tab that doesn't mount the Guided
+// inputs — resolved against the existing DB row below so a cross-tab save
+// can't wipe them.
+hybridOfferType: formData.get("hybridOfferType") || undefined,
+```
+
+`BrandingTab.jsx:70-75` carries hidden inputs for the trigger fields for the
+same reason. This bug class was found and fixed twice and never swept for.
+Apply the same `undefined`-and-resolve treatment to `aggression`,
+`budgetEnabled`, `budgetAmount`, `aiDiscountCodeMode`, `mode`.
+
+**Do this first.** It is a few lines, and until it lands you cannot know what
+aggression was live when any given decision was minted — which makes every
+experiment below unattributable.
+
+### The structural problem: degraded states wear the intended output's clothes
+
+Three of the six archetypes are *intentional* no-offer modals — `SOFT_UPSELL`,
+`TRUST_REMINDER`, `PURE_REMINDER` — with a sound rationale: do not buy a
+conversion you already had. The announce-only margin guard is intentional. The
+aggression-0 path is intentional.
+
+But #2, #3, #5 and #6 are **failures that return the identical payload**:
+`type: 'no-discount', amount: 0`. #2 even fabricates plausible reminder copy.
+Nothing downstream can distinguish "the AI decided you did not need a discount"
+from "the AI could not produce one". That ambiguity is the entire reason this
+went undiagnosed for as long as it did.
+
+The data to separate them already exists — `AIDecision.decision` JSON preserves
+`budget-exhausted` vs `no_intervention` vs the real baseline name. It is simply
+never surfaced. **Surface it on the decision log and the live-config card.**
+That is a small console change and it is the one that would have caught this.
+
+### Ruled out
+
+- **Variant genome bias.** Genomes carry `offerAmount` but not offer type or
+  archetype; the reminder-vs-offer decision is made upstream by `selectBaseline`
+  and each baseline has an isolated population (`ai-decision.jsx:664-669`). A
+  no-offer pool is all-zero *by design*. Evolution is not the culprit and
+  re-seeding will not help.
+- **Unique-code mint failure.** `createPercentageDiscount` throws on userErrors
+  (`discount-codes.js:342`), the outer catch returns 500, and the client fails
+  closed with **no modal at all** (`exit-intent-modal.js:2589`). It does not
+  degrade to a reminder. Only the *generic* path degrades silently.
+- **Mode drift between storefront and endpoint.** `exit-intent-modal.liquid:16`
+  seeds mode from the metafield and `exit-intent-modal.js:3866` merges with
+  liquid winning. Both read the same source. Settings-*value* drift is real
+  (see P0 above); mode drift is not.
+- **`hasPromoActive` → no-discount baselines** (`baseline-selector.js:143`).
+  The storefront never sets this signal — `collectCustomerSignals` emits
+  `promoInCart`, never `hasPromoActive`. Dead branch.
+
+### Order of diagnosis
+
+1. Read the live-config card in the super-admin console. It already renders
+   `mode`, `aggression`, `aiDiscountCodeMode`, `hybridOfferAmount` and
+   `budgetEnabled` straight from the metafield (`live-config.js:70-88`). One
+   card read kills or confirms #2, #3 and #4.
+2. If `aggression` reads 5 rather than 7, the P0 cross-tab reset has already
+   happened on this store.
+3. Only if that does not settle it, run the decision-type histogram in §7.
+
 
 ## 1. Context — what shipped on September 17
 
@@ -82,6 +308,64 @@ this.** A new arm would optimize within the sessions that already render and
 stay blind to the ones that never did — you would be tuning the reachable
 population while the reach problem gets worse.
 
+### Prerequisite: the storefront does not honour the trigger gene
+
+**Found September 18. Nothing in this section works until this is fixed, and it
+may invert the diagnosis above.**
+
+`setupAITriggers` (`extensions/exit-intent-modal/assets/exit-intent-modal.js:1912`):
+
+```js
+if (!isMobile) {
+  document.addEventListener('mouseout', ...)   // armed regardless of triggerType
+}
+if (triggerType === 'idle' || triggerType === 'exit_intent_or_idle') {
+  this.setupIdleTrigger(idleSeconds, ...)
+}
+if (isMobile && triggerType === 'exit_intent') {
+  this.setupIdleTrigger(Math.min(idleSeconds, 15), ...)   // fallback
+}
+```
+
+Desktop arms `mouseout` unconditionally — the gene never suppresses it. Mobile
+coerces `exit_intent` into an idle timer. The actual treatment per arm:
+
+| gene | desktop | mobile |
+|---|---|---|
+| `exit_intent` | exit | **idle 15s (always)** |
+| `idle` | exit + idle | idle(g) |
+| `exit_intent_or_idle` | exit + idle | idle(g) |
+
+Two consequences:
+
+1. **`idle` and `exit_intent_or_idle` are the same treatment on both devices.**
+   Two of three arms are duplicates splitting one population. No bandit
+   distinguishes them because there is nothing to distinguish.
+2. **`exit_intent` is mislabelled on mobile.** Because the idle gene pool is
+   `[15, 30, 45, 60]` (`gene-pools.js:122`), `Math.min(idleSeconds, 15)` is
+   *always exactly 15*. So on mobile the `exit_intent` arm is silently the most
+   aggressive idle timer in the pool — it fires fastest, renders most, and
+   accumulates the most impressions of any arm.
+
+The same unconditional `mouseout` appears in the escalation-watch path at
+`:726`.
+
+**This may invert the section above.** The claim "exit intent persists because
+bad triggers are never punished" has a competing explanation that fits the same
+symptom: exit intent persists because on mobile it *is* winning, as a 15-second
+idle timer wearing the wrong label. Reach-blindness says add pressure against
+triggers that do not fire. Contamination says exit intent was never tested and
+what is actually winning is speed. Opposite fixes.
+
+**Settle it before writing any of the fix below.** The §7 render-rate query
+already groups by `deviceType`. A **high** mobile render rate on `exit_intent`
+means contamination and the premise above is wrong; a low one means the original
+diagnosis holds.
+
+The repair is roughly five lines: gate the desktop `mouseout` registration on
+the gene, and stop coercing `exit_intent` on mobile — instead make it
+*ineligible*, see below.
+
 ### Proposed fix (P0)
 
 Score on **decisions**, not renders, for the trigger dimension. Two options:
@@ -107,9 +391,52 @@ render-based fitness. Follow the existing pattern in
 (Monte-Carlo on profit-weighted EV, confidence bar, cold-start fallback,
 `MIN_ARM_OUTCOMES = 50`).
 
-**Recommendation: B.** A is a patch on a metric that is measuring the wrong
-thing; B measures the right thing. A is acceptable as a two-day stopgap if
-there is urgency.
+**Recommendation: reversed on September 18 — A′, not B.**
+
+The original recommendation was B, on the grounds that A "conflates two effects
+in one scalar". That is backwards. Copy is not seen until the modal renders, so
+copy cannot influence whether the trigger fires. That gives a clean
+factorisation:
+
+```
+EV(trigger, copy) = fireRate(trigger, device, context) × cvr(copy | rendered)
+```
+
+A **separates** those two factors. B fuses them back together into a single
+conversion rate scored on decisions.
+
+Convergence settles it. Firing is a tens-of-percent event and its rate
+stabilises in ~50 sessions per cell. Conversion is a ~2% event, so B needs
+thousands of decisions *per arm per segment* before its posteriors separate —
+`discount-arm.server.js` sets `MIN_ARM_OUTCOMES = 50`, `surface-arm.server.js`
+uses 20, and at one store neither arm leaves cold start this year. **B is a
+structure that never converges on the traffic that exists.**
+
+**A′ — the corrected version of A.** A was weak only because the multiplier was
+estimated *per variant* (`variant.rendered / variant.decided`), which is why it
+needed a prior and crushed cold variants. Estimate it per
+**(trigger × device)** instead — six cells, not one per variant — with a Beta
+prior, pooled across shops:
+
+```js
+sample *= betaMean(fireRate[triggerType][deviceType])   // 6 cells, globally pooled
+```
+
+Copy fitness stays render-based and untouched.
+
+**Add a hard eligibility filter first.** A mobile session should never be dealt
+an exit-intent-only gene. That is a device capability constraint, not something
+to discover at 50 outcomes per arm. Filter the gene pool at selection time and
+delete the mobile coercion described in the *Prerequisite* above — the coercion
+is what created the mislabelling in the first place.
+
+**Pool the fire rate globally.** `fireRate(exit_intent | mobile)` is close to a
+universal constant; it is not shop-specific knowledge. `cluster-priors.server.js`
+and `archetype-priors.js` already exist for exactly this. With one paying store,
+pooled priors are worth more than any new per-shop arm — and that is true of
+every arm in this document, not just this one.
+
+B remains the right shape *if* traffic ever justifies it. It does not yet.
 
 ### How to verify it worked
 
@@ -117,6 +444,14 @@ The `TriggerPerformance` panel (Performance tab) shows chosen / shown / show
 rate per trigger gene. After the fix, a trigger with a low show rate should lose
 share over successive generations. Before the fix it will not, no matter how
 long you wait.
+
+**September 18 caveat.** This verification is only meaningful *after* the
+*Prerequisite* lands. Until the storefront honours the gene, the panel is
+reporting on arms that are not distinct treatments — `idle` and
+`exit_intent_or_idle` are the same thing, and mobile `exit_intent` is a 15s idle
+timer. A show rate read off the current panel describes the coercion, not the
+gene. Check the render-rate-by-device query in §7 before reading this panel at
+all.
 
 ---
 
@@ -151,6 +486,35 @@ missed           isHoldout: false, wasShown: true,  rendered: false
 The old per-protocol figure survives as `holdout.perProtocol`, labelled a
 diagnostic. It is selected on a post-randomization event and must never be
 quoted as lift.
+
+Put plainly: **per-protocol measures the modal; ITT measures the product.** The
+merchant is buying the product.
+
+### Raise the holdout to 20% while there is one store (September 18)
+
+`HOLDOUT_RATE = 0.05` (`apps.exit-intent.api.ai-decision.jsx:340`) is a bad
+split at this volume. Power is governed by the smaller arm and scales with
+`4 × p × (1 − p)`:
+
+| split | effective N |
+|---|---|
+| 5 / 95 | 0.19 N |
+| 20 / 80 | 0.64 N |
+| 50 / 50 | 1.00 N |
+
+Moving to 20% **more than triples** statistical power on identical traffic.
+`computeHoldout()` returns `null` below 10 holdout sessions and only sets
+`hasEnoughData` at 20 — at 5% that needs ~400 treatment sessions before the
+number is even shown, and far more before it means anything.
+
+The cost is foregone uplift on 15% more sessions — a quantity that is currently
+unmeasured and might be zero. Establishing whether it is zero is the entire
+purpose of the holdout. Buying that answer faster is worth more right now than
+protecting an uplift that cannot yet be demonstrated. Drop back to 5% once lift
+is established.
+
+Ship it in the same deploy as the ITT change; both alter the same endpoint and
+both are cheapest at one customer.
 
 ### Reading the three slices
 
@@ -196,7 +560,7 @@ customer. Later means a merchant watching lift drop 35 points overnight.
 
 ### Agreed design
 
-Keep the main dashboard header as-is. Add the 95/5 explanation as sub-modules
+Keep the main dashboard header as-is. Add the holdout-split explanation as sub-modules
 or banners beneath it, not as a replacement for the headline.
 
 ### Negative lift — the transparency question
@@ -227,7 +591,11 @@ Current behaviour to fix while you are there: when lift is negative,
 `incrementalRevenue` clamps at `Math.max(0, …)` and the ROI line silently
 vanishes. The merchant sees `$0` with no explanation.
 
-### The 95 vs 5 panel is revenue-only. This is a product decision — keep it.
+### The holdout panel is revenue-only. This is a product decision — keep it.
+
+> Named "the 95 vs 5 panel" on September 17. §3 now recommends an 80/20 split
+> while there is one store, so the name is stale but the decision below is
+> unaffected — it is about *what the panel measures*, not the split.
 
 **Decided September 18, 2026. Do not "improve" this by adding profit or margin
 to the holdout panel.** The premise the merchant buys is: Resparq gives away
@@ -266,7 +634,7 @@ mid-browse), and trained discount-seeking across repeat visits.
 
 ---
 
-## 5. Offer amount as a learned arm (P2 — blocked on §2)
+## 5. Offer amount as a learned arm (P2 — ~~blocked on §2~~ blocked on §0)
 
 Currently `offerCeilingPercent()` (`app/utils/ai-decision.server.js`) is a
 deterministic function of propensity × aggression × assumed margin. Nothing ever
@@ -288,7 +656,25 @@ have got for free is exactly what the arm must avoid. §4 governs what the
 **merchant is shown**, not what the optimizer maximizes.
 
 Expected payoff is real: this is the most direct lever on close rate that does
-not require new storefront instrumentation. **Blocked until §2 lands.**
+not require new storefront instrumentation.
+
+**Correction, September 18 — this is not blocked on §2.** The original claim was
+that adding an arm here would "tune the reachable population while the reach
+problem gets worse". It would not. Offer amount is not visible before the modal
+renders, so it cannot influence whether the trigger fires — the same
+separability argument that reverses §2's recommendation applies here. Trigger
+bias does not contaminate this arm; it only shrinks the population the arm
+learns on. **Power-limited, not biased.**
+
+Once the trigger gene is actually honoured (§2 *Prerequisite*), the real spread
+between trigger arms is narrow — exit versus exit+idle. Offer amount varies on
+every rendered session. Per unit of work this is the better lever, and it can
+run in parallel with §2 rather than behind it.
+
+**It is blocked on §0.** An arm that learns offer magnitude needs the engine to
+emit offers. Today a large share of decisions return `amount: 0` for four
+reasons that have nothing to do with what this arm would optimise. Fix the
+plumbing before putting an optimiser on top of it.
 
 ---
 
@@ -296,11 +682,15 @@ not require new storefront instrumentation. **Blocked until §2 lands.**
 
 | # | Item | Evidence | Note |
 |---|---|---|---|
-| 1 | **Budget counts codes issued, not redeemed** | `checkBudget()` in `ai-decision.server.js` — no `redeemed` filter | Dev data: 9 offers issued / 1 redeemed → budget charged $98, actually given $8. 12x over. `DiscountOffer.redeemed` exists and is indexed. Middle option: count redeemed + unredeemed-but-unexpired, so expired-unused codes release their hold. Surfaced on the live-config card; logic unchanged. |
-| 2 | **Manual mode has no mobile fallback** | `setupTriggers()` ~line 2183, `exit-intent-modal.js` | If a Manual store enables only exit intent, mobile visitors never see the modal at all — no idle timer is registered. Both AI paths handle this; manual does not. Storefront behaviour change affecting live merchants, so it was left alone. |
+| 1 | **Budget counts codes issued, not redeemed** | `checkBudget()` in `ai-decision.server.js` — no `redeemed` filter | Dev data: 9 offers issued / 1 redeemed → budget charged $98, actually given $8. 12x over. `DiscountOffer.redeemed` exists and is indexed. Middle option: count redeemed + unredeemed-but-unexpired, so expired-unused codes release their hold. Surfaced on the live-config card; logic unchanged. **Promoted to §0 #3 on September 18** — this does not merely mis-report spend, it silently disables the product once the inflated counter crosses the cap. |
+| 2 | **Manual mode has no mobile fallback** | `setupTriggers()` ~line 2183, `exit-intent-modal.js` | If a Manual store enables only exit intent, mobile visitors never see the modal at all — no idle timer is registered. Both AI paths handle this; manual does not. Storefront behaviour change affecting live merchants, so it was left alone. **September 18:** "handle" is doing too much work here — the AI paths *coerce* `exit_intent` into a 15s idle timer, which is what mislabels the arm. See §2 *Prerequisite*. The manual gap and the AI mislabelling are the same missing abstraction: device capability should filter the trigger, not silently substitute for it. |
 | 3 | **No add-to-cart event** | — | `InterventionOutcome` has no cart-creation event, so "close rate" is order-based only. Tracking ATC needs a new storefront event and a column. Blocks true funnel analysis. |
 | 4 | **Modal copy fields editable but inert in AI mode** | Settings tab | `modalHeadline` / `modalBody` / `ctaButton` write through correctly but the AI path reads variant genes instead. Should be disabled in AI/Hybrid, as the pinned-offer fields already are. |
 | 5 | **Console cannot edit discount codes or branding** | `EDITABLE_FIELDS` | Deliberate — those mint Shopify-side resources. Supporting them needs the creation flow, not just a config write. |
+| 6 | **Scroll depth reports 100 on non-scrolling pages** | `getScrollDepth()`, `exit-intent-modal.js:876` — `maxScroll > 0 ? … : 100` | A page that does not scroll is not evidence of engagement, but it scores a flat +8 propensity. Contributes to §0 #1. |
+| 7 | **`visitFrequency` never resets** | `exit-intent-modal.js:824` | A `localStorage` counter incremented on every signal collection, worth up to +12. Converts tenure into intent and never decays. Contributes to §0 #1. |
+| 8 | **Learning cron has no npm script** | `app/cron/threshold-learning-cycle.js`, `PRODUCTION-CRON-SETUP.md:38` | Manually-created Fly scheduled machine. If it is not running, `rebuildDiscountArmStats` never builds and every discount decision is a coin flip forever. It also selects shops on the **Shop row** `mode: 'ai'`, so row/metafield drift silently excludes a store. Verify the machine exists. |
+| 9 | **Settings form wipes unmounted fields** | `app.settings.jsx:250` | See §0 P0. `aggression`, `budgetEnabled`, `budgetAmount`, `aiDiscountCodeMode` and `mode` all reset on a cross-tab save. The `undefined`-and-resolve fix already exists in the same file for hybrid fields. |
 
 ---
 
@@ -330,6 +720,63 @@ select coalesce(decision::json->>'source','(live decision path)') as source,
 from "AIDecision" d
 left join "InterventionOutcome" io on io."aiDecisionId" = d.id
 where decision like '{%' group by 1 order by 3 desc;
+
+-- =====================================================================
+-- Added September 18 for the §0 zero-offer diagnosis.
+-- Run the live-config card FIRST; these are only for what it cannot settle.
+-- =====================================================================
+
+-- The single most discriminating query. Separates §0 #1 / #2 / #3 / #4 at once.
+--   budget-exhausted                      -> #3
+--   baseline = 'pure_reminder'            -> #4
+--   baseline = 'revenue_no_discount'      -> #1
+--   type='no-discount' on a *_with_discount baseline -> #2 or #6
+select (decision::jsonb->>'type')      as decision_type,
+       (decision::jsonb->>'baseline')  as baseline,
+       (decision::jsonb->>'archetype') as archetype,
+       count(*),
+       round(avg((decision::jsonb->>'amount')::numeric), 2) as avg_amount
+from "AIDecision"
+where "shopId" = '<SHOP_ID>' and "createdAt" > now() - interval '14 days'
+group by 1,2,3 order by 4 desc;
+
+-- Smoking gun for §0 #2. The generic-reconciliation fallback is the only thing
+-- that writes this row shape. Any non-zero count here IS #2.
+select "offerType", mode, count(*), sum(amount) as sum_amount
+from "DiscountOffer"
+where "shopId" = '<SHOP_ID>' and "createdAt" > now() - interval '30 days'
+group by 1,2 order by 3 desc;
+
+-- Confirms §0 #1 — is propensity inflated into the no-discount band?
+-- Mass at p_bucket >= 70 with high cart_under_40 confirms it.
+select width_bucket((signals::jsonb->>'propensityScore')::numeric, 0, 100, 10) * 10 as p_bucket,
+       count(*) filter (where (signals::jsonb->>'cartValue')::numeric < 40) as cart_under_40,
+       count(*) as total,
+       round(avg((signals::jsonb->>'cartValue')::numeric), 2) as avg_cart
+from "AIDecision"
+where "shopId" = '<SHOP_ID>' and "createdAt" > now() - interval '14 days'
+  and signals::jsonb->>'propensityScore' is not null
+group by 1 order by 1;
+
+-- Are the discount-arm bandit arms mature, or starved? (§0 #5)
+-- Zero rows => the threshold-learning cron never ran => coin flip forever.
+-- Check the Fly scheduled machine exists; there is no npm script for it.
+select segment, "sampleSize", "confidenceLevel", "lastUpdated", data
+from "MetaLearningInsights"
+where "insightType" = 'discount_arm_stats' and segment like '<SHOP_ID>::%'
+order by "lastUpdated" desc;
+
+-- Sanity: is the AI endpoint being reached at all?
+-- No rows => not in AI mode; the modals are manual-mode renders.
+select date_trunc('day', "createdAt") as day, count(*)
+from "AIDecision"
+where "shopId" = '<SHOP_ID>' and "createdAt" > now() - interval '14 days'
+group by 1 order by 1;
+
+-- Not answerable in SQL: the serving config lives in the Shopify metafield,
+-- not the Shop row. The live-config card renders it already; raw read is:
+--   { shop { metafield(namespace:"exit_intent", key:"settings") { value } } }
+-- Any disagreement between that and the Shop row is itself a finding.
 
 -- Budget: charged vs actually given (item 6.1)
 select count(*) as offers, count(*) filter (where redeemed) as redeemed,
@@ -362,14 +809,49 @@ from "DiscountOffer" where "createdAt" >= now() - interval '1 month';
 - **Zero paying stores as of writing.** Never invent uplift %, recovered $, CVR
   or testimonials. Measurement-capability claims are fine — the holdout does
   measure real per-store lift.
+- **A gene being stored is not a gene being executed.** The trigger genes are
+  written, read, evolved and reported on, and the storefront still does not obey
+  them (§2 *Prerequisite*). Before trusting any arm, read the code that consumes
+  its output, not just the code that produces it.
+- **`amount: 0` is ambiguous.** Four intended paths and four failure paths emit
+  the identical payload (§0). Never read a no-offer decision as "the AI chose
+  not to discount" without checking `AIDecision.decision`'s baseline field.
+- **Aggression does nothing on most branches.** It is inert on §0 #1–#4 and only
+  genuinely moves #8 and the discount-arm confidence bar. "Turn the dial up" is
+  not a diagnosis.
+- **One paying store.** Every arm in this document is keyed per
+  `(shop, segment)` with a 20–50 outcome cold start. Nothing converges on this
+  traffic. Pooled priors (`cluster-priors.server.js`, `archetype-priors.js`)
+  are worth more than any new per-shop arm until that changes.
 
 ---
 
 ## 9. Suggested order
 
-1. Deploy ITT (§3) — already written, changes merchant numbers, do it while there is one customer.
-2. Watch the **Trigger never fired** slice for a week. It is now visible for the first time.
-3. Fix the denominator (§2, option B). Nothing else learns correctly until this lands.
-4. Significance gate + dashboard sub-modules (§4).
-5. Offer amount as an arm (§5).
-6. Then §6 items by whatever hurts most.
+Revised September 18. The September 17 order assumed the engine was emitting
+offers and that the trigger gene was being executed. Neither holds.
+
+1. **Fix the settings cross-tab wipe** (§0, P0). A few lines. Until it lands you
+   cannot know what config was live when any decision was minted, which makes
+   everything below unattributable.
+2. **Diagnose the zero-offer paths** (§0). Start with the live-config card — one
+   read kills or confirms three of the four candidates. Whatever it names, fix
+   that before adding anything that learns.
+3. **Surface intended-vs-degraded** on the decision log (§0). Small console
+   change; it is the observability that would have caught this. Do it while the
+   diagnosis is fresh.
+4. **Deploy ITT** (§3) — already written, changes merchant numbers, do it while
+   there is one customer. Raise `HOLDOUT_RATE` to 0.20 in the same deploy (§3).
+5. **Honour the trigger gene** (§2 *Prerequisite*, ~5 lines) and run the
+   render-rate-by-device query. Nothing about triggers can be learned or even
+   diagnosed until the arms are distinct treatments.
+6. Watch the **Trigger never fired** slice for a week, now that it is both
+   visible and meaningful.
+7. **Fire-rate multiplier** (§2, option A′) with globally pooled priors.
+8. **Significance gate + dashboard sub-modules** (§4). This is what tells you
+   whether any of 1–7 did anything.
+9. **Offer amount as an arm** (§5) — can start from step 2 onward, in parallel.
+10. Then §6 items by whatever hurts most.
+
+Steps 1–3 are all §0 and none of them are learning work. That is the point:
+the September 17 plan was optimising a system that was not running.
