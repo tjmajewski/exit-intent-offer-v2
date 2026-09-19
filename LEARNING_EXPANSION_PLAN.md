@@ -2,6 +2,7 @@
 
 **Written:** September 17, 2026
 **Revised:** September 18, 2026 — §0 added, §2's fix recommendation reversed, §5 unblocked, §9 reordered.
+**Superseded in part:** [HANDOFF-2026-09-18.md](./HANDOFF-2026-09-18.md) records what actually shipped on September 18, five corrections to this document, and the ordered work that follows. Read it alongside §0.
 **Status:** Plan. Items marked SHIPPED are on `main` and not yet deployed at time of writing.
 **Successor to:** [AI_LEARNING_AUDIT.md](./AI_LEARNING_AUDIT.md) (July 10) — that doc audited what learns; this one covers a structural defect it did not catch, and the work queued behind fixing it.
 
