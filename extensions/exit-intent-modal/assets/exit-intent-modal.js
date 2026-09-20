@@ -431,19 +431,24 @@
         sessionStorage.removeItem(PILL_OFFER_KEY);
       } catch (_) {}
       try {
-        const attrs = { exit_intent: 'true' };
-        // Same timestamped format as every other render stamp — an
-        // untimestamped one sorts at epoch 0 and loses to any later arm
-        // stamp, so a pill redeem after a newer skip decision would resolve
-        // as skipped.
-        markRenderedThisSession();
-        if (offer.aiDecisionId) attrs.exit_intent_ai_decision = `${offer.aiDecisionId}|${Date.now()}`;
-        if (offer.impressionId) attrs.exit_intent_impression = offer.impressionId;
-        fetch('/cart/update.js', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ attributes: attrs })
-        }).catch(() => {});
+        // Test/preview mode never stamps a real cart. Guarded around the stamp
+        // only — an early return here would skip the discount redirect below
+        // and break the merchant's own test of the pill.
+        if (!isResparqTestMode()) {
+          const attrs = { exit_intent: 'true' };
+          // Same timestamped format as every other render stamp — an
+          // untimestamped one sorts at epoch 0 and loses to any later arm
+          // stamp, so a pill redeem after a newer skip decision would resolve
+          // as skipped.
+          markRenderedThisSession();
+          if (offer.aiDecisionId) attrs.exit_intent_ai_decision = `${offer.aiDecisionId}|${Date.now()}`;
+          if (offer.impressionId) attrs.exit_intent_impression = offer.impressionId;
+          fetch('/cart/update.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attributes: attrs })
+          }).catch(() => {});
+        }
       } catch (_) {}
       try { sessionStorage.setItem('exitIntentDiscount', offer.code); } catch (_) {}
       // Pill redeem is strong engagement: reset ignore backoff (the dismissal
@@ -2611,11 +2616,14 @@
       // Stamp exit intent on the Shopify cart so the order webhook can attribute
       // any order placed this session as a conversion — even if the customer
       // dismisses the modal and checks out later without using a discount code.
-      fetch('/cart/update.js', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attributes: this.renderStampAttributes() })
-      }).catch(() => {}); // fire-and-forget, non-fatal
+      const renderStamp = this.renderStampAttributes();
+      if (renderStamp) {
+        fetch('/cart/update.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ attributes: renderStamp })
+        }).catch(() => {}); // fire-and-forget, non-fatal
+      }
 
       // Track variant impression (both Pro and Enterprise)
       this.trackVariant('impression');
@@ -2659,6 +2667,13 @@
      * A must not mark a page-D decision as displayed.
      */
     renderStampAttributes() {
+      // Test/preview mode never stamps a real cart — the same exemption
+      // stampShownDecisionOnCart already honours. A merchant walking their own
+      // live storefront leaves a render stamp otherwise, and since a displayed
+      // modal now outranks a later skip, that stamp gets resurrected into a
+      // real attributed order. One self-test would visibly move a small shop's
+      // revenue card.
+      if (this.isPreview || isResparqTestMode()) return null;
       markRenderedThisSession();
       const attrs = { exit_intent: 'true' };
       if (this.currentAiDecisionId) {
@@ -3687,13 +3702,16 @@
       // NO-DISCOUNT OFFER: Primary CTA redirect derived from CTA text
       if (offerType === 'no-discount') {
         console.log(`[No Discount] Primary CTA — redirecting to ${destination}`);
-        try {
-          await fetch('/cart/update.js', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ attributes: this.renderStampAttributes() })
-          });
-        } catch (e) { /* non-fatal */ }
+        const ctaStamp = this.renderStampAttributes();
+        if (ctaStamp) {
+          try {
+            await fetch('/cart/update.js', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ attributes: ctaStamp })
+            });
+          } catch (e) { /* non-fatal */ }
+        }
 
         if (destination === 'checkout') {
           window.location.href = '/checkout';
@@ -3785,13 +3803,16 @@
 
       // Stamp exit intent on cart so the order webhook can attribute this conversion
       // regardless of whether a discount code was applied
+      const convStamp = this.renderStampAttributes();
       try {
-        await fetch('/cart/update.js', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ attributes: this.renderStampAttributes() })
-        });
-        console.log('[Exit Intent] Cart attribute stamped for conversion tracking');
+        if (convStamp) {
+          await fetch('/cart/update.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attributes: convStamp })
+          });
+          console.log('[Exit Intent] Cart attribute stamped for conversion tracking');
+        }
       } catch (e) {
         console.log('[Exit Intent] Cart attribute stamp failed (non-fatal):', e);
       }

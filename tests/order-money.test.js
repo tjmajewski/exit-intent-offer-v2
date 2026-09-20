@@ -297,22 +297,100 @@ describe('readCartStamps', () => {
     assert.equal(s.decisionAt.getTime(), 1700000000000);
   });
 
-  test('exposes the rendered decision separately from the winning one', () => {
-    // A modal rendered as dec_d, then the /cart page minted dec_e which
-    // skipped. Recency says the arm is skip, and that is the right reading of
-    // the stamps — but the order, if a Resparq code is redeemed on it,
-    // belongs to dec_d. The caller needs both facts.
+  test('a displayed modal outranks a later decision not to show one', () => {
+    // The real pattern: shopper is shown an offer on a product page, dismisses
+    // it without clicking, browses on, and the cart page mints a fresh
+    // decision that skips. On recency alone that reads as "we showed this
+    // person nothing" and the sale drops out of the merchant's revenue —
+    // which is exactly how their no-click conversions get lost.
+    const s = readCartStamps([
+      stamp('exit_intent_shown_decision', 'dec_d', 5000),
+      stamp('exit_intent_ai_decision', 'dec_d', 5000),
+      { name: 'exit_intent', value: 'true' },
+      stamp('exit_intent_decision', 'dec_e', 9000)
+    ], { orderedAt: new Date(20000) });
+    assert.equal(s.arm, 'shown');
+    assert.equal(s.rendered, true);
+    assert.equal(s.aiDecisionId, 'dec_d');
+  });
+
+  test('a later HOLDOUT still wins over an earlier render', () => {
+    // The exception. Holdout is a measurement control; quietly moving a
+    // visitor into the treated group corrupts the only causal number we have.
+    const s = readCartStamps([
+      stamp('exit_intent_shown_decision', 'dec_a', 1000),
+      stamp('exit_intent_ai_decision', 'dec_a', 1000),
+      { name: 'exit_intent', value: 'true' },
+      stamp('exit_intent_holdout', 'dec_c', 8000)
+    ], { orderedAt: new Date(20000) });
+    assert.equal(s.arm, 'holdout');
+    assert.equal(s.rendered, false);
+  });
+
+  test('a render stamp cannot claim an order outside the attribution window', () => {
+    // Carts live longer than the 7-day window. A render from 30 days ago must
+    // not take credit for today's order just by outranking a skip.
+    const DAY = 86400000;
+    const s = readCartStamps([
+      stamp('exit_intent_ai_decision', 'dec_old', 1000),
+      { name: 'exit_intent', value: 'true' },
+      stamp('exit_intent_decision', 'dec_now', 1000 + 29 * DAY)
+    ], { orderedAt: new Date(1000 + 30 * DAY) });
+    assert.equal(s.arm, 'skip');
+    assert.equal(s.rendered, false);
+  });
+
+  test('a render inside the window still claims it', () => {
+    const DAY = 86400000;
+    const s = readCartStamps([
+      stamp('exit_intent_ai_decision', 'dec_r', 1000),
+      { name: 'exit_intent', value: 'true' },
+      stamp('exit_intent_decision', 'dec_now', 1000 + 2 * DAY)
+    ], { orderedAt: new Date(1000 + 3 * DAY) });
+    assert.equal(s.arm, 'shown');
+    assert.equal(s.aiDecisionId, 'dec_r');
+  });
+
+  test('exposes the rendered decision alongside the resolved one', () => {
+    // dec_d rendered; dec_e skipped later. The skip wins on recency, but a
+    // displayed modal outranks a later decision not to show one, so the arm
+    // resolves to shown and the order is attributed to dec_d.
     const s = readCartStamps([
       stamp('exit_intent_shown_decision', 'dec_d', 5000),
       stamp('exit_intent_ai_decision', 'dec_d', 5000),
       { name: 'exit_intent', value: 'true' },
       stamp('exit_intent_decision', 'dec_e', 9000)
     ]);
-    assert.equal(s.arm, 'skip');
-    assert.equal(s.aiDecisionId, 'dec_e');
-    assert.equal(s.rendered, false);
+    assert.equal(s.arm, 'shown');
+    assert.equal(s.aiDecisionId, 'dec_d');
+    assert.equal(s.rendered, true);
     assert.equal(s.renderedDecisionId, 'dec_d');
     assert.equal(s.renderedAt.getTime(), 5000);
+  });
+
+  test('a legacy untimestamped render stamp is NOT window-bounded', () => {
+    // Documented fail-open, not an oversight. Render stamps only started
+    // carrying timestamps on 2026-09-19, so carts stamped before that have
+    // no clock to bound. Failing closed would drop legitimate renders from
+    // exactly those carts; failing open can over-credit one placed outside
+    // the window. Self-resolves as pre-2026-09-19 carts expire (~14 days).
+    const DAY = 86400000;
+    const s = readCartStamps([
+      { name: 'exit_intent_ai_decision', value: 'dec_legacy' },
+      { name: 'exit_intent', value: 'true' },
+      stamp('exit_intent_decision', 'dec_now', 30 * DAY)
+    ], { orderedAt: new Date(31 * DAY) });
+    assert.equal(s.arm, 'shown');
+    assert.equal(s.aiDecisionId, 'dec_legacy');
+  });
+
+  test('a skip with no render stamp at all stays a skip', () => {
+    // The override needs actual render evidence. Without it, a skip is a skip
+    // and must keep returning early — otherwise every natural conversion
+    // starts claiming modal attribution.
+    const s = readCartStamps([stamp('exit_intent_decision', 'dec_e', 9000)]);
+    assert.equal(s.arm, 'skip');
+    assert.equal(s.rendered, false);
   });
 
   test('renderedDecisionId is null when nothing rendered', () => {

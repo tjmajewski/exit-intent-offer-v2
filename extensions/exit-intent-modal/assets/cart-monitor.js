@@ -551,18 +551,26 @@
         sessionStorage.setItem('exitIntentPillDismissed', 'true');
         sessionStorage.removeItem('exitIntentPendingOffer');
         const attrs = { exit_intent: 'true' };
-        // Timestamped, matching the modal's render stamp format. The server
-        // resolves the cart's stamps by recency, and an untimestamped render
-        // stamp sorts at epoch 0 — so a cart-banner redeem that follows a
-        // newer skip decision would otherwise be recorded as a skip.
-        try { sessionStorage.setItem('resparqRenderedThisSession', '1'); } catch (e) { /* ignore */ }
-        if (offer.aiDecisionId) attrs.exit_intent_ai_decision = `${offer.aiDecisionId}|${Date.now()}`;
-        if (offer.impressionId) attrs.exit_intent_impression = offer.impressionId;
-        fetch('/cart/update.js', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ attributes: attrs })
-        }).catch(() => {});
+        // Test/preview mode never stamps a real cart — a merchant walking
+        // their own storefront would otherwise leave render evidence that a
+        // later real order picks up. Guarded around the stamp only; the
+        // discount redirect below must still run so the merchant can test it.
+        let inTestMode = false;
+        try { inTestMode = sessionStorage.getItem('resparqTestMode') === '1'; } catch (e) { /* ignore */ }
+        if (!inTestMode) {
+          // Timestamped, matching the modal's render stamp format. The server
+          // resolves the cart's stamps by recency, and an untimestamped render
+          // stamp sorts at epoch 0 — so a cart-banner redeem that follows a
+          // newer skip decision would otherwise be recorded as a skip.
+          try { sessionStorage.setItem('resparqRenderedThisSession', '1'); } catch (e) { /* ignore */ }
+          if (offer.aiDecisionId) attrs.exit_intent_ai_decision = `${offer.aiDecisionId}|${Date.now()}`;
+          if (offer.impressionId) attrs.exit_intent_impression = offer.impressionId;
+          fetch('/cart/update.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attributes: attrs })
+          }).catch(() => {});
+        }
       } catch (_) {}
       try { sessionStorage.setItem('exitIntentDiscount', offer.code); } catch (_) {}
       sendJourneyEvent({

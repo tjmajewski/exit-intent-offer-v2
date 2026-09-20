@@ -138,7 +138,11 @@ export const action = async ({ request }) => {
     // anything. Resolved by recency across all the stamps on the cart —
     // Shopify never clears a cart attribute and a decision is minted per
     // carted page load, so one cart routinely carries several.
-    const stamps = readCartStamps(payload.note_attributes);
+    // The order date bounds how long a render stamp can keep claiming an
+    // order — carts outlive the attribution window they are counted over.
+    const stamps = readCartStamps(payload.note_attributes, {
+      orderedAt: payload.created_at || null
+    });
 
     // Orders that must never reach M1: Bogus-Gateway test checkouts and
     // draft orders.

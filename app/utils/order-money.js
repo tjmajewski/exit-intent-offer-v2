@@ -26,9 +26,18 @@
  * of accumulating.
  */
 
+import { ATTRIBUTION_WINDOW_DAYS } from './metrics-contract.js';
+
 const ARM_SHOWN = 'shown';
 const ARM_SKIP = 'skip';
 const ARM_HOLDOUT = 'holdout';
+
+/** Epoch millis from a Date, an ISO string, or a number. Null when unusable. */
+function toTime(v) {
+  if (v == null) return null;
+  const t = v instanceof Date ? v.getTime() : (typeof v === 'number' ? v : Date.parse(v));
+  return Number.isFinite(t) ? t : null;
+}
 
 function num(v, fallback = 0) {
   const n = typeof v === 'number' ? v : parseFloat(v);
@@ -174,7 +183,7 @@ function lineItemRefundTotal(payload) {
  *            impressionId: string|null, decisionAt: Date|null,
  *            renderedDecisionId: string|null, renderedAt: Date|null}}
  */
-export function readCartStamps(noteAttributes) {
+export function readCartStamps(noteAttributes, { orderedAt = null, windowDays = ATTRIBUTION_WINDOW_DAYS } = {}) {
   const attrs = Array.isArray(noteAttributes) ? noteAttributes : [];
   // Shopify clears a cart attribute by setting it to the EMPTY STRING, not by
   // removing it. Without this normalisation a cleared stamp reads as present
@@ -252,12 +261,46 @@ export function readCartStamps(noteAttributes) {
     Boolean(winner.fromRender)
   );
 
+  // A DISPLAYED modal outranks a later decision not to show one.
+  //
+  // Decisions are minted on every carted page load, and the cart page itself
+  // almost always skips — so a shopper who was shown an offer, dismissed it
+  // and checked out without clicking ends up with a fresher skip stamp than
+  // their own render stamp. Resolved on recency alone that reads as "we
+  // showed this person nothing", and the sale drops out of the merchant's
+  // revenue entirely. Being shown something is not undone by a later page
+  // deciding to stay quiet.
+  //
+  // Only over SKIP. A later holdout stamp still wins: holdout is a
+  // measurement control and quietly moving a visitor into the treated group
+  // corrupts the only causal number in the product.
+  //
+  // Bounded by the attribution window so a render cannot claim an order
+  // forever — carts outlive the window they are attributed over.
+  let resolvedWinner = winner;
+  let resolvedRendered = rendered;
+  if (winner.arm === ARM_SKIP && renderStamp?.aiDecisionId) {
+    const orderedTime = toTime(orderedAt);
+    const withinWindow =
+      orderedTime == null ||
+      renderStamp.at === 0 ||
+      (orderedTime - renderStamp.at) / 86400000 <= windowDays;
+    if (withinWindow) {
+      resolvedWinner = {
+        arm: ARM_SHOWN,
+        aiDecisionId: renderStamp.aiDecisionId,
+        at: renderStamp.at
+      };
+      resolvedRendered = true;
+    }
+  }
+
   return {
-    arm: winner.arm,
-    aiDecisionId: winner.aiDecisionId ?? null,
-    rendered,
+    arm: resolvedWinner.arm,
+    aiDecisionId: resolvedWinner.aiDecisionId ?? null,
+    rendered: resolvedRendered,
     impressionId,
-    decisionAt: winner.at > 0 ? new Date(winner.at) : null,
+    decisionAt: resolvedWinner.at > 0 ? new Date(resolvedWinner.at) : null,
     // The decision that actually RENDERED, regardless of which stamp won on
     // recency. When a later prefetch decision outranks an earlier rendered
     // one, the order still belongs to the decision the shopper saw — the
