@@ -263,6 +263,12 @@ Comprehensive documentation is available in the following files:
 - **[REFACTORING_NOTES.md](./REFACTORING_NOTES.md)** - Code refactoring history
 - **[CRITICAL_NOTES.md](./CRITICAL_NOTES.md)** - Important fixes and gotchas
 
+### Current State
+- **[HANDOFF-2026-09-20.md](./HANDOFF-2026-09-20.md)** - Latest handoff: the metrics contract, what shipped, what needs an operator
+- **[HANDOFF-2026-09-19.md](./HANDOFF-2026-09-19.md)** - The audit this work came from; §1-§6 are still largely open
+- **[AI_AUDIT_2026-09-19_QA.md](./AI_AUDIT_2026-09-19_QA.md)** - Full QA findings with file and line numbers
+- **[AI_AUDIT_2026-09-19_ARCHITECTURE.md](./AI_AUDIT_2026-09-19_ARCHITECTURE.md)** - Full architecture review
+
 ---
 
 ## Development
@@ -274,6 +280,7 @@ Comprehensive documentation is available in the following files:
 npm run dev              # Start dev server with Shopify CLI
 npm run build            # Build for production
 npm run setup            # Initialize database
+npm test                 # Run the test suite (node:test)
 
 # Database
 npm run prisma:generate  # Generate Prisma client
@@ -285,9 +292,18 @@ npm run evolution        # Run evolution cycle
 npm run aggregate-genes  # Run meta-learning aggregation
 npm run track-seasonal   # Track seasonal patterns
 
+# Diagnostics (read-only)
+node --env-file=.env scripts/dev/dashboard-preview.mjs <shop-domain> [days]
+                         # What a shop's dashboard will render, before deploying
+
 # Deployment
 npm run deploy           # Deploy app and extension
 ```
+
+> `npm run deploy` (`shopify app deploy`) is what registers webhook topics and
+> ships the theme extension. `flyctl deploy` only ships the backend — a new
+> webhook topic added to `shopify.app.toml` stays unregistered until the
+> Shopify deploy runs. See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md).
 
 ### Development Workflow
 

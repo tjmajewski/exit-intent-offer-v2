@@ -1,5 +1,73 @@
 # @shopify/shopify-app-template-react-router
 
+## Resparq AI - September 20, 2026 (The metrics contract)
+
+Recovered revenue is the number that justifies the subscription, so it has to
+survive a merchant checking it against their Shopify reports. This defines four
+numbers, names them distinctly, and makes the headline one attributable to a
+specific order. Full detail in `HANDOFF-2026-09-20.md`.
+
+### Added
+- **Four named metrics** (`app/utils/metrics-contract.js`) — M1 recovered
+  revenue, M2 discount cost, M3 verified lift, M4 show rate. Pure functions,
+  no database, so every one carries a test with a hand-computed expected value.
+- **`AttributedOrder`** — one row per attributed order, unique on
+  `(shopId, orderId)`. The database refuses a duplicate rather than the call
+  site remembering to update instead of insert.
+- **Reversal webhook** (`orders/updated`, `orders/cancelled`) so the headline
+  can go *down*. A merchant who refunds an order and still sees it claimed
+  stops trusting every other number on the page. `refunds/create` is
+  deliberately not subscribed: its payload carries no subtotal fields, so the
+  reversal could only be accumulated, and an additive total double-counts on
+  redelivery.
+- **A test framework.** The repo had none. `npm test`, node:test, 72 tests.
+- **`scripts/ops/repair-duplicate-outcomes.mjs`** — opt-in operator repair for
+  the duplicate outcome rows and the threshold counters a fixed bug corrupted.
+- **`scripts/dev/dashboard-preview.mjs`** — prints what a given shop's
+  dashboard will render, read-only, before a deploy rather than after one.
+
+### Changed
+- **Revenue basis is `subtotal_price`**, after discounts and before tax and
+  shipping, for every surface that reports or learns from it. Not
+  `current_subtotal_price`, which already has refunds taken out of it —
+  storing that and subtracting a reversal counts the refund twice.
+- **Two cart stamps.** The shown arm now stamps at decision time as well as
+  render time. Stamps carry their own timestamp and are resolved by recency,
+  because Shopify never clears a cart attribute and a decision is minted on
+  every carted page load.
+- **A displayed modal outranks a later decision not to show one** — bounded to
+  skip only (never holdout) and to the attribution window. Without this, a
+  shopper who saw the modal, didn't click, and bought anyway was recorded as
+  never having been shown anything, and the sale dropped out of revenue.
+- **Show-rate diagnostic removed from the merchant dashboard.** §2.5 calls M4
+  internal; a red banner telling a paying shop their install is broken, on a
+  ratio ordinary causes depress, costs more trust than it saves.
+
+### Fixed
+- **Shop redaction was failing on any shop with AI decisions.**
+  `InterventionOutcome` and `InterventionThreshold` were never deleted, so
+  `db.shop.delete` threw a foreign-key violation, the error was swallowed, and
+  the handler reported success while the data survived. The live handler is
+  `webhooks.jsx`; `webhooks.shop.redact.jsx` is unrouted.
+- **`getIncrementality` could report a conversion rate above 100%.** Its
+  converted numerator was missing the `rendered` filter its denominator has.
+- **Test/preview renders no longer stamp a real cart.** The decision stamp
+  always honoured test mode; the render stamp did not, so a merchant walking
+  their own storefront left evidence that a later real order picked up.
+
+### Known gaps
+- The unique index on `InterventionOutcome(shopId, aiDecisionId)` is **not**
+  added. Production applies schema with `prisma db push` at container boot, so
+  a failing index build is a boot loop. Run the repair script first.
+- The legacy path still bills and reports on `total_price`, so commission is
+  charged on a basis that includes sales tax while the M1 card excludes it.
+- `InterventionOutcome.revenue` changes basis mid-column with no generation
+  marker.
+- M3 is computed but not displayed; the Verified Lift card still reads
+  `getIncrementality` until `HANDOFF-2026-09-19.md` §2.2 and §2.3 close.
+
+---
+
 ## Resparq AI - July 21, 2026 (Enterprise trigger genes)
 
 The Enterprise storefront path ignored the evolved trigger genes and showed the

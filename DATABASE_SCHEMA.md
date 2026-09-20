@@ -15,6 +15,7 @@ Resparq uses **Prisma ORM** with **SQLite** (development) and **PostgreSQL** (pr
 - **Variant** - AI-generated modal variants (Enterprise evolution system)
 - **VariantImpression** - Individual customer exposures to variants
 - **Conversion** - Orders attributed to exit intent modals
+- **AttributedOrder** - The metrics contract's source of truth for merchant-facing revenue (§2.5)
 - **DiscountOffer** - Dynamically created discount codes (AI mode)
 - **AIDecision** - Audit trail of AI decisions
 - **MetaLearningInsights** - Cross-store intelligence aggregates
@@ -383,6 +384,72 @@ model Conversion {
 2. Order placed → `orders/create` webhook fires
 3. Webhook finds matching impression by discount code
 4. Creates/updates Conversion record
+
+---
+
+### AttributedOrder
+
+**Purpose:** One row per attributed order. The source of truth for the two
+merchant-facing money numbers, M1 (recovered revenue) and M2 (discount cost).
+See `HANDOFF-2026-09-19.md` §2.5 for the contract these fields implement.
+
+**Why this is separate from `Conversion`:** `Conversion` is the order log for
+the shown path only, stores `total_price`, and has no concept of an arm or a
+reversal. `AttributedOrder` carries the arm assignment, whether a shopper
+actually saw the surface, the gross subtotal, and the refund/cancellation
+fields the headline number needs in order to be able to go *down*.
+
+```prisma
+model AttributedOrder {
+  id     String @id @default(uuid())
+  shopId String
+
+  orderId     String    // Shopify order id
+  orderNumber String?
+  orderedAt   DateTime
+
+  arm        String     // "shown" | "skip" | "holdout", from the decision-time cart stamp
+  rendered   Boolean    @default(false)  // did a shopper actually see it
+  renderedAt DateTime?
+  decisionAt DateTime?
+
+  aiDecisionId String?
+  impressionId String?
+
+  subtotal       Float   // subtotal_price: after discounts, before tax/shipping, before reversal
+  totalPrice     Float   // kept so the basis choice is revisitable without a backfill
+  totalTax       Float   @default(0)
+  totalShipping  Float   @default(0)
+  discountAmount Float   @default(0)  // only what OUR code granted
+
+  shopCurrency        String?  // nullable on purpose — never defaulted
+  presentmentCurrency String?
+
+  refundedAmount Float     @default(0)
+  cancelledAt    DateTime?
+  testOrder      Boolean   @default(false)
+
+  @@unique([shopId, orderId])
+}
+```
+
+**Three field choices that are load-bearing:**
+
+- **`subtotal` is `subtotal_price`, not `current_subtotal_price`.** The
+  `current_*` family already reflects edits, returns and refunds. Storing that
+  and then subtracting `refundedAmount` counts the reversal twice — a $40
+  refund on a $100 order reports $20 recovered instead of $60.
+- **`shopCurrency` is nullable and must never be defaulted.** §2.5 forbids
+  summing across currencies without conversion, and a fabricated `'USD'` is how
+  that rule breaks silently. `computeRecoveredRevenue` excludes any row whose
+  currency is absent or does not match the rest.
+- **`rendered` gates M1.** A decided-but-never-displayed order is excluded.
+  `arm` comes from the decision-time stamp so M3's intent-to-treat denominator
+  can read it while M1 does not.
+
+**Uniqueness:** `@@unique([shopId, orderId])` so the *database* refuses a
+duplicate rather than the webhook handler remembering to update instead of
+insert. Every counting bug in `HANDOFF-2026-09-19.md` §2 is that same shape.
 
 ---
 
@@ -764,6 +831,31 @@ npx prisma migrate deploy
 # Reset database (dev only)
 npx prisma migrate reset
 ```
+
+### The unique index that is deliberately absent
+
+`InterventionOutcome` has a plain `@@index([shopId, aiDecisionId])`, not a
+unique one, even though one row per decision is the correct constraint.
+
+**Production applies schema with `prisma db push` at container boot**
+(`package.json` `setup`, Dockerfile CMD) — there is no `release_command` in
+`fly.toml` and nothing runs `prisma migrate deploy`. A unique index declared in
+`schema.prisma` would be issued by `db push` as a bare `CREATE UNIQUE INDEX`
+against a table that still holds duplicate rows from a fixed bug: error 23505,
+`setup` exits non-zero, **the container never starts.**
+
+Before adding it, run the repair and confirm it reports zero duplicate groups:
+
+```bash
+node --env-file=.env scripts/ops/repair-duplicate-outcomes.mjs           # dry run
+node --env-file=.env scripts/ops/repair-duplicate-outcomes.mjs --apply
+```
+
+That script also rebuilds the `InterventionThreshold` counters the same bug
+double-bumped. Both halves run together or neither does — repairing the rows
+alone leaves the evidence table and the state table disagreeing.
+
+---
 
 ### Important Migrations
 

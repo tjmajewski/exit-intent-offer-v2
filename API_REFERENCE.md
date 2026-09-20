@@ -772,18 +772,66 @@ Tracks conversions when orders are placed.
 **Request Body:** (Shopify order object)
 
 **Processing:**
-1. Extracts discount code from order
-2. Finds matching Conversion or VariantImpression record
-3. Updates with order details (order number, value, customer email)
-4. Calculates profit (order value - discount amount)
-5. Triggers evolution cycle if threshold reached
+1. Claims the order id in `WebhookOrder` (at-most-once; a retry returns early)
+2. Reads the cart stamps and resolves which arm the visitor was in
+3. Routes to one of three arms — holdout, skip, or shown — each of which
+   returns before the next; one order is never credited to two arms
+4. Updates the existing `InterventionOutcome` for that decision
+5. Writes one `AttributedOrder` row, unique on `(shopId, orderId)`
+6. Shown arm only: updates `Conversion`, analytics, and variant fitness
 
-**Response:**
-```json
-{
-  "success": true
-}
-```
+**Arm resolution** (`app/utils/order-money.js` → `readCartStamps`)
+
+A cart carries stamps from every page load — Shopify never clears a cart
+attribute and a decision is minted on each carted page view. Stamps are written
+`<decisionId>|<epochMs>` and resolved by **recency**, with two overrides:
+
+- A **displayed modal outranks a later decision not to show one**, bounded to
+  the skip arm and to the attribution window. Without it, a shopper who saw the
+  modal, didn't click, and bought anyway is recorded as never having been
+  shown anything.
+- A **redeemed Resparq-issued code** forces the shown arm. "Resparq-issued"
+  means an EXIT-prefixed code or one matching a `DiscountOffer` row — not any
+  `SAVE20`-shaped code, which a merchant's own campaigns use.
+
+Neither override applies to **holdout**. Holdout is a measurement control and
+moving a visitor into the treated group corrupts the only causal number in the
+product.
+
+**Money:** revenue is `subtotal_price` — after discounts, before tax and
+shipping. Not `current_subtotal_price`, which already has refunds taken out.
+
+**Response:** `204 No Content` on success. Returns 401 on HMAC failure
+(re-thrown as-is so Shopify stops retrying a forged request).
+
+---
+
+### POST /webhooks/orders/reversal
+
+**Reversal Webhook** — topics `orders/updated` and `orders/cancelled`
+
+Applies refunds and cancellations to `AttributedOrder`, so recovered revenue
+can go *down*. Without this the headline number can only ever rise, and a
+merchant who refunds an order and still sees it claimed stops trusting every
+other number on the page.
+
+**Authentication:** Shopify HMAC verification
+
+**Processing:**
+1. Payload-only guard — returns immediately unless the order carries a
+   cancellation, a refund, a reversed `financial_status`, or a moved subtotal.
+   `orders/updated` is the noisiest topic Shopify has, so the common case costs
+   no database work.
+2. Looks up the `AttributedOrder`; an order Resparq never attributed is not an
+   error and is ignored
+3. Recomputes the reversal **absolutely** from the payload and writes it
+
+**Why `refunds/create` is not subscribed:** that payload carries one refund and
+neither subtotal field, so a reversal could only be *accumulated* — and an
+additive total double-counts the moment Shopify redelivers, which it will.
+The order payload lets every delivery recompute the same answer from scratch.
+
+**Response:** `204 No Content`
 
 ---
 

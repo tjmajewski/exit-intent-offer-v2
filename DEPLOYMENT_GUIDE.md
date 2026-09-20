@@ -268,6 +268,55 @@ flyctl deploy -a resparq
 flyctl deploy -a resparq --verbose
 ```
 
+### Webhook topic changes need `shopify app deploy` as well
+
+`flyctl deploy` ships the backend. It does **not** register webhook topics —
+those live in `shopify.app.toml` and reach Shopify only through:
+
+```bash
+shopify app deploy
+```
+
+Forget it and the handler is live but never called. The reversal webhooks
+(`orders/updated`, `orders/cancelled`) added for the metrics contract are the
+current example: without registration, refunds never arrive and recovered
+revenue can only go up, which is the exact failure the feature exists to
+prevent. The same command ships theme-extension changes.
+
+Check the topics Shopify actually has registered before assuming:
+
+```bash
+shopify app webhook trigger --help
+```
+
+Scope changes are different again — adding a scope forces every merchant to
+re-authorise. `read_orders` already covered the reversal topics, so that
+deploy needed no re-auth.
+
+---
+
+### Schema changes are applied by `db push`, not by migrations
+
+`npm run setup` runs `prisma generate && prisma db push` and is the container's
+entrypoint (Dockerfile `CMD` → `docker-start`). There is no `release_command`
+in `fly.toml`. **Nothing in `prisma/migrations/` executes in production** —
+those files are for local work and migrate-managed environments.
+
+The consequence that matters: a schema change `db push` cannot apply cleanly is
+an **outage**, not a failed migration. `setup` exits non-zero and the container
+never starts.
+
+The sharp edge is adding a unique index to a table that already holds
+duplicates. `db push` issues a bare `CREATE UNIQUE INDEX`, Postgres returns
+23505, and the app boot-loops. Clean the data first with a one-shot script, run
+it against production deliberately, confirm it reports clean, and only then add
+the constraint.
+
+Additive changes — a new table, a nullable column, a new plain index — are
+safe under `db push`.
+
+---
+
 ### Verifying Deployment
 
 ```bash
