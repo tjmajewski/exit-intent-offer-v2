@@ -239,9 +239,7 @@ Comprehensive documentation is available in the following files:
 ### Core Documentation
 - **[API_REFERENCE.md](./API_REFERENCE.md)** - All API endpoints and webhooks
 - **[DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md)** - Database models and relationships
-- **[FRONTEND_COMPONENTS.md](./FRONTEND_COMPONENTS.md)** - Component architecture
 - **[DEVELOPER_ONBOARDING.md](./DEVELOPER_ONBOARDING.md)** - Getting started guide
-- **[TESTING_GUIDE.md](./TESTING_GUIDE.md)** - How to test features
 - **[DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)** - Production deployment
 - **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** - Common issues and solutions
 - **[ENVIRONMENT_VARIABLES.md](./ENVIRONMENT_VARIABLES.md)** - Required env vars
@@ -310,7 +308,7 @@ npm run deploy           # Deploy app and extension
 1. **Make code changes** in `app/` or `extensions/`
 2. **Test in browser** via Shopify CLI URL
 3. **Check database** with Prisma Studio (`npm run prisma:studio`)
-4. **Run tests** (manual testing for now, see TESTING_GUIDE.md)
+4. **Run tests** — `npm test` for the unit suite, plus the manual checklist below
 5. **Commit changes** with descriptive messages
 6. **Push to branch** for review
 
@@ -422,7 +420,11 @@ Cross-store intelligence:
 - [ ] Generation number increases
 - [ ] Activity feed shows recent events
 
-See [TESTING_GUIDE.md](./TESTING_GUIDE.md) for detailed testing procedures.
+Automated coverage lives in `tests/` and runs with `npm test` (node:test, no
+framework dependency). It covers the pure metric and money functions — the
+arithmetic behind every merchant-facing number — where each expected value is
+hand-computed in a comment beside the assertion. The checklist above is still
+the only coverage for the storefront and Shopify integration paths.
 
 ---
 
