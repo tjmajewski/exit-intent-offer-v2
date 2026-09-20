@@ -358,7 +358,7 @@ export async function confirmInterventionRender(db, { shopId, aiDecisionId }) {
  * Update an existing InterventionOutcome when a conversion comes in later
  * (e.g. order webhook fires after the initial decision was recorded).
  */
-export async function recordInterventionConversion(db, outcomeId, revenue, discountAmount = 0) {
+export async function recordInterventionConversion(db, outcomeId, revenue, discountAmount = 0, { proveRender = true } = {}) {
   const profit = revenue - discountAmount;
 
   const outcome = await db.interventionOutcome.update({
@@ -380,9 +380,28 @@ export async function recordInterventionConversion(db, outcomeId, revenue, disco
     return outcome;
   }
 
-  // A conversion proves the render — safety net for a lost confirm-render
-  // request. Counts the missing showImpression so CVR can't exceed 100%.
+  // A conversion USUALLY proves the render — safety net for a lost
+  // confirm-render request, so CVR can't exceed 100%.
+  //
+  // `proveRender: false` is the exception the two-stamp contract created. A
+  // cart carrying only the DECISION stamp and not the render stamp is a
+  // visitor who was decided-for, never saw the modal, and bought anyway. That
+  // order belongs in M3's intent-to-treat numerator and must NOT be minted as
+  // a show: doing so would inflate M1 and M4 with a modal nobody displayed —
+  // the mirror image of the bug this contract exists to close.
   if (outcome.wasShown && !outcome.rendered) {
+    if (!proveRender) {
+      // The outcome row is now marked converted — M3 and the intent-to-treat
+      // denominator read it and get the right answer. The bandit does not.
+      // §2.5 item 3: the bandit's reward is per-IMPRESSION (shown, then
+      // ordered) and is correct as a scoring rule; feeding it a conversion
+      // with no impression behind it would push showConversions above
+      // showImpressions and corrupt the beta posterior. Report and reward are
+      // different numbers, and this is the line between them.
+      return outcome;
+    }
+    // Safety net for a lost confirm-render request on a genuinely rendered
+    // modal, so CVR can't exceed 100%.
     await confirmInterventionRender(db, {
       shopId: outcome.shopId,
       aiDecisionId: outcome.aiDecisionId
@@ -439,6 +458,100 @@ export async function recordInterventionConversion(db, outcomeId, revenue, disco
   });
 
   return outcome;
+}
+
+/**
+ * One conversion, one outcome row — for every arm.
+ *
+ * HANDOFF §2.1 closed the holdout/skip double-write by teaching two webhook
+ * branches to find-then-update instead of insert. It left the find-then-update
+ * logic duplicated across those branches, and a third copy already existed on
+ * the shown path. Three copies of "look up by decision id, fall back to a
+ * create" is three chances to reintroduce exactly the bug that was just fixed,
+ * so they now share this.
+ *
+ * The lookup is keyed ONLY on an exact aiDecisionId. A fuzzy, shop-wide match
+ * is fine for reading cosmetic signal data but must never select the row we
+ * are about to write a conversion into: at two concurrent shoppers it steals
+ * one visitor's credit and gives it to another. Callers that only have a fuzzy
+ * match pass `aiDecisionId: null` and get the create path.
+ *
+ * @param {object} db
+ * @param {object} args
+ * @param {string}  args.shopId
+ * @param {string?} args.aiDecisionId  exact id from the cart stamp, or null
+ * @param {boolean} args.wasShown      which arm's row to match
+ * @param {boolean} args.isHoldout
+ * @param {number}  args.revenue
+ * @param {number}  args.discountAmount
+ * @param {boolean} args.proveRender   shown path only: treat the conversion as
+ *                  proof the modal displayed. False when the cart carries the
+ *                  decision stamp but not the render stamp.
+ * @param {object}  args.fallbackFields   signal data for the create path
+ * @returns {Promise<{outcome: object|null, path: 'updated'|'created'|'duplicate'}>}
+ */
+export async function recordConversionForDecision(db, {
+  shopId,
+  aiDecisionId = null,
+  wasShown = false,
+  isHoldout = false,
+  revenue,
+  discountAmount = 0,
+  proveRender = true,
+  fallbackFields = {}
+}) {
+  const existing = aiDecisionId
+    ? await db.interventionOutcome.findFirst({
+        where: {
+          shopId,
+          aiDecisionId,
+          wasShown,
+          isHoldout,
+          converted: false
+        }
+      })
+    : null;
+
+  if (existing) {
+    const outcome = await recordInterventionConversion(
+      db, existing.id, revenue, discountAmount, { proveRender }
+    );
+    return { outcome, path: 'updated' };
+  }
+
+  // No decision-time row to update: a legacy stamp with no id, a decision
+  // whose prefetch write was itself skipped, or a row that is already
+  // converted (a retry, or out-of-order delivery). Insert so the conversion
+  // is not lost.
+  try {
+    const outcome = await recordInterventionOutcome(db, {
+      shopId,
+      wasShown,
+      isHoldout,
+      converted: true,
+      revenue,
+      discountAmount,
+      aiDecisionId,
+      ...fallbackFields
+    });
+    return { outcome, path: 'created' };
+  } catch (err) {
+    // P2002 against the (shopId, aiDecisionId) uniqueness — once that index
+    // exists, a row for this decision is already there and the lookup above
+    // missed it only because it was already converted. That is a duplicate
+    // delivery, not a lost conversion: the existing row is already right.
+    //
+    // Written as catch-then-read rather than as a Prisma `upsert` on purpose:
+    // upsert needs the unique constraint to exist to compile its where-key,
+    // and the constraint is not added until an operator has run
+    // scripts/ops/repair-duplicate-outcomes.mjs. This form is correct both
+    // before and after that lands, so the follow-up needs no second change.
+    if (err?.code !== 'P2002') throw err;
+    const already = aiDecisionId
+      ? await db.interventionOutcome.findFirst({ where: { shopId, aiDecisionId } })
+      : null;
+    return { outcome: already, path: 'duplicate' };
+  }
 }
 
 // =============================================================================

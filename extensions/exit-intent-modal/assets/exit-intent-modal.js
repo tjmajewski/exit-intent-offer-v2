@@ -85,6 +85,81 @@
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Cart stamping — the two-stamp metrics contract (HANDOFF §2.5).
+  //
+  // Stamp #1 goes on at DECISION time and says which arm this cart's visitor
+  // was assigned. Stamp #2 goes on at RENDER time and says a shopper actually
+  // saw the surface. M1 (recovered revenue) and M4 (show rate) read the
+  // render stamp; M3 (verified lift) and the intent-to-treat denominator read
+  // the decision stamp. Collapsing them into one is what caused §2.2.
+  //
+  // Every arm stamp carries its own timestamp, because Shopify never clears a
+  // cart attribute and decisions are minted per carted page load — so a cart
+  // routinely holds stamps from several page loads at once. The server
+  // resolves them by recency (readCartStamps), which is correct whether or
+  // not the clearing below actually lands.
+  // ---------------------------------------------------------------------
+  const ARM_ATTRS = {
+    holdout: 'exit_intent_holdout',
+    skip: 'exit_intent_decision',
+    shown: 'exit_intent_shown_decision'
+  };
+
+  /**
+   * Write this decision's arm stamp and clear the other two, in ONE request.
+   *
+   * One request matters: three separate fire-and-forget POSTs to
+   * /cart/update.js race each other and the last one to land wins
+   * nondeterministically, which is how a cleared stamp comes back.
+   *
+   * Shopify clears a cart attribute by being sent the EMPTY STRING, not null
+   * — sending null leaves the attribute in place with a null value.
+   */
+  const RENDERED_THIS_SESSION_KEY = 'resparqRenderedThisSession';
+
+  /** Has a Resparq surface already displayed to this visitor this session? */
+  function hasRenderedThisSession() {
+    try { return sessionStorage.getItem(RENDERED_THIS_SESSION_KEY) === '1'; }
+    catch (e) { return false; }
+  }
+
+  function markRenderedThisSession() {
+    try { sessionStorage.setItem(RENDERED_THIS_SESSION_KEY, '1'); } catch (e) { /* ignore */ }
+  }
+
+  function stampArmOnCart(arm, decisionId, extraAttributes) {
+    const attrName = ARM_ATTRS[arm];
+    if (!attrName) return null;
+    // Rendering is terminal for attribution. Once a shopper has actually been
+    // shown an offer, every later page load still mints a decision — and the
+    // /cart page in particular almost always skips. Letting that newer skip
+    // stamp overwrite the arm makes a treated shopper read as skipped, which
+    // credits the skip arm with a conversion the modal caused and drops the
+    // order out of the merchant-facing revenue entirely.
+    //
+    // The visitor has already been treated; nothing a later prefetch decides
+    // changes what they experienced.
+    if (arm !== 'shown' && hasRenderedThisSession()) {
+      return null;
+    }
+    const stampedAt = Date.now();
+    const attributes = {};
+    // `<decisionId>|<epochMs>`. A stamp with no id still carries its time, so
+    // recency resolution works for legacy-sentinel decisions too.
+    attributes[attrName] = `${decisionId || ''}|${stampedAt}`;
+    for (const [otherArm, otherAttr] of Object.entries(ARM_ATTRS)) {
+      if (otherArm !== arm) attributes[otherAttr] = '';
+    }
+    if (extraAttributes) Object.assign(attributes, extraAttributes);
+    fetch('/cart/update.js', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attributes })
+    }).catch(() => {}); // fire-and-forget, non-fatal
+    return stampedAt;
+  }
+
   // Entry-source capture. Ad-click params (gclid/fbclid/utm) live on the
   // LANDING URL, not document.referrer — classifying off the referrer alone
   // meant paid traffic landed in 'organic'/'social' and the 'paid' class
@@ -357,7 +432,12 @@
       } catch (_) {}
       try {
         const attrs = { exit_intent: 'true' };
-        if (offer.aiDecisionId) attrs.exit_intent_ai_decision = offer.aiDecisionId;
+        // Same timestamped format as every other render stamp — an
+        // untimestamped one sorts at epoch 0 and loses to any later arm
+        // stamp, so a pill redeem after a newer skip decision would resolve
+        // as skipped.
+        markRenderedThisSession();
+        if (offer.aiDecisionId) attrs.exit_intent_ai_decision = `${offer.aiDecisionId}|${Date.now()}`;
         if (offer.impressionId) attrs.exit_intent_impression = offer.impressionId;
         fetch('/cart/update.js', {
           method: 'POST',
@@ -759,6 +839,7 @@
           this.pillOpenerAt = marker.at || Date.now();
           this.pillOpenerStamped = true; // opener already consumed the show budget
           this.currentAiDecisionId = marker.aiDecisionId || null;
+          this.stampShownDecisionOnCart(this.currentAiDecisionId);
           this.preloadedDecision = decision;
           await this.updateModalWithAI(decision);
           // Triggers: desktop exit-intent + the decision's idle gene (mobile
@@ -2096,13 +2177,7 @@
         // Handle holdout group — stamp cart for incrementality tracking
         if (data.isHoldout) {
           console.log('[Enterprise AI] Holdout group — no intervention (incrementality measurement)');
-          fetch('/cart/update.js', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              attributes: { exit_intent_holdout: data.aiDecisionId || 'true' }
-            })
-          }).catch(() => {});
+          stampArmOnCart('holdout', data.aiDecisionId || 'true');
           return null;
         }
 
@@ -2110,20 +2185,17 @@
         if (data.shouldShow === false || data.decision?.type === 'no_intervention') {
           console.log('[Enterprise AI] No intervention — AI decided no modal is optimal');
           // Stamp cart with unique decision ID for accurate conversion tracking
-          const decisionId = data.aiDecisionId || 'no_intervention';
-          fetch('/cart/update.js', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              attributes: { exit_intent_decision: decisionId }
-            })
-          }).catch(() => {});
+          stampArmOnCart('skip', data.aiDecisionId || 'no_intervention');
           return null;
         }
 
         // Store the aiDecisionId for shown modals (used in CTA click stamping)
         if (data.aiDecisionId) {
           this.currentAiDecisionId = data.aiDecisionId;
+          // Decision-time stamp — the shown arm's half of the two-stamp
+          // contract. Holdout and skip stamped above; without this one the
+          // show arm is the only arm missing from intent-to-treat.
+          this.stampShownDecisionOnCart(data.aiDecisionId);
         }
 
         return data.decision || null; // Return decision object or null
@@ -2542,7 +2614,7 @@
       fetch('/cart/update.js', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}), ...(this.currentImpressionId ? { exit_intent_impression: this.currentImpressionId } : {}) } })
+        body: JSON.stringify({ attributes: this.renderStampAttributes() })
       }).catch(() => {}); // fire-and-forget, non-fatal
 
       // Track variant impression (both Pro and Enterprise)
@@ -2552,6 +2624,48 @@
       // impression/outcome rows at decision prefetch — learning counters
       // only move once we confirm the modal actually rendered.
       this.confirmRenderServed();
+    }
+
+    /**
+     * Cart stamp #1 of 2 — DECISION time (HANDOFF §2.5 implementation logic 1,
+     * closing §2.2).
+     *
+     * The holdout and skip arms have always stamped here. The shown arm only
+     * stamped at RENDER time, so a visitor who was decided-for and never
+     * triggered left no trace on the cart at all: their order could never be
+     * attributed, while their decision row still sat in the intent-to-treat
+     * denominator. That deflates measured lift in the one direction a vendor
+     * is least likely to go looking for.
+     *
+     * This stamp says "a decision was made for this cart and its arm was
+     * shown". It deliberately does NOT say the shopper saw anything — that is
+     * what the render stamp in showModal() is for. M1 and M4 read the render
+     * stamp; M3 and the ITT denominator read this one.
+     */
+    stampShownDecisionOnCart(decisionId) {
+      if (!decisionId) return;
+      if (this.isPreview || isResparqTestMode()) return;
+      if (this.shownDecisionStamped === decisionId) return; // one write per decision
+      this.shownDecisionStamped = decisionId;
+      this.shownDecisionStampedAt = stampArmOnCart('shown', decisionId);
+    }
+
+    /**
+     * Cart stamp #2 of 2 — RENDER time. A shopper saw the surface.
+     *
+     * Carries the decision id it belongs to, stamped with the SAME clock the
+     * arm stamp uses, so readCartStamps can tell whether this render vouches
+     * for the winning decision or for an older one. A render stamp from page
+     * A must not mark a page-D decision as displayed.
+     */
+    renderStampAttributes() {
+      markRenderedThisSession();
+      const attrs = { exit_intent: 'true' };
+      if (this.currentAiDecisionId) {
+        attrs.exit_intent_ai_decision = `${this.currentAiDecisionId}|${this.shownDecisionStampedAt || Date.now()}`;
+      }
+      if (this.currentImpressionId) attrs.exit_intent_impression = this.currentImpressionId;
+      return attrs;
     }
 
     /**
@@ -2727,11 +2841,7 @@
           console.log('%c This customer is in the 5% holdout group for incrementality measurement', 'color: #64748b');
           console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
           this.aiDecidedNoIntervention = true;
-          fetch('/cart/update.js', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ attributes: { exit_intent_holdout: result.aiDecisionId || 'true' } })
-          }).catch(() => {});
+          stampArmOnCart('holdout', result.aiDecisionId || 'true');
           return;
         }
 
@@ -2746,11 +2856,7 @@
           // Stamp cart with unique decision ID for accurate conversion tracking —
           // lets the order webhook match this exact decision instead of a fuzzy time search.
           const decisionId = result.aiDecisionId || 'no_intervention';
-          fetch('/cart/update.js', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ attributes: { exit_intent_decision: decisionId } })
-          }).catch(() => {}); // fire-and-forget
+          stampArmOnCart('skip', decisionId); // fire-and-forget
           return;
         }
 
@@ -2794,6 +2900,7 @@
           // Store the aiDecisionId for shown modals (used in webhook matching)
           if (result.aiDecisionId) {
             this.currentAiDecisionId = result.aiDecisionId;
+            this.stampShownDecisionOnCart(result.aiDecisionId);
           }
 
           // Store the decision for trigger setup (triggerType, idleSeconds) and later use
@@ -2820,7 +2927,6 @@
       // Store variant info for tracking (both Pro and Enterprise)
       this.currentVariantId = decision.variantId || decision.variant?.id || null;
       this.currentSegment = decision.segment || null;
-      this.currentImpressionId = decision.impressionId || null;
       this.currentImpressionId = decision.impressionId || null;
 
       // Store expiry for countdown timer (null = generic code or no-discount = no timer)
@@ -3585,7 +3691,7 @@
           await fetch('/cart/update.js', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}), ...(this.currentImpressionId ? { exit_intent_impression: this.currentImpressionId } : {}) } })
+            body: JSON.stringify({ attributes: this.renderStampAttributes() })
           });
         } catch (e) { /* non-fatal */ }
 
@@ -3683,7 +3789,7 @@
         await fetch('/cart/update.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ attributes: { exit_intent: 'true', ...(this.currentAiDecisionId ? { exit_intent_ai_decision: this.currentAiDecisionId } : {}), ...(this.currentImpressionId ? { exit_intent_impression: this.currentImpressionId } : {}) } })
+          body: JSON.stringify({ attributes: this.renderStampAttributes() })
         });
         console.log('[Exit Intent] Cart attribute stamped for conversion tracking');
       } catch (e) {

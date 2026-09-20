@@ -14,21 +14,21 @@ datasource db {
 }
 
 model Session {
-  id            String    @id
-  shop          String
-  state         String
-  isOnline      Boolean   @default(false)
-  scope         String?
-  expires       DateTime?
-  accessToken   String
-  userId        BigInt?
-  firstName     String?
-  lastName      String?
-  email         String?
-  accountOwner  Boolean   @default(false)
-  locale        String?
-  collaborator  Boolean?  @default(false)
-  emailVerified Boolean?  @default(false)
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
@@ -133,8 +133,8 @@ model Shop {
 
   // Hybrid ("Guided") Mode — merchant pins the offer, AI does the rest
   hybridOfferType           String  @default("percentage") // "percentage" | "fixed"
-  hybridOfferAmount         Float   @default(15)            // pinned value (15 => 15% or $15)
-  hybridDiscountCodeMode    String  @default("generic")     // "generic" | "unique"
+  hybridOfferAmount         Float   @default(15) // pinned value (15 => 15% or $15)
+  hybridDiscountCodeMode    String  @default("generic") // "generic" | "unique"
   hybridGenericDiscountCode String? // The generic code for hybrid mode
   hybridDiscountCodePrefix  String? @default("EXIT") // Prefix for unique codes in hybrid mode
 
@@ -174,6 +174,7 @@ model Shop {
   brandSafetyRule        BrandSafetyRule?        @relation("ShopBrandSafetyRules")
   interventionThresholds InterventionThreshold[] @relation("ShopInterventionThresholds")
   interventionOutcomes   InterventionOutcome[]   @relation("ShopInterventionOutcomes")
+  attributedOrders       AttributedOrder[]       @relation("ShopAttributedOrders")
 }
 
 model DiscountOffer {
@@ -234,16 +235,16 @@ model Variant {
   parents    String? // JSON array ['VAR_ABC', 'VAR_DEF']
 
   // Genes (the DNA)
-  offerAmount Int
-  headline    String
-  subhead     String
-  cta         String
-  redirect    String // cart | checkout
-  urgency     Boolean
-  showSubhead Boolean @default(true) // If false, modal renders without subhead (evolved concept)
+  offerAmount       Int
+  headline          String
+  subhead           String
+  cta               String
+  redirect          String // cart | checkout
+  urgency           Boolean
+  showSubhead       Boolean @default(true) // If false, modal renders without subhead (evolved concept)
   showProductImages Boolean @default(false) // Render cart-item thumbnails inside the modal (evolved gene)
-  triggerType String  @default("exit_intent") // exit_intent | idle | exit_intent_or_idle
-  idleSeconds Int     @default(30) // seconds before idle trigger fires
+  triggerType       String  @default("exit_intent") // exit_intent | idle | exit_intent_or_idle
+  idleSeconds       Int     @default(30) // seconds before idle trigger fires
 
   // Visual Genes (Design DNA)
   colorScheme String @default("classic")
@@ -301,11 +302,11 @@ model VariantImpression {
   duringPromo    Boolean @default(false)
 
   // Phase 2A scenario signals — enable richer "who + where + what offer" aggregation
-  pageType    String? // home | product | collection | cart | checkout | search | blog | account | other
-  promoInCart Boolean @default(false) // cart has applied discount code or item-level discount
-  cartSubscription String @default("none") // none | mixed | all — cart contains selling-plan (subscription) lines
-  archetype   String? // denormalized archetype name (THRESHOLD_DISCOUNT, SOFT_UPSELL, etc.) — fast aggregator queries
-  segmentKey  String? // composite segment key (see app/utils/segment-key.js) — richer than the legacy segment field
+  pageType         String? // home | product | collection | cart | checkout | search | blog | account | other
+  promoInCart      Boolean @default(false) // cart has applied discount code or item-level discount
+  cartSubscription String  @default("none") // none | mixed | all — cart contains selling-plan (subscription) lines
+  archetype        String? // denormalized archetype name (THRESHOLD_DISCOUNT, SOFT_UPSELL, etc.) — fast aggregator queries
+  segmentKey       String? // composite segment key (see app/utils/segment-key.js) — richer than the legacy segment field
 
   timestamp DateTime @default(now())
 
@@ -573,10 +574,91 @@ model InterventionOutcome {
 
   timestamp DateTime @default(now())
 
+  // NOT YET UNIQUE on (shopId, aiDecisionId) — deliberately.
+  //
+  // One outcome row per AI decision is the right constraint and §2.1 left it
+  // open. It cannot be added yet: production applies schema with
+  // `prisma db push` at container boot (package.json `setup`, Dockerfile CMD),
+  // not `prisma migrate deploy`. A unique index declared here would be issued
+  // as a bare CREATE UNIQUE INDEX against a table that still holds the §2.1
+  // duplicate pairs, fail with 23505, exit `setup` non-zero, and boot-loop the
+  // container. Run scripts/ops/repair-duplicate-outcomes.mjs first, confirm it
+  // reports zero duplicate groups, then add the constraint in its own change.
+  @@index([shopId, aiDecisionId])
   @@index([shopId, scoreBucket, wasShown])
   @@index([shopId, timestamp])
   @@index([shopId, wasShown, converted])
   @@index([timestamp])
+}
+
+/// The metrics contract's source of truth (HANDOFF-2026-09-19 §2.5).
+///
+/// One row per attributed order, keyed on the Shopify order id so the
+/// DATABASE refuses a duplicate rather than trusting the webhook handler to
+/// find the existing row. M1 (recovered revenue), M2 (discount cost) and the
+/// order side of M3 are all read from here and nowhere else.
+///
+/// Deliberately separate from `Conversion`: that table is the merchant-facing
+/// order log for the shown path only, stores `total_price`, and has no
+/// concept of an arm or a reversal. Reshaping it would have meant a backfill
+/// and would have mixed the reporting surface with the measurement surface.
+model AttributedOrder {
+  id     String @id @default(uuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], name: "ShopAttributedOrders")
+
+  orderId     String // Shopify order id
+  orderNumber String?
+  orderedAt   DateTime
+
+  /// Which arm this order's visitor was assigned at DECISION time:
+  /// "shown" | "skip" | "holdout". Read from the decision-time cart stamp,
+  /// never inferred from whether a discount code happened to be redeemed.
+  arm String
+
+  /// Did a shopper actually see the surface. M1 and M4 read this; M3 and the
+  /// intent-to-treat denominator deliberately do not.
+  rendered   Boolean   @default(false)
+  renderedAt DateTime?
+  decisionAt DateTime?
+
+  aiDecisionId String?
+  impressionId String?
+
+  /// Money, in shop currency. `subtotal` is Shopify's `subtotal_price`: the
+  /// GROSS subtotal after discounts, before tax and shipping, and before any
+  /// reversal. Deliberately NOT `current_subtotal_price`, which already has
+  /// refunds taken out of it — storing that and then subtracting
+  /// `refundedAmount` counts the reversal twice. `totalPrice` is kept
+  /// alongside so the choice can be revisited without a backfill (§2.5, M1).
+  subtotal       Float
+  totalPrice     Float
+  totalTax       Float @default(0)
+  totalShipping  Float @default(0)
+  /// Only the discount OUR code granted — see ourDiscountAmount() in the
+  /// orders/create webhook. Never the order's whole `total_discounts`.
+  discountAmount Float @default(0)
+
+  /// Nullable: a payload with no `currency` must store null and be excluded
+  /// from any sum, never be defaulted to 'USD'. §2.5 forbids summing across
+  /// currencies, and a fabricated currency is how that rule gets broken
+  /// silently.
+  shopCurrency        String?
+  presentmentCurrency String?
+
+  /// Reversals. Without these the number can only ever go up, and a merchant
+  /// who refunds an order and still sees it claimed stops trusting the page.
+  refundedAmount Float     @default(0)
+  cancelledAt    DateTime?
+  testOrder      Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shopId, orderId])
+  @@index([shopId, orderedAt])
+  @@index([shopId, arm, rendered])
+  @@index([shopId, aiDecisionId])
 }
 
 model InterventionThreshold {

@@ -454,6 +454,11 @@ export async function loader({ request }) {
     // Null until the shop exists in the DB or on any failure — the UI then
     // shows the "measuring" state.
     let incrementality = null;
+    // §2.5 metrics contract: M1 recovered revenue, M2 discount cost,
+    // M3 verified lift, M4 show rate. Read from AttributedOrder, which only
+    // starts filling on orders placed after this shipped — `metrics.m1.orderCount`
+    // is how the UI knows whether to trust it yet.
+    let metrics = null;
     try {
       const shopRow = await db.shop.findUnique({
         where: { shopifyDomain: session.shop },
@@ -462,6 +467,19 @@ export async function loader({ request }) {
       if (shopRow) {
         const { getIncrementality } = await import('../utils/incrementality.server.js');
         incrementality = await getIncrementality(db, shopRow.id);
+        const { getMetricsContract } = await import('../utils/metrics-contract.server.js');
+        // Same window as every other number on this page. Without it the
+        // headline read lifetime while impressions/CVR read 30 days, and the
+        // date toggle moved everything except the one figure a merchant
+        // actually looks at.
+        //
+        // M1 windows on the ORDER date; M3/M4 window on the DECISION date.
+        // Different cohorts on purpose — "revenue in the last 30 days" is an
+        // order-date question and "did it work" is a decision-date one.
+        const metricsDays = dateRange === 'all' ? null : (dateRange === '7d' ? 7 : 30);
+        metrics = await getMetricsContract(db, shopRow.id, {
+          since: metricsDays ? new Date(Date.now() - metricsDays * 24 * 60 * 60 * 1000) : null
+        });
       }
     } catch (error) {
       console.error("Error loading incrementality:", error);
@@ -496,7 +514,7 @@ export async function loader({ request }) {
     }
 
     console.log('Loader returning variants:', liveVariants?.length || 0);
-    return { plan, modalLibrary, dateRange, liveVariants, incrementality, mode, totals };
+    return { plan, modalLibrary, dateRange, liveVariants, incrementality, metrics, mode, totals };
   } catch (error) {
     console.error("Error loading analytics:", error);
     return {
@@ -512,7 +530,7 @@ export async function loader({ request }) {
 
 
 export default function Performance() {
-  const { plan, modalLibrary, dateRange: loaderDateRange, liveVariants, incrementality, mode, totals } = useLoaderData();
+  const { plan, modalLibrary, dateRange: loaderDateRange, liveVariants, incrementality, metrics, mode, totals } = useLoaderData();
   const fetcher = useFetcher();
   const autopilotFetcher = useFetcher();
   const navigate = useNavigate();
@@ -854,6 +872,33 @@ export default function Performance() {
         // these — the note under it says so rather than leaving a merchant to
         // spot the difference themselves.
         const totalRecovered = totals ? totals.revenue : allModals.reduce((sum, m) => sum + (m.stats.revenue || 0), 0);
+        // Three states, not two. `measuringSince` is null only when the shop
+        // has NO contract rows at all — it has not started measuring. Once it
+        // has any, an empty window is a real $0 and must say so.
+        //
+        // The old two-state version showed the LEGACY total_price figure
+        // under the new, stricter label until the first contract order
+        // landed, then collapsed to one order's subtotal overnight. The label
+        // promises "only when the modal rendered, minus refunds"; the legacy
+        // number is none of those things.
+        const contractLive = Boolean(metrics?.measuringSince);
+        const useContractM1 = contractLive;
+        // Use the shop's own currency. The contract already resolves it from
+        // the orders; hardcoding '$' shows a GBP merchant "$1,234.00" on a
+        // number whose whole promise is that it reconciles against Shopify.
+        const fmtMoney = (n) => {
+          const amount = Number(n || 0);
+          if (metrics?.currency) {
+            try {
+              return new Intl.NumberFormat(undefined, {
+                style: 'currency', currency: metrics.currency
+              }).format(amount);
+            } catch { /* unknown currency code — fall through */ }
+          }
+          return `$${amount.toLocaleString(undefined, {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+          })}`;
+        };
         const totalImpressions = totals ? totals.impressions : allModals.reduce((sum, m) => sum + (m.stats.impressions || 0), 0);
         const totalClicks = totals ? totals.clicks : allModals.reduce((sum, m) => sum + (m.stats.clicks || 0), 0);
         const totalConversions = totals ? totals.conversions : allModals.reduce((sum, m) => sum + (m.stats.conversions || 0), 0);
@@ -908,9 +953,16 @@ export default function Performance() {
               )}
             </div>
 
-            {/* Recovered Revenue */}
+            {/* M1 recovered revenue + M2 discount cost.
+                §2.5 item 4: the label is what the number actually supports —
+                "orders placed after a Resparq offer", not "revenue Resparq
+                recovered". The first is verifiable and standard for the
+                category; the second is a causal claim only M3 can make.
+                §2.5 M2: never show M1 without it. A merchant who works the
+                subtraction out for themselves and finds it unflattering is a
+                churned merchant, so the subtraction is done for them. */}
             <div
-              title="Total value of orders recovered after the customer engaged with a Resparq offer. The Verified Lift card shows this measured against a control group."
+              title="Revenue from orders placed after a shopper was shown a Resparq offer, counted only when the modal actually rendered, minus refunds and cancellations. Attributed, not causal — the Verified Lift card is the causal number."
               style={{
                 background: "white",
                 border: "1px solid #e5e7eb",
@@ -918,13 +970,27 @@ export default function Performance() {
                 padding: 20
               }}
             >
-              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>Recovered Revenue</div>
+              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>
+                Revenue after a Resparq offer
+              </div>
               <div style={{ fontSize: 20, fontWeight: 700, color: "#1f2937" }}>
-                ${totalRecovered.toLocaleString()}
+                {useContractM1 ? fmtMoney(metrics.m1.amount) : "Measuring"}
               </div>
-              <div style={{ fontSize: 14, color: "#6b7280" }}>
-                across {allModals.length} modal{allModals.length !== 1 ? 's' : ''}
-              </div>
+              {useContractM1 ? (
+                <>
+                  <div style={{ fontSize: 14, color: "#6b7280" }}>
+                    across {metrics.m1.orderCount} order{metrics.m1.orderCount !== 1 ? 's' : ''}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#6b7280", marginTop: 6 }}>
+                    &minus; {fmtMoney(metrics.m2.amount)} discount cost
+                    {' '}= <strong style={{ color: "#1f2937" }}>{fmtMoney(metrics.net)}</strong> net
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: 14, color: "#6b7280" }}>
+                  starts counting from your next order
+                </div>
+              )}
             </div>
 
             {/* Verified Lift (holdout-measured — proof, not projection) */}
@@ -968,7 +1034,44 @@ export default function Performance() {
                   </div>
                 </>
               )}
+              {/* §2.5: M1 and M3 answer different questions and will not
+                  match — M1 is several times larger. The first merchant to
+                  notice that gap assumes one of the two is fabricated unless
+                  the page says so first, in plain language. */}
+              {useContractM1 && (
+                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 10, lineHeight: 1.45 }}>
+                  The revenue card counts every order placed after a shopper saw an offer.
+                  This card measures how many of those would not have happened anyway,
+                  against a holdout group. They answer different questions, so they will not match.
+                </div>
+              )}
             </div>
+
+            {/* M4 show rate — internal diagnostic, surfaced only when it is
+                telling us something is broken. confirm-render is
+                fire-and-forget and is the sole gate on all show-side
+                learning: when it is blocked (ad blocker, CSP, flaky network)
+                the engine quietly learns "never show" and every number on
+                this page degrades with no signal that anything is wrong.
+                Nothing computed this before. */}
+            {metrics?.m4?.alarm && (
+              <div style={{
+                gridColumn: "1 / -1",
+                background: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: 12,
+                padding: 16
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#991b1b", marginBottom: 4 }}>
+                  Offers are being decided but almost never displayed
+                </div>
+                <div style={{ fontSize: 13, color: "#7f1d1d" }}>
+                  {metrics.m4.rendered} of {metrics.m4.decisions} decisions produced a modal a shopper
+                  actually saw ({((metrics.m4.showRate || 0) * 100).toFixed(1)}%). Worth checking that the
+                  Resparq app block is enabled on your live theme.
+                </div>
+              </div>
+            )}
 
             {/* Quick Insight */}
             <div style={{

@@ -165,6 +165,50 @@ async function handleShopRedact(shop) {
   });
   console.log(`Deleted ${deletedRules.count} brand safety rules`);
 
+  // Tables with a REQUIRED Shop relation. Prisma's default referential action
+  // is Restrict, so every one of these has to go before db.shop.delete or it
+  // throws a foreign-key violation and the shop's data survives the erasure.
+  //
+  // InterventionOutcome and InterventionThreshold were already missing here
+  // before AttributedOrder existed, which means shop redaction has been
+  // failing on any shop with AI decisions — throwing, 500ing, and being
+  // retried forever by Shopify. AttributedOrder is the third such table, not
+  // the first, and it carries order ids and revenue figures.
+  const deletedAttributedOrders = await db.attributedOrder.deleteMany({
+    where: { shopId: shopRecord.id }
+  });
+  console.log(`Deleted ${deletedAttributedOrders.count} attributed orders`);
+
+  const deletedOutcomes = await db.interventionOutcome.deleteMany({
+    where: { shopId: shopRecord.id }
+  });
+  console.log(`Deleted ${deletedOutcomes.count} intervention outcomes`);
+
+  const deletedThresholds = await db.interventionThreshold.deleteMany({
+    where: { shopId: shopRecord.id }
+  });
+  console.log(`Deleted ${deletedThresholds.count} intervention thresholds`);
+
+  const deletedCharges = await db.usageCharge.deleteMany({
+    where: { shopId: shopRecord.id }
+  });
+  console.log(`Deleted ${deletedCharges.count} usage charges`);
+
+  const deletedStarter = await db.starterImpression.deleteMany({
+    where: { shopId: shopRecord.id }
+  });
+  console.log(`Deleted ${deletedStarter.count} starter impressions`);
+
+  // Keyed on the shop DOMAIN, not the id — not an FK, but it is shop data and
+  // erasure means erasure.
+  const deletedWebhookOrders = await db.webhookOrder.deleteMany({
+    where: { shopDomain: shop }
+  });
+  console.log(`Deleted ${deletedWebhookOrders.count} webhook order claims`);
+
+  const deletedSessions = await db.session.deleteMany({ where: { shop } });
+  console.log(`Deleted ${deletedSessions.count} sessions`);
+
   // Finally delete the shop record
   await db.shop.delete({
     where: { id: shopRecord.id }

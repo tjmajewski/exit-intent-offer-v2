@@ -1,6 +1,8 @@
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
-import { recordInterventionOutcome, recordInterventionConversion } from "../utils/intervention-threshold.server.js";
+import { recordInterventionConversion, recordConversionForDecision } from "../utils/intervention-threshold.server.js";
+import { orderMoney, refundedSubtotal, isExcludedOrder, readCartStamps } from "../utils/order-money.js";
+import { upsertAttributedOrder } from "../utils/metrics-contract.server.js";
 import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
 import { pruneAnalyticsEvents } from "../utils/analytics-metafield.js";
 
@@ -40,6 +42,35 @@ function ourDiscountAmount(payload, matchedCodes) {
 
   const allCodes = payload.discount_codes || [];
   return allCodes.length === 1 ? parseFloat(payload.total_discounts) || 0 : 0;
+}
+
+/**
+ * Denormalised decision-time signals for an InterventionOutcome created on
+ * the fallback path (no decision-time row to update). Shape is shared by all
+ * three arms, which is why it stopped being inlined three times.
+ */
+function signalFieldsFromDecision(decision) {
+  let signalData = {};
+  if (decision?.signals) {
+    try { signalData = JSON.parse(decision.signals); } catch { /* ignore */ }
+  }
+  return {
+    propensityScore: signalData.propensityScore ?? signalData.propensity ?? null,
+    intentScore: signalData.intentScore ?? null,
+    cartValue: signalData.cartValue ?? null,
+    deviceType: signalData.deviceType ?? null,
+    trafficSource: signalData.trafficSource ?? null,
+    segment: signalData.deviceType === 'mobile'
+      ? 'mobile'
+      : (signalData.deviceType === 'desktop' ? 'desktop' : 'all')
+  };
+}
+
+/** signalFieldsFromDecision, for callers that hold an id rather than a row. */
+async function signalFieldsForDecision(db, aiDecisionId) {
+  if (!aiDecisionId) return signalFieldsFromDecision(null);
+  const decision = await db.aIDecision.findUnique({ where: { id: aiDecisionId } });
+  return signalFieldsFromDecision(decision);
 }
 
 export const action = async ({ request }) => {
@@ -83,6 +114,108 @@ export const action = async ({ request }) => {
     const devWriteSkip = isLearningWriteSkipped({ shopDomain: shop });
     console.log("Order ID:", payload.id);
     console.log("Order total:", payload.total_price);
+
+    // METRICS CONTRACT (§2.5). Revenue is `subtotal_price` — after discounts,
+    // before tax and shipping — for every surface that reports or learns from
+    // it. `total_price` carries sales tax and shipping, neither of which
+    // Resparq recovered, and a merchant reconciling one month against their
+    // Shopify report finds the difference immediately.
+    //
+    // Not `current_subtotal_price`: that one already has refunds taken out,
+    // so storing it and then subtracting a reversal counts the refund twice.
+    // See orderMoney(). `total_price` is still stored on AttributedOrder so
+    // the choice is revisitable without a backfill.
+    //
+    // KNOWN GAP, deliberately out of this change: the legacy path below still
+    // bills on `total_price` (`orderValue`, updateAnalytics, storeConversion,
+    // UsageCharge.recoveredRevenue), so commission is charged on a basis that
+    // includes sales tax while this card excludes it. Reconcile those before
+    // the next billing cycle.
+    const money = orderMoney(payload);
+    const attributionRevenue = money.subtotal;
+
+    // Which arm this cart's visitor was in, and whether they actually saw
+    // anything. Resolved by recency across all the stamps on the cart —
+    // Shopify never clears a cart attribute and a decision is minted per
+    // carted page load, so one cart routinely carries several.
+    const stamps = readCartStamps(payload.note_attributes);
+
+    // Orders that must never reach M1: Bogus-Gateway test checkouts and
+    // draft orders.
+    //
+    // KNOWN GAP: this does NOT cover a merchant self-testing on their live
+    // storefront. `stampShownDecisionOnCart` honours isResparqTestMode(), but
+    // `renderStampAttributes()` does not — so a test-mode render still stamps
+    // `exit_intent` on a real cart, and an order placed through a real
+    // gateway afterwards is counted. Pre-existing (the legacy metafield
+    // revenue has always counted it); fix by guarding the render stamp the
+    // same way the decision stamp is guarded.
+    const excludedFromMetrics = isExcludedOrder(payload);
+
+    /**
+     * The one row that represents this order in the metrics contract.
+     *
+     * Unique on (shopId, orderId) in the schema, so a webhook retry or a
+     * second call site produces an UPDATE. Every counting bug in HANDOFF §2
+     * is a second row created where an existing row should have been updated;
+     * this is the database refusing to let that happen again.
+     *
+     * An order that arrives already partially refunded (a slow webhook, a
+     * replay) carries its reversal in the payload — record it now rather than
+     * waiting for a refunds/create that already fired.
+     */
+    const recordAttributedOrder = async ({
+      shopId, arm, aiDecisionId = null, impressionId = null, rendered = false,
+      discountAmount = 0, decisionCreatedAt = null
+    }) => {
+      try {
+        const alreadyRefunded = Math.min(refundedSubtotal(payload), money.subtotal);
+        await upsertAttributedOrder(db, {
+          shopId,
+          orderId: String(payload.id),
+          orderNumber: payload.name ?? (payload.order_number != null ? `#${payload.order_number}` : null),
+          orderedAt: payload.created_at ? new Date(payload.created_at) : new Date(),
+          arm,
+          rendered,
+          // There is no render timestamp anywhere in the database —
+          // InterventionOutcome carries `rendered` as a boolean and a
+          // `timestamp` that is decision time. The cart stamp is the only
+          // place a real one exists, so the decision stamp's clock is what
+          // the attribution window runs from. Writing the ORDER's timestamp
+          // here (as the first cut did) makes every order zero days old and
+          // the window inert.
+          renderedAt: rendered ? (stamps.decisionAt ?? null) : null,
+          decisionAt: stamps.decisionAt ?? decisionCreatedAt ?? null,
+          aiDecisionId,
+          impressionId,
+          subtotal: money.subtotal,
+          totalPrice: money.totalPrice,
+          totalTax: money.totalTax,
+          totalShipping: money.totalShipping,
+          discountAmount,
+          // Null, never 'USD'. §2.5 forbids summing across currencies and a
+          // fabricated currency is how that rule breaks silently.
+          shopCurrency: money.shopCurrency,
+          presentmentCurrency: money.presentmentCurrency,
+          testOrder: excludedFromMetrics
+        });
+        if (alreadyRefunded > 0 || payload.cancelled_at) {
+          const { applyOrderReversal } = await import('../utils/metrics-contract.server.js');
+          await applyOrderReversal(db, {
+            shopId,
+            orderId: String(payload.id),
+            refundedAmount: alreadyRefunded,
+            cancelledAt: payload.cancelled_at ? new Date(payload.cancelled_at) : undefined
+          });
+        }
+      } catch (err) {
+        // Never fail the webhook over the reporting row. A lost AttributedOrder
+        // costs one order's worth of M1; a thrown error costs the whole
+        // delivery, and the idempotency claim above means Shopify's retry is
+        // swallowed rather than reprocessed.
+        console.error('[Webhook] AttributedOrder write failed:', err.message);
+      }
+    };
 
     // Check if our discount code was used
     const discountCodes = payload.discount_codes || [];
@@ -137,6 +270,14 @@ export const action = async ({ request }) => {
       attr => attr.name === 'exit_intent_impression'
     );
 
+    // A Resparq code may have been redeemed on this order. `exitDiscountUsed`
+    // and `configuredDiscountUsed` are NOT proof of that on their own —
+    // `exitDiscountUsed` matches any `10OFF`/`SAVE20`-shaped code and
+    // `configuredDiscountUsed` matches the shop's own configured code, both
+    // of which a merchant uses in newsletters and campaigns that have nothing
+    // to do with us. Provenance is established below, once shopRecord exists.
+    const redeemedCode = exitIntentDiscount || exitDiscountUsed || configuredDiscountUsed;
+
     // Gate on ANY attribution signal, not just a redeemed discount code.
     // Previously this branch was `if (exitIntentDiscount)`, so an order that
     // converted through the cart-attribute path (customer saw the modal, went
@@ -150,8 +291,15 @@ export const action = async ({ request }) => {
     // learning table (it feeds evolution fitness), and widening the gate above
     // would otherwise let dev/test orders write into it — exactly what the
     // flag exists to prevent.
+    //
+    // Holdout is excluded outright. A holdout visitor is a measurement
+    // control; crediting their order to a variant's fitness is exactly the
+    // contamination the holdout exists to avoid. The `exit_intent` flag is
+    // never cleared from a cart, so without this check a stale one from an
+    // earlier page load pulls holdout orders into evolution learning.
     const hasAttribution =
-      exitIntentDiscount || exitIntentAttribute || exitDiscountUsed || configuredDiscountUsed;
+      stamps.arm !== 'holdout' &&
+      (exitIntentDiscount || exitIntentAttribute || exitDiscountUsed || configuredDiscountUsed);
 
     if (hasAttribution && !devWriteSkip) {
       console.log(
@@ -260,66 +408,123 @@ export const action = async ({ request }) => {
       }
     }
 
+    // ARM RESOLUTION. `stamps` resolves the cart's arm stamps by recency,
+    // which is right for stamps alone — but recency is the wrong tie-breaker
+    // against a REDEEMED RESPARQ CODE.
+    //
+    // A modal renders on a product page and the shopper clicks through with
+    // the code. The very next carted page load (the /cart page itself) mints
+    // a fresh decision, that decision skips, and its skip stamp is now the
+    // newest thing on the cart. Resolved on recency alone the order reads as
+    // `skip` — so the skip arm is credited with a conversion our modal
+    // caused, the shown outcome is never marked converted, and the order
+    // takes the skip branch's early return, losing the Conversion row, the
+    // analytics revenue and the redemption flag.
+    //
+    // Two conditions, and BOTH are required:
+    //
+    //   1. Resparq provably issued the code. An EXIT-prefixed code is
+    //      app-generated; anything else has to be matched to a DiscountOffer
+    //      row we actually minted. Without this, a merchant's own `SAVE20`
+    //      newsletter campaign — which `exitDiscountUsed`'s regex happily
+    //      matches — books unrelated revenue into M1.
+    //   2. Resparq decided something for this cart at all. A cart with no
+    //      stamps never had a decision made for it, so there is no arm to
+    //      correct and nothing to attribute.
+    //
+    // Holdout is deliberately NOT overridable. A holdout visitor is never
+    // issued a code, so a code on a holdout cart means something else is
+    // wrong — and silently reclassifying a control visitor as treated
+    // corrupts the only causal number in the product.
+    let resparqIssuedCode = Boolean(exitIntentDiscount);
+    if (!resparqIssuedCode && redeemedCode?.code && shopRecord) {
+      try {
+        // Case-insensitive: the configured-code match above lowercases both
+        // sides, and a merchant-typed generic code routinely differs in case
+        // from the code Shopify puts on the order. An exact match here means
+        // a real Resparq order fails provenance, resolves to `skip`, and is
+        // lost from M1.
+        const issued = await db.discountOffer.findFirst({
+          where: {
+            shopId: shopRecord.id,
+            discountCode: { equals: redeemedCode.code, mode: 'insensitive' }
+          },
+          select: { id: true }
+        });
+        resparqIssuedCode = Boolean(issued);
+      } catch (err) {
+        console.error('[Webhook] Discount provenance lookup failed:', err.message);
+      }
+    }
+
+    const armOverriddenByCode =
+      resparqIssuedCode && stamps.arm != null && stamps.arm !== 'holdout';
+    const resolvedArm = armOverriddenByCode ? 'shown' : stamps.arm;
+    const resolvedRendered = stamps.rendered || armOverriddenByCode;
+    // Under the override the winning stamp is the LATER skip decision, but the
+    // order belongs to the decision that actually rendered. readCartStamps
+    // hands that one back separately; without it the exact outcome lookup
+    // misses and falls through to a shop-wide fuzzy match that can mark a
+    // different shopper's outcome converted.
+    const attributionDecisionId = armOverriddenByCode
+      ? (stamps.renderedDecisionId ?? stamps.aiDecisionId)
+      : stamps.aiDecisionId;
+
+    if (armOverriddenByCode && stamps.arm !== 'shown') {
+      console.log(
+        `[Webhook] Arm resolved to 'shown' by Resparq-issued code (cart stamps said '${stamps.arm}')`
+      );
+    }
+
     // HOLDOUT CONVERSION TRACKING: Detect orders from the 5% holdout group.
     // These conversions are recorded for incrementality measurement but are
     // excluded from the adaptive threshold learning loop.
-    const holdoutAttr = noteAttributes.find(
-      attr => attr.name === 'exit_intent_holdout'
-    );
-
-    if (holdoutAttr && shopRecord) {
+    // Gated on the RESOLVED arm, not on the raw attribute. A cart carrying a
+    // stale holdout stamp from an earlier page load alongside a newer shown
+    // decision is a treated visitor, and entering this branch on attribute
+    // presence alone would return early and silently drop their order from
+    // every downstream surface.
+    if (resolvedArm === 'holdout' && shopRecord) {
       console.log('[Webhook] Holdout group conversion detected');
       try {
-        const holdoutDecisionId = holdoutAttr.value;
-        const revenue = parseFloat(payload.total_price);
-        const aiDecisionId = (holdoutDecisionId && holdoutDecisionId !== 'true') ? holdoutDecisionId : null;
+        const aiDecisionId = stamps.aiDecisionId;
 
         if (!devWriteSkip) {
           // The decision endpoint already inserted this outcome row at
           // prefetch time (wasShown:false, isHoldout:true, converted:false).
-          // Update it in place — a second insert here double-counts this
-          // conversion in getIncrementality's holdout numerator and deflates
-          // reported lift.
-          const existingOutcome = aiDecisionId
-            ? await db.interventionOutcome.findFirst({
-                where: { shopId: shopRecord.id, aiDecisionId, isHoldout: true, converted: false }
-              })
-            : null;
-
-          if (existingOutcome) {
-            await recordInterventionConversion(db, existingOutcome.id, revenue, 0);
-          } else {
-            // No prefetch row to update — legacy stamp without an
-            // aiDecisionId, or the decision-time write was itself skipped.
-            // Fall back to a fresh insert so the conversion isn't lost.
-            let signalData = {};
-            if (aiDecisionId) {
-              const decision = await db.aIDecision.findUnique({ where: { id: aiDecisionId } });
-              if (decision?.signals) {
-                try { signalData = JSON.parse(decision.signals); } catch { /* ignore */ }
-              }
-            }
-            await recordInterventionOutcome(db, {
-              shopId: shopRecord.id,
-              wasShown: false,
-              isHoldout: true,
-              converted: true,
-              revenue,
-              discountAmount: 0,
-              propensityScore: signalData.propensityScore ?? signalData.propensity ?? null,
-              intentScore: signalData.intentScore ?? null,
-              cartValue: signalData.cartValue ?? null,
-              deviceType: signalData.deviceType ?? null,
-              trafficSource: signalData.trafficSource ?? null,
-              segment: signalData.deviceType === 'mobile' ? 'mobile' : (signalData.deviceType === 'desktop' ? 'desktop' : 'all'),
-              aiDecisionId
-            });
-          }
+          // recordConversionForDecision updates it in place; a second insert
+          // double-counts into getIncrementality's holdout numerator and
+          // deflates reported lift. The find-or-create logic used to be
+          // copy-pasted into each of these branches — §2.1 left that open and
+          // the shared helper closes it.
+          const { path } = await recordConversionForDecision(db, {
+            shopId: shopRecord.id,
+            aiDecisionId,
+            wasShown: false,
+            isHoldout: true,
+            revenue: attributionRevenue,
+            discountAmount: 0,
+            fallbackFields: await signalFieldsForDecision(db, aiDecisionId)
+          });
+          console.log(`[Webhook] Holdout conversion ${path}: $${attributionRevenue}`);
         }
-
-        console.log(`[Webhook] Holdout conversion recorded: $${revenue}`);
       } catch (err) {
         console.error('[Webhook] Error recording holdout conversion:', err.message);
+      }
+
+      // Outside the try above on purpose. The outcome write and the M1 write
+      // are independent facts about this order, and a failure in the learning
+      // table must not also cost the merchant-facing number — the idempotency
+      // claim at the top of this handler means Shopify's retry returns early,
+      // so anything skipped here is skipped permanently.
+      if (!devWriteSkip) {
+        await recordAttributedOrder({
+          shopId: shopRecord.id,
+          arm: 'holdout',
+          aiDecisionId: stamps.aiDecisionId,
+          rendered: false,
+          discountAmount: 0
+        });
       }
 
       // Holdout conversions don't flow into analytics/revenue attribution
@@ -330,30 +535,22 @@ export const action = async ({ request }) => {
     // but the customer converted anyway. This closes the feedback loop for the
     // adaptive intervention threshold system.
     // The cart attribute value is now the unique aiDecisionId (not a boolean).
-    const noInterventionAttr = noteAttributes.find(
-      attr => attr.name === 'exit_intent_decision'
-    );
-
-    if (noInterventionAttr && shopRecord) {
+    if (resolvedArm === 'skip' && shopRecord) {
       console.log('[Webhook] Natural conversion detected — customer bought without modal');
       try {
-        const decisionId = noInterventionAttr.value;
-        const revenue = parseFloat(payload.total_price);
-        const hasExactDecisionId = Boolean(decisionId && decisionId !== 'no_intervention');
+        const decisionId = stamps.aiDecisionId;
+        const hasExactDecisionId = Boolean(decisionId);
 
-        // Look up the exact AI decision by ID (precise matching, no fuzzy search)
+        // The exact id from the cart stamp is the only key safe to write a
+        // conversion against. The legacy shop-wide fuzzy match below is fine
+        // for reading cosmetic signal data, but selecting an outcome row with
+        // it means a second shopper's still-open skip decision can be handed
+        // this order's credit. recordConversionForDecision is given null in
+        // that case and takes the create path.
         let recentDecision = null;
-        let signalData = {};
         if (hasExactDecisionId) {
-          recentDecision = await db.aIDecision.findUnique({
-            where: { id: decisionId }
-          });
+          recentDecision = await db.aIDecision.findUnique({ where: { id: decisionId } });
         }
-        // Fallback: legacy 'no_intervention' string (from before the ID fix).
-        // This is a shop-wide, customer-agnostic fuzzy match, good enough for
-        // cosmetic signalData but never safe as the key for updating an
-        // existing outcome row below — it could land on a different visitor's
-        // still-open skip decision and steal their conversion credit.
         if (!recentDecision) {
           recentDecision = await db.aIDecision.findFirst({
             where: {
@@ -365,69 +562,82 @@ export const action = async ({ request }) => {
           });
         }
 
-        if (recentDecision?.signals) {
-          try { signalData = JSON.parse(recentDecision.signals); } catch { /* ignore */ }
-        }
+        const exactDecisionId = (hasExactDecisionId && recentDecision) ? recentDecision.id : null;
 
         if (!devWriteSkip) {
-          // Same shape as the holdout branch above: the decision endpoint
-          // already inserted this outcome row at prefetch time
-          // (wasShown:false, converted:false). Update it rather than
-          // inserting a second one, which would double-count this
-          // conversion into the skip arm's impressions AND conversions.
-          // Only trust the fast-path update when the cart carried a real,
-          // exact aiDecisionId — a fuzzy-matched recentDecision must fall
-          // through to the create branch below instead of updating a row
-          // that may belong to a different visitor.
-          const existingOutcome = hasExactDecisionId && recentDecision
-            ? await db.interventionOutcome.findFirst({
-                where: { shopId: shopRecord.id, aiDecisionId: recentDecision.id, wasShown: false, isHoldout: false, converted: false }
-              })
-            : null;
-
-          if (existingOutcome) {
-            await recordInterventionConversion(db, existingOutcome.id, revenue, 0);
-          } else {
-            await recordInterventionOutcome(db, {
-              shopId: shopRecord.id,
-              wasShown: false,
-              converted: true,
-              revenue,
-              discountAmount: 0,
-              propensityScore: signalData.propensityScore ?? signalData.propensity ?? null,
-              intentScore: signalData.intentScore ?? null,
-              cartValue: signalData.cartValue ?? null,
-              deviceType: signalData.deviceType ?? null,
-              trafficSource: signalData.trafficSource ?? null,
-              segment: signalData.deviceType === 'mobile' ? 'mobile' : (signalData.deviceType === 'desktop' ? 'desktop' : 'all'),
-              aiDecisionId: recentDecision?.id ?? null
-            });
-          }
+          const { path } = await recordConversionForDecision(db, {
+            shopId: shopRecord.id,
+            aiDecisionId: exactDecisionId,
+            wasShown: false,
+            isHoldout: false,
+            revenue: attributionRevenue,
+            discountAmount: 0,
+            fallbackFields: {
+              ...signalFieldsFromDecision(recentDecision),
+              // Keep the fuzzy id on the created row for forensics — it is
+              // only unsafe as a LOOKUP key, not as a breadcrumb. Left null
+              // when it came from the fuzzy path so the new unique index
+              // can't collide two visitors onto one decision.
+              aiDecisionId: exactDecisionId
+            }
+          });
+          console.log(`[Webhook] Natural conversion ${path}: $${attributionRevenue}`);
         }
-
-        console.log(`[Webhook] Natural conversion recorded: $${revenue}`);
       } catch (err) {
         console.error('[Webhook] Error recording natural conversion:', err.message);
       }
+
+      // Outside the try, for the same reason as the holdout branch.
+      if (!devWriteSkip) {
+        await recordAttributedOrder({
+          shopId: shopRecord.id,
+          arm: 'skip',
+          aiDecisionId: stamps.aiDecisionId,
+          rendered: false,
+          discountAmount: 0
+        });
+      }
+
+      // Return, the way the holdout branch does. Without this a cart that
+      // resolved to skip fell through into the shown branch below and the
+      // same order was credited to BOTH arms — a skip conversion and a shown
+      // conversion from one purchase, which is the §2.1 double-count in a
+      // new costume. The AI showed nothing here; there is no modal
+      // attribution, no analytics revenue and no Conversion row to write.
+      return new Response(null, { status: 200 });
     }
 
     // INTERVENTION CONVERSION TRACKING: When a modal WAS shown and the customer converts,
     // update the existing InterventionOutcome record with conversion data.
     // Uses the unique aiDecisionId stamped on the cart for precise matching.
-    const aiDecisionAttr = noteAttributes.find(
-      attr => attr.name === 'exit_intent_ai_decision'
-    );
+    // The decision id comes from `stamps`, never from the raw cart attribute.
+    // Arm and render stamps are written as `<decisionId>|<epochMs>` so the
+    // server can resolve several page loads' worth of stamps by recency —
+    // reading `.value` directly yields the composite, which matches no row in
+    // AIDecision or InterventionOutcome and silently sends every lookup down
+    // its fuzzy fallback.
 
-    if ((exitIntentAttribute || exitDiscountUsed || exitIntentDiscount || configuredDiscountUsed) && shopRecord) {
+    // The DECISION stamp says an arm was assigned for this cart; the RENDER
+    // stamp says a shopper actually saw the surface. Before §2.2 the shown
+    // arm only ever wrote the second one, so a decided-but-never-rendered
+    // visitor left no trace and their order could not be attributed at all —
+    // while their decision row still sat in the ITT denominator.
+    const shownArmOnCart = resolvedArm === 'shown';
+
+    let shownDiscountAmount = 0;
+    let shownDecisionId = null;
+
+    if ((shownArmOnCart || exitIntentAttribute || exitDiscountUsed || exitIntentDiscount || configuredDiscountUsed) && shopRecord) {
       try {
+        const exactDecisionId = attributionDecisionId;
         let recentOutcome = null;
 
         // Prefer exact match by aiDecisionId
-        if (aiDecisionAttr?.value) {
+        if (exactDecisionId) {
           recentOutcome = await db.interventionOutcome.findFirst({
             where: {
               shopId: shopRecord.id,
-              aiDecisionId: aiDecisionAttr.value,
+              aiDecisionId: exactDecisionId,
               wasShown: true,
               converted: false
             }
@@ -440,7 +650,11 @@ export const action = async ({ request }) => {
         // backfills rendered on whatever row it is handed. Without the filter a
         // fuzzy match could land on a prefetched decision the visitor never saw
         // and mint it as an impression — a show that never happened.
-        if (!recentOutcome) {
+        //
+        // Only reachable when the cart carried the RENDER stamp. A cart with
+        // just the decision stamp has no rendered row to match and must not
+        // borrow someone else's.
+        if (!recentOutcome && resolvedRendered) {
           recentOutcome = await db.interventionOutcome.findFirst({
             where: {
               shopId: shopRecord.id,
@@ -453,16 +667,40 @@ export const action = async ({ request }) => {
           });
         }
 
-        if (recentOutcome) {
-          const revenue = parseFloat(payload.total_price);
-          const discountAmount = ourDiscountAmount(payload, [
-            exitIntentDiscount, exitDiscountUsed, configuredDiscountUsed
-          ]);
-          await recordInterventionConversion(db, recentOutcome.id, revenue, discountAmount);
-          console.log(`[Webhook] Intervention conversion recorded for outcome ${recentOutcome.id}`);
+        const discountAmount = ourDiscountAmount(payload, [
+          exitIntentDiscount, exitDiscountUsed, configuredDiscountUsed
+        ]);
+
+        if (recentOutcome && !devWriteSkip) {
+          await recordInterventionConversion(
+            db, recentOutcome.id, attributionRevenue, discountAmount,
+            // No render stamp means the shopper never saw it. Mark the
+            // outcome converted for intent-to-treat, but leave the bandit's
+            // per-impression reward alone — see recordInterventionConversion.
+            { proveRender: resolvedRendered }
+          );
+          console.log(`[Webhook] Intervention conversion recorded for outcome ${recentOutcome.id} (rendered=${resolvedRendered})`);
         }
+
+        shownDiscountAmount = discountAmount;
+        shownDecisionId = exactDecisionId;
       } catch (err) {
         console.error('[Webhook] Error recording intervention conversion:', err.message);
+      }
+
+      // Outside the try, for the same reason as the other two arms: the
+      // learning write and the merchant-facing write are independent facts,
+      // and the idempotency claim makes anything skipped here permanent.
+      if (!devWriteSkip && (shownArmOnCart || exitIntentAttribute || exitDiscountUsed || exitIntentDiscount || configuredDiscountUsed)) {
+        await recordAttributedOrder({
+          shopId: shopRecord.id,
+          arm: 'shown',
+          aiDecisionId: shownDecisionId ?? attributionDecisionId,
+          impressionId: stamps.impressionId,
+          // M1 counts this order only if this is true.
+          rendered: resolvedRendered,
+          discountAmount: shownDiscountAmount
+        });
       }
 
       // Journey log: conversion touch. The webhook has no visitorId of its
@@ -478,9 +716,9 @@ export const action = async ({ request }) => {
             });
             touchVisitorId = priorTouch?.visitorId || null;
           }
-          if (!touchVisitorId && aiDecisionAttr?.value) {
+          if (!touchVisitorId && stamps.aiDecisionId) {
             const dec = await db.aIDecision.findUnique({
-              where: { id: aiDecisionAttr.value },
+              where: { id: stamps.aiDecisionId },
               select: { signals: true }
             });
             if (dec?.signals) {
@@ -495,7 +733,7 @@ export const action = async ({ request }) => {
               surface: 'order',
               response: 'converted',
               impressionId: impressionAttr?.value || null,
-              aiDecisionId: aiDecisionAttr?.value || null,
+              aiDecisionId: stamps.aiDecisionId,
               discountCode: exitDiscountUsed?.code || exitIntentDiscount?.code || configuredDiscountUsed?.code || null
             });
           }
@@ -510,17 +748,11 @@ export const action = async ({ request }) => {
     // exitDiscountUsed     → legacy codes (e.g. 10OFF, 10DOLLARSOFF)
     // exitIntentDiscount   → EXIT-prefixed codes generated by the app
     // configuredDiscountUsed → manually-configured codes (manual mode)
-    // noInterventionAttr   → AI decided no modal, but customer converted naturally
-    // holdoutAttr          → holdout group (already handled above with early return)
-    if (!exitIntentAttribute && !exitDiscountUsed && !exitIntentDiscount && !configuredDiscountUsed && !noInterventionAttr) {
+    // The skip and holdout arms have already returned above, so anything
+    // reaching here is either the shown arm or an order with no Resparq
+    // involvement at all.
+    if (!exitIntentAttribute && !exitDiscountUsed && !exitIntentDiscount && !configuredDiscountUsed) {
       console.log("No exit intent offer used, skipping");
-      return new Response(null, { status: 200 });
-    }
-
-    // Natural conversion only (no modal was shown) — intervention tracking is done above,
-    // don't flow into analytics/revenue attribution since the modal wasn't shown.
-    if (noInterventionAttr && !exitIntentAttribute && !exitDiscountUsed && !exitIntentDiscount && !configuredDiscountUsed) {
-      console.log('[Webhook] Natural conversion tracked, no modal attribution needed');
       return new Response(null, { status: 200 });
     }
 

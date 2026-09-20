@@ -551,7 +551,12 @@
         sessionStorage.setItem('exitIntentPillDismissed', 'true');
         sessionStorage.removeItem('exitIntentPendingOffer');
         const attrs = { exit_intent: 'true' };
-        if (offer.aiDecisionId) attrs.exit_intent_ai_decision = offer.aiDecisionId;
+        // Timestamped, matching the modal's render stamp format. The server
+        // resolves the cart's stamps by recency, and an untimestamped render
+        // stamp sorts at epoch 0 — so a cart-banner redeem that follows a
+        // newer skip decision would otherwise be recorded as a skip.
+        try { sessionStorage.setItem('resparqRenderedThisSession', '1'); } catch (e) { /* ignore */ }
+        if (offer.aiDecisionId) attrs.exit_intent_ai_decision = `${offer.aiDecisionId}|${Date.now()}`;
         if (offer.impressionId) attrs.exit_intent_impression = offer.impressionId;
         fetch('/cart/update.js', {
           method: 'POST',

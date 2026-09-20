@@ -17,7 +17,15 @@ export async function getIncrementality(db, shopId) {
   const [shown, shownConverted, holdout, holdoutConverted] = await Promise.all([
     // rendered: prefetched-never-displayed decisions must not deflate shown-CVR
     db.interventionOutcome.count({ where: { shopId, wasShown: true, rendered: true, isHoldout: false } }),
-    db.interventionOutcome.count({ where: { shopId, wasShown: true, isHoldout: false, converted: true } }),
+    // `rendered: true` must match the denominator above. Without it the
+    // numerator counts converted-but-never-displayed decisions that the
+    // denominator excludes, so shownCVR can exceed 1.0 and liftFactor
+    // inflates — on the merchant-facing card. That row shape is no longer
+    // theoretical: the two-stamp contract deliberately marks a
+    // decided-but-never-rendered visitor's outcome converted for
+    // intent-to-treat (recordInterventionConversion, proveRender:false), so
+    // this mismatch would now fire routinely rather than never.
+    db.interventionOutcome.count({ where: { shopId, wasShown: true, rendered: true, isHoldout: false, converted: true } }),
     db.interventionOutcome.count({ where: { shopId, isHoldout: true } }),
     db.interventionOutcome.count({ where: { shopId, isHoldout: true, converted: true } })
   ]);

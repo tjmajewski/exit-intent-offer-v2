@@ -25,6 +25,18 @@ api_version = "2026-01"
   topics = [ "orders/create" ]
   uri = "/webhooks/orders/create"
 
+  # Reversals (HANDOFF §2.5 / M1): recovered revenue has to be able to go DOWN.
+  # A merchant who refunds an order and still sees it claimed on the dashboard
+  # stops trusting every other number on the page.
+  #
+  # Deliberately NOT refunds/create: that payload carries one refund and no
+  # subtotal fields, so the reversal can only be accumulated, and an additive
+  # total double-counts on redelivery. orders/updated fires on refund and
+  # carries everything needed to recompute the answer from scratch.
+  [[webhooks.subscriptions]]
+  topics = [ "orders/cancelled", "orders/updated" ]
+  uri = "/webhooks/orders/reversal"
+
   # Cart events (for proactive AI decisions on add-to-cart)
   [[webhooks.subscriptions]]
   topics = [ "carts/create", "carts/update" ]
