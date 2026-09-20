@@ -272,35 +272,50 @@ export const action = async ({ request }) => {
       try {
         const holdoutDecisionId = holdoutAttr.value;
         const revenue = parseFloat(payload.total_price);
+        const aiDecisionId = (holdoutDecisionId && holdoutDecisionId !== 'true') ? holdoutDecisionId : null;
 
-        // Look up the AI decision by ID for signal data
-        let signalData = {};
-        let aiDecisionId = null;
-        if (holdoutDecisionId && holdoutDecisionId !== 'true') {
-          aiDecisionId = holdoutDecisionId;
-          const decision = await db.aIDecision.findUnique({
-            where: { id: holdoutDecisionId }
-          });
-          if (decision?.signals) {
-            try { signalData = JSON.parse(decision.signals); } catch { /* ignore */ }
+        if (!devWriteSkip) {
+          // The decision endpoint already inserted this outcome row at
+          // prefetch time (wasShown:false, isHoldout:true, converted:false).
+          // Update it in place — a second insert here double-counts this
+          // conversion in getIncrementality's holdout numerator and deflates
+          // reported lift.
+          const existingOutcome = aiDecisionId
+            ? await db.interventionOutcome.findFirst({
+                where: { shopId: shopRecord.id, aiDecisionId, isHoldout: true, converted: false }
+              })
+            : null;
+
+          if (existingOutcome) {
+            await recordInterventionConversion(db, existingOutcome.id, revenue, 0);
+          } else {
+            // No prefetch row to update — legacy stamp without an
+            // aiDecisionId, or the decision-time write was itself skipped.
+            // Fall back to a fresh insert so the conversion isn't lost.
+            let signalData = {};
+            if (aiDecisionId) {
+              const decision = await db.aIDecision.findUnique({ where: { id: aiDecisionId } });
+              if (decision?.signals) {
+                try { signalData = JSON.parse(decision.signals); } catch { /* ignore */ }
+              }
+            }
+            await recordInterventionOutcome(db, {
+              shopId: shopRecord.id,
+              wasShown: false,
+              isHoldout: true,
+              converted: true,
+              revenue,
+              discountAmount: 0,
+              propensityScore: signalData.propensityScore ?? signalData.propensity ?? null,
+              intentScore: signalData.intentScore ?? null,
+              cartValue: signalData.cartValue ?? null,
+              deviceType: signalData.deviceType ?? null,
+              trafficSource: signalData.trafficSource ?? null,
+              segment: signalData.deviceType === 'mobile' ? 'mobile' : (signalData.deviceType === 'desktop' ? 'desktop' : 'all'),
+              aiDecisionId
+            });
           }
         }
-
-        if (!devWriteSkip) await recordInterventionOutcome(db, {
-          shopId: shopRecord.id,
-          wasShown: false,
-          isHoldout: true,
-          converted: true,
-          revenue,
-          discountAmount: 0,
-          propensityScore: signalData.propensityScore ?? signalData.propensity ?? null,
-          intentScore: signalData.intentScore ?? null,
-          cartValue: signalData.cartValue ?? null,
-          deviceType: signalData.deviceType ?? null,
-          trafficSource: signalData.trafficSource ?? null,
-          segment: signalData.deviceType === 'mobile' ? 'mobile' : (signalData.deviceType === 'desktop' ? 'desktop' : 'all'),
-          aiDecisionId
-        });
 
         console.log(`[Webhook] Holdout conversion recorded: $${revenue}`);
       } catch (err) {
@@ -324,16 +339,21 @@ export const action = async ({ request }) => {
       try {
         const decisionId = noInterventionAttr.value;
         const revenue = parseFloat(payload.total_price);
+        const hasExactDecisionId = Boolean(decisionId && decisionId !== 'no_intervention');
 
         // Look up the exact AI decision by ID (precise matching, no fuzzy search)
         let recentDecision = null;
         let signalData = {};
-        if (decisionId && decisionId !== 'no_intervention') {
+        if (hasExactDecisionId) {
           recentDecision = await db.aIDecision.findUnique({
             where: { id: decisionId }
           });
         }
-        // Fallback: legacy 'no_intervention' string (from before the ID fix)
+        // Fallback: legacy 'no_intervention' string (from before the ID fix).
+        // This is a shop-wide, customer-agnostic fuzzy match, good enough for
+        // cosmetic signalData but never safe as the key for updating an
+        // existing outcome row below — it could land on a different visitor's
+        // still-open skip decision and steal their conversion credit.
         if (!recentDecision) {
           recentDecision = await db.aIDecision.findFirst({
             where: {
@@ -349,20 +369,41 @@ export const action = async ({ request }) => {
           try { signalData = JSON.parse(recentDecision.signals); } catch { /* ignore */ }
         }
 
-        if (!devWriteSkip) await recordInterventionOutcome(db, {
-          shopId: shopRecord.id,
-          wasShown: false,
-          converted: true,
-          revenue,
-          discountAmount: 0,
-          propensityScore: signalData.propensityScore ?? signalData.propensity ?? null,
-          intentScore: signalData.intentScore ?? null,
-          cartValue: signalData.cartValue ?? null,
-          deviceType: signalData.deviceType ?? null,
-          trafficSource: signalData.trafficSource ?? null,
-          segment: signalData.deviceType === 'mobile' ? 'mobile' : (signalData.deviceType === 'desktop' ? 'desktop' : 'all'),
-          aiDecisionId: recentDecision?.id ?? null
-        });
+        if (!devWriteSkip) {
+          // Same shape as the holdout branch above: the decision endpoint
+          // already inserted this outcome row at prefetch time
+          // (wasShown:false, converted:false). Update it rather than
+          // inserting a second one, which would double-count this
+          // conversion into the skip arm's impressions AND conversions.
+          // Only trust the fast-path update when the cart carried a real,
+          // exact aiDecisionId — a fuzzy-matched recentDecision must fall
+          // through to the create branch below instead of updating a row
+          // that may belong to a different visitor.
+          const existingOutcome = hasExactDecisionId && recentDecision
+            ? await db.interventionOutcome.findFirst({
+                where: { shopId: shopRecord.id, aiDecisionId: recentDecision.id, wasShown: false, isHoldout: false, converted: false }
+              })
+            : null;
+
+          if (existingOutcome) {
+            await recordInterventionConversion(db, existingOutcome.id, revenue, 0);
+          } else {
+            await recordInterventionOutcome(db, {
+              shopId: shopRecord.id,
+              wasShown: false,
+              converted: true,
+              revenue,
+              discountAmount: 0,
+              propensityScore: signalData.propensityScore ?? signalData.propensity ?? null,
+              intentScore: signalData.intentScore ?? null,
+              cartValue: signalData.cartValue ?? null,
+              deviceType: signalData.deviceType ?? null,
+              trafficSource: signalData.trafficSource ?? null,
+              segment: signalData.deviceType === 'mobile' ? 'mobile' : (signalData.deviceType === 'desktop' ? 'desktop' : 'all'),
+              aiDecisionId: recentDecision?.id ?? null
+            });
+          }
+        }
 
         console.log(`[Webhook] Natural conversion recorded: $${revenue}`);
       } catch (err) {

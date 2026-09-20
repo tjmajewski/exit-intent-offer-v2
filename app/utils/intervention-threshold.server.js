@@ -371,6 +371,15 @@ export async function recordInterventionConversion(db, outcomeId, revenue, disco
     }
   });
 
+  // Holdout outcomes are for incrementality measurement only — mirrors the
+  // same guard in recordInterventionOutcome. Without it, a holdout
+  // conversion (wasShown:false) would fall into the `arm === 'skip'` branch
+  // below and bias the threshold learning loop with data the AI never
+  // decided to skip; it was withheld at random for measurement.
+  if (outcome.isHoldout) {
+    return outcome;
+  }
+
   // A conversion proves the render — safety net for a lost confirm-render
   // request. Counts the missing showImpression so CVR can't exceed 100%.
   if (outcome.wasShown && !outcome.rendered) {
