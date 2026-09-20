@@ -954,15 +954,28 @@ export default function Performance() {
             </div>
 
             {/* M1 recovered revenue + M2 discount cost.
-                §2.5 item 4: the label is what the number actually supports —
-                "orders placed after a Resparq offer", not "revenue Resparq
-                recovered". The first is verifiable and standard for the
-                category; the second is a causal claim only M3 can make.
+                §2.5 item 4: the label has to be what the number actually
+                supports — "orders placed after a Resparq offer", not "revenue
+                Resparq recovered". The first is verifiable and standard for
+                the category; the second is a causal claim only M3 can make.
                 §2.5 M2: never show M1 without it. A merchant who works the
                 subtraction out for themselves and finds it unflattering is a
-                churned merchant, so the subtraction is done for them. */}
+                churned merchant, so the subtraction is done for them.
+
+                TWO BASES, and the card says which one it is on.
+                AttributedOrder starts empty and only fills from the next
+                order, so on the day this ships every existing shop has no
+                contract data. Blanking the card would take a live merchant's
+                revenue figure away overnight — unacceptable. Showing the
+                legacy figure under the contract's label would be worse: that
+                label promises render-gated, refund-adjusted, tax-excluded
+                money and the legacy figure is none of those.
+                So: show the legacy number under the legacy claim until the
+                contract has data, then switch both together. */}
             <div
-              title="Revenue from orders placed after a shopper was shown a Resparq offer, counted only when the modal actually rendered, minus refunds and cancellations. Attributed, not causal — the Verified Lift card is the causal number."
+              title={useContractM1
+                ? "Revenue from orders placed after a shopper was shown a Resparq offer, counted only when the modal actually rendered, minus refunds and cancellations. Excludes tax and shipping. Attributed, not causal — the Verified Lift card is the causal number."
+                : "Total value of orders placed after a customer engaged with a Resparq offer. Attributed, not causal — the Verified Lift card is the causal number. Refund-adjusted reporting that excludes tax and shipping begins with your next order."}
               style={{
                 background: "white",
                 border: "1px solid #e5e7eb",
@@ -974,7 +987,7 @@ export default function Performance() {
                 Revenue after a Resparq offer
               </div>
               <div style={{ fontSize: 20, fontWeight: 700, color: "#1f2937" }}>
-                {useContractM1 ? fmtMoney(metrics.m1.amount) : "Measuring"}
+                {useContractM1 ? fmtMoney(metrics.m1.amount) : `$${totalRecovered.toLocaleString()}`}
               </div>
               {useContractM1 ? (
                 <>
@@ -988,7 +1001,7 @@ export default function Performance() {
                 </>
               ) : (
                 <div style={{ fontSize: 14, color: "#6b7280" }}>
-                  starts counting from your next order
+                  across {allModals.length} modal{allModals.length !== 1 ? 's' : ''}
                 </div>
               )}
             </div>
@@ -1047,31 +1060,13 @@ export default function Performance() {
               )}
             </div>
 
-            {/* M4 show rate — internal diagnostic, surfaced only when it is
-                telling us something is broken. confirm-render is
-                fire-and-forget and is the sole gate on all show-side
-                learning: when it is blocked (ad blocker, CSP, flaky network)
-                the engine quietly learns "never show" and every number on
-                this page degrades with no signal that anything is wrong.
-                Nothing computed this before. */}
-            {metrics?.m4?.alarm && (
-              <div style={{
-                gridColumn: "1 / -1",
-                background: "#fef2f2",
-                border: "1px solid #fecaca",
-                borderRadius: 12,
-                padding: 16
-              }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#991b1b", marginBottom: 4 }}>
-                  Offers are being decided but almost never displayed
-                </div>
-                <div style={{ fontSize: 13, color: "#7f1d1d" }}>
-                  {metrics.m4.rendered} of {metrics.m4.decisions} decisions produced a modal a shopper
-                  actually saw ({((metrics.m4.showRate || 0) * 100).toFixed(1)}%). Worth checking that the
-                  Resparq app block is enabled on your live theme.
-                </div>
-              </div>
-            )}
+            {/* M4 show rate is computed (metrics.m4) but deliberately NOT
+                rendered here. §2.5 calls it "internal, diagnostic" and it is:
+                a tripwire for a silent confirm-render failure, aimed at us,
+                not a message for a merchant. A red banner telling a paying
+                shop their install is broken — on a ratio that can be depressed
+                by ordinary causes — costs more trust than it saves. Read it
+                from scripts/dev/dashboard-preview.mjs or the admin console. */}
 
             {/* Quick Insight */}
             <div style={{
