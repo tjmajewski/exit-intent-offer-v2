@@ -256,7 +256,8 @@ export function summarizeDecision(row) {
         : "The stored decision is not valid JSON.",
       context: [],
       trigger: null,
-      shown: null,
+      shownReached: false,
+    shown: null,
       result: row.result ?? null,
       source: null,
       raw: row.decision,
@@ -277,7 +278,13 @@ export function summarizeDecision(row) {
     trigger: triggerOf(decision, signals),
     why: whyOf(decision, P),
     context: contextOf(decision, signals),
-    // What the visitor actually read, when this decision produced a modal.
+    // Whether this copy actually reached a shopper. The console rendered
+    // "Visitor saw: ..." unconditionally, which put a flat contradiction
+    // directly above "the visitor never actually saw this" — on the one
+    // surface whose entire purpose is to stop the console asserting things
+    // that did not happen.
+    shownReached: Boolean(row.result?.rendered),
+    // The copy this decision carried. Present whether or not it was displayed.
     shown: decision.headline
       ? [decision.headline, decision.showSubhead === false ? null : decision.subhead, decision.cta]
           .filter(Boolean)

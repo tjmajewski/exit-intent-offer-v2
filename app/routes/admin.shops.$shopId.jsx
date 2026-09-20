@@ -771,7 +771,7 @@ function DecisionLog({ decisions, mode, now }) {
             )}
             {row.shown && (
               <Text as="p" tone="subdued" variant="bodySm">
-                Visitor saw: {row.shown}
+                {row.shownReached ? "Visitor saw" : "Would have shown"}: {row.shown}
               </Text>
             )}
             {row.context.length > 0 && (
