@@ -17,7 +17,7 @@
 import { PrismaClient } from '@prisma/client';
 import {
   updateShopCluster,
-  deriveVertical,
+  deriveVerticalDetailed,
   grossMarginForShop,
   shopClusterDims
 } from '../../app/utils/store-cluster.server.js';
@@ -49,8 +49,10 @@ for (const shop of shops) {
   const before = shopClusterDims(shop);
   const marginBefore = grossMarginForShop(shop);
 
-  // Derive the vertical directly so a dry run can report it without writing.
-  const vertical = await deriveVertical(db, shop.shopifyDomain);
+  // Derive directly so a dry run can report without writing, and so a null
+  // result names its own cause instead of listing three possibilities.
+  const diag = await deriveVerticalDetailed(db, shop.shopifyDomain);
+  const vertical = diag.vertical;
 
   if (APPLY) {
     const updated = await updateShopCluster(db, shop);
@@ -64,8 +66,19 @@ for (const shop of shops) {
   const moved = before.vertical !== after.vertical || marginBefore !== marginAfter;
 
   console.log(`  ${shop.shopifyDomain}`);
-  console.log(`    vertical      ${before.vertical || 'unknown'} -> ${after.vertical || 'unknown'}` +
-    (vertical ? '' : '   (derivation returned nothing — no session token, API error, or no product type matched)'));
+  console.log(`    vertical      ${before.vertical || 'unknown'} -> ${after.vertical || 'unknown'}`);
+  if (diag.reason !== 'ok') {
+    console.log(`      why: ${diag.reason}`);
+    if (diag.detail) console.log(`      ${diag.detail}`);
+  }
+  if (diag.sampled) {
+    console.log(`      sampled ${diag.sampled} products; votes: ${
+      Object.keys(diag.votes).length
+        ? Object.entries(diag.votes).map(([k, v]) => `${k}=${v}`).join(' ')
+        : 'none'
+    }`);
+    console.log(`      product types: ${diag.productTypes.slice(0, 12).join(' | ') || '(all empty)'}`);
+  }
   console.log(`    aov band      ${before.aovBand || 'unknown'} -> ${after.aovBand || 'unknown'}` +
     (after.aovBand ? '' : '   (needs 5+ conversions in 180d)'));
   console.log(`    gross margin  ${(marginBefore * 100).toFixed(0)}% -> ${(marginAfter * 100).toFixed(0)}%${moved ? '' : '   (no change)'}`);

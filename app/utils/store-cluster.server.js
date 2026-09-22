@@ -188,13 +188,38 @@ export async function deriveAovBand(db, shopId) {
  * Admin API, using the stored offline access token (crons have no session
  * middleware). Majority vote across mapped types; null on any failure.
  */
-export async function deriveVertical(db, shopDomain, { apiVersion = '2026-01', fetchImpl = fetch } = {}) {
+export async function deriveVertical(db, shopDomain, opts = {}) {
+  return (await deriveVerticalDetailed(db, shopDomain, opts)).vertical;
+}
+
+/**
+ * deriveVertical, but it says WHY it returned nothing.
+ *
+ * Every failure here collapses to `null`, and a null vertical is
+ * indistinguishable from "this store sells 50 unrelated things" — while the
+ * causes could not be more different: a missing offline session token is an
+ * install problem, a GraphQL error is an API-version problem, and no keyword
+ * match is a vocabulary problem. Only the last one is fixed by editing the
+ * keyword table, and the first live shop spent its whole trial unclassified
+ * with no way to tell which it was.
+ *
+ * @returns {{vertical: string|null, reason: string, detail: string|null,
+ *            sampled: number, productTypes: string[], votes: Object}}
+ */
+export async function deriveVerticalDetailed(
+  db, shopDomain, { apiVersion = '2026-01', fetchImpl = fetch } = {}
+) {
+  const out = { vertical: null, reason: 'unknown', detail: null, sampled: 0, productTypes: [], votes: {} };
   try {
     const session = await db.session.findFirst({
       where: { shop: shopDomain, isOnline: false },
       select: { accessToken: true }
     });
-    if (!session?.accessToken) return null;
+    if (!session?.accessToken) {
+      out.reason = 'no_offline_session';
+      out.detail = 'No offline session row for this shop. App-proxy requests can still authenticate, so this does not show up as a broken install — but every cron that reads products is blind.';
+      return out;
+    }
 
     const resp = await fetchImpl(`https://${shopDomain}/admin/api/${apiVersion}/graphql.json`, {
       method: 'POST',
@@ -203,34 +228,80 @@ export async function deriveVertical(db, shopDomain, { apiVersion = '2026-01', f
         'X-Shopify-Access-Token': session.accessToken
       },
       body: JSON.stringify({
+        // NO sortKey. BEST_SELLING is not a member of ProductSortKeys — it
+        // exists only on a collection's products connection — so this query
+        // failed GraphQL VALIDATION on every store, every run, since it
+        // shipped. Validation errors return HTTP 200 with a top-level
+        // `errors` array and a null `data`, which the old code read straight
+        // through to `undefined` and returned as a null vertical,
+        // indistinguishable from "this store sells 50 unrelated things".
+        //
+        // A vertical is a majority vote over the catalog; it does not need the
+        // best sellers specifically, and the default ordering samples the
+        // catalog fine. Not worth a second failure mode to rank them.
         query: `{
-          products(first: 50, sortKey: BEST_SELLING) {
+          products(first: 50) {
             nodes { productType category { fullName } }
           }
         }`
       })
     });
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    const nodes = data?.data?.products?.nodes;
-    if (!Array.isArray(nodes) || nodes.length === 0) return null;
+    if (!resp.ok) {
+      out.reason = 'http_error';
+      out.detail = `Admin API returned ${resp.status} ${resp.statusText} for apiVersion ${apiVersion}`;
+      return out;
+    }
 
-    const votes = {};
+    const data = await resp.json();
+    if (data?.errors) {
+      out.reason = 'graphql_error';
+      out.detail = JSON.stringify(data.errors).slice(0, 400);
+      return out;
+    }
+
+    const nodes = data?.data?.products?.nodes;
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+      out.reason = 'no_products';
+      out.detail = 'The products query returned no nodes. A store with no products, or a token without read_products.';
+      return out;
+    }
+
+    out.sampled = nodes.length;
+    out.productTypes = [...new Set(
+      nodes.map((n) => n.productType || n.category?.fullName || '').filter(Boolean)
+    )];
+
     for (const node of nodes) {
       const v = mapProductTypeToVertical(node.productType) ||
                 mapProductTypeToVertical(node.category?.fullName);
-      if (v) votes[v] = (votes[v] || 0) + 1;
+      if (v) out.votes[v] = (out.votes[v] || 0) + 1;
     }
-    const ranked = Object.entries(votes).sort((a, b) => b[1] - a[1]);
+    const ranked = Object.entries(out.votes).sort((a, b) => b[1] - a[1]);
+
     // Require the winner to cover at least 25% of products — a store selling
     // 50 unrelated things is 'other', not whatever squeaked a plurality.
-    if (ranked.length === 0 || ranked[0][1] < nodes.length * 0.25) {
-      return ranked.length > 0 ? 'other' : null;
+    if (ranked.length === 0) {
+      out.reason = 'no_keyword_match';
+      out.detail = out.productTypes.length
+        ? `None of these product types matched the keyword table: ${out.productTypes.slice(0, 12).join(', ')}`
+        : 'Every product has an empty productType and no category, so there was nothing to match against.';
+      return out;
     }
-    return ranked[0][0];
+    if (ranked[0][1] < nodes.length * 0.25) {
+      out.vertical = 'other';
+      out.reason = 'no_majority';
+      out.detail = `Top vote ${ranked[0][0]} covers only ${ranked[0][1]}/${nodes.length} products, below the 25% bar`;
+      return out;
+    }
+
+    out.vertical = ranked[0][0];
+    out.reason = 'ok';
+    return out;
   } catch (e) {
+    out.reason = 'threw';
+    out.detail = e.message;
     console.error(`[Cluster] Vertical derivation failed for ${shopDomain}:`, e.message);
-    return null;
+    return out;
   }
 }
 
