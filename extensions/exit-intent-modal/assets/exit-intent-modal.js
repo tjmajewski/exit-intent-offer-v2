@@ -4004,20 +4004,238 @@
   function interceptMiniCartCheckout() {
     console.log('[Exit Intent] Setting up checkout interception');
 
+    // One interception at a time. Cancelling the click opens an async window
+    // during which the shopper sees nothing happen, and an impatient second
+    // click used to read an already cleared stash, skip preventDefault
+    // entirely, and let the theme's native submit race our redirect — arriving
+    // at checkout with no discount and the code already thrown away. This latch
+    // keeps the second click cancelled and inert. Closure-scoped, not per-event.
+    //
+    // A DEADLINE rather than a boolean, deliberately. A boolean that is only
+    // ever set to true relies on the navigation to clear it by unloading the
+    // page — and that assumption breaks on bfcache: a shopper who reaches
+    // checkout and presses Back gets this page restored with its JS state
+    // intact, latch still set, and every further click on Checkout silently
+    // cancelled. A dead checkout button is far worse than the double-click it
+    // was guarding against. The deadline self-heals: once the interception
+    // window has elapsed, clicks behave normally again whatever happened.
+    let interceptingUntil = 0;
+
+    // Covers the /cart POST (when one is needed) AND the /cart.js read. Two
+    // same-origin round trips on a slow mobile connection; exceeding it just
+    // applies our code, which is the pre-existing behaviour, so the timeout can
+    // afford to be generous.
+    const CHECKOUT_INTERCEPT_TIMEOUT_MS = 2500;
+
     // Use event delegation - listen on document for ALL clicks
     document.addEventListener('click', (e) => {
-      // Check if clicked element is the checkout button (or inside it)
-      const checkoutButton = e.target.closest('#CartDrawer-Checkout, button[name="checkout"]');
-      
+      // Check if clicked element is the checkout button (or inside it).
+      //
+      // HANDOFF-2026-09-19 §1.1. This selector was `button[name="checkout"]`
+      // only, which is Dawn's cart-page and cart-drawer control — so the
+      // qualify → check out → /discount/<code> path already worked on
+      // Dawn-family themes. It does NOT cover the pre-Dawn family (Debut,
+      // Brooklyn, Narrative and most custom themes), which render the same
+      // control as `input[type=submit][name="checkout"]`. On those themes a
+      // shopper who hit a threshold and checked out normally paid full price.
+      // `input[name="checkout"]` is the whole fix for that family.
+      //
+      // Deliberately NOT added: `a[href*="/checkout"]`, which matches
+      // "proceed to checkout" links in unrelated theme sections and headers —
+      // a capture-phase preventDefault on the wrong anchor is a worse bug than
+      // the one being fixed. Also not a `submit` listener on the cart form:
+      // /cart/update and /cart/change post to that same form in several
+      // themes, so it would hijack quantity changes.
+      //
+      // Still uncovered, and uncoverable from here: accelerated checkout
+      // (Shop Pay / PayPal / GPay), which bypasses the cart entirely, and
+      // form submission via the Enter key, which fires no click.
+      const checkoutButton = e.target.closest(
+        '#CartDrawer-Checkout, button[name="checkout"], input[name="checkout"]'
+      );
+
+
       if (checkoutButton) {
+        // A second click while the first is still resolving: cancel it and do
+        // nothing else. Without this the stash is already gone, `code` is null,
+        // preventDefault never runs, and the native submit races us.
+        if (Date.now() < interceptingUntil) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          return;
+        }
+
         const code = store.get('sessionStorage', 'exitIntentDiscount');
         if (code) {
           e.preventDefault();
           e.stopPropagation();
           e.stopImmediatePropagation();
-          console.log(`[Exit Intent] Intercepted checkout click! Redirecting with discount: ${code}`);
+          // Slack past the timeout so the latch always outlives the pending
+          // navigation, then expires on its own.
+          interceptingUntil = Date.now() + CHECKOUT_INTERCEPT_TIMEOUT_MS + 500;
           store.remove('sessionStorage', 'exitIntentDiscount');
-          window.location.href = `/discount/${encodeURIComponent(code)}?redirect=/checkout`;
+
+          // Tell the shopper the click landed. The button stays enabled — a
+          // disabled control that never re-enables is worse than a slow one,
+          // and the latch above already makes further clicks harmless.
+          try { checkoutButton.setAttribute('aria-busy', 'true'); } catch (_) {}
+
+          // Never overwrite a code the shopper already applied themselves.
+          //
+          // `/discount/<code>` REPLACES the cart's discount code. Before
+          // widening the selector above, this path was reachable only on
+          // Dawn-family themes; it now covers the pre-Dawn family too, so the
+          // exposure is materially larger and has to be handled.
+          //
+          // The harm it prevents: shopper types the merchant's own SUMMER20 in
+          // the cart, has a stale exitIntentDiscount from a dismissed offer
+          // earlier in the session, clicks Check out — and we silently swap
+          // their 20% for our 15%. Because our codes are minted
+          // `combinesWith: { orderDiscounts: true }` (discount-codes.js:128)
+          // that either stacks (the §1.3 margin harm) or drops the larger of
+          // the two. Both are outcomes promo-detect.js argues against.
+          //
+          // The read has to be async, so preventDefault fires first and the
+          // navigation happens in the callback. On a /cart.js failure we fall
+          // back to the pre-existing redirect: that is exactly what Dawn
+          // shoppers already get today, so the fallback cannot regress anyone.
+          // Exactly one navigation, whichever path gets there first. We have
+          // already cancelled the shopper's click, so every branch below —
+          // including the timeout — MUST navigate. A hung /cart.js must never
+          // leave someone pressing Checkout and watching nothing happen.
+          let navigated = false;
+          const go = (href, why) => {
+            if (navigated) return;
+            navigated = true;
+            console.log(`[Exit Intent] Intercepted checkout click — ${why}`);
+            window.location.href = href;
+          };
+          const goWithOurCode = (why) =>
+            go(`/discount/${encodeURIComponent(code)}?redirect=/checkout`, why || `applying ${code}`);
+
+          const timer = setTimeout(
+            () => goWithOurCode('cart read too slow, applying our code'),
+            CHECKOUT_INTERCEPT_TIMEOUT_MS
+          );
+
+          // PERSIST THE CART FORM FIRST, when there is one to persist.
+          //
+          // On pre-Dawn themes (Debut, Brooklyn, Narrative) the control we now
+          // intercept is the submit button of `<form action="/cart" method="post">`,
+          // and `note`, `updates[]` and `attributes[...]` are plain inputs inside
+          // it that ONLY the native submit writes back. Cancelling that submit
+          // and navigating by GET silently discards a gift note or a quantity
+          // the shopper edited without pressing "Update cart" — which is a worse
+          // outcome than losing the discount, and it is breakage this selector
+          // widening introduces rather than something that already existed.
+          //
+          // Posting the form's own FormData to /cart is exactly what the native
+          // submit does. FormData omits submit buttons, so this persists the
+          // cart without also triggering Shopify's redirect-to-checkout.
+          //
+          // Dawn needs none of this (the drawer has no updates[], and Dawn
+          // persists the note over JS), so the POST is skipped unless one of
+          // those fields is actually present — no extra round trip for the
+          // common case.
+          const form = checkoutButton.form;
+          let persist = Promise.resolve();
+          if (form && typeof FormData === 'function') {
+            const needsPersist = Array.prototype.some.call(
+              form.elements || [],
+              (el) => {
+                // Unnamed elements are the common case in a cart form (the
+                // submit button, decorative inputs) and `name` is undefined on
+                // them, so the falsy guard has to come first.
+                const n = el && el.name;
+                if (!n) return false;
+                return n === 'note' || n.indexOf('updates[') === 0 || n.indexOf('attributes[') === 0;
+              }
+            );
+            if (needsPersist) {
+              console.log('[Exit Intent] Cart form carries note/quantity state — persisting before redirect');
+              // URL-ENCODED, not multipart. Handing a FormData straight to
+              // fetch sends `multipart/form-data`, whereas a native HTML form
+              // submit sends `application/x-www-form-urlencoded` — so posting
+              // the FormData would be betting that Shopify's /cart endpoint
+              // parses an encoding the browser would never have sent it. On a
+              // live checkout path that bet is not worth taking: if it were
+              // wrong the POST would quietly do nothing and the state loss this
+              // is meant to prevent would still happen, invisibly.
+              //
+              // FormData is still the right way to READ the form (it applies
+              // the browser's own rules for checkboxes, radios, multi-selects
+              // and disabled fields); only the wire format changes. File values
+              // are skipped — they cannot be urlencoded, and a file input in a
+              // cart form is a line-item property we have no business resending.
+              const body = new URLSearchParams();
+              try {
+                new FormData(form).forEach((v, k) => {
+                  if (typeof v === 'string') body.append(k, v);
+                });
+              } catch (_) { /* fall through with whatever was collected */ }
+              persist = fetch('/cart', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body.toString()
+              }).catch(() => { /* non-fatal: still better to reach checkout */ });
+            }
+          }
+
+          persist
+            .then(() => fetch('/cart.js'))
+            .then((r) => r.json())
+            .then((cart) => {
+              clearTimeout(timer);
+              // Two things this filter has to get right:
+              //
+              // 1. CASE. Every code we mint is uppercased at generation
+              //    (discount-codes.js), and Shopify returns cart codes
+              //    uppercased — but a merchant-configured code reaching the
+              //    stash in mixed case would otherwise make our OWN code read
+              //    as "theirs". Benign if it happens (our code is already in
+              //    the cart, so /checkout keeps it) but comparing case-
+              //    insensitively costs nothing and removes the question.
+              //
+              // 2. `applicable`. A code can sit in the cart while Shopify
+              //    refuses to honour it — expired, minimum not met, customer
+              //    not eligible. Treating that as "theirs" would send the
+              //    shopper to checkout with THEIR dead code and OURS discarded,
+              //    i.e. no discount at all. Only a code Shopify is actually
+              //    applying earns the right to block ours.
+              const ours = String(code).toUpperCase();
+              const theirs = Array.isArray(cart.discount_codes)
+                ? cart.discount_codes.filter(
+                    (d) =>
+                      d &&
+                      d.code &&
+                      String(d.code).toUpperCase() !== ours &&
+                      d.applicable !== false
+                  ).map((d) => d.code)
+                : [];
+
+              // Automatic discounts never appear in `discount_codes` — a
+              // site-wide "20% off everything" with no code to type shows up
+              // only as a cart-level application. That is the single most
+              // likely shape of the §1.3 merchant promo, so missing it here
+              // would leave the guard blind to its main case.
+              const autos = Array.isArray(cart.cart_level_discount_applications)
+                ? cart.cart_level_discount_applications
+                    .filter((a) => a && a.type === 'automatic')
+                    .map((a) => a.title || 'automatic discount')
+                : [];
+
+              const existing = theirs.concat(autos);
+              if (existing.length) {
+                go('/checkout', `cart already carries ${existing.join(', ')}, leaving it alone`);
+                return;
+              }
+              goWithOurCode();
+            })
+            .catch(() => {
+              clearTimeout(timer);
+              goWithOurCode('cart read failed, applying our code');
+            });
         }
       }
     }, true); // Use capture phase

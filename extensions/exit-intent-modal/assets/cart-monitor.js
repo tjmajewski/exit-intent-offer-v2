@@ -330,20 +330,31 @@
       // Check if threshold is met
       if (currentTotal >= offer.threshold && !this.bannerShown) {
         console.log('[Cart Monitor]  Threshold met! Showing banner');
-        
+
+        // Stash the code BEFORE rendering, so the surfaces can tell the truth
+        // about whether it will actually apply at checkout (§1.1). Previously
+        // this ran last, so the card promised "applied at checkout" without
+        // knowing — and a throw here meant it never ran at all.
+        const applied = this.applyDiscountCode(offer.code);
+
+        // Latched BEFORE the renders, not after. A throw out of either render
+        // (getThemeTokens, a theme that has mangled the cart DOM) used to leave
+        // bannerShown false, so the next 2s poll re-entered this same branch and
+        // threw again — forever, re-firing the journey event's dedup check and
+        // re-running the stash. Losing one card render is recoverable; a
+        // re-entrant loop is not.
+        this.bannerShown = true;
+
         // Show banner on cart page
         if (isCartPage) {
-          this.renderThresholdCartCard(offer, currentTotal, true);
+          this.renderThresholdCartCard(offer, currentTotal, true, applied);
         }
-        
+
         // Update mini-cart CTA if exists
         if (hasMiniCart) {
-          this.updateMiniCartCTA(hasMiniCart, offer, currentTotal, true);
+          this.updateMiniCartCTA(hasMiniCart, offer, currentTotal, true, applied);
         }
-        
-        this.applyDiscountCode(offer.code);
-        this.bannerShown = true;
-        
+
       } else if (currentTotal >= offer.threshold && this.bannerShown) {
         // Still qualified - do nothing (already showing banner)
         
@@ -361,10 +372,17 @@
           this.updateMiniCartCTA(hasMiniCart, offer, currentTotal, false);
         }
         
-        // Remove discount code from sessionStorage
-        sessionStorage.removeItem('exitIntentDiscount');
-        
+        // Latched first, and the removeItem guarded: a bare removeItem here is
+        // the same failure shape applyDiscountCode was hardened against two
+        // lines up. Unguarded, a throw stranded bannerShown at true and every
+        // subsequent poll re-asserted "You've unlocked $X off" on a cart that
+        // no longer qualifies.
         this.bannerShown = false;
+        try {
+          sessionStorage.removeItem('exitIntentDiscount');
+        } catch (e) {
+          console.warn('[Cart Monitor] Could not clear stashed discount code:', e && e.message);
+        }
         
       } else if (currentTotal < offer.threshold && !this.bannerShown) {
         // Still below threshold - show progress
@@ -385,15 +403,23 @@
     // downgrades to a text-only line when the cart already shows competing
     // promos. Escalates to a contained, header-inset fixed card only when there
     // is no cart container to mount into.
-    renderThresholdCartCard(offer, currentTotal, qualified) {
+    // `applied` says whether the code was actually stashed for the checkout
+    // interception. When it wasn't (storage blocked), the copy has to ask the
+    // shopper to type it rather than claiming it is already handled — §1.1.
+    // Defaults true so the below-threshold callers, for which it is irrelevant,
+    // do not have to pass it.
+    renderThresholdCartCard(offer, currentTotal, qualified, applied = true) {
       const t = this.getThemeTokens();
       const id = 'exit-intent-threshold-card';
       const remaining = Math.max(0, offer.threshold - currentTotal);
       const roundedRemaining = Math.ceil(remaining / 5) * 5;
       const amount = formatCurrency(offer.discount);
 
+      const unlocked = `You've unlocked <span style="color:${t.accent};font-weight:700;">${amount} off</span>`;
       const label = qualified
-        ? `<span>You've unlocked <span style="color:${t.accent};font-weight:700;">${amount} off</span> — code <strong>${offer.code}</strong> applied at checkout.</span>`
+        ? (applied
+            ? `<span>${unlocked} — code <strong>${offer.code}</strong> applied at checkout.</span>`
+            : `<span>${unlocked} — use code <strong>${offer.code}</strong> at checkout.</span>`)
         : `<span>Add <strong>${formatCurrency(roundedRemaining)}</strong> more to get <span style="color:${t.accent};font-weight:700;">${amount} off</span></span>`;
 
       let card = document.getElementById(id);
@@ -460,14 +486,46 @@
       return card;
     }
 
+    // Stash the code so the checkout interception in exit-intent-modal.js can
+    // redirect through /discount/<code> when the shopper checks out.
+    //
+    // HANDOFF-2026-09-19 §1.1. This `setItem` was unguarded, so a throw
+    // unwound out of checkThreshold before `this.bannerShown = true` ever ran
+    // — leaving the monitor re-entering the qualified branch every poll, and,
+    // worse, a card already on screen telling the shopper their code was
+    // "applied at checkout" when nothing had been stored and nothing would
+    // apply it. That shopper adds the extra items, checks out, and pays full
+    // price, while the cart stamp still credits the conversion to us.
+    //
+    // The reachable trigger is NOT a storage-blocked browser: in a context
+    // where sessionStorage access throws, getActiveOffer() (itself wrapped)
+    // returns null, so the qualified branch is never entered and this is never
+    // called — and the offer could not have been written in the first place,
+    // since showModal stores it through the guarded `store.set` helper. What is
+    // reachable is QUOTA EXHAUSTION ARRIVING MID-SESSION: the offer was stored
+    // fine, then another script on the page filled sessionStorage before the
+    // shopper crossed the threshold.
+    //
+    // Returns whether the stash actually landed, so the surfaces can say
+    // something true either way. Never throws.
     applyDiscountCode(code) {
-      // Store code for checkout redirect
-      sessionStorage.setItem('exitIntentDiscount', code);
+      let stored = false;
+      try {
+        sessionStorage.setItem('exitIntentDiscount', code);
+        stored = true;
+      } catch (e) {
+        console.warn('[Cart Monitor] Could not stash discount code (storage blocked):', e && e.message);
+      }
       sendJourneyEvent(
         { surface: 'cart_banner', response: 'apply', discountCode: code },
         'apply_' + code
       );
-      console.log(`[Cart Monitor] Discount code ${code} stored and ready for checkout from any page`);
+      console.log(
+        stored
+          ? `[Cart Monitor] Discount code ${code} stored and ready for checkout from any page`
+          : `[Cart Monitor] Discount code ${code} could NOT be stored — surfaces will ask the shopper to enter it`
+      );
+      return stored;
     }
 
     watchMiniCart(miniCartElement, offer) {
@@ -488,7 +546,9 @@
       });
     }
 
-    updateMiniCartCTA(miniCartElement, offer, currentTotal, qualified) {
+    // `applied` — see renderThresholdCartCard. Defaults true for the
+    // below-threshold callers, where it is irrelevant.
+    updateMiniCartCTA(miniCartElement, offer, currentTotal, qualified, applied = true) {
       const ctaId = 'exit-intent-minicart-cta';
       let existingCTA = miniCartElement.querySelector(`#${ctaId}`);
       const t = this.getThemeTokens();
@@ -502,7 +562,7 @@
         existingCTA.innerHTML = `
           <div style="padding: 12px 14px;">
             <div style="font-size: 15px; font-weight: 700; margin-bottom: 2px; color: ${t.foreground};">You've unlocked <span style="color:${t.accent};">${formatCurrency(offer.discount)} off</span></div>
-            <div style="font-size: 13px; color: ${t.foreground}; opacity: 0.75;">Code <strong>${offer.code}</strong> applied at checkout</div>
+            <div style="font-size: 13px; color: ${t.foreground}; opacity: 0.75;">${applied ? `Code <strong>${offer.code}</strong> applied at checkout` : `Use code <strong>${offer.code}</strong> at checkout`}</div>
           </div>
         `;
       } else {
