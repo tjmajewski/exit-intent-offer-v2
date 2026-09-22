@@ -4214,20 +4214,44 @@
                   ).map((d) => d.code)
                 : [];
 
-              // Automatic discounts never appear in `discount_codes` — a
-              // site-wide "20% off everything" with no code to type shows up
-              // only as a cart-level application. That is the single most
-              // likely shape of the §1.3 merchant promo, so missing it here
-              // would leave the guard blind to its main case.
+              // An AUTOMATIC discount does NOT block us, deliberately.
+              //
+              // It is tempting to treat it like a typed code, and an earlier
+              // version did. That is wrong, for three reasons:
+              //
+              //  1. `/discount/<code>` replaces the cart's discount CODE. It
+              //     does not touch automatic discounts, so applying ours
+              //     destroys nothing — there is no shopper action to preserve.
+              //  2. A store-wide automatic discount is the merchant's own
+              //     baseline pricing, set globally and presumably priced for.
+              //     Resparq's incremental offer on top of it is the product
+              //     doing what it is sold to do. Declining is not caution, it
+              //     is silently not working.
+              //  3. Consistency. The server-side promo guard (promo-detect.js)
+              //     ships OFF precisely because withholding offers from a live
+              //     merchant mid-trial is the riskier error. Blocking here
+              //     would reinstate that decision at the last possible step,
+              //     where it is hardest to see — and the merchant who raised
+              //     their aggression looking for MORE activity would get less.
+              //
+              // Logged, not acted on, so the stacking is visible if it ever
+              // needs revisiting.
               const autos = Array.isArray(cart.cart_level_discount_applications)
                 ? cart.cart_level_discount_applications
                     .filter((a) => a && a.type === 'automatic')
                     .map((a) => a.title || 'automatic discount')
                 : [];
+              if (autos.length) {
+                console.log(
+                  `[Exit Intent] Cart carries automatic discount(s) ${autos.join(', ')} — ` +
+                  `applying our code on top (they combine; see combinesWith).`
+                );
+              }
 
-              const existing = theirs.concat(autos);
-              if (existing.length) {
-                go('/checkout', `cart already carries ${existing.join(', ')}, leaving it alone`);
+              // Only a code the SHOPPER typed blocks us, because replacing that
+              // is destroying something they chose to do.
+              if (theirs.length) {
+                go('/checkout', `cart already carries typed code ${theirs.join(', ')}, leaving it alone`);
                 return;
               }
               goWithOurCode();
