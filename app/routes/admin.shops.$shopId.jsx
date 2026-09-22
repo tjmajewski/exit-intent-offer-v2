@@ -419,6 +419,35 @@ export async function loader({ request, params }) {
     aiRange = { max, announceAbove };
   }
 
+  // Where the engagement actually came from. "Clicks" above is one number for
+  // the whole offer, and an offer now has three places to accept it: the modal
+  // CTA, the persistent pill, and the cart / mini-cart line. The journey log is
+  // the only record that keeps them apart, so read the accept responses out of
+  // it — otherwise a merchant clicking Apply in their drawer looks identical to
+  // one clicking the modal.
+  const ACCEPT_RESPONSES = ["cta_click", "redeem", "apply"];
+  const surfaceRows = await db.visitorTouch.groupBy({
+    by: ["surface", "response"],
+    where: {
+      shopId: shop.id,
+      timestamp: { gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000) },
+      response: { in: ACCEPT_RESPONSES },
+    },
+    _count: { id: true },
+  });
+  const SURFACE_LABELS = {
+    modal: "Modal CTA",
+    pill: "Pill redeem",
+    cart_banner: "Cart line apply",
+  };
+  const surfaceEngagement = Object.entries(SURFACE_LABELS).map(([surface, label]) => ({
+    surface,
+    label,
+    count: surfaceRows
+      .filter((row) => row.surface === surface)
+      .reduce((sum, row) => sum + row._count.id, 0),
+  }));
+
   // The vertical drives the gross margin the whole margin guard runs on, and
   // an operator override beats the cron's keyword vote. Built here rather than
   // in the component because store-cluster is a server-only module.
@@ -452,6 +481,7 @@ export async function loader({ request, params }) {
     verticalHelp,
     days,
     perf,
+    surfaceEngagement,
     variants,
     triggerPerformance: Object.values(triggerPerformance).sort((a, b) => b.decided - a.decided),
     recentDecisions: recentDecisions.map((decision) => ({
@@ -828,7 +858,7 @@ function DecisionLog({ decisions, mode, now }) {
 
 export default function AdminShopDetail() {
   const {
-    shop, live, liveSettings, aiRange, days, perf, variants,
+    shop, live, liveSettings, aiRange, days, perf, surfaceEngagement, variants,
     triggerPerformance, recentDecisions, auditEntries, now,
     VERTICAL_OPTIONS, verticalHelp,
   } = useLoaderData();
@@ -999,6 +1029,25 @@ export default function AdminShopDetail() {
                   value={`$${fmtNum(perf.profit, { maximumFractionDigits: 0 })}`}
                 />
               </InlineGrid>
+            </Card>
+            {/* Which surface the shopper said yes on. "Clicks" above counts the
+                offer once however it was accepted; this splits it, so a merchant
+                asking whether anyone uses the mini-cart line has an answer. */}
+            <Card>
+              <BlockStack gap="300">
+                <Text as="h3" variant="headingMd">
+                  Where they accepted
+                </Text>
+                <Text as="p" tone="subdued" variant="bodySm">
+                  Accepts from the journey log over the same {days} days. One offer can
+                  only be accepted once, so these sum to the offers taken, not to clicks.
+                </Text>
+                <InlineGrid columns={3} gap="400">
+                  {surfaceEngagement.map((row) => (
+                    <StatCell key={row.surface} label={row.label} value={fmtNum(row.count)} />
+                  ))}
+                </InlineGrid>
+              </BlockStack>
             </Card>
             <Card>
               <InlineGrid columns={4} gap="400">

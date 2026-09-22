@@ -243,6 +243,29 @@
     try { return localStorage.getItem('resparqVisitorId'); } catch (_) { return null; }
   }
 
+  // Count a pill redeem as a click on the impression that carried the offer.
+  // The pill is the late half of the same offer the modal opened with, and it
+  // posts the same endpoint the modal CTA does — without this, a shopper who
+  // ignored the modal and redeemed from the pill showed up as zero clicks.
+  function sendClickEvent(offer, surface) {
+    try {
+      if (isResparqTestMode()) return;
+      if (new URLSearchParams(window.location.search).get('resparqPreview')) return;
+      if (!offer || !offer.impressionId) return;
+      fetch('/apps/exit-intent/api/track-click', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({
+          impressionId: offer.impressionId,
+          buttonType: 'primary',
+          surface,
+          visitorId: getVisitorId()
+        })
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   function sendJourneyEvent(payload) {
     try {
       if (isResparqTestMode()) return;
@@ -514,6 +537,7 @@
         aiDecisionId: offer.aiDecisionId || null,
         discountCode: offer.code
       });
+      sendClickEvent(offer, 'pill');
       window.location.replace(`/discount/${encodeURIComponent(offer.code)}?redirect=/checkout`);
     };
 
@@ -3741,6 +3765,7 @@
             body: JSON.stringify({
               impressionId: this.currentImpressionId,
               buttonType: 'primary',
+              surface: 'modal',
               visitorId: getVisitorId()
             })
           });
@@ -3892,6 +3917,7 @@
             body: JSON.stringify({
               impressionId: this.currentImpressionId,
               buttonType: 'secondary',
+              surface: 'modal',
               visitorId: getVisitorId()
             })
           });

@@ -146,12 +146,44 @@
     return false;
   }
 
+  // Merchant self-test and QA preview traffic never reports anything.
+  function isTestOrPreview() {
+    try {
+      if (sessionStorage.getItem('resparqTestMode') === '1') return true;
+      if (new URLSearchParams(window.location.search).get('resparqPreview')) return true;
+    } catch (_) {}
+    return false;
+  }
+
+  // Count an Apply on a cart surface as a click on the impression that carried
+  // the offer. The modal posts the same endpoint from its own CTA; the cart
+  // line is the late half of the same offer, so the dashboard's click count
+  // has to include it. keepalive because this fires as we navigate away.
+  function sendClickEvent(offer, surface) {
+    try {
+      if (isTestOrPreview()) return;
+      if (!offer || !offer.impressionId) return;
+      let visitorId = null;
+      try { visitorId = localStorage.getItem('resparqVisitorId'); } catch (_) {}
+      fetch('/apps/exit-intent/api/track-click', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({
+          impressionId: offer.impressionId,
+          buttonType: 'primary',
+          surface,
+          visitorId
+        })
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   // test mode and preview never report. Once-per-key dedup via sessionStorage
   // so re-mounting surfaces on navigation doesn't flood the journal.
   function sendJourneyEvent(payload, onceKey) {
     try {
-      if (sessionStorage.getItem('resparqTestMode') === '1') return;
-      if (new URLSearchParams(window.location.search).get('resparqPreview')) return;
+      if (isTestOrPreview()) return;
       let visitorId = null;
       try { visitorId = localStorage.getItem('resparqVisitorId'); } catch (_) {}
       if (!visitorId) return;
@@ -630,6 +662,21 @@
     // text-only inline line instead of a full banner.
     // ============================================================
 
+    // The modal treats the DEFAULT brand accent (#f59e0b, what every shop
+    // starts with) as "unset" and renders its CTA in the theme's own button
+    // color — black on most storefronts. The cart surfaces read
+    // offer.accentColor raw, so an untouched shop got an amber Apply button
+    // moments after a black modal CTA. Mirror the modal's rule: a genuinely
+    // customized accent wins, otherwise follow the theme like the modal does.
+    offerCtaColors(offer) {
+      const t = this.getThemeTokens();
+      const accent = (offer.accentColor || '').trim();
+      const customized = accent && accent.toLowerCase() !== '#f59e0b';
+      return customized
+        ? { background: accent, text: '#ffffff' }
+        : { background: t.primary, text: t.primaryText };
+    }
+
     // Mirrors buildPillHeadline in exit-intent-modal.js. This surface usually
     // follows a dismissal, but it reads the same sessionStorage record the
     // pill writes — and the AI can open with a pill instead of a modal, in
@@ -678,6 +725,7 @@
         aiDecisionId: offer.aiDecisionId || null,
         discountCode: offer.code
       });
+      sendClickEvent(offer, 'cart_banner');
       window.location.replace(`/discount/${encodeURIComponent(offer.code)}?redirect=/checkout`);
     }
 
@@ -685,7 +733,8 @@
       const existing = document.getElementById('exit-intent-flat-cart-banner');
       if (existing) return;
 
-      const accent = offer.accentColor || '#111827';
+      const cta = this.offerCtaColors(offer);
+      const t = this.getThemeTokens();
       const font = offer.brandFont || 'inherit';
 
       // Find a sensible mount point near the top of the cart
@@ -733,14 +782,17 @@
 
       const label = document.createElement('span');
       label.textContent = this.buildFlatOfferLabel(offer);
-      label.style.cssText = 'flex: 1; min-width: 0;';
+      // Bold and in the theme's text color: this is the only thing telling the
+      // shopper their discount is still on the table, and at inherited weight
+      // it read as fine print next to the checkout button.
+      label.style.cssText = `flex: 1; min-width: 0; font-size: 15px; font-weight: 700; color: ${t.foreground};`;
 
       const applyBtn = document.createElement('button');
       applyBtn.type = 'button';
       applyBtn.textContent = 'Apply';
       applyBtn.style.cssText = `
-        background: ${accent};
-        color: #ffffff;
+        background: ${cta.background};
+        color: ${cta.text};
         border: none;
         padding: 10px 18px;
         border-radius: ${checkoutStyle?.borderRadius || '6px'};
@@ -769,7 +821,8 @@
       const existingId = 'exit-intent-flat-minicart-line';
       if (miniCart.querySelector(`#${existingId}`)) return;
 
-      const accent = offer.accentColor || '#111827';
+      const cta = this.offerCtaColors(offer);
+      const t = this.getThemeTokens();
       const font = offer.brandFont || 'inherit';
       const crowded = detectCompetingPromos(miniCart);
       const checkoutStyle = cloneCheckoutButtonStyle(miniCart);
@@ -812,20 +865,20 @@
 
       const label = document.createElement('span');
       label.textContent = this.buildFlatOfferLabel(offer);
-      label.style.cssText = 'flex: 1 1 auto; min-width: 0; line-height: 1.3; font-weight: 500;';
+      label.style.cssText = `flex: 1 1 auto; min-width: 0; line-height: 1.3; font-size: 14px; font-weight: 700; color: ${t.foreground};`;
 
       const applyBtn = document.createElement('button');
       applyBtn.type = 'button';
       applyBtn.textContent = 'Apply';
       applyBtn.style.cssText = `
-        background: ${accent};
-        color: #ffffff;
+        background: ${cta.background};
+        color: ${cta.text};
         border: none;
-        padding: 9px 16px;
+        padding: 10px 18px;
         border-radius: ${checkoutStyle?.borderRadius || '6px'};
         font-family: ${checkoutStyle?.fontFamily || font};
-        font-weight: ${checkoutStyle?.fontWeight || '600'};
-        font-size: 12px;
+        font-weight: ${checkoutStyle?.fontWeight || '700'};
+        font-size: 13px;
         letter-spacing: ${checkoutStyle?.letterSpacing || 'normal'};
         text-transform: ${checkoutStyle?.textTransform || 'none'};
         cursor: pointer;

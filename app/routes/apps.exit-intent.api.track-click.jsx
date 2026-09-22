@@ -14,11 +14,17 @@ export async function action({ request }) {
 
   try {
     const { admin, session } = await authenticate.public.appProxy(request);
-    const { impressionId, buttonType, visitorId } = await request.json();
+    const { impressionId, buttonType, visitorId, surface } = await request.json();
 
     if (!impressionId) {
       return json({ error: "Missing impressionId" }, { status: 400 });
     }
+
+    // Which surface the shopper clicked. The offer outlives the modal — the
+    // pill and the cart/mini-cart line carry the SAME impressionId, and a
+    // click on either is a click on that impression. Without this they only
+    // wrote a VisitorTouch row and the dashboard's click count stayed at 0.
+    const clickSurface = surface === 'pill' || surface === 'cart_banner' ? surface : 'modal';
 
     // Import the recordClick function
     const { recordClick } = await import('../utils/variant-engine.js');
@@ -27,11 +33,14 @@ export async function action({ request }) {
     // Note: buttonType is logged below but not persisted — no schema field.
     const impression = await recordClick(impressionId);
 
-    console.log(`[Click Tracking] Recorded ${buttonType} click for impression ${impressionId}`);
+    console.log(`[Click Tracking] Recorded ${buttonType} click on ${clickSurface} for impression ${impressionId}`);
 
     // Journey log: CTA click. Written here (authenticated, impression-backed)
     // rather than the public journey endpoint so a browser can't forge clicks.
-    if (visitorId && impression) {
+    // Only for the modal — the pill and cart surfaces already report their own
+    // redeem/apply touch through the journey endpoint, and a second row here
+    // would double-count the same action in the journey.
+    if (visitorId && impression && clickSurface === 'modal') {
       const { isLearningWriteSkipped } = await import('../utils/dev-shop-guard.server.js');
       if (!isLearningWriteSkipped({ shopDomain: session.shop })) {
         const { recordTouch } = await import('../utils/journey.server.js');
