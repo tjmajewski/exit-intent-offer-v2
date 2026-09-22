@@ -3,6 +3,7 @@
 // Builds network intelligence for new stores
 
 import db from '../db.server.js';
+import { meetsPublishGate } from '../utils/meta-learning-gate.js';
 
 /**
  * Aggregate gene performance across all stores
@@ -117,7 +118,32 @@ export async function aggregateGenePerformance() {
     for (const [geneType, genes] of Object.entries(geneAggregates)) {
       for (const [geneValue, agg] of Object.entries(genes)) {
         const storeCount = agg.storeCount.size;
-        if (storeCount < minStores && agg.totalImpressions < 100) continue;
+        // HANDOFF-2026-09-19 §5.1. This was
+        //   `if (storeCount < minStores && agg.totalImpressions < 100) continue;`
+        // which skips only when BOTH bars fail — i.e. it published whenever
+        // EITHER bar passed. One store with 100+ impressions on a gene
+        // published its merchant-authored copy and absolute revenue dollars
+        // into the cross-store pool at sampleSize: 1.
+        //
+        // Now both bars must clear. This is also STRICTER than before for
+        // cluster rows (minStores 2), which now need >= 100 pooled impressions
+        // as well. It means cluster priors populate later than the old code
+        // implied. Do not "fix" that back.
+        //
+        // THIS DOES NOT MEET §5's ENVELOPE, and §5.1 is not "closed" by it.
+        // §5 asks for aggregate ratios over k>=5 stores with BOUNDED per-store
+        // weight, and forbids absolute per-store revenue crossing a boundary.
+        // What landed is k>=3, unbounded per-store weight, and `totalRevenue` /
+        // `avgProfitPerImpression` are still written below as summed absolute
+        // dollars. Three stores at 98/1/1 impressions clear both bars and the
+        // published revenue figure is ~98% one store's — the same subtraction
+        // attack §5 item 3 flags at k=2.
+        //
+        // What IS closed: the k=1 leak, and with it the merchant-copy leak —
+        // a headline unique to one merchant can never reach storeCount >= 3.
+        // The remaining work is k>=5, per-store weight bounding, and dropping
+        // absolute dollars from the published row.
+        if (!meetsPublishGate(storeCount, agg.totalImpressions, minStores)) continue;
 
         const avgCVR = agg.totalImpressions > 0 ? agg.totalConversions / agg.totalImpressions : 0;
         const avgProfit = agg.totalImpressions > 0 ? agg.totalRevenue / agg.totalImpressions : 0;

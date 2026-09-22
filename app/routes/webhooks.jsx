@@ -1,5 +1,9 @@
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import {
+  SHOP_SCOPED_TABLES_WITHOUT_FK,
+  shopScopedInsightFilter
+} from "../utils/redaction-scope.js";
 
 /**
  * GDPR Compliance Webhooks Handler
@@ -208,6 +212,31 @@ async function handleShopRedact(shop) {
 
   const deletedSessions = await db.session.deleteMany({ where: { shop } });
   console.log(`Deleted ${deletedSessions.count} sessions`);
+
+  // Tables that carry a shopId STRING with NO foreign key to Shop.
+  //
+  // HANDOFF-2026-09-19 §5.6. Because there is no FK, Postgres raised nothing,
+  // `db.shop.delete` below succeeded, and this handler logged a clean success
+  // while every one of these rows survived — the exact failure shape the
+  // comment at the FK block above describes, one class over. `VisitorTouch` is
+  // the one that matters most: it holds a durable per-shopper `visitorId`
+  // (the localStorage `resparqVisitorId`), which is the most identifying thing
+  // the app stores.
+  //
+  // See app/utils/redaction-scope.js for why AdminAuditLog is included and for
+  // the one residual this does NOT clear.
+  for (const table of SHOP_SCOPED_TABLES_WITHOUT_FK) {
+    const deleted = await db[table].deleteMany({ where: { shopId: shopRecord.id } });
+    console.log(`Deleted ${deleted.count} ${table} rows`);
+  }
+
+  // MetaLearningInsights has no shopId column — two writers encode the shop
+  // into `segment` as `${shopId}::<suffix>`. Scoped by insightType as well so
+  // genuinely global rows (generated copy, cluster priors) are never swept up.
+  const deletedInsights = await db.metaLearningInsights.deleteMany({
+    where: shopScopedInsightFilter(shopRecord.id)
+  });
+  console.log(`Deleted ${deletedInsights.count} shop-scoped meta-learning insights`);
 
   // Finally delete the shop record
   await db.shop.delete({

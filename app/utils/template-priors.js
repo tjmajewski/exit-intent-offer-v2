@@ -19,6 +19,8 @@
 // own data the score is driven entirely by meta (or a global default), so a
 // cold-start shop still benefits from the network without over-committing.
 
+import { MIN_META_STORES } from './meta-learning-gate.js';
+
 // Lookback for own-shop impressions.
 const WINDOW_DAYS = 30;
 
@@ -83,10 +85,21 @@ export async function computeTemplatePriors(prisma, shopId, ctx = {}) {
   }
 
   // ---- Level 3: cross-store meta-learning for this baseline ----
+  //
+  // HANDOFF-2026-09-19 §5.2: this read had NO sampleSize gate, while the other
+  // reader of the same table (variant-engine.js, gene inheritance) requires
+  // >= 3 stores. A
+  // k=1 row — one store's data — therefore reached another merchant's runtime
+  // sampling through this path only. Same bar as the writer and the sibling
+  // reader now, from one shared constant so the three cannot drift.
   const meta = new Map(); // templateId → { rate, n }
   if (baseline) {
     const metaRows = await prisma.metaLearningGene.findMany({
-      where: { baseline, geneType: 'templateId' },
+      where: {
+        baseline,
+        geneType: 'templateId',
+        sampleSize: { gte: MIN_META_STORES }
+      },
       select: { geneValue: true, avgCVR: true, totalImpressions: true }
     });
     for (const m of metaRows) {

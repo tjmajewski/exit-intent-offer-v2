@@ -10,6 +10,7 @@ import { computeTemplatePriors, getTemplateMultiplier } from './template-priors.
 import { blendWithPrior } from './cluster-priors.server.js';
 import { deviceKeyFromSegmentKey } from './segment-key.js';
 import { maybeGeneratedGene } from './generated-copy.server.js';
+import { MIN_META_STORES } from './meta-learning-gate.js';
 
 // ---------------------------------------------------------------------------
 // Per-cell variant stats (phase 5). Every impression/click/conversion bumps
@@ -334,7 +335,7 @@ export async function seedInitialPopulation(shopId, baseline, segment = 'all') {
     const { vertical, aovBand } = shopClusterDims(shop);
     const baseGeneWhere = {
       baseline: baseline,
-      sampleSize: { gte: 3 }, // At least 3 stores used this gene
+      sampleSize: { gte: MIN_META_STORES }, // At least 3 stores used this gene
       confidenceLevel: { gte: 0.7 }, // 70%+ confidence
       avgProfitPerImpression: { gt: 0 }
     };

@@ -2,6 +2,7 @@ import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { createPercentageDiscount, createFixedDiscount, createThresholdDiscount, getDiscountCodeDetails } from "../utils/discount-codes";
 import { offerTypeForBaseline } from "../utils/baseline-selector.js";
+import { hasPromoActive, normalisePromoInCart } from "../utils/promo-detect.js";
 import { getMetaInsight, shouldUseMetaLearning } from "../utils/meta-learning.js";
 import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
 import { composeSegmentKey } from "../utils/segment-key.js";
@@ -438,8 +439,24 @@ export async function action({ request }) {
     // Enterprise site-wide promo intelligence adjusts/pauses aggression for
     // margin. Skipped in Hybrid: the merchant deliberately pinned the offer and
     // Resparq honors it (spec §2 #1). isHybrid guards it out.
+    // Hoisted out of the Enterprise block so the tier-agnostic stacking guard
+    // below (§1.3) can CONSUME it. Only the consumption is shared — the query
+    // itself is still inside the Enterprise guard below, so for a Pro shop
+    // activePromo is always null.
+    //
+    // And it is null for EVERY shop on every plan today: the only writer of the
+    // Promotion table is webhooks.discounts.create.jsx, and `discounts/create`
+    // is not among the subscriptions in shopify.app.toml — so the topic never
+    // arrives and the table is never populated. The `shopPromotion` limb of
+    // hasPromoActive is therefore currently unreachable and the guard rests
+    // entirely on the client-reported promoInCart signal.
+    //
+    // The hoist is kept because subscribing `discounts/create` (no re-auth —
+    // write_discounts already covers it) then makes this a one-line change
+    // instead of a re-plumb. See scripts/ops/promo-guard-preflight.mjs.
+    let activePromo = null;
     if (isEnterprisePlan && !isTestMode && !isHybrid) {
-      const activePromo = await db.promotion.findFirst({
+      activePromo = await db.promotion.findFirst({
         where: {
           shopId: shopRecord.id,
           status: "active",
@@ -625,6 +642,29 @@ export async function action({ request }) {
     const { selectVariantForImpression, getLiveVariants, seedInitialPopulation, recordImpression } =
       await import('../utils/variant-engine.js');
 
+    // HANDOFF-2026-09-19 §1.3 — the promo-stacking guard.
+    //
+    // selectBaseline has always had a "site-wide promo is running, use the
+    // no-discount pools" branch (baseline-selector.js:143). It has never once
+    // executed, because `signals.hasPromoActive` was read in two places and
+    // written in none. A Pro merchant running 20% site-wide had Resparq stack
+    // on top of it, every code being minted `combinesWith: all`.
+    //
+    // This is the missing writer, and it is DETECTION only — see
+    // promo-detect.js for why flipping `combinesWith` is the wrong lever and
+    // can make the shopper pay MORE.
+    //
+    // Computed HERE and not at its old site further down, because selectBaseline
+    // is called ~160 lines before that and this is the only consumer that has
+    // to run first.
+    const resolvedPromoInCart = normalisePromoInCart(signals);
+    signals.hasPromoActive = hasPromoActive({
+      promoInCart: resolvedPromoInCart,
+      shopPromotion: activePromo,
+      isTestMode,
+      isHybrid
+    });
+
     // Step 1: Determine which baseline to use (revenue/conversion × discount/no-discount)
     let baseline = selectBaseline(signals, aiGoal);
 
@@ -784,7 +824,7 @@ export async function action({ request }) {
     // at runtime (not just visible on the dashboard).
     const triggerReason = preScore?.triggerReason || 'general';
     const resolvedPageType = signals.pageType || signals.exitPage || null;
-    const resolvedPromoInCart = signals.promoInCart === true;
+    // resolvedPromoInCart is computed above, before selectBaseline — see §1.3.
     const resolvedCartSubscription =
       (signals.cartSubscription === 'mixed' || signals.cartSubscription === 'all')
         ? signals.cartSubscription
