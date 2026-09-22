@@ -127,12 +127,22 @@ export function normalizeVertical(v) {
 }
 
 /**
- * The shop's effective cluster dimensions: derived fields win, self-report
- * is the fallback for vertical.
+ * The shop's effective cluster dimensions.
+ *
+ * `storeVertical` WINS over `derivedVertical`. It used to be the other way
+ * round, on the reasoning that a merchant's self-report is less trustworthy
+ * than the catalog — but nothing merchant-facing has ever written that field.
+ * Its only writer is the super-admin console, which makes it an operator
+ * override, and an override that loses to the thing it is overriding is not
+ * one. A store the keyword table gets wrong had no way to be corrected.
+ *
+ * Still normalized through the vocabulary, so a value typed before the field
+ * became a dropdown ("Wigs", "hair") still resolves rather than silently
+ * matching nothing.
  */
 export function shopClusterDims(shop) {
   return {
-    vertical: shop?.derivedVertical || normalizeVertical(shop?.storeVertical),
+    vertical: normalizeVertical(shop?.storeVertical) || shop?.derivedVertical || null,
     aovBand: shop?.aovBand || null
   };
 }

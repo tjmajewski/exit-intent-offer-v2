@@ -41,14 +41,17 @@ describe('the margin table', () => {
 });
 
 describe('grossMarginForShop', () => {
-  test('prefers the derived vertical over the self-reported one', () => {
+  test('prefers the operator override over the derived vertical', () => {
+    // Reversed deliberately — see shopClusterDims. storeVertical's only writer
+    // is the super-admin console, so it is an override, and an override that
+    // loses to the thing it overrides is not one.
     const shop = { derivedVertical: 'electronics', storeVertical: 'beauty' };
-    assert.equal(grossMarginForShop(shop), GROSS_MARGIN_BY_VERTICAL.electronics);
+    assert.equal(grossMarginForShop(shop), GROSS_MARGIN_BY_VERTICAL.beauty);
   });
 
-  test('falls back to the self-reported vertical when nothing is derived', () => {
+  test('uses the derived vertical when no override is set', () => {
     assert.equal(
-      grossMarginForShop({ derivedVertical: null, storeVertical: 'jewelry' }),
+      grossMarginForShop({ derivedVertical: 'jewelry', storeVertical: null }),
       GROSS_MARGIN_BY_VERTICAL.jewelry
     );
   });
@@ -116,5 +119,35 @@ describe('what the prior actually changes at the guard', () => {
     // Above ~50% margin the merchant's own dial binds, not the margin. A
     // generous prior therefore cannot run away with the discount.
     assert.equal(ceiling(0.65), ceiling(0.95));
+  });
+});
+
+describe('the operator override wins', () => {
+  test('a super-admin vertical beats the cron keyword vote', async () => {
+    const { shopClusterDims } = await import('../app/utils/store-cluster.server.js');
+    // The point of an override. This used to return 'other' — the field
+    // existed in the console and was silently ignored once the cron ran.
+    const shop = { storeVertical: 'beauty', derivedVertical: 'other' };
+    assert.equal(shopClusterDims(shop).vertical, 'beauty');
+    assert.equal(grossMarginForShop(shop), GROSS_MARGIN_BY_VERTICAL.beauty);
+  });
+
+  test('auto-derive still applies when no override is set', async () => {
+    const { shopClusterDims } = await import('../app/utils/store-cluster.server.js');
+    const shop = { storeVertical: null, derivedVertical: 'electronics' };
+    assert.equal(shopClusterDims(shop).vertical, 'electronics');
+  });
+
+  test('free text typed before the field became a dropdown still resolves', async () => {
+    const { shopClusterDims } = await import('../app/utils/store-cluster.server.js');
+    for (const typed of ['Wigs', 'hair', 'BEAUTY']) {
+      assert.equal(shopClusterDims({ storeVertical: typed }).vertical, 'beauty', `"${typed}"`);
+    }
+  });
+
+  test('an unrecognisable override falls through instead of blanking the vertical', async () => {
+    const { shopClusterDims } = await import('../app/utils/store-cluster.server.js');
+    const shop = { storeVertical: 'asdfgh', derivedVertical: 'beauty' };
+    assert.equal(shopClusterDims(shop).vertical, 'beauty');
   });
 });

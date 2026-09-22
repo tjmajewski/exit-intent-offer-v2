@@ -49,6 +49,12 @@ import {
   relativeTime,
 } from "../components/admin/decision-summary.js";
 import db from "../db.server.js";
+import {
+  VERTICALS,
+  GROSS_MARGIN_BY_VERTICAL,
+  DEFAULT_GROSS_MARGIN,
+  grossMarginForShop
+} from "../utils/store-cluster.server.js";
 import { getShopMetrics } from "../utils/shop-metrics.server.js";
 import { offerCeilingPercent } from "../utils/ai-decision.server.js";
 
@@ -398,7 +404,10 @@ export async function loader({ request, params }) {
   if (liveSettings?.mode === "ai") {
     const args = {
       aggression: liveSettings.aggression ?? 5,
-      assumedGrossMargin: liveSettings.assumedGrossMargin ?? 0.4,
+      // The engine infers this from the shop's vertical (no merchant-entered
+      // value exists). Quoting a flat 0.4 here made the console disagree with
+      // what the storefront actually serves.
+      assumedGrossMargin: grossMarginForShop(shop, liveSettings.assumedGrossMargin),
     };
     let max = 0;
     let announceAbove = null;
@@ -410,11 +419,37 @@ export async function loader({ request, params }) {
     aiRange = { max, announceAbove };
   }
 
+  // The vertical drives the gross margin the whole margin guard runs on, and
+  // an operator override beats the cron's keyword vote. Built here rather than
+  // in the component because store-cluster is a server-only module.
+  //
+  // Ordered by margin, not alphabetically, so the list reads as the gradient
+  // it actually is. The blank option means "let the cron decide", which is
+  // right for almost every store.
+  const VERTICAL_OPTIONS = [
+    { label: "Auto-derive (no override)", value: "" },
+    ...[...VERTICALS]
+      .sort((a, b) =>
+        (GROSS_MARGIN_BY_VERTICAL[b] ?? DEFAULT_GROSS_MARGIN) -
+        (GROSS_MARGIN_BY_VERTICAL[a] ?? DEFAULT_GROSS_MARGIN))
+      .map((v) => ({
+        label: `${v} — ${((GROSS_MARGIN_BY_VERTICAL[v] ?? DEFAULT_GROSS_MARGIN) * 100).toFixed(0)}% margin`,
+        value: v
+      }))
+  ];
+  const verticalHelp = [
+    shop.derivedVertical ? `Auto-derived: ${shop.derivedVertical}` : "Auto-derive has not classified this store",
+    `Gross margin in use: ${(grossMarginForShop(shop) * 100).toFixed(0)}%`,
+    "An override here wins over auto-derive."
+  ].join(" · ");
+
   return {
     shop,
     live,
     liveSettings,
     aiRange,
+    VERTICAL_OPTIONS,
+    verticalHelp,
     days,
     perf,
     variants,
@@ -795,9 +830,12 @@ export default function AdminShopDetail() {
   const {
     shop, live, liveSettings, aiRange, days, perf, variants,
     triggerPerformance, recentDecisions, auditEntries, now,
+    VERTICAL_OPTIONS, verticalHelp,
   } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
+
+
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab") || "plan";
   const tabs = [
@@ -1209,13 +1247,13 @@ export default function AdminShopDetail() {
                       checked={Boolean(form.promotionalIntelligenceEnabled)}
                       onChange={set("promotionalIntelligenceEnabled")}
                     />
-                    <TextField
+                    <Select
                       label="Store vertical"
                       name="storeVertical"
                       value={form.storeVertical || ""}
                       onChange={set("storeVertical")}
-                      placeholder="fashion, electronics, …"
-                      autoComplete="off"
+                      options={VERTICAL_OPTIONS}
+                      helpText={verticalHelp}
                     />
                   </InlineGrid>
                 </BlockStack>
