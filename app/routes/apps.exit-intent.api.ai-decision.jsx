@@ -41,7 +41,7 @@ export async function action({ request }) {
   if (limited) return limited;
 
   const { default: db } = await import("../db.server.js");
-  const { decideOffer, checkBudget, offerCeilingPercent, recommendedThreshold, capThresholdByDiscount, subShareFromSignals } = await import("../utils/ai-decision.server.js");
+  const { decideOffer, checkBudget, offerCeilingPercent, recommendedThreshold, capThresholdByDiscount, subShareFromSignals, roundToNiceNumber } = await import("../utils/ai-decision.server.js");
   try{
     const { admin } = await authenticate.public.appProxy(request);
     const { shop, signals, testMode } = await request.json();
@@ -951,14 +951,34 @@ export async function action({ request }) {
           }
         }
       } else if (servedOfferType === 'fixed') {
-        // The ceiling is a PERCENTAGE but this pool's amounts are DOLLARS, so
-        // the two are not comparable until the ceiling is converted against
-        // the cart. Without this, a $20 gene compared against a ceiling of 17
-        // would be capped to "$17" — a number that means nothing here and that
-        // happens to exceed the margin on a small cart.
-        const maxDollars = Math.floor((signals.cartValue || 0) * ceilingPct / 100);
+        // The gene is read as a dollar floor AND a percent of the cart,
+        // whichever is larger.
+        //
+        // It used to be dollars only. The pool ([5,10,15,20]) was sized for
+        // ~$100 carts, so on a store with a $1,175 median cart every visitor
+        // in this lane was offered $5-$16 — 0.4%-1.4% — while the visitor
+        // beside them, split into the PERCENT lane by nothing but a visitorId
+        // hash, got 20% ($235). Two arms the bandit is supposed to compare
+        // were 15x apart in value, and the merchant's aggression dial could
+        // not move the dollar one: the aggression cap chops the gene to $16
+        // before the margin ceiling (which would have allowed $235) is ever
+        // consulted.
+        //
+        // Reading the gene as a percent when that is the bigger number fixes
+        // the scaling without breaking small-cart stores, which keep today's
+        // behavior exactly (on a $30 cart, gene 5 is still $5, not $1.50).
+        // Nice-rounded because "$60 off" is an offer and "$58.75 off" is a
+        // rounding artifact. The margin ceiling below still binds last.
+        const cv = signals.cartValue || 0;
+        const scaledDollars = roundToNiceNumber(cv * cappedOfferAmount / 100);
+        if (scaledDollars > cappedOfferAmount) {
+          console.log(`[Fixed Scaling] Gene ${cappedOfferAmount} read as ${cappedOfferAmount}% of $${cv} → $${scaledDollars}`);
+          cappedOfferAmount = scaledDollars;
+        }
+
+        const maxDollars = Math.floor(cv * ceilingPct / 100);
         if (cappedOfferAmount > maxDollars) {
-          console.log(`[Margin Guard] Capping fixed discount from $${cappedOfferAmount} to $${maxDollars} (ceiling ${ceilingPct}% of $${signals.cartValue}, P=${signals.propensityScore})`);
+          console.log(`[Margin Guard] Capping fixed discount from $${cappedOfferAmount} to $${maxDollars} (ceiling ${ceilingPct}% of $${cv}, P=${signals.propensityScore})`);
           cappedOfferAmount = Math.max(maxDollars, 0);
           if (cappedOfferAmount === 0) {
             // A dollars-off offer on a cart small enough that the percentage
@@ -967,7 +987,7 @@ export async function action({ request }) {
             suppress(
               'limit',
               'fixed_offer_floored',
-              `A dollars-off offer on a $${signals.cartValue} cart floors to $0 at a ${ceilingPct}% ceiling`
+              `A dollars-off offer on a $${cv} cart floors to $0 at a ${ceilingPct}% ceiling`
             );
           }
         }

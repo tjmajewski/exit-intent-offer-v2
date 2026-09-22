@@ -181,7 +181,7 @@ function analyzeCartComposition(signals) {
 }
 
 // Round to psychologically appealing numbers
-function roundToNiceNumber(value) {
+export function roundToNiceNumber(value) {
   if (value <= 15) return Math.round(value);
   if (value < 50) return Math.round(value / 5) * 5;
   if (value < 200) return Math.round(value / 10) * 10;

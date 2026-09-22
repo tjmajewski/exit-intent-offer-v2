@@ -225,11 +225,14 @@ export const genePools = {
   // $400 one). The bandit picks between them per segment instead of us
   // guessing.
   //
-  // offerAmounts here are DOLLARS, unlike PERCENT_DISCOUNT where they are
-  // percent. The storefront formats {{amount}} as currency whenever
-  // decision.type is 'fixed' (see amountTextFor in exit-intent-modal.js), and
-  // the margin guard converts its percentage ceiling into dollars before
-  // clamping — see the fixed branch in the decision endpoint.
+  // offerAmounts here are served as DOLLARS, unlike PERCENT_DISCOUNT where
+  // they are percent — but the gene is read as a dollar floor AND a percent of
+  // the cart, whichever is larger. A flat dollar pool does not scale: [5..20]
+  // is a real offer on a $100 cart and noise on a $1,175 one. See the fixed
+  // branch in the decision endpoint for why. The storefront formats {{amount}}
+  // as currency whenever decision.type is 'fixed' (see amountTextFor in
+  // exit-intent-modal.js), and the margin guard converts its percentage
+  // ceiling into dollars before clamping, last.
   conversion_with_discount_fixed: {
     archetypeName: 'FIXED_DISCOUNT',
     archetypeDescription: 'Convert hesitant cart via flat $ off discount code',
