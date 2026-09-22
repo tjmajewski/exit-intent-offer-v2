@@ -269,6 +269,56 @@
   const OFFER_PILL_ID = 'exit-intent-offer-pill';
   const PILL_OFFER_KEY = 'exitIntentPendingOffer';
   const PILL_DISMISSED_KEY = 'exitIntentPillDismissed';
+
+  // ============================================================
+  // PENDING-OFFER STORAGE — localStorage, not sessionStorage.
+  //
+  // The modal tells the shopper their code "expires in 24 hours" and the
+  // DiscountOffer row genuinely carries a 24h expiry, but the pending offer
+  // used to live in sessionStorage, which is destroyed the moment the tab
+  // closes. Both readers already checked a 24h window and neither could ever
+  // reach it. A mobile shopper who saw a $45 offer, closed the tab and came
+  // back that evening had a valid code and no surface anywhere that would
+  // offer it back to them — and with no email capture, nothing to recover it.
+  //
+  // localStorage makes the promise true. Every access is wrapped: Safari
+  // private mode throws on write, and a blocked store must lose the offer
+  // rather than break the page.
+  // ============================================================
+  const offerStore = {
+    read(key) {
+      try { return localStorage.getItem(key); } catch (_) {}
+      // Storage blocked (private mode, embedded webview). Fall back to the
+      // session so the offer still survives navigation within this tab.
+      try { return sessionStorage.getItem(key); } catch (_) { return null; }
+    },
+    write(key, value) {
+      try { localStorage.setItem(key, value); return; } catch (_) {}
+      try { sessionStorage.setItem(key, value); } catch (_) {}
+    },
+    remove(key) {
+      try { localStorage.removeItem(key); } catch (_) {}
+      try { sessionStorage.removeItem(key); } catch (_) {}
+    }
+  };
+
+  /**
+   * Has this offer outlived its code?
+   *
+   * Prefers the server's real expiry (DiscountOffer.expiresAt, carried through
+   * the decision) and falls back to 24h from when it was stored, which is what
+   * a generic code with no expiry gets. Returns true for anything unreadable,
+   * so a malformed record is dropped rather than shown forever.
+   */
+  function offerExpired(offer) {
+    if (!offer) return true;
+    if (offer.expiresAt) {
+      const at = Date.parse(offer.expiresAt);
+      if (!Number.isNaN(at)) return Date.now() >= at;
+    }
+    if (offer.timestamp) return Date.now() - offer.timestamp > 24 * 60 * 60 * 1000;
+    return false;
+  }
   // Opening-surface arm (phase 7a/7b): marker for a pill that opened the
   // session ({ at, escalated, aiDecisionId }) plus the full decision it
   // carried — lets pill→modal escalation survive page navigation.
@@ -279,10 +329,14 @@
   // escalated, pill not dismissed, offer still live.
   function pillOpenerPending() {
     try {
+      // The opener marker stays session-scoped on purpose — "escalate once per
+      // session" is a per-visit rule. The two shared pill keys moved to
+      // localStorage so the offer outlives the tab, and must be read from there
+      // or this gate sees null and escalates over a dismissal.
       const marker = JSON.parse(sessionStorage.getItem(PILL_OPENER_KEY));
       if (!marker || marker.escalated) return false;
-      if (sessionStorage.getItem(PILL_DISMISSED_KEY) === 'true') return false;
-      if (!sessionStorage.getItem(PILL_OFFER_KEY)) return false; // redeemed/expired
+      if (offerStore.read(PILL_DISMISSED_KEY) === 'true') return false;
+      if (!offerStore.read(PILL_OFFER_KEY)) return false; // redeemed/expired
       if (!sessionStorage.getItem(PILL_OPENER_DECISION_KEY)) return false;
       return true;
     } catch (_) {
@@ -399,7 +453,7 @@
     closeBtn.onmouseout = () => { closeBtn.style.color = 'rgba(255,255,255,0.55)'; };
     closeBtn.onclick = (e) => {
       e.stopPropagation();
-      try { sessionStorage.setItem(PILL_DISMISSED_KEY, 'true'); } catch (_) {}
+      offerStore.write(PILL_DISMISSED_KEY, 'true');
       // When this pill OPENED the session (surface arm), dismissing it is the
       // session's "no" — bump the frequency backoff like a modal dismissal.
       // Recovery pills (mounted after a modal dismissal) skip this: the modal
@@ -427,8 +481,8 @@
       // Mark redeemed so the pill doesn't re-mount if the customer
       // bounces back from checkout
       try {
-        sessionStorage.setItem(PILL_DISMISSED_KEY, 'true');
-        sessionStorage.removeItem(PILL_OFFER_KEY);
+        offerStore.write(PILL_DISMISSED_KEY, 'true');
+        offerStore.remove(PILL_OFFER_KEY);
       } catch (_) {}
       try {
         // Test/preview mode never stamps a real cart. Guarded around the stamp
@@ -480,8 +534,8 @@
     // Journey log: pill shown — once per offer, not per page navigation
     // (the pill re-mounts on every page load while the offer is pending).
     try {
-      if (sessionStorage.getItem('exitIntentPillTrackedFor') !== offer.code) {
-        sessionStorage.setItem('exitIntentPillTrackedFor', offer.code);
+      if (offerStore.read('exitIntentPillTrackedFor') !== offer.code) {
+        offerStore.write('exitIntentPillTrackedFor', offer.code);
         sendJourneyEvent({
           surface: 'pill', response: 'shown',
           impressionId: offer.impressionId || null,
@@ -495,14 +549,17 @@
   // Keeps the offer visible as the customer navigates the store.
   function bootPersistedPill() {
     try {
-      if (sessionStorage.getItem(PILL_DISMISSED_KEY) === 'true') return;
-      const raw = sessionStorage.getItem(PILL_OFFER_KEY);
+      if (offerStore.read(PILL_DISMISSED_KEY) === 'true') return;
+      const raw = offerStore.read(PILL_OFFER_KEY);
       if (!raw) return;
       const offer = JSON.parse(raw);
       if (!offer || !offer.code) return;
-      // Drop stale offers (>24h, matches code expiry)
-      if (offer.timestamp && Date.now() - offer.timestamp > 24 * 60 * 60 * 1000) {
-        sessionStorage.removeItem(PILL_OFFER_KEY);
+      // Expired offers are cleared, along with the dismissal that was scoped to
+      // them — otherwise a shopper who dismissed yesterday's pill would never
+      // be shown today's.
+      if (offerExpired(offer)) {
+        offerStore.remove(PILL_OFFER_KEY);
+        offerStore.remove(PILL_DISMISSED_KEY);
         return;
       }
       const mount = () => mountOfferPill(offer);
@@ -2531,8 +2588,8 @@
           // Pill as opener: this is the customer's FIRST sight of the offer.
           const offer = this.buildPendingOfferData({ alreadySeen: false });
           try {
-            sessionStorage.setItem(PILL_OFFER_KEY, JSON.stringify(offer));
-            sessionStorage.removeItem(PILL_DISMISSED_KEY);
+            offerStore.write(PILL_OFFER_KEY, JSON.stringify(offer));
+            offerStore.remove(PILL_DISMISSED_KEY);
             sessionStorage.setItem(PILL_OPENER_KEY, JSON.stringify({
               at: this.pillOpenerAt,
               escalated: false,
@@ -2549,9 +2606,7 @@
           return;
         }
         // Respect an explicit pill dismissal — no escalation over a "no".
-        try {
-          if (sessionStorage.getItem(PILL_DISMISSED_KEY) === 'true') return;
-        } catch (_) {}
+        if (offerStore.read(PILL_DISMISSED_KEY) === 'true') return;
         // Min gap before escalating; then escalate exactly once per session.
         if (Date.now() - this.pillOpenerAt < 60 * 1000) return;
         if (this.pillEscalated) return;
@@ -3462,8 +3517,8 @@
       if (shouldShowPill) {
         const offer = this.buildPendingOfferData();
         try {
-          sessionStorage.setItem(PILL_OFFER_KEY, JSON.stringify(offer));
-          sessionStorage.removeItem(PILL_DISMISSED_KEY);
+          offerStore.write(PILL_OFFER_KEY, JSON.stringify(offer));
+          offerStore.remove(PILL_DISMISSED_KEY);
         } catch (_) {}
         mountOfferPill(offer);
       }
@@ -3494,6 +3549,10 @@
       }
       return {
         code: this.settings.discountCode,
+        // The code's REAL expiry, so a stored offer dies with the code rather
+        // than 24h after it happened to be saved. Null for generic codes,
+        // which never expire and fall back to the 24h rule.
+        expiresAt: this.offerExpiresAt ? this.offerExpiresAt.toISOString() : null,
         accentColor: this.settings.brandAccentColor,
         brandFont: this.settings.brandFont,
         aiDecisionId: this.currentAiDecisionId || null,

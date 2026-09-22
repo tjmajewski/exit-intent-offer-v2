@@ -109,6 +109,43 @@
   }
 
   // Journey log reporter (mirrors exit-intent-modal.js). Fire-and-forget;
+  // ============================================================
+  // PENDING-OFFER STORAGE — must match exit-intent-modal.js exactly.
+  //
+  // These two files are loaded separately and share no module, so the
+  // pending-offer contract is duplicated rather than imported. If the storage
+  // or expiry rule changes in one, it changes in the other or the cart page
+  // stops seeing an offer the pill is still showing.
+  //
+  // localStorage, not sessionStorage: the code is good for 24 hours and the
+  // shopper must still be able to claim it after closing the tab.
+  // ============================================================
+  const offerStore = {
+    read(key) {
+      try { return localStorage.getItem(key); } catch (_) {}
+      try { return sessionStorage.getItem(key); } catch (_) { return null; }
+    },
+    write(key, value) {
+      try { localStorage.setItem(key, value); return; } catch (_) {}
+      try { sessionStorage.setItem(key, value); } catch (_) {}
+    },
+    remove(key) {
+      try { localStorage.removeItem(key); } catch (_) {}
+      try { sessionStorage.removeItem(key); } catch (_) {}
+    }
+  };
+
+  /** Prefers the code's real expiry; falls back to 24h from when it was saved. */
+  function offerExpired(offer) {
+    if (!offer) return true;
+    if (offer.expiresAt) {
+      const at = Date.parse(offer.expiresAt);
+      if (!Number.isNaN(at)) return Date.now() >= at;
+    }
+    if (offer.timestamp) return Date.now() - offer.timestamp > 24 * 60 * 60 * 1000;
+    return false;
+  }
+
   // test mode and preview never report. Once-per-key dedup via sessionStorage
   // so re-mounting surfaces on navigation doesn't flood the journal.
   function sendJourneyEvent(payload, onceKey) {
@@ -219,14 +256,14 @@
      */
     getPendingFlatOffer() {
       try {
-        if (sessionStorage.getItem('exitIntentPillDismissed') === 'true') return null;
-        const raw = sessionStorage.getItem('exitIntentPendingOffer');
+        if (offerStore.read('exitIntentPillDismissed') === 'true') return null;
+        const raw = offerStore.read('exitIntentPendingOffer');
         if (!raw) return null;
         const offer = JSON.parse(raw);
         if (!offer || !offer.code) return null;
-        // 24h expiry matches code TTL
-        if (offer.timestamp && Date.now() - offer.timestamp > 24 * 60 * 60 * 1000) {
-          sessionStorage.removeItem('exitIntentPendingOffer');
+        if (offerExpired(offer)) {
+          offerStore.remove('exitIntentPendingOffer');
+          offerStore.remove('exitIntentPillDismissed');
           return null;
         }
         return offer;
@@ -608,8 +645,10 @@
 
     applyFlatOffer(offer) {
       try {
-        sessionStorage.setItem('exitIntentPillDismissed', 'true');
-        sessionStorage.removeItem('exitIntentPendingOffer');
+        // Through offerStore, or the record survives in localStorage and the
+        // pill re-mounts on the next page for an offer already redeemed.
+        offerStore.write('exitIntentPillDismissed', 'true');
+        offerStore.remove('exitIntentPendingOffer');
         const attrs = { exit_intent: 'true' };
         // Test/preview mode never stamps a real cart — a merchant walking
         // their own storefront would otherwise leave render evidence that a

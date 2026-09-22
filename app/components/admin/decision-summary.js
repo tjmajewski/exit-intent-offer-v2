@@ -223,6 +223,45 @@ const TIMINGS = {
   exit_intent: "on exit intent",
 };
 
+/**
+ * Fill the same placeholders exit-intent-modal.js fills at render time.
+ *
+ * Deliberately a mirror, not a shared module: the storefront asset ships to
+ * Shopify's CDN and imports nothing from the app. If the storefront's
+ * replacement map changes, this changes with it — the alternative is a console
+ * that quietly disagrees with the shopper's screen.
+ *
+ * `{{amount}}` is a bare number for percentage offers (the % lives in the
+ * template) and a currency value otherwise. A placeholder with nothing to fill
+ * it is left standing rather than blanked, so a genuinely broken gene still
+ * looks broken here.
+ */
+function interpolate(text, decision) {
+  if (typeof text !== "string" || !text.includes("{{")) return text;
+  // Number(null) and Number("") are both 0, so a decision with no amount
+  // would render "$0" — a confident wrong number in place of a placeholder
+  // that correctly signals a broken gene. Absent must stay absent.
+  const money = (n) => {
+    if (n == null || n === "") return null;
+    const v = Number(n);
+    if (!Number.isFinite(v)) return null;
+    return `$${v % 1 === 0 ? v : v.toFixed(2)}`;
+  };
+  const amount = decision?.amount;
+  const values = {
+    "{{amount}}": decision?.type === "percentage"
+      ? (amount == null || amount === "" || !Number.isFinite(Number(amount))
+          ? null : String(amount))
+      : money(amount),
+    "{{threshold}}": money(decision?.threshold),
+  };
+  let out = text;
+  for (const [token, value] of Object.entries(values)) {
+    if (value != null) out = out.split(token).join(value);
+  }
+  return out;
+}
+
 function triggerOf(decision, signals) {
   const type = decision.triggerType;
   if (!type) {
@@ -284,10 +323,19 @@ export function summarizeDecision(row) {
     // surface whose entire purpose is to stop the console asserting things
     // that did not happen.
     shownReached: Boolean(row.result?.rendered),
-    // The copy this decision carried. Present whether or not it was displayed.
+    // The copy this decision carried, with placeholders filled in the way the
+    // storefront fills them.
+    //
+    // The console printed the RAW gene under the label "Visitor saw:", so an
+    // operator read `Your {{amount}} discount expires in 24 hours` and
+    // reasonably concluded interpolation was broken in production. It is not —
+    // the storefront substitutes at render — but a console that shows a
+    // template while claiming to show what a shopper saw is manufacturing
+    // false alarms about the one path nobody can observe directly.
     shown: decision.headline
       ? [decision.headline, decision.showSubhead === false ? null : decision.subhead, decision.cta]
           .filter(Boolean)
+          .map(part => interpolate(part, decision))
           .join(" · ")
       : null,
     result: row.result ?? null,
