@@ -41,7 +41,7 @@ export async function action({ request }) {
   if (limited) return limited;
 
   const { default: db } = await import("../db.server.js");
-  const { decideOffer, checkBudget, offerCeilingPercent, recommendedThreshold, capThresholdByDiscount, subShareFromSignals, scaleDollarOffer } = await import("../utils/ai-decision.server.js");
+  const { decideOffer, checkBudget, offerCeilingPercent, recommendedThreshold, capThresholdByDiscount, subShareFromSignals, scaleDollarOffer, maxConditionalDiscount } = await import("../utils/ai-decision.server.js");
   try{
     const { admin } = await authenticate.public.appProxy(request);
     const { shop, signals, testMode } = await request.json();
@@ -936,18 +936,41 @@ export async function action({ request }) {
         cappedOfferAmount = 0;
       } else if (servedOfferType === 'threshold') {
         const thr = recommendedThreshold(signals.cartValue || 0);
-        // Same flat-pool problem as the fixed lane, measured against the
-        // qualifying spend rather than the cart: [10,15,20,25] asked a $1,175
-        // shopper for $100 more to earn $20 back. The ask scaled with the cart
-        // and the reward never did, so the deal decayed to nothing exactly
-        // where the basket was biggest. capThresholdByDiscount below then
-        // re-derives the ask FROM this discount, so a bigger reward buys a
-        // proportionate ask rather than an unbounded one.
-        const scaledThrDollars = scaleDollarOffer(cappedOfferAmount, thr);
-        if (scaledThrDollars > cappedOfferAmount) {
-          console.log(`[Offer Scaling] Threshold gene ${cappedOfferAmount} → $${scaledThrDollars} against a $${thr} qualifying spend`);
+        // Same flat-pool problem as the fixed lane: [10,15,20,25] asked a
+        // $1,150 shopper for $350 more to earn $20 back. The ask scales with
+        // the cart (recommendedThreshold is 1.3x) and the reward never did, so
+        // the deal decayed to nothing exactly where the basket was biggest.
+        //
+        // Scaled against the INCREMENTAL spend, not the qualifying total. A
+        // threshold offer is funded only by the margin on the spend it adds;
+        // sizing it against the whole threshold sizes it against money the
+        // merchant already had, and produces offers like "spend $350 more,
+        // save $300" that lose $160 on a shopper who was already converting.
+        const gap = Math.max(0, thr - (signals.cartValue || 0));
+        const scaledThrDollars = scaleDollarOffer(cappedOfferAmount, gap);
+        if (scaledThrDollars !== cappedOfferAmount) {
+          console.log(`[Offer Scaling] Threshold gene ${cappedOfferAmount} → $${scaledThrDollars} against a $${gap} incremental spend`);
           cappedOfferAmount = scaledThrDollars;
         }
+
+        // Hard backstop: never give back more than half the margin the added
+        // spend generates. This is what makes offerCeilingPercent's exemption
+        // of conditional offers from the propensity taper actually true.
+        const incrementalMax = maxConditionalDiscount(
+          signals.cartValue || 0, thr, settings.assumedGrossMargin
+        );
+        if (cappedOfferAmount > incrementalMax) {
+          console.log(`[Margin Guard] Threshold discount $${cappedOfferAmount} exceeds half the margin on a $${gap} upsell — capping to $${incrementalMax}`);
+          cappedOfferAmount = incrementalMax;
+          if (cappedOfferAmount === 0) {
+            suppress(
+              'limit',
+              'threshold_gap_too_small',
+              `A "spend $${gap} more" ask generates too little margin to fund any discount`
+            );
+          }
+        }
+
         const maxDollars = Math.floor(thr * ceilingPct / 100);
         if (cappedOfferAmount > maxDollars) {
           console.log(`[Margin Guard] Capping threshold discount from $${cappedOfferAmount} to $${maxDollars} (ceiling ${ceilingPct}%, P=${signals.propensityScore})`);

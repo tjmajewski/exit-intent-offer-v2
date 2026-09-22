@@ -204,10 +204,12 @@ export function roundToNiceNumber(value) {
  * cart a gene of 5 is still $5, not $1.50); large-cart stores get an offer
  * proportionate to what they are asking for.
  *
- * `basis` is the spend the discount is measured against — the cart for a flat
- * offer, the qualifying threshold for a conditional one. Both match what the
- * margin guard converts its percentage ceiling against, so the ceiling still
- * binds last and still binds correctly.
+ * `basis` is the spend the discount is measured against — the CART for a flat
+ * offer, the INCREMENTAL spend (threshold minus cart) for a conditional one.
+ * Not the whole threshold: a conditional discount is only ever funded by the
+ * margin on the spend it adds, so measuring it against the full qualifying
+ * total sizes it against money the merchant already had. See
+ * maxConditionalDiscount, which is the hard backstop on that.
  *
  * Nice-rounded because "$60 off" is an offer and "$58.75 off" is a rounding
  * artifact.
@@ -231,6 +233,41 @@ export function scaleDollarOffer(gene, basis) {
 export function recommendedThreshold(cartValue, mult = 1.3) {
   const cv = Number(cartValue) || 0;
   return Math.max(roundToNiceNumber(cv * mult), cv + 10);
+}
+
+/**
+ * The most a conditional ("spend $X more, save $Y") offer may give back.
+ *
+ * A threshold offer is funded entirely by the margin on the spend it ADDS. Ask
+ * a $1,150 shopper for $350 more and, at a 40% gross margin, the merchant
+ * earns $140 on it. Give back $300 and the "upsell" cost them $160 on a
+ * shopper who was already converting — worse than showing nothing.
+ *
+ * Half of that incremental margin, matching the flat lane's shareCap
+ * ("consume at most half the margin"). At the default 40% it works out to 20%
+ * of the gap, which is the same bound MAX_GAP_MULTIPLE = 5 expresses from the
+ * other side; the two constants agree by construction rather than by luck.
+ *
+ * This is the only guard here that reads the gap at all. offerCeilingPercent
+ * deliberately exempts conditional offers from the propensity taper, on the
+ * grounds that a threshold "costs nothing unless the basket grows" — true only
+ * while the discount stays small relative to the growth. This is what makes it
+ * true.
+ *
+ * Call with the threshold BEFORE capThresholdByDiscount narrows it: that
+ * function only ever lowers the ask when the gap exceeds 5x the discount, and
+ * the floor it lands on is exactly this bound, so the two cannot disagree.
+ *
+ * @param {number} cartValue
+ * @param {number} threshold qualifying spend
+ * @param {number} assumedGrossMargin 0..1
+ * @returns {number} dollars; 0 when the ask adds nothing
+ */
+export function maxConditionalDiscount(cartValue, threshold, assumedGrossMargin = 0.40) {
+  const cv = Number(cartValue) || 0;
+  const thr = Number(threshold) || 0;
+  const agm = (assumedGrossMargin > 0 && assumedGrossMargin < 1) ? assumedGrossMargin : 0.40;
+  return Math.floor(Math.max(0, thr - cv) * agm * 0.5);
 }
 
 // Ceiling on how much extra spend one dollar of discount may ask for.

@@ -10,6 +10,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   scaleDollarOffer,
+  maxConditionalDiscount,
   offerCeilingPercent,
   recommendedThreshold,
   capThresholdByDiscount
@@ -38,7 +39,8 @@ function servedThreshold(gene, cartValue, { aggression = AGG, propensity = 75 } 
   const poolMax = Math.max(...THRESH);
   let amount = Math.min(gene, Math.round(poolMax * (aggression / 10)));
   const thr = recommendedThreshold(cartValue);
-  amount = scaleDollarOffer(amount, thr);
+  amount = scaleDollarOffer(amount, Math.max(0, thr - cartValue));
+  amount = Math.min(amount, maxConditionalDiscount(cartValue, thr, AGM));
   const ceiling = offerCeilingPercent({
     propensity, aggression, assumedGrossMargin: AGM, conditional: true
   });
@@ -121,8 +123,45 @@ describe('THRESHOLD_DISCOUNT served amount', () => {
   test('a $1,175 cart is no longer asked for $100 more to earn $20', () => {
     for (const gene of THRESH) {
       const { amount } = servedThreshold(gene, 1175);
-      assert.ok(amount >= 100, `gene ${gene} served $${amount} off on a $1,175 cart`);
+      assert.ok(amount >= 30, `gene ${gene} served $${amount} off on a $1,175 cart`);
     }
+  });
+
+  test('THE MERCHANT NEVER LOSES MONEY ON THE UPSELL', () => {
+    // The regression this file exists to prevent a second time. Scaling the
+    // reward without bounding it against the margin on the ADDED spend
+    // produced "spend $350 more, save $300": the merchant earns $140 and gives
+    // back $300, losing $160 on a shopper who was already converting.
+    for (const cart of [50, 100, 400, 875, 1175, 6142]) {
+      for (const gene of THRESH) {
+        const { amount, threshold } = servedThreshold(gene, cart);
+        const earned = (threshold - cart) * AGM;
+        assert.ok(
+          earned >= amount,
+          `gene ${gene} on $${cart}: merchant earns $${earned.toFixed(0)} on a ` +
+          `$${threshold - cart} upsell but gives back $${amount}`
+        );
+      }
+    }
+  });
+
+  test('keeps at least half the incremental margin for the merchant', () => {
+    for (const cart of [400, 875, 1175, 6142]) {
+      for (const gene of THRESH) {
+        const { amount, threshold } = servedThreshold(gene, cart);
+        assert.ok(
+          amount <= maxConditionalDiscount(cart, threshold, AGM) + 1,
+          `gene ${gene} on $${cart} gave back $${amount} of a $${((threshold - cart) * AGM).toFixed(0)} margin`
+        );
+      }
+    }
+  });
+
+  test('the arms stay distinguishable — the cap must not flatten the pool', () => {
+    // If every gene clamps to the same number the bandit has nothing to learn
+    // on this lane.
+    const served = THRESH.map(g => servedThreshold(g, 1175).amount);
+    assert.ok(new Set(served).size >= 3, `pool flattened to ${served.join(', ')}`);
   });
 
   test('the ask stays proportionate to the reward', () => {
@@ -169,5 +208,36 @@ describe('the two flat lanes are now comparable arms', () => {
     const fixedDollars = servedFixed(Math.max(...FIXED), cart);
     const ratio = Math.max(percentDollars, fixedDollars) / Math.min(percentDollars, fixedDollars);
     assert.ok(ratio <= 2, `lanes are ${ratio.toFixed(1)}x apart ($${percentDollars} vs $${fixedDollars})`);
+  });
+});
+
+describe('maxConditionalDiscount', () => {
+  test('is half the margin on the added spend, never on the whole cart', () => {
+    // $1,150 cart, $1,500 threshold: the upsell is $350, worth $140 at a 40%
+    // margin, so at most $70 may be given back.
+    assert.equal(maxConditionalDiscount(1150, 1500, 0.40), 70);
+  });
+
+  test('an ask that adds nothing funds nothing', () => {
+    assert.equal(maxConditionalDiscount(1000, 1000, 0.40), 0);
+    assert.equal(maxConditionalDiscount(1000, 900, 0.40), 0);
+  });
+
+  test('a richer margin funds a bigger giveback', () => {
+    assert.ok(maxConditionalDiscount(1000, 1300, 0.70) > maxConditionalDiscount(1000, 1300, 0.40));
+  });
+
+  test('bad margin input falls back to the engine default, never NaN', () => {
+    for (const bad of [0, 1, -1, null, undefined, NaN, 'x']) {
+      assert.equal(maxConditionalDiscount(1000, 1300, bad), maxConditionalDiscount(1000, 1300, 0.40));
+    }
+  });
+
+  test('agrees with MAX_GAP_MULTIPLE at the default margin', () => {
+    // MAX_GAP_MULTIPLE = 5 says "never more than $5 of ask per $1 saved".
+    // Half the incremental margin at 40% says "never more than 20% of the ask".
+    // They are the same bound from opposite sides; if one moves, so must the other.
+    const gap = 500;
+    assert.equal(maxConditionalDiscount(1000, 1000 + gap, 0.40), gap / 5);
   });
 });

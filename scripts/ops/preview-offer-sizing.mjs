@@ -18,6 +18,7 @@
 import { PrismaClient } from '@prisma/client';
 import {
   scaleDollarOffer,
+  maxConditionalDiscount,
   offerCeilingPercent,
   recommendedThreshold,
   capThresholdByDiscount
@@ -85,12 +86,18 @@ function fixedLane(gene, cart, { scaled }) {
 function thresholdLane(gene, cart, { scaled }) {
   let a = Math.min(gene, Math.round(Math.max(...THRESH) * n));
   const thr = recommendedThreshold(cart);
-  if (scaled) a = scaleDollarOffer(a, thr);
+  if (scaled) {
+    a = scaleDollarOffer(a, Math.max(0, thr - cart));
+    a = Math.min(a, maxConditionalDiscount(cart, thr, AGM));
+  }
   const ceil = offerCeilingPercent({
     propensity: 75, aggression: AGG, assumedGrossMargin: AGM, conditional: true
   });
   a = Math.max(Math.min(a, Math.floor((thr * ceil) / 100)), 0);
-  return { amount: a, threshold: capThresholdByDiscount(cart, thr, a) };
+  const threshold = capThresholdByDiscount(cart, thr, a);
+  // What the merchant actually keeps: margin on the spend the ask adds, less
+  // the discount. Negative means the upsell cost them money.
+  return { amount: a, threshold, net: (threshold - cart) * AGM - a };
 }
 
 function percentLane(gene, cart) {
@@ -126,11 +133,14 @@ for (const [label, p] of [['p10', 0.1], ['median', 0.5], ['p90', 0.9]]) {
   console.log(`                     now ${fAfter.map(money).join('  ')}` +
     (fAfter.every((v, i) => v === fBefore[i]) ? '   (unchanged)' : ''));
 
+  const fmtT = (r) => `+${money(r.threshold - cart)}\u2192${money(r.amount)}`;
   const tBefore = THRESH.map(g => thresholdLane(g, cart, { scaled: false }));
   const tAfter = THRESH.map(g => thresholdLane(g, cart, { scaled: true }));
-  console.log(`  THRESHOLD_DISCOUNT was ${tBefore.map(r => `+${money(r.threshold - cart)}→${money(r.amount)}`).join('  ')}`);
-  console.log(`                     now ${tAfter.map(r => `+${money(r.threshold - cart)}→${money(r.amount)}`).join('  ')}` +
+  console.log(`  THRESHOLD_DISCOUNT was ${tBefore.map(fmtT).join('  ')}`);
+  console.log(`                     now ${tAfter.map(fmtT).join('  ')}` +
     (tAfter.every((r, i) => r.amount === tBefore[i].amount) ? '   (unchanged)' : ''));
+  console.log(`                 merchant ${tAfter.map(r => (r.net >= 0 ? '+' : '') + money(r.net)).join('  ')}` +
+    (tAfter.some(r => r.net < 0) ? '   <-- NEGATIVE, the upsell costs margin' : '   (margin kept on every arm)'));
 }
 
 const seen = {};
@@ -141,7 +151,8 @@ for (const [a, c] of Object.entries(seen).sort((x, y) => y[1] - x[1])) {
 }
 
 console.log(`\n${line}`);
-console.log('"+$X→$Y" reads: spend $X more than the current cart, save $Y.');
+console.log('"+$X\u2192$Y" reads: spend $X more than the current cart, save $Y.');
+console.log('"merchant" is the margin kept: (added spend x gross margin) - discount.');
 console.log('Nothing was written. No Shopify call was made.');
 console.log(line + '\n');
 
