@@ -188,6 +188,41 @@ export function roundToNiceNumber(value) {
   return Math.round(value / 25) * 25;
 }
 
+/**
+ * A dollars-denominated gene, scaled to the spend it is offered against.
+ *
+ * Two of the three discount lanes draw their amounts from flat dollar pools
+ * (FIXED_DISCOUNT [5,10,15,20], THRESHOLD_DISCOUNT [10,15,20,25]). Those
+ * numbers are a real offer on a $100 cart and noise on a $1,175 one — and the
+ * PERCENT_DISCOUNT lane beside them, which a visitor is routed into by nothing
+ * but a visitorId hash, scales automatically. The two arms the bandit is meant
+ * to compare were up to 15x apart in value for reasons that had nothing to do
+ * with what converts.
+ *
+ * The gene is therefore read as a dollar FLOOR and a PERCENT of the basis,
+ * whichever is larger. Small-cart stores keep today's exact behavior (on a $30
+ * cart a gene of 5 is still $5, not $1.50); large-cart stores get an offer
+ * proportionate to what they are asking for.
+ *
+ * `basis` is the spend the discount is measured against — the cart for a flat
+ * offer, the qualifying threshold for a conditional one. Both match what the
+ * margin guard converts its percentage ceiling against, so the ceiling still
+ * binds last and still binds correctly.
+ *
+ * Nice-rounded because "$60 off" is an offer and "$58.75 off" is a rounding
+ * artifact.
+ *
+ * @param {number} gene   pool amount, in dollars
+ * @param {number} basis  cart value, or qualifying threshold
+ * @returns {number} dollars, never below `gene`
+ */
+export function scaleDollarOffer(gene, basis) {
+  const g = Number(gene) || 0;
+  const b = Number(basis) || 0;
+  if (g <= 0 || b <= 0) return g;
+  return Math.max(g, roundToNiceNumber((b * g) / 100));
+}
+
 // Shared threshold recommendation for AOV offers — single source for the
 // engine AND the decision endpoint (which previously used a bare
 // Math.round(cartValue * 1.3): no nice-rounding, no floor, so a $0 cart

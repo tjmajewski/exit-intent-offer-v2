@@ -41,7 +41,7 @@ export async function action({ request }) {
   if (limited) return limited;
 
   const { default: db } = await import("../db.server.js");
-  const { decideOffer, checkBudget, offerCeilingPercent, recommendedThreshold, capThresholdByDiscount, subShareFromSignals, roundToNiceNumber } = await import("../utils/ai-decision.server.js");
+  const { decideOffer, checkBudget, offerCeilingPercent, recommendedThreshold, capThresholdByDiscount, subShareFromSignals, scaleDollarOffer } = await import("../utils/ai-decision.server.js");
   try{
     const { admin } = await authenticate.public.appProxy(request);
     const { shop, signals, testMode } = await request.json();
@@ -936,6 +936,18 @@ export async function action({ request }) {
         cappedOfferAmount = 0;
       } else if (servedOfferType === 'threshold') {
         const thr = recommendedThreshold(signals.cartValue || 0);
+        // Same flat-pool problem as the fixed lane, measured against the
+        // qualifying spend rather than the cart: [10,15,20,25] asked a $1,175
+        // shopper for $100 more to earn $20 back. The ask scaled with the cart
+        // and the reward never did, so the deal decayed to nothing exactly
+        // where the basket was biggest. capThresholdByDiscount below then
+        // re-derives the ask FROM this discount, so a bigger reward buys a
+        // proportionate ask rather than an unbounded one.
+        const scaledThrDollars = scaleDollarOffer(cappedOfferAmount, thr);
+        if (scaledThrDollars > cappedOfferAmount) {
+          console.log(`[Offer Scaling] Threshold gene ${cappedOfferAmount} → $${scaledThrDollars} against a $${thr} qualifying spend`);
+          cappedOfferAmount = scaledThrDollars;
+        }
         const maxDollars = Math.floor(thr * ceilingPct / 100);
         if (cappedOfferAmount > maxDollars) {
           console.log(`[Margin Guard] Capping threshold discount from $${cappedOfferAmount} to $${maxDollars} (ceiling ${ceilingPct}%, P=${signals.propensityScore})`);
@@ -951,28 +963,14 @@ export async function action({ request }) {
           }
         }
       } else if (servedOfferType === 'fixed') {
-        // The gene is read as a dollar floor AND a percent of the cart,
-        // whichever is larger.
-        //
-        // It used to be dollars only. The pool ([5,10,15,20]) was sized for
-        // ~$100 carts, so on a store with a $1,175 median cart every visitor
-        // in this lane was offered $5-$16 — 0.4%-1.4% — while the visitor
-        // beside them, split into the PERCENT lane by nothing but a visitorId
-        // hash, got 20% ($235). Two arms the bandit is supposed to compare
-        // were 15x apart in value, and the merchant's aggression dial could
-        // not move the dollar one: the aggression cap chops the gene to $16
-        // before the margin ceiling (which would have allowed $235) is ever
-        // consulted.
-        //
-        // Reading the gene as a percent when that is the bigger number fixes
-        // the scaling without breaking small-cart stores, which keep today's
-        // behavior exactly (on a $30 cart, gene 5 is still $5, not $1.50).
-        // Nice-rounded because "$60 off" is an offer and "$58.75 off" is a
-        // rounding artifact. The margin ceiling below still binds last.
+        // Scale the flat dollar gene to the cart before the ceiling clamps it
+        // — see scaleDollarOffer. The aggression cap above chopped the gene to
+        // $16; without this the margin ceiling that would have allowed $235 is
+        // never reached, and the dial cannot move the offer at all.
         const cv = signals.cartValue || 0;
-        const scaledDollars = roundToNiceNumber(cv * cappedOfferAmount / 100);
+        const scaledDollars = scaleDollarOffer(cappedOfferAmount, cv);
         if (scaledDollars > cappedOfferAmount) {
-          console.log(`[Fixed Scaling] Gene ${cappedOfferAmount} read as ${cappedOfferAmount}% of $${cv} → $${scaledDollars}`);
+          console.log(`[Offer Scaling] Fixed gene ${cappedOfferAmount} → $${scaledDollars} against a $${cv} cart`);
           cappedOfferAmount = scaledDollars;
         }
 
