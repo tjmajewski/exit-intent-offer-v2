@@ -6,6 +6,18 @@
 //
 //   node --env-file=.env scripts/ops/promo-guard-preflight.mjs
 //
+// A LOCAL .env POINTS AT THE DEV DATABASE. Running it that way reports on
+// `exit-intent-test-2.myshopify.com` (the hardcoded dev shop in
+// dev-shop-guard.server.js) and tells you nothing about the live merchant,
+// which is `568e5d-75.myshopify.com`. Once this script is deployed, run it on
+// production instead:
+//
+//   flyctl ssh console -a resparq -C 'node scripts/ops/promo-guard-preflight.mjs'
+//
+// The guard it gates is OFF by default (RESPARQ_PROMO_GUARD_ENABLED). Do not
+// set that flag until this script has reported a real verdict against
+// production rather than INSUFFICIENT SAMPLE.
+//
 // WHY THIS EXISTS
 //
 // The guard (app/utils/promo-detect.js) writes `signals.hasPromoActive`, which

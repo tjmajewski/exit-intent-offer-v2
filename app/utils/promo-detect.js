@@ -1,3 +1,4 @@
+/* eslint-env node */
 // Is a merchant promotion already running for this visitor?
 //
 // HANDOFF-2026-09-19 §1.3: `signals.hasPromoActive` is READ in two places —
@@ -27,6 +28,40 @@
 //     renders, still stamps the cart, and a no-click conversion still credits.
 //     No merchant-facing number goes to zero.
 //   - False negative (promo running, we miss it): status quo, no regression.
+
+/**
+ * Is the guard allowed to act at all?
+ *
+ * OFF BY DEFAULT, and that is a deliberate, temporary state — see HANDOFF
+ * 2026-09-21 §3.2. The reasoning, recorded so it can be revisited rather than
+ * cargo-culted:
+ *
+ * The one live shop is `568e5d-75.myshopify.com`, `mode=ai` (NOT hybrid, as an
+ * earlier reading of a dev-database row wrongly concluded), and their trial
+ * decision is days away. Turning this on changes which offer they serve, and
+ * the production data cannot say how often: 9 rendered impressions in 30 days
+ * is below any threshold at which a promoInCart rate means anything.
+ *
+ * What settles it is that they issued $0 of discounts over those 30 days. No
+ * discount is being issued, so nothing is being stacked, so §1.3's harm is
+ * currently theoretical FOR THIS SHOP — while switching the guard on is a real
+ * unmeasured change to a live merchant's offers during a trial. Holding it
+ * costs nothing today; shipping it risks something.
+ *
+ * TO TURN ON: set RESPARQ_PROMO_GUARD_ENABLED=1, after
+ * `scripts/ops/promo-guard-preflight.mjs` has run against PRODUCTION and
+ * reported a real verdict rather than INSUFFICIENT SAMPLE. It is a flag flip
+ * and a restart, no deploy.
+ *
+ * This is separate from hasPromoActive() so that predicate stays pure and its
+ * tests stay hand-computable — an env read inside it would make every
+ * assertion depend on ambient state.
+ *
+ * @returns {boolean}
+ */
+export function promoGuardEnabled() {
+  return process.env.RESPARQ_PROMO_GUARD_ENABLED === '1';
+}
 
 /**
  * @param {Object} input

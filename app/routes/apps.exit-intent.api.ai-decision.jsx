@@ -2,7 +2,7 @@ import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { createPercentageDiscount, createFixedDiscount, createThresholdDiscount, getDiscountCodeDetails } from "../utils/discount-codes";
 import { offerTypeForBaseline } from "../utils/baseline-selector.js";
-import { hasPromoActive, normalisePromoInCart } from "../utils/promo-detect.js";
+import { hasPromoActive, normalisePromoInCart, promoGuardEnabled } from "../utils/promo-detect.js";
 import { getMetaInsight, shouldUseMetaLearning } from "../utils/meta-learning.js";
 import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
 import { composeSegmentKey } from "../utils/segment-key.js";
@@ -657,8 +657,12 @@ export async function action({ request }) {
     // Computed HERE and not at its old site further down, because selectBaseline
     // is called ~160 lines before that and this is the only consumer that has
     // to run first.
+    // Gated OFF by default. The live shop is mode=ai with 9 rendered
+    // impressions in 30 days and $0 of discounts issued, so the guard's harm is
+    // theoretical for them while switching it on is an unmeasured change to a
+    // paying merchant's offers during their trial. See promoGuardEnabled().
     const resolvedPromoInCart = normalisePromoInCart(signals);
-    signals.hasPromoActive = hasPromoActive({
+    signals.hasPromoActive = promoGuardEnabled() && hasPromoActive({
       promoInCart: resolvedPromoInCart,
       shopPromotion: activePromo,
       isTestMode,

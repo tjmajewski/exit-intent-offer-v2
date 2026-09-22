@@ -5,9 +5,10 @@
 // that the predicate was wrong, it was that nothing ever called it, and a
 // guard that returns true but routes to a discount pool anyway fixes nothing.
 
+/* eslint-env node */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hasPromoActive, normalisePromoInCart } from '../app/utils/promo-detect.js';
+import { hasPromoActive, normalisePromoInCart, promoGuardEnabled } from '../app/utils/promo-detect.js';
 import { selectBaseline } from '../app/utils/baseline-selector.js';
 
 // ---------------------------------------------------------------- predicate
@@ -124,4 +125,50 @@ test('the guard changes the outcome for exactly the same visitor', () => {
   const without = selectBaseline({ ...signals, hasPromoActive: false });
   const with_ = selectBaseline({ ...signals, hasPromoActive: true });
   assert.notEqual(without, with_);
+});
+
+// ------------------------------------------------------------------ the flag
+//
+// Off by default while the one live shop (mode=ai, 9 rendered impressions in
+// 30 days, $0 discounts issued) is mid-trial. See promoGuardEnabled().
+
+test('the guard is OFF unless the env flag is exactly "1"', () => {
+  const original = process.env.RESPARQ_PROMO_GUARD_ENABLED;
+  try {
+    delete process.env.RESPARQ_PROMO_GUARD_ENABLED;
+    assert.equal(promoGuardEnabled(), false, 'absent must be off');
+
+    process.env.RESPARQ_PROMO_GUARD_ENABLED = '0';
+    assert.equal(promoGuardEnabled(), false);
+
+    // Not 'true', not 'yes' — one spelling, so a half-remembered value cannot
+    // silently arm a guard that changes a live merchant's offers.
+    process.env.RESPARQ_PROMO_GUARD_ENABLED = 'true';
+    assert.equal(promoGuardEnabled(), false);
+
+    process.env.RESPARQ_PROMO_GUARD_ENABLED = '1';
+    assert.equal(promoGuardEnabled(), true);
+  } finally {
+    if (original === undefined) delete process.env.RESPARQ_PROMO_GUARD_ENABLED;
+    else process.env.RESPARQ_PROMO_GUARD_ENABLED = original;
+  }
+});
+
+test('the predicate itself does not read the env — it stays pure', () => {
+  const original = process.env.RESPARQ_PROMO_GUARD_ENABLED;
+  try {
+    // Same inputs, opposite flag states, identical answer. The gate lives at
+    // the call site; if this ever diverges, every hand-computed assertion above
+    // becomes dependent on ambient state.
+    const input = { promoInCart: true, shopPromotion: null, isTestMode: false, isHybrid: false };
+    delete process.env.RESPARQ_PROMO_GUARD_ENABLED;
+    const off = hasPromoActive(input);
+    process.env.RESPARQ_PROMO_GUARD_ENABLED = '1';
+    const on = hasPromoActive(input);
+    assert.equal(off, true);
+    assert.equal(on, true);
+  } finally {
+    if (original === undefined) delete process.env.RESPARQ_PROMO_GUARD_ENABLED;
+    else process.env.RESPARQ_PROMO_GUARD_ENABLED = original;
+  }
 });
