@@ -1327,11 +1327,11 @@ export async function action({ request }) {
       console.log(`[${modeLabel}] Creating unique discount code with prefix: ${prefix}`);
 
       if (decision.type === 'percentage') {
-        discountResult = await createPercentageDiscount(admin, decision.amount, prefix);
+        discountResult = await createPercentageDiscount(admin, decision.amount, prefix, shopRecord.id);
       } else if (decision.type === 'fixed') {
-        discountResult = await createFixedDiscount(admin, decision.amount, prefix);
+        discountResult = await createFixedDiscount(admin, decision.amount, prefix, shopRecord.id);
       } else if (decision.type === 'threshold') {
-        discountResult = await createThresholdDiscount(admin, decision.threshold, decision.amount, prefix);
+        discountResult = await createThresholdDiscount(admin, decision.threshold, decision.amount, prefix, shopRecord.id);
         offerAmount = decision.amount; // Store discount amount, not threshold
       }
     }

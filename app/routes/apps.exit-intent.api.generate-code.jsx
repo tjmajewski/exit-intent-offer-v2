@@ -91,9 +91,9 @@ export async function action({ request }) {
     let discountResult;
 
     if (offerType === "percentage" && discountPercentage > 0) {
-      discountResult = await createPercentageDiscount(admin, discountPercentage, prefix);
+      discountResult = await createPercentageDiscount(admin, discountPercentage, prefix, shopRecord.id);
     } else if (offerType === "fixed" && discountAmount > 0) {
-      discountResult = await createFixedDiscount(admin, discountAmount, prefix);
+      discountResult = await createFixedDiscount(admin, discountAmount, prefix, shopRecord.id);
     } else {
       return json({ error: "Invalid offer configuration" }, { status: 400 });
     }

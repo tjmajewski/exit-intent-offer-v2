@@ -1,4 +1,95 @@
 import { ensureSubscriptionEligibility } from "./discount-subscription.js";
+import {
+  applySubscriptionFields,
+  isSubscriptionFieldRejection,
+  shopSellsSubscriptions
+} from "./discount-subscription-fields.js";
+
+/**
+ * Send a discountCodeBasicCreate and return the created code.
+ *
+ * One submit path for all four create sites, because the subscription-field
+ * rule has to be applied identically at every one of them. Four hand-copied
+ * literals is how three of them ended up sending fields Shopify rejects.
+ *
+ * `input` must NOT carry appliesOnSubscription / appliesOnOneTimePurchase /
+ * recurringCycleLimit — this decides whether to add them.
+ *
+ * The retry is the important part. A store that does not sell subscriptions
+ * rejects all three fields and takes the ENTIRE offer down with them, which is
+ * exactly what happened to the first paying merchant for a week. Capability
+ * detection can be wrong or stale; this makes that survivable rather than
+ * fatal.
+ *
+ * @param {object} admin
+ * @param {Object} input - basicCodeDiscount, without subscription fields
+ * @param {string} label - for logs
+ * @param {string|null} shopId - cache key for capability detection
+ * @returns {Promise<string>} the created code
+ */
+async function submitBasicCodeDiscount(admin, input, label, shopId = null) {
+  const wantsSubscriptions = shopId
+    ? await shopSellsSubscriptions(admin, shopId)
+    : false;
+
+  const attempt = async (withSubscriptions) => {
+    const variables = {
+      basicCodeDiscount: applySubscriptionFields(input, withSubscriptions)
+    };
+    const response = await admin.graphql(DISCOUNT_CREATE_MUTATION, { variables });
+    const result = await response.json();
+    // A top-level `errors` array means `data` is null. Reading through it is
+    // how this used to surface as an opaque TypeError instead of the real
+    // message.
+    if (!result?.data?.discountCodeBasicCreate) {
+      throw new Error(
+        `${label}: no discountCodeBasicCreate in response — ` +
+        `${JSON.stringify(result?.errors || result).slice(0, 400)}`
+      );
+    }
+    return result.data.discountCodeBasicCreate;
+  };
+
+  let payload = await attempt(wantsSubscriptions);
+
+  if (wantsSubscriptions && isSubscriptionFieldRejection(payload.userErrors)) {
+    console.warn(
+      `[Discount] ${label}: store rejected the subscription fields despite ` +
+      `reporting selling plans — retrying without them.`
+    );
+    payload = await attempt(false);
+  }
+
+  if (payload.userErrors?.length > 0) {
+    console.error(`Error creating discount (${label}):`, payload.userErrors);
+    throw new Error(
+      `Failed to create discount code (${label}): ` +
+      payload.userErrors.map((e) => `${(e.field || []).join('.')}: ${e.message}`).join('; ')
+    );
+  }
+
+  const created = payload.codeDiscountNode?.codeDiscount?.codes?.nodes?.[0]?.code;
+  if (!created) {
+    throw new Error(`${label}: create reported no errors but returned no code`);
+  }
+  return created;
+}
+
+const DISCOUNT_CREATE_MUTATION = `
+  mutation discountCodeBasicCreate($basicCodeDiscount: DiscountCodeBasicInput!) {
+    discountCodeBasicCreate(basicCodeDiscount: $basicCodeDiscount) {
+      codeDiscountNode {
+        id
+        codeDiscount {
+          ... on DiscountCodeBasic {
+            codes(first: 1) { nodes { code } }
+          }
+        }
+      }
+      userErrors { field message }
+    }
+  }
+`;
 
 /**
  * Derive a branded code prefix from the shop's myshopify domain.
@@ -76,7 +167,7 @@ export async function createDiscountCode(admin, shop, options = {}) {
  * Create or verify generic discount code exists in Shopify
  * Should be called when merchant saves settings with generic mode
  */
-export async function createGenericDiscountCode(admin, code, type, amount) {
+export async function createGenericDiscountCode(admin, code, type, amount, shopId = null) {
   // First check if code already exists
   const existingCode = await checkDiscountCodeExists(admin, code);
 
@@ -89,28 +180,6 @@ export async function createGenericDiscountCode(admin, code, type, amount) {
   }
 
   // Create new generic code with no expiry
-  const mutation = `
-    mutation discountCodeBasicCreate($basicCodeDiscount: DiscountCodeBasicInput!) {
-      discountCodeBasicCreate(basicCodeDiscount: $basicCodeDiscount) {
-        codeDiscountNode {
-          id
-          codeDiscount {
-            ... on DiscountCodeBasic {
-              codes(first: 1) {
-                nodes {
-                  code
-                }
-              }
-            }
-          }
-        }
-        userErrors {
-          field
-          message
-        }
-      }
-    }
-  `;
 
   const variables = {
     basicCodeDiscount: {
@@ -143,26 +212,16 @@ export async function createGenericDiscountCode(admin, code, type, amount) {
         items: {
           all: true
         },
-        appliesOnOneTimePurchase: true,
-        appliesOnSubscription: true
-      },
-      // Subscription (selling plan) items: discount first billing cycle only —
-      // renewals bill at full price.
-      recurringCycleLimit: 1
+        // See submitBasicCodeDiscount: the subscription fields are added only
+        // when the store sells subscriptions.
+      }
       // No usage limit for generic codes - can be reused
     }
   };
 
-  const response = await admin.graphql(mutation, { variables });
-  const result = await response.json();
-
-  if (result.data.discountCodeBasicCreate.userErrors.length > 0) {
-    console.error("Error creating generic discount:", result.data.discountCodeBasicCreate.userErrors);
-    throw new Error("Failed to create generic discount code");
-  }
-
-  const createdCode = result.data.discountCodeBasicCreate.codeDiscountNode
-    .codeDiscount.codes.nodes[0].code;
+  const createdCode = await submitBasicCodeDiscount(
+    admin, variables.basicCodeDiscount, `generic ${type} ${amount}`, shopId
+  );
 
   console.log(` Created generic discount: ${createdCode} (no expiry)`);
 
@@ -275,32 +334,10 @@ async function checkDiscountCodeExists(admin, code) {
 }
 
 // Create percentage discount with 24h expiration
-export async function createPercentageDiscount(admin, percentage, prefix = 'SAVE') {
+export async function createPercentageDiscount(admin, percentage, prefix = 'SAVE', shopId = null) {
   const code = generateUniqueCode('percentage', percentage, prefix);
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
   
-  const mutation = `
-    mutation discountCodeBasicCreate($basicCodeDiscount: DiscountCodeBasicInput!) {
-      discountCodeBasicCreate(basicCodeDiscount: $basicCodeDiscount) {
-        codeDiscountNode {
-          id
-          codeDiscount {
-            ... on DiscountCodeBasic {
-              codes(first: 1) {
-                nodes {
-                  code
-                }
-              }
-            }
-          }
-        }
-        userErrors {
-          field
-          message
-        }
-      }
-    }
-  `;
 
   const variables = {
     basicCodeDiscount: {
@@ -325,28 +362,20 @@ export async function createPercentageDiscount(admin, percentage, prefix = 'SAVE
         items: {
           all: true
         },
-        appliesOnOneTimePurchase: true,
-        appliesOnSubscription: true
+        // appliesOnOneTimePurchase / appliesOnSubscription / recurringCycleLimit
+        // are added by submitBasicCodeDiscount ONLY when the store sells
+        // subscriptions. Shopify rejects all three otherwise and the whole
+        // offer dies with them — see discount-subscription-fields.js.
       },
-      // Subscription (selling plan) items: discount first billing cycle only —
-      // renewals bill at full price.
-      recurringCycleLimit: 1,
       appliesOncePerCustomer: true,
       usageLimit: 1
     }
   };
 
-  const response = await admin.graphql(mutation, { variables });
-  const result = await response.json();
-  
-  if (result.data.discountCodeBasicCreate.userErrors.length > 0) {
-    console.error("Error creating discount:", result.data.discountCodeBasicCreate.userErrors);
-    throw new Error("Failed to create discount code");
-  }
-  
-  const createdCode = result.data.discountCodeBasicCreate.codeDiscountNode
-    .codeDiscount.codes.nodes[0].code;
-  
+  const createdCode = await submitBasicCodeDiscount(
+    admin, variables.basicCodeDiscount, `percentage ${percentage}%`, shopId
+  );
+
   console.log(` Created percentage discount: ${createdCode} (expires in 24h)`);
   
   return {
@@ -356,32 +385,10 @@ export async function createPercentageDiscount(admin, percentage, prefix = 'SAVE
 }
 
 // Create fixed amount discount with 24h expiration
-export async function createFixedDiscount(admin, amount, prefix = 'SAVE') {
+export async function createFixedDiscount(admin, amount, prefix = 'SAVE', shopId = null) {
   const code = generateUniqueCode('fixed', amount, prefix);
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   
-  const mutation = `
-    mutation discountCodeBasicCreate($basicCodeDiscount: DiscountCodeBasicInput!) {
-      discountCodeBasicCreate(basicCodeDiscount: $basicCodeDiscount) {
-        codeDiscountNode {
-          id
-          codeDiscount {
-            ... on DiscountCodeBasic {
-              codes(first: 1) {
-                nodes {
-                  code
-                }
-              }
-            }
-          }
-        }
-        userErrors {
-          field
-          message
-        }
-      }
-    }
-  `;
 
   const variables = {
     basicCodeDiscount: {
@@ -409,28 +416,20 @@ export async function createFixedDiscount(admin, amount, prefix = 'SAVE') {
         items: {
           all: true
         },
-        appliesOnOneTimePurchase: true,
-        appliesOnSubscription: true
+        // appliesOnOneTimePurchase / appliesOnSubscription / recurringCycleLimit
+        // are added by submitBasicCodeDiscount ONLY when the store sells
+        // subscriptions. Shopify rejects all three otherwise and the whole
+        // offer dies with them — see discount-subscription-fields.js.
       },
-      // Subscription (selling plan) items: discount first billing cycle only —
-      // renewals bill at full price.
-      recurringCycleLimit: 1,
       appliesOncePerCustomer: true,
       usageLimit: 1
     }
   };
 
-  const response = await admin.graphql(mutation, { variables });
-  const result = await response.json();
-  
-  if (result.data.discountCodeBasicCreate.userErrors.length > 0) {
-    console.error("Error creating discount:", result.data.discountCodeBasicCreate.userErrors);
-    throw new Error("Failed to create discount code");
-  }
-  
-  const createdCode = result.data.discountCodeBasicCreate.codeDiscountNode
-    .codeDiscount.codes.nodes[0].code;
-  
+  const createdCode = await submitBasicCodeDiscount(
+    admin, variables.basicCodeDiscount, `fixed $${amount}`, shopId
+  );
+
   console.log(` Created fixed discount: ${createdCode} (expires in 24h)`);
   
   return {
@@ -440,32 +439,10 @@ export async function createFixedDiscount(admin, amount, prefix = 'SAVE') {
 }
 
 // Create threshold discount (spend $X get $Y off) with 24h expiration
-export async function createThresholdDiscount(admin, threshold, discountAmount, prefix = 'SAVE') {
+export async function createThresholdDiscount(admin, threshold, discountAmount, prefix = 'SAVE', shopId = null) {
   const code = generateUniqueCode('threshold', { threshold, amount: discountAmount }, prefix);
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   
-  const mutation = `
-    mutation discountCodeBasicCreate($basicCodeDiscount: DiscountCodeBasicInput!) {
-      discountCodeBasicCreate(basicCodeDiscount: $basicCodeDiscount) {
-        codeDiscountNode {
-          id
-          codeDiscount {
-            ... on DiscountCodeBasic {
-              codes(first: 1) {
-                nodes {
-                  code
-                }
-              }
-            }
-          }
-        }
-        userErrors {
-          field
-          message
-        }
-      }
-    }
-  `;
 
   const variables = {
     basicCodeDiscount: {
@@ -498,28 +475,20 @@ export async function createThresholdDiscount(admin, threshold, discountAmount, 
         items: {
           all: true
         },
-        appliesOnOneTimePurchase: true,
-        appliesOnSubscription: true
+        // appliesOnOneTimePurchase / appliesOnSubscription / recurringCycleLimit
+        // are added by submitBasicCodeDiscount ONLY when the store sells
+        // subscriptions. Shopify rejects all three otherwise and the whole
+        // offer dies with them — see discount-subscription-fields.js.
       },
-      // Subscription (selling plan) items: discount first billing cycle only —
-      // renewals bill at full price.
-      recurringCycleLimit: 1,
       appliesOncePerCustomer: true,
       usageLimit: 1
     }
   };
 
-  const response = await admin.graphql(mutation, { variables });
-  const result = await response.json();
-  
-  if (result.data.discountCodeBasicCreate.userErrors.length > 0) {
-    console.error("Error creating discount:", result.data.discountCodeBasicCreate.userErrors);
-    throw new Error("Failed to create discount code");
-  }
-  
-  const createdCode = result.data.discountCodeBasicCreate.codeDiscountNode
-    .codeDiscount.codes.nodes[0].code;
-  
+  const createdCode = await submitBasicCodeDiscount(
+    admin, variables.basicCodeDiscount, `threshold $${threshold}/$${discountAmount}`, shopId
+  );
+
   console.log(` Created threshold discount: ${createdCode} (spend $${threshold} get $${discountAmount} off, expires in 24h)`);
   
   return {
