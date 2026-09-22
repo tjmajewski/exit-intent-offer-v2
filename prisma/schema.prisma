@@ -551,7 +551,7 @@ model InterventionOutcome {
   // What happened
   wasShown       Boolean // true = modal shown, false = no_intervention
   rendered       Boolean @default(false) // wasShown rows: client confirmed the surface actually rendered (decisions are minted at prefetch, before any trigger fires). wasShown=false rows are created rendered=true (nothing to render).
-  isHoldout      Boolean @default(false) // true = 5% holdout group (excluded from learning)
+  isHoldout      Boolean @default(false) // true = holdout group, 10% of visitors (excluded from learning)
   converted      Boolean @default(false)
   revenue        Float?
   discountAmount Float?
@@ -572,6 +572,20 @@ model InterventionOutcome {
   aiDecisionId String? // Links to AIDecision record
   impressionId String? // Links to VariantImpression (if shown)
 
+  // The randomisation unit. The holdout coin is a STICKY hash of visitorId
+  // (apps.exit-intent.api.ai-decision.jsx), so one visitor's every page load
+  // lands in the same arm. Counting rows therefore counts page loads, not
+  // people, and the two arms do not generate rows at the same rate — the
+  // first control visitor on the live store produced 5 rows in 28 seconds
+  // against ~1.7 for a typical treated visitor. A rate built on rows compares
+  // two different units and moves with browsing depth rather than behaviour.
+  //
+  // Denormalised onto the outcome so the dashboard can count DISTINCT people
+  // per arm without joining VisitorTouch on every load. Nullable: rows
+  // written before this column existed carry null, and older cached
+  // storefront scripts can still post a decision with no visitorId.
+  visitorId String?
+
   timestamp DateTime @default(now())
 
   // NOT YET UNIQUE on (shopId, aiDecisionId) — deliberately.
@@ -588,6 +602,8 @@ model InterventionOutcome {
   @@index([shopId, scoreBucket, wasShown])
   @@index([shopId, timestamp])
   @@index([shopId, wasShown, converted])
+  // Distinct-visitor counts per arm, the shape both dashboard tiles read.
+  @@index([shopId, isHoldout, visitorId])
   @@index([timestamp])
 }
 

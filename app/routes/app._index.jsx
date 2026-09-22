@@ -40,6 +40,9 @@ function emptyAnalytics() {
     lifetime: { ...zero },
     trends: { hasTrendData: false, revenueChange: null, conversionsChange: null, cvrChange: null },
     dailyRevenue: [],
+    // null, not a zeroed shape: the tiles hide entirely rather than render
+    // "0.0% vs TBD" for a shop that has no outcome rows at all.
+    arms: null,
   };
 }
 
@@ -241,6 +244,10 @@ export async function loader({ request }) {
         lifetime: toDashboardShape(lifetimeMetrics),
         trends,
         dailyRevenue,
+        // Per-CUSTOMER arm comparison, deliberately kept off last30Days: every
+        // field in that object is denominated in rows, and mixing a people
+        // count into it is how the two units get confused again.
+        arms: window30.arms ?? null,
       };
     } else {
       analytics = emptyAnalytics();
@@ -763,6 +770,7 @@ function InfoTooltip({ content }) {
 
 export default function Dashboard() {
   const { settings, status, plan, analytics, promoWarning, deviceUpsell, activePromotions, modalLibrary, onboarding, populationSize, shopDomain, aiProgress, holdoutLift, isAIMode, currencyCode } = useLoaderData();
+  const arms = analytics?.arms ?? null;
   const fetcher = useFetcher();
   const [isEnabled, setIsEnabled] = useState(status.enabled);
 
@@ -1368,67 +1376,62 @@ export default function Dashboard() {
         );
       })()}
 
-      {/* Second Row Metrics */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(3, 1fr)",
-        gap: 24,
-        marginBottom: 32
-      }}>
-        <div style={{
-          background: "white",
-          padding: 24,
-          borderRadius: 8,
-          border: "1px solid #e5e7eb"
-        }}>
-          <div style={{
-            fontSize: 14,
-            color: "#6b7280",
-            marginBottom: 8
-          }}>
-            People Clicked
-          </div>
-          <div style={{ fontSize: 32, fontWeight: "bold", color: "#111827" }}>
-            {analytics.last30Days.clicks.toLocaleString()}
-          </div>
-        </div>
+      {/* Arm comparison. Two tiles, not three: "Times Shown" was removed
+          because a display count answers "did the app do something", and the
+          question the merchant actually has is "did it work" — which only a
+          comparison against the control group can address.
 
+          AI/Guided mode only. Manual mode shows every visitor a modal
+          unconditionally and randomises nothing, so there is no control arm and
+          the pair would be a rate beside a permanently empty box. */}
+      {isAIMode && arms && (
         <div style={{
-          background: "white",
-          padding: 24,
-          borderRadius: 8,
-          border: "1px solid #e5e7eb"
+          display: "grid",
+          gridTemplateColumns: "repeat(2, 1fr)",
+          gap: 24,
+          marginBottom: 32
         }}>
           <div style={{
-            fontSize: 14,
-            color: "#6b7280",
-            marginBottom: 8
+            background: "white",
+            padding: 24,
+            borderRadius: 8,
+            border: "1px solid #e5e7eb"
           }}>
-            Click Rate
+            <div style={{ fontSize: 14, color: "#6b7280", marginBottom: 8 }}>
+              With Resparq
+            </div>
+            <div style={{ fontSize: 32, fontWeight: "bold", color: "#111827" }}>
+              {arms.treated.customers > 0 ? `${arms.treated.rate.toFixed(1)}%` : "\u2014"}
+            </div>
+            <div style={{ fontSize: 13, color: "#6b7280", marginTop: 6 }}>
+              {arms.treated.converted.toLocaleString()} of {arms.treated.customers.toLocaleString()} customers ordered
+            </div>
           </div>
-          <div style={{ fontSize: 32, fontWeight: "bold", color: "#111827" }}>
-            {analytics.last30Days.clickRate}%
-          </div>
-        </div>
 
-        <div style={{
-          background: "white",
-          padding: 24,
-          borderRadius: 8,
-          border: "1px solid #e5e7eb"
-        }}>
           <div style={{
-            fontSize: 14,
-            color: "#6b7280",
-            marginBottom: 8
+            background: "white",
+            padding: 24,
+            borderRadius: 8,
+            border: "1px solid #e5e7eb"
           }}>
-            Times Shown
-          </div>
-          <div style={{ fontSize: 32, fontWeight: "bold", color: "#111827" }}>
-            {analytics.last30Days.impressions.toLocaleString()}
+            <div style={{ fontSize: 14, color: "#6b7280", marginBottom: 8 }}>
+              Without Resparq (Control)
+            </div>
+            <div style={{
+              fontSize: 32,
+              fontWeight: "bold",
+              color: arms.controlReady ? "#111827" : "#9ca3af"
+            }}>
+              {arms.controlReady ? `${arms.control.rate.toFixed(1)}%` : "TBD"}
+            </div>
+            <div style={{ fontSize: 13, color: "#6b7280", marginTop: 6 }}>
+              {arms.controlReady
+                ? `${arms.control.converted.toLocaleString()} of ${arms.control.customers.toLocaleString()} customers ordered`
+                : `${arms.control.customers.toLocaleString()} of ${arms.controlMinimum} customers held back so far`}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Enterprise: Promotional Intelligence Widget */}
       {activePromotions && activePromotions.count > 0 && (

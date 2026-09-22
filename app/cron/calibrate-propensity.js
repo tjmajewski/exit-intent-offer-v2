@@ -1,7 +1,7 @@
 // Propensity Calibration Cron (weekly)
 //
 // Trains the calibrated propensity model — P(convert WITHOUT a modal) — from
-// InterventionOutcome rows where wasShown=false (5% holdout + learned skips
+// InterventionOutcome rows where wasShown=false (10% holdout + learned skips
 // with webhook-recorded natural conversions), joining each outcome back to
 // its AIDecision for the full signal vector.
 //

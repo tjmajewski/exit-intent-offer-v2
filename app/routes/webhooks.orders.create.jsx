@@ -480,7 +480,7 @@ export const action = async ({ request }) => {
       );
     }
 
-    // HOLDOUT CONVERSION TRACKING: Detect orders from the 5% holdout group.
+    // HOLDOUT CONVERSION TRACKING: Detect orders from the 10% holdout group.
     // These conversions are recorded for incrementality measurement but are
     // excluded from the adaptive threshold learning loop.
     // Gated on the RESOLVED arm, not on the raw attribute. A cart carrying a

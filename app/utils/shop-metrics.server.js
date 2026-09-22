@@ -54,6 +54,90 @@ import db from "../db.server.js";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * Control customers required before the control tile shows a rate instead of
+ * "Not enough data yet".
+ *
+ * Set at 10 by product decision. Recording the statistics so the number is
+ * raised deliberately rather than rediscovered: at 10 customers the rate can
+ * only land on 0%, 10%, 20% ... — the granularity is 10 percentage points, so
+ * a true rate near 5% is not a value the tile is able to display. On a 5%
+ * baseline it reads 0% about 60% of the time and 10% about 32% of the time.
+ * It is an honest count of what happened and a poor estimate of the truth;
+ * ~100 customers is where 1-point resolution starts.
+ *
+ * The LIFT figure has its own, stricter gate in computeHoldout and is
+ * unaffected by this.
+ */
+export const CONTROL_CUSTOMER_MINIMUM = 10;
+
+/**
+ * Per-CUSTOMER conversion for each arm — the pair the merchant dashboard puts
+ * side by side.
+ *
+ * Counts DISTINCT visitors, not rows, because the holdout coin is a sticky
+ * per-visitor hash: one visitor's every page load lands in the same arm, and
+ * the arms do not generate rows at the same rate. The live store's first
+ * control visitor produced 5 rows in 28 seconds against ~1.7 for a typical
+ * treated visitor, so a row-based pair of rates would have compared browsing
+ * depth as much as behaviour. Rows stay right for everything that is counting
+ * events; a comparison between arms has to count the thing that was randomised.
+ *
+ * Treatment is INTENTION-TO-TREAT — every non-holdout customer, whether or not
+ * a modal was decided, rendered or seen. Filtering to customers who saw
+ * something would select on a post-randomisation event correlated with the
+ * outcome and stop the two arms being comparable. Choosing to stay quiet is a
+ * thing the product did, and it belongs in the denominator.
+ *
+ * Rows with a null visitorId (written before the column existed, or by a
+ * cached storefront script) are excluded from BOTH arms rather than guessed
+ * at, so the two rates stay like-for-like.
+ */
+async function armsByCustomer({ shopId, since }) {
+  const rows = await db.$queryRaw`
+    SELECT "isHoldout" AS holdout,
+           COUNT(DISTINCT "visitorId")::int AS customers,
+           COUNT(DISTINCT "visitorId") FILTER (WHERE converted)::int AS converted
+    FROM "InterventionOutcome"
+    WHERE "shopId" = ${shopId}
+      AND "timestamp" >= ${since}
+      AND "visitorId" IS NOT NULL
+    GROUP BY 1`;
+  return shapeArms(rows);
+}
+
+/**
+ * The pure half of armsByCustomer: group rows -> the shape both tiles read.
+ *
+ * Separated so the gate and the rate arithmetic are testable without a
+ * database. Takes what the query returns — one row per arm, `holdout` boolean,
+ * `customers` and `converted` as distinct-visitor counts.
+ */
+export function shapeArms(rows) {
+  const pick = (isHoldout) => {
+    const row = (rows || []).find(r => Boolean(r.holdout) === isHoldout);
+    const customers = row?.customers ?? 0;
+    const converted = row?.converted ?? 0;
+    return {
+      customers,
+      converted,
+      rate: customers > 0 ? (converted / customers) * 100 : 0
+    };
+  };
+
+  const treated = pick(false);
+  const control = pick(true);
+  return {
+    treated,
+    control,
+    // The control tile shows a rate only past the minimum; below it the number
+    // exists but says nothing, and a 0% beside a non-zero treated rate reads
+    // as infinite lift.
+    controlReady: control.customers >= CONTROL_CUSTOMER_MINIMUM,
+    controlMinimum: CONTROL_CUSTOMER_MINIMUM
+  };
+}
+
+/**
  * The definitions above, as Prisma where-clauses.
  *
  * Exported because the cross-shop admin dashboard has to count the SAME rows
@@ -148,6 +232,7 @@ export async function getShopMetrics({ shopId, days = 30, mode = "ai" }) {
     starterConverted,
     orderAgg,
     decisions,
+    arms,
   ] = await Promise.all([
     db.interventionOutcome.count({ where: W.shown }),
     db.interventionOutcome.count({ where: W.skipped }),
@@ -171,6 +256,7 @@ export async function getShopMetrics({ shopId, days = 30, mode = "ai" }) {
       _sum: { orderValue: true, discountAmount: true },
     }),
     db.aIDecision.count({ where: { shopId, createdAt: { gte: since } } }),
+    armsByCustomer({ shopId, since }),
   ]);
 
   // Manual/Starter mode never produces InterventionOutcome rows — the modal is
@@ -203,6 +289,7 @@ export async function getShopMetrics({ shopId, days = 30, mode = "ai" }) {
     discountGiven,
     skipped,
     decisions,
+    arms,
     holdout: computeHoldout({
       treatmentTotal: treatedTotal,
       treatmentConverted: treatedConverted,
@@ -222,7 +309,7 @@ export async function getShopMetrics({ shopId, days = 30, mode = "ai" }) {
 
 function buildResult({
   window, since, impressions, clicks, orders, cohortConversions, revenue,
-  discountGiven, skipped, decisions, holdout,
+  discountGiven, skipped, decisions, holdout, arms = null,
 }) {
   const rate = (n, d) => (d > 0 ? (n / d) * 100 : 0);
   return {
@@ -244,6 +331,9 @@ function buildResult({
     clickRate: rate(clicks, impressions),
     revenuePerImpression: impressions > 0 ? revenue / impressions : 0,
     showRate: rate(impressions, impressions + skipped),
+    // Per-customer conversion for each arm. See armsByCustomer — this is the
+    // only pair in this module whose denominator is people rather than rows.
+    arms,
     holdout,
   };
 }

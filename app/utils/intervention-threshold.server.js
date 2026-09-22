@@ -217,6 +217,13 @@ export async function recordInterventionOutcome(db, {
   segment = 'all',
   aiDecisionId = null,
   impressionId = null,
+  // The arm's randomisation unit — see InterventionOutcome.visitorId. Both
+  // dashboard tiles count DISTINCT visitors per arm, so an outcome written
+  // without this is invisible to them (it still counts in every row-based
+  // figure). Null only for pre-column rows and cached scripts with no
+  // visitorId, which are the same rows the holdout coin falls back to
+  // per-request randomness for.
+  visitorId = null,
   // Decision endpoint passes true for wasShown outcomes: the decision is
   // minted at prefetch, before any trigger fires, so the row is created
   // rendered=false and the show counters wait for confirmInterventionRender.
@@ -247,7 +254,8 @@ export async function recordInterventionOutcome(db, {
       segment,
       scoreBucket: bucket,
       aiDecisionId,
-      impressionId
+      impressionId,
+      visitorId
     }
   });
 

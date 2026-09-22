@@ -3,7 +3,7 @@
 //
 // Learns P(convert WITHOUT a modal) from real outcomes instead of the
 // hand-set curves in propensity.server.js. Training data: InterventionOutcome
-// rows with wasShown=false — the 5% holdout (random, unbiased) plus learned
+// rows with wasShown=false — the 10% holdout (random, unbiased) plus learned
 // skips whose natural conversions the order webhook records. Skip rows are
 // not randomly assigned (the adaptive threshold chose them), but the model
 // conditions on the same features that drove the skip, which bounds the bias;

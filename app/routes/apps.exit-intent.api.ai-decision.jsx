@@ -343,11 +343,11 @@ export async function action({ request }) {
     // bucket. The per-bucket "did shown beat skipped" comparison that drives
     // threshold learning was reading a control arm that was empty in every
     // other bucket and fabricated in that one. Holdout visitors now pay for the
-    // customer-enrichment lookup as well (5% of traffic) — that is the cost of
+    // customer-enrichment lookup as well (10% of traffic) — that is the cost of
     // scoring them on the same scale as everyone else, which is the entire
     // point of having a control group.
     // =========================================================================
-    // HOLDOUT GROUP: 5% of eligible traffic is randomly excluded from ALL
+    // HOLDOUT GROUP: 10% of eligible traffic is randomly excluded from ALL
     // intervention. This happens BEFORE hard overrides and Thompson Sampling
     // so the holdout is unbiased. Holdout outcomes are recorded for
     // incrementality measurement but never fed into the learning loop.
@@ -357,7 +357,20 @@ export async function action({ request }) {
     // randomness flickered assignment across visits and contaminated the
     // incrementality measurement in both directions. Old cached storefront
     // scripts without visitorId fall back to per-request random.
-    const HOLDOUT_RATE = 0.05;
+    //
+    // 5% -> 10% (2026-09-22). The error on a lift estimate scales with
+    // 1/(1-h) + 1/h, which is 21.1 at h=0.05 and 11.1 at h=0.10: doubling the
+    // control arm nearly HALVES the variance for the same total traffic,
+    // because at 5% the small arm dominates the error term. It also halves the
+    // wait for a control group big enough to quote at all. The cost is that 5%
+    // more visitors see nothing, which is real money on a live store — taken
+    // deliberately, because a control group too small to read makes every
+    // revenue number the product reports unfalsifiable.
+    //
+    // Sticky hashing means raising the rate REASSIGNS existing visitors: a
+    // visitor whose hash lands in 5..9 moves from treated to control. That is
+    // correct going forward and does not retro-edit any past row.
+    const HOLDOUT_RATE = 0.10;
     const holdoutVisitorId = (typeof signals.visitorId === 'string' && signals.visitorId.length > 0)
       ? signals.visitorId
       : null;
@@ -393,7 +406,8 @@ export async function action({ request }) {
         deviceType: signals.deviceType,
         trafficSource: signals.trafficSource,
         segment: holdoutSegment,
-        aiDecisionId: aiDecisionRecord.id
+        aiDecisionId: aiDecisionRecord.id,
+        visitorId: holdoutVisitorId
       }).catch(e => console.error('[Holdout] Failed to record holdout outcome:', e));
 
       // Journey log: holdout suppression is a touch too — the visitor's
@@ -616,7 +630,8 @@ export async function action({ request }) {
         deviceType: signals.deviceType,
         trafficSource: signals.trafficSource,
         segment,
-        aiDecisionId: aiDecisionRecord.id
+        aiDecisionId: aiDecisionRecord.id,
+        visitorId: signals.visitorId ?? null
       }).catch(e => console.error('[Threshold] Failed to record no_intervention outcome:', e));
 
       // Track as an analytics event for learning. Gated like every neighbouring
@@ -1232,6 +1247,7 @@ export async function action({ request }) {
         segment: noDiscSegment,
         aiDecisionId: noDiscAiDec.id,
         impressionId,
+        visitorId: signals.visitorId ?? null,
         pendingRender: true // decision prefetch ≠ render; client confirms via confirm-render
       }).catch(e => console.error('[Threshold] Failed to record shown outcome:', e));
 
@@ -1480,6 +1496,7 @@ export async function action({ request }) {
       segment: shownSegment,
       aiDecisionId: discountAiDec.id,
       impressionId,
+      visitorId: signals.visitorId ?? null,
       pendingRender: true // decision prefetch ≠ render; client confirms via confirm-render
     }).catch(e => console.error('[Threshold] Failed to record shown outcome:', e));
 
