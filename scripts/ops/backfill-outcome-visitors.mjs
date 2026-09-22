@@ -49,6 +49,9 @@ async function main() {
   }
 
   const stats = { fromSignals: 0, fromTouch: 0, unresolved: 0, written: 0 };
+  // Decision ids whose visitor came from the journey log rather than signals,
+  // so the per-row tally below attributes each row to the right source.
+  const fromTouchIds = new Set();
   const PAGE = 500;
   let cursor = null;
 
@@ -63,55 +66,73 @@ async function main() {
     if (batch.length === 0) break;
     cursor = batch[batch.length - 1].id;
 
-    for (const row of batch) {
-      let visitorId = null;
+    // Resolve the whole page in two lookups rather than one to three per
+    // row. Row-at-a-time was fine for the 60 rows on the first live store and
+    // would be hours of serial round trips once the platform has real volume.
+    const decisionIds = [...new Set(batch.map(r => r.aiDecisionId).filter(Boolean))];
 
-      if (row.aiDecisionId) {
-        const decision = await db.aIDecision.findUnique({
-          where: { id: row.aiDecisionId },
-          select: { signals: true }
-        });
-        if (decision?.signals) {
-          try {
-            const parsed = JSON.parse(decision.signals);
-            if (typeof parsed?.visitorId === 'string' && parsed.visitorId.length > 0) {
-              visitorId = parsed.visitorId;
-              stats.fromSignals++;
-            }
-          } catch {
-            // Malformed signals blob — fall through to the touch lookup.
-          }
+    const decisions = decisionIds.length
+      ? await db.aIDecision.findMany({
+          where: { id: { in: decisionIds } },
+          select: { id: true, signals: true }
+        })
+      : [];
+    const visitorByDecision = new Map();
+    for (const d of decisions) {
+      if (!d.signals) continue;
+      try {
+        const parsed = JSON.parse(d.signals);
+        if (typeof parsed?.visitorId === 'string' && parsed.visitorId.length > 0) {
+          visitorByDecision.set(d.id, parsed.visitorId);
         }
+      } catch {
+        // Malformed signals blob — the journey-log fallback below covers it.
+      }
+    }
 
-        // Fallback: the journey log recorded the same decision against a
-        // visitor even when the decision row's signals are unusable.
-        if (!visitorId) {
-          const touch = await db.visitorTouch.findFirst({
-            where: { shopId: row.shopId, aiDecisionId: row.aiDecisionId },
-            select: { visitorId: true }
-          });
-          if (touch?.visitorId) {
-            visitorId = touch.visitorId;
-            stats.fromTouch++;
-          }
+    // Fallback only for the decisions signals could not answer for: the
+    // journey log recorded the same decision against a visitor even when the
+    // decision row is gone or its blob is unusable.
+    const unresolvedIds = decisionIds.filter(id => !visitorByDecision.has(id));
+    if (unresolvedIds.length) {
+      const touches = await db.visitorTouch.findMany({
+        where: { aiDecisionId: { in: unresolvedIds } },
+        select: { aiDecisionId: true, visitorId: true }
+      });
+      for (const t of touches) {
+        if (t.visitorId && !visitorByDecision.has(t.aiDecisionId)) {
+          visitorByDecision.set(t.aiDecisionId, t.visitorId);
+          fromTouchIds.add(t.aiDecisionId);
         }
       }
+    }
 
+    // Group by the value being written so the page costs one updateMany per
+    // distinct visitor instead of one update per row.
+    const idsByVisitor = new Map();
+    for (const row of batch) {
+      const visitorId = row.aiDecisionId ? visitorByDecision.get(row.aiDecisionId) : null;
       if (!visitorId) {
         // Genuinely unattributable: a cached storefront script posted no
-        // visitorId. Left null on purpose — both arm tiles exclude nulls, so a
-        // guess here would put a fabricated customer into one of the arms.
+        // visitorId. Left null on purpose — both arm tiles exclude nulls, so
+        // a guess here would put a fabricated customer into one of the arms.
         stats.unresolved++;
         continue;
       }
+      if (fromTouchIds.has(row.aiDecisionId)) stats.fromTouch++;
+      else stats.fromSignals++;
+      if (!idsByVisitor.has(visitorId)) idsByVisitor.set(visitorId, []);
+      idsByVisitor.get(visitorId).push(row.id);
+      stats.written++;
+    }
 
-      if (apply) {
-        await db.interventionOutcome.update({
-          where: { id: row.id },
+    if (apply) {
+      for (const [visitorId, ids] of idsByVisitor) {
+        await db.interventionOutcome.updateMany({
+          where: { id: { in: ids } },
           data: { visitorId }
         });
       }
-      stats.written++;
     }
 
     console.log(`  ...scanned through ${cursor}`);

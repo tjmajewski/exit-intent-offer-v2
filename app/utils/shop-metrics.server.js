@@ -93,16 +93,64 @@ export const CONTROL_CUSTOMER_MINIMUM = 10;
  * at, so the two rates stay like-for-like.
  */
 async function armsByCustomer({ shopId, since }) {
-  const rows = await db.$queryRaw`
-    SELECT "isHoldout" AS holdout,
-           COUNT(DISTINCT "visitorId")::int AS customers,
-           COUNT(DISTINCT "visitorId") FILTER (WHERE converted)::int AS converted
-    FROM "InterventionOutcome"
-    WHERE "shopId" = ${shopId}
-      AND "timestamp" >= ${since}
-      AND "visitorId" IS NOT NULL
-    GROUP BY 1`;
-  return shapeArms(rows);
+  try {
+    // Resolve each visitor to ONE arm before counting them, then count
+    // visitors rather than rows.
+    //
+    // A visitor can hold rows in both arms. HOLDOUT_RATE went 5% -> 10% on
+    // 2026-09-22 and the assignment hash is sticky per visitor, so every
+    // visitor whose hash lands in buckets 5..9 was treated before that deploy
+    // and is control after it. Grouping rows by isHoldout counts such a
+    // visitor once in EACH arm, inflating both denominators — and if they
+    // order post-change it lands in the control numerator while their earlier
+    // treated row keeps them in treatment's denominator, biasing the
+    // comparison against the product. Any future change to the rate does the
+    // same thing.
+    //
+    // They are dropped from BOTH arms rather than assigned to one. Their
+    // pre-change behaviour belongs to treatment and their post-change
+    // behaviour to control, and no single bucket is honest about that, so
+    // they are not a clean observation of either. `crossedArms` reports how
+    // many were dropped so a large number is visible rather than silent.
+    const rows = await db.$queryRaw`
+      WITH per_visitor AS (
+        SELECT "visitorId"          AS vid,
+               bool_or("isHoldout")     AS any_holdout,
+               bool_or(NOT "isHoldout") AS any_treated,
+               bool_or(converted)       AS converted
+        FROM "InterventionOutcome"
+        WHERE "shopId" = ${shopId}
+          AND "timestamp" >= ${since}
+          AND "visitorId" IS NOT NULL
+        GROUP BY 1
+      )
+      SELECT any_holdout AS holdout,
+             COUNT(*)::int AS customers,
+             COUNT(*) FILTER (WHERE converted)::int AS converted,
+             0::int AS crossed
+      FROM per_visitor
+      WHERE any_holdout <> any_treated
+      GROUP BY 1
+      UNION ALL
+      SELECT NULL AS holdout, 0::int, 0::int, COUNT(*)::int AS crossed
+      FROM per_visitor
+      WHERE any_holdout AND any_treated`;
+    return shapeArms(rows);
+  } catch (err) {
+    // Never take the rest of the dashboard down with this.
+    //
+    // This is the only query in getShopMetrics that reads a column added in
+    // 2026-09-22, and production applies schema with `prisma db push` at
+    // container boot rather than a migration gate. A request served before
+    // that push lands hits a missing column; inside the shared Promise.all
+    // that rejection propagates out of getShopMetrics and the dashboard
+    // loader's catch replaces EVERY number on the page with zeroes — the
+    // merchant reads $0 revenue and 0 orders instead of two hidden tiles.
+    // Returning null degrades to exactly the state the tiles already render
+    // for a shop with no data: hidden.
+    console.error('[Metrics] armsByCustomer failed, arm tiles hidden:', err?.message || err);
+    return null;
+  }
 }
 
 /**
@@ -113,8 +161,12 @@ async function armsByCustomer({ shopId, since }) {
  * `customers` and `converted` as distinct-visitor counts.
  */
 export function shapeArms(rows) {
+  const all = rows || [];
+  // The crossed-arms tally arrives as its own row with a null `holdout`, so
+  // match on null explicitly rather than letting Boolean(null) === false fold
+  // it into the treated arm and double-count those visitors.
   const pick = (isHoldout) => {
-    const row = (rows || []).find(r => Boolean(r.holdout) === isHoldout);
+    const row = all.find(r => r?.holdout != null && Boolean(r.holdout) === isHoldout);
     const customers = row?.customers ?? 0;
     const converted = row?.converted ?? 0;
     return {
@@ -126,9 +178,16 @@ export function shapeArms(rows) {
 
   const treated = pick(false);
   const control = pick(true);
+  // Visitors who hold rows in both arms, dropped from both. Non-zero after a
+  // HOLDOUT_RATE change, and expected to decay as those visitors stop
+  // returning — a number that keeps climbing means assignment is no longer
+  // sticky, which is a different and worse bug.
+  const crossedArms = all.reduce((n, r) => n + (r?.crossed ?? 0), 0);
+
   return {
     treated,
     control,
+    crossedArms,
     // The control tile shows a rate only past the minimum; below it the number
     // exists but says nothing, and a 0% beside a non-zero treated rate reads
     // as infinite lift.
@@ -202,9 +261,11 @@ export function canonicalWhere({ shopIds, from, to = null, extra = {} }) {
  * @param {string}  args.shopId  Shop.id (Prisma id, not the myshopify domain)
  * @param {number|null} args.days Rolling window size; null means lifetime
  * @param {string}  args.mode    Shop.mode — 'ai' | 'hybrid' | 'manual'
+ * @param {boolean} args.includeArms  Run the per-customer arm comparison.
+ *   Off for callers that only need the money/count figures.
  * @returns {Promise<object>} see buildResult() for the shape
  */
-export async function getShopMetrics({ shopId, days = 30, mode = "ai" }) {
+export async function getShopMetrics({ shopId, days = 30, mode = "ai", includeArms = true }) {
   // null/0 means lifetime. `since` of epoch keeps every query on the same
   // indexed timestamp path rather than branching the where clauses.
   const lifetime = days === null || days === 0;
@@ -256,7 +317,11 @@ export async function getShopMetrics({ shopId, days = 30, mode = "ai" }) {
       _sum: { orderValue: true, discountAmount: true },
     }),
     db.aIDecision.count({ where: { shopId, createdAt: { gte: since } } }),
-    armsByCustomer({ shopId, since }),
+    // Opt-out because the caller that asks for lifetime metrics alongside a
+    // 30-day window reads arms from the 30-day result only. Left on, the
+    // lifetime call runs a DISTINCT visitor count from epoch — the widest
+    // possible scan — on every dashboard load and discards it.
+    includeArms ? armsByCustomer({ shopId, since }) : null,
   ]);
 
   // Manual/Starter mode never produces InterventionOutcome rows — the modal is

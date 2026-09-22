@@ -234,7 +234,9 @@ export async function loader({ request }) {
     if (shopRecord) {
       const [metrics30, lifetimeMetrics, trends, dailyRevenue] = await Promise.all([
         getShopMetrics({ shopId: shopRecord.id, days: 30, mode: shopMode }),
-        getShopMetrics({ shopId: shopRecord.id, days: null, mode: shopMode }),
+        // Lifetime totals only — the arm tiles read the 30-day window, and
+        // computing them from epoch here would be a discarded full scan.
+        getShopMetrics({ shopId: shopRecord.id, days: null, mode: shopMode, includeArms: false }),
         getShopTrends({ shopId: shopRecord.id, days: 7, mode: shopMode }),
         getDailyRevenue({ shopId: shopRecord.id, days: 7 }),
       ]);
@@ -341,6 +343,17 @@ export async function loader({ request }) {
     let aiProgress = null;
     let holdoutLift = null;
     const isAIMode = settings?.mode === 'ai' && (plan.tier === 'pro' || plan.tier === 'enterprise');
+    // Whether this shop actually has a control group, which is a wider set
+    // than isAIMode. The decision endpoint flips the holdout coin for 'ai'
+    // AND 'hybrid' (apps.exit-intent.api.ai-decision.jsx admits both), and
+    // shop-metrics treats hybrid as AI throughout. A Guided shop therefore
+    // pays the full cost of measurement — 10% of its visitors are shown
+    // nothing — and gating its tiles on isAIMode would have withheld the
+    // result it paid for. Kept separate from isAIMode rather than widening
+    // it, because isAIMode also drives the hero card's lift branch and the
+    // AI-progress panel, and those are not part of this change.
+    const hasControlArm = (settings?.mode === 'ai' || settings?.mode === 'hybrid')
+      && (plan.tier === 'pro' || plan.tier === 'enterprise');
 
     if (shopRecord && isAIMode) {
       const [champion, variantCounts, maxGen] = await Promise.all([
@@ -419,6 +432,7 @@ export async function loader({ request }) {
       aiProgress,
       holdoutLift,
       isAIMode,
+      hasControlArm,
       currencyCode
     };
   } catch (error) {
@@ -431,6 +445,7 @@ export async function loader({ request }) {
       populationSize: 0,
       holdoutLift: null,
       isAIMode: false,
+      hasControlArm: false,
       currencyCode: "USD"
     };
   }
@@ -769,7 +784,7 @@ function InfoTooltip({ content }) {
 
 
 export default function Dashboard() {
-  const { settings, status, plan, analytics, promoWarning, deviceUpsell, activePromotions, modalLibrary, onboarding, populationSize, shopDomain, aiProgress, holdoutLift, isAIMode, currencyCode } = useLoaderData();
+  const { settings, status, plan, analytics, promoWarning, deviceUpsell, activePromotions, modalLibrary, onboarding, populationSize, shopDomain, aiProgress, holdoutLift, isAIMode, hasControlArm, currencyCode } = useLoaderData();
   const arms = analytics?.arms ?? null;
   const fetcher = useFetcher();
   const [isEnabled, setIsEnabled] = useState(status.enabled);
@@ -1381,10 +1396,11 @@ export default function Dashboard() {
           question the merchant actually has is "did it work" — which only a
           comparison against the control group can address.
 
-          AI/Guided mode only. Manual mode shows every visitor a modal
-          unconditionally and randomises nothing, so there is no control arm and
-          the pair would be a rate beside a permanently empty box. */}
-      {isAIMode && arms && (
+          AI and Guided only — both run the holdout coin. Manual mode shows
+          every visitor a modal unconditionally and randomises nothing, so
+          there is no control arm and the pair would be a rate beside a
+          permanently empty box. */}
+      {hasControlArm && arms && (
         <div style={{
           display: "grid",
           gridTemplateColumns: "repeat(2, 1fr)",

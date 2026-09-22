@@ -12,9 +12,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { shapeArms, CONTROL_CUSTOMER_MINIMUM } from '../app/utils/shop-metrics.server.js';
 
-const rows = (treated, control) => [
-  { holdout: false, customers: treated[0], converted: treated[1] },
-  { holdout: true, customers: control[0], converted: control[1] }
+const rows = (treated, control, crossed = 0) => [
+  { holdout: false, customers: treated[0], converted: treated[1], crossed: 0 },
+  { holdout: true, customers: control[0], converted: control[1], crossed: 0 },
+  // The query emits the crossed-arms tally as its own row with a null arm.
+  { holdout: null, customers: 0, converted: 0, crossed }
 ];
 
 describe('arm tiles — rate arithmetic', () => {
@@ -85,6 +87,74 @@ describe('arm tiles — the control gate', () => {
   test('the minimum is carried in the payload so the tile can name it', () => {
     const a = shapeArms(rows([5, 0], [3, 0]));
     assert.equal(a.controlMinimum, CONTROL_CUSTOMER_MINIMUM);
+  });
+});
+
+describe('arm tiles — a visitor belongs to one arm', () => {
+  // HOLDOUT_RATE went 5% -> 10% and assignment is a sticky per-visitor hash,
+  // so every visitor in buckets 5..9 was treated before that deploy and is
+  // control after it. Rows for such a visitor exist in both arms.
+
+  test('the crossed-arms tally is reported, not folded into an arm', () => {
+    const a = shapeArms(rows([30, 2], [12, 1], 4));
+    assert.equal(a.crossedArms, 4);
+    assert.equal(a.treated.customers, 30, 'crossed visitors must not inflate treated');
+    assert.equal(a.control.customers, 12, 'crossed visitors must not inflate control');
+  });
+
+  test('the null-arm tally row is never mistaken for the treated arm', () => {
+    // Boolean(null) === false, so a naive arm match would return the tally row
+    // for the treated arm and report 0 treated customers on every shop.
+    const a = shapeArms([
+      { holdout: null, customers: 0, converted: 0, crossed: 7 },
+      { holdout: false, customers: 41, converted: 3, crossed: 0 }
+    ]);
+    assert.equal(a.treated.customers, 41);
+    assert.equal(a.crossedArms, 7);
+  });
+
+  test('crossedArms is 0 when the query returns no tally row', () => {
+    const a = shapeArms([
+      { holdout: false, customers: 10, converted: 1 },
+      { holdout: true, customers: 10, converted: 0 }
+    ]);
+    assert.equal(a.crossedArms, 0);
+  });
+
+  test('the arms query resolves each visitor before counting', () => {
+    const metrics = readFileSync(
+      new URL('../app/utils/shop-metrics.server.js', import.meta.url), 'utf8'
+    );
+    // Counting rows grouped by isHoldout is the shape this replaced; a visitor
+    // with rows in both arms landed in both denominators.
+    assert.match(metrics, /WITH per_visitor AS/);
+    assert.match(metrics, /WHERE any_holdout <> any_treated/);
+  });
+});
+
+describe('arm tiles — failure is contained', () => {
+  test('a failing arms query returns null instead of throwing', async () => {
+    // getShopMetrics runs this inside a shared Promise.all. A rejection there
+    // propagates to the dashboard loader's catch, which replaces every number
+    // on the page with zeroes — the merchant reads $0 revenue rather than two
+    // hidden tiles. Production applies schema with `prisma db push` at boot,
+    // so a request served before the new column exists hits exactly this.
+    const metrics = readFileSync(
+      new URL('../app/utils/shop-metrics.server.js', import.meta.url), 'utf8'
+    );
+    const fn = metrics.slice(
+      metrics.indexOf('async function armsByCustomer'),
+      metrics.indexOf('export function shapeArms')
+    );
+    assert.match(fn, /try \{/, 'armsByCustomer must not let its query escape');
+    assert.match(fn, /return null;/, 'a failed arms query degrades to hidden tiles');
+  });
+
+  test('the tiles render nothing when arms is null', () => {
+    const dashboard = readFileSync(
+      new URL('../app/routes/app._index.jsx', import.meta.url), 'utf8'
+    );
+    assert.match(dashboard, /&& arms && \(/);
   });
 });
 
@@ -165,10 +235,25 @@ describe('manual mode', () => {
     'utf8'
   );
 
-  test('the tile pair is gated on AI mode', () => {
-    // Manual mode shows every visitor a modal unconditionally and randomises
-    // nothing, so there is no control arm and the comparison is meaningless.
-    assert.match(dashboard, /\{isAIMode && arms && \(/);
+  test('the tile pair is gated on having a control arm, not on AI mode', () => {
+    // Manual mode randomises nothing, so there is no control arm and the
+    // comparison is meaningless. But hybrid/Guided DOES run the holdout coin,
+    // and gating on isAIMode (which is `=== 'ai'`) would have made a Guided
+    // shop pay for a control group it could never see.
+    assert.match(dashboard, /\{hasControlArm && arms && \(/);
+  });
+
+  test('Guided mode counts as having a control arm', () => {
+    assert.match(
+      dashboard,
+      /const hasControlArm = \(settings\?\.mode === 'ai' \|\| settings\?\.mode === 'hybrid'\)/
+    );
+  });
+
+  test('the lifetime metrics call skips the arm query', () => {
+    // Only the 30-day window feeds the tiles; computing arms from epoch on the
+    // lifetime call is a discarded full scan on every dashboard load.
+    assert.match(dashboard, /days: null, mode: shopMode, includeArms: false/);
   });
 
   // Match RENDERED labels only — a label sitting on its own line between JSX
