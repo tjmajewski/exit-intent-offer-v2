@@ -1427,7 +1427,7 @@ export default function Dashboard() {
             <div style={{ fontSize: 13, color: "#6b7280", marginTop: 6 }}>
               {arms.controlReady
                 ? `${arms.control.converted.toLocaleString()} of ${arms.control.customers.toLocaleString()} customers ordered`
-                : `${arms.control.customers.toLocaleString()} of ${arms.controlMinimum} customers held back so far`}
+                : `Will calculate after ${arms.controlMinimum} customers`}
             </div>
           </div>
         </div>
