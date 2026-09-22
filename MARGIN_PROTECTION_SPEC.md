@@ -1,7 +1,8 @@
 # Margin Protection Feature - AI Mode
 
 **Status:** SUPERSEDED — a simplified margin floor shipped (June 2026) instead
-of this per-product-cost design.
+of this per-product-cost design. Margin is inferred per-vertical since
+2026-09-22; see the box below.
 **Plan Tier:** Both Pro and Enterprise (no longer Enterprise-only)
 **Mode:** AI Mode Only
 
@@ -9,13 +10,34 @@ of this per-product-cost design.
 
 > **What actually shipped.** The June 2026 offer-engine unification made margin
 > protection **always-on for both tiers** via `offerCeilingPercent` in
-> [`app/utils/ai-decision.server.js`](app/utils/ai-decision.server.js). It uses a
-> single per-store `assumedGrossMargin` setting (default 0.40), NOT per-product
-> Shopify `unitCost` fetching. Three caps bind every offer: post-discount gross
-> margin ≥ 20%, offer ≤ half the gross margin, and the merchant's aggression
-> ceiling. Regression-guarded by `scripts/dev/verify-margin-invariant.mjs`. The
-> per-product cost-based design below is **deferred** — kept for reference if
-> finer-grained, SKU-level margin control is ever needed.
+> [`app/utils/ai-decision.server.js`](app/utils/ai-decision.server.js), NOT
+> per-product Shopify `unitCost` fetching. Three caps bind every offer:
+> post-discount gross margin ≥ 20%, offer ≤ half the gross margin, and the
+> merchant's aggression ceiling. Regression-guarded by
+> `scripts/dev/verify-margin-invariant.mjs`. The per-product cost-based design
+> below is **deferred** — kept for reference if finer-grained, SKU-level margin
+> control is ever needed.
+>
+> **Where the gross margin comes from (2026-09-22).** There is no
+> merchant-entered value. `settings.assumedGrossMargin` has a reader but has
+> never had a writer, so every store ran at the hardcoded `0.40` fallback until
+> this date — ~15 points low for beauty and 15 points **high** for electronics,
+> which is the dangerous direction. A margin field during onboarding is a
+> blocker on getting a store live, and Shopify's own cost-per-item needs a
+> `read_inventory` scope this app does not hold. So `grossMarginForShop(shop,
+> explicit)` in `store-cluster.server.js` infers it from the vertical the app
+> already derives from the store's catalog. An explicit setting still wins if
+> one is ever written; a super-admin override on the shop wins over auto-derive.
+>
+> **Conditional offers have their own cap (2026-09-22).** A threshold offer is
+> funded only by the margin on the spend it ADDS, so
+> `maxConditionalDiscount(cartValue, threshold, assumedGrossMargin)` caps the
+> giveback at half that incremental margin. Without it, scaling the reward
+> produced "spend $350 more, save $300" — a loss on a shopper who was already
+> converting. This is also what makes `offerCeilingPercent`'s exemption of
+> conditional offers from the propensity taper true: that exemption rests on "a
+> threshold costs nothing unless the basket grows", which only holds while the
+> discount stays small relative to the growth.
 
 ---
 

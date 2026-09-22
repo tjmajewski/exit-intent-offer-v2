@@ -14,6 +14,7 @@ Common issues and their solutions for Resparq development and deployment.
 6. [Evolution System Issues](#evolution-system-issues)
 7. [Deployment Issues](#deployment-issues)
 8. [Performance Issues](#performance-issues)
+9. [Offers Look Too Small / Too Large](#offers-look-too-small--too-large)
 
 ---
 
@@ -643,5 +644,85 @@ If your issue isn't covered here:
 
 ---
 
-**Last Updated:** January 2026
+## Offers Look Too Small / Too Large
+
+### Issue: "Aggression is high but the discounts are tiny"
+
+Check in this order. Every step is read-only and runs on the container — never
+with a local `.env`, which points at the dev database.
+
+**1. Are requests crashing before they write a decision?**
+
+```bash
+flyctl ssh console -a resparq -C 'node scripts/ops/why-no-render.mjs <shop> 1'
+```
+
+Section 3's *gap* is impressions minus storefront decisions. A crash between
+`recordImpression` and `aIDecision.create` writes an impression row and no
+decision row, so the loss is invisible except as that gap.
+
+**The script has no notion of when a fix landed**, so a 30-day window
+re-indicts an outage that was fixed a week ago. It takes a **fractional** day
+count — use `0.45` to look at the last ~11 hours only.
+
+Beware survivorship when reading section 5: no-discount decisions always write a
+row, discount decisions can crash before they do, so a crashing mint makes the
+engine look like it is refusing to spend.
+
+**2. What would each lane actually offer on this store's real carts?**
+
+```bash
+flyctl ssh console -a resparq -C 'node scripts/ops/preview-offer-sizing.mjs <shop> 30 <aggression>'
+```
+
+Prints was/now per lane at p10 / median / p90 cart, plus the merchant's kept
+margin per threshold arm. Pass the aggression explicitly: it lives in the
+Shopify settings metafield and the script has no admin session, so it falls back
+to `Shop.aggression` and says which it used.
+
+**3. Is the gross margin right?**
+
+The header line reads e.g. `gross margin ... 65% (from vertical: beauty)`. There
+is no merchant-entered margin — it is inferred from the store's vertical (see
+`MARGIN_PROTECTION_SPEC.md`). If it says `unknown`, the store has no vertical and
+is running at the 50% default.
+
+**4. Why does the store have no vertical?**
+
+```bash
+flyctl ssh console -a resparq -C 'node scripts/ops/reclassify-shop.mjs <shop>'
+```
+
+Dry run. It names which of six things failed — `no_offline_session`,
+`http_error`, `graphql_error`, `no_products`, `no_keyword_match`, `no_majority`
+— and prints the product types it actually saw. Only `no_keyword_match` is fixed
+by editing the keyword table in `store-cluster.server.js`.
+
+`--apply` persists. `--all --apply` sweeps every AI-mode shop.
+
+**5. Still wrong? Override it.**
+
+Super admin → shop detail → **Mode & AI** card → *Store vertical*. The dropdown
+labels each option with the margin it implies. An override beats auto-derive and
+takes effect immediately — no cron wait.
+
+### Issue: "A threshold offer asks for a lot and gives back almost nothing"
+
+Expected below ~$150 carts, and it is the margin math, not a bug. A threshold
+offer is funded only by the margin on the spend it ADDS, so
+`maxConditionalDiscount` caps the giveback at half that. A $146 cart asked for
+$44 more generates ~$18 of margin at 40%, which funds $8.
+
+If the store's real margin is higher than its vertical prior, fix the vertical
+(step 4/5 above) rather than the pool.
+
+### Issue: "The super-admin offer range disagrees with what shoppers see"
+
+Fixed 2026-09-22. The console quoted a flat 0.4 gross margin while the
+storefront inferred it from the vertical. Both read `grossMarginForShop` now. If
+you see a disagreement again, that is a real bug — they share one function.
+
+---
+
+**Last Updated:** September 2026
 **Maintained by:** Resparq Development Team

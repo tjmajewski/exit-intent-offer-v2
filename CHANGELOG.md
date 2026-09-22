@@ -1,5 +1,81 @@
 # @shopify/shopify-app-template-react-router
 
+## Resparq AI - September 22, 2026 (Offers that scale with the cart)
+
+A store at aggression 8 was discounting almost nothing on a $1,150 median cart.
+The decision engine was not at fault: two of the three discount lanes were
+denominated in flat dollars sized for ~$100 carts. Chasing it surfaced that
+`derivedVertical` has never been populated for any store on the platform. Full
+detail in `HANDOFF-2026-09-22.md`.
+
+### Added
+- **`scaleDollarOffer(gene, basis)`** — the dollars-off lanes read their gene as
+  a dollar floor AND a percent of the spend it is measured against, whichever is
+  larger. `basis` is the cart for a flat offer and the *incremental* spend for a
+  conditional one.
+- **`maxConditionalDiscount(cartValue, threshold, assumedGrossMargin)`** — a
+  threshold offer never gives back more than half the margin the added spend
+  generates. At the default 40% margin this lands on exactly the bound
+  `MAX_GAP_MULTIPLE = 5` expresses from the other side.
+- **`GROSS_MARGIN_BY_VERTICAL` / `grossMarginForShop()`** — gross margin
+  inferred from the vertical the app derives from the store's own catalog. No
+  merchant input, no new scope, no onboarding step.
+- **`deriveVerticalDetailed()`** — reports which of six things made derivation
+  return nothing (`no_offline_session`, `http_error`, `graphql_error`,
+  `no_products`, `no_keyword_match`, `no_majority`) with the product types it
+  actually saw. `deriveVertical` stays a thin wrapper.
+- **Super-admin vertical dropdown** — the free-text field became a `Select` over
+  the vocabulary, each option labelled with the margin it implies, ordered by
+  margin rather than alphabetically.
+- **`scripts/ops/preview-offer-sizing.mjs`** — replays the sizing math over a
+  shop's real impression cart values, was/now per lane, plus the merchant's kept
+  margin per threshold arm. Read-only, no Shopify call.
+- **`scripts/ops/reclassify-shop.mjs`** — derive one shop's cluster now instead
+  of waiting for the weekly cron. Dry run by default; `--apply`, `--all`.
+- 46 tests (`offer-scaling`, `gross-margin-prior`, `derive-vertical`). 118 → 164.
+
+### Fixed
+- **Vertical derivation has never worked, on any store.** The products query
+  asked for `sortKey: BEST_SELLING`, which is not a member of `ProductSortKeys`
+  — it exists only on a collection's products connection. Shopify answers a
+  validation failure with HTTP 200, a top-level `errors` array and a null
+  `data`; the old code read through it to `undefined` and returned `null`, the
+  same `null` an unclassifiable store returns. Dropped the `sortKey` rather than
+  correcting it: a majority vote over the catalog does not need the best sellers
+  specifically.
+- **The super-admin "Store vertical" field did nothing** once the cron ran.
+  `shopClusterDims` returned `derivedVertical || storeVertical`, so the derived
+  value always won. `storeVertical`'s only writer is the console, which makes it
+  an operator override; precedence reversed.
+- **`assumedGrossMargin` was hardcoded at 0.40 platform-wide.** No UI writes it
+  and nothing ever has, so the ternary in `offerCeilingPercent` always fell
+  through. ~15 points low for beauty, 15 points **high** for electronics — the
+  dangerous direction, authorizing 20% discounts on a ~25% margin.
+- **`beauty` did not match hair or wig product types.** It listed `hair care`
+  but not `hair`. Added `hair / wig / extension / lash / braid / weave`.
+- **The console's AI offer range quoted a flat 0.4 margin** while the storefront
+  infers it, so the ceiling shown to an operator disagreed with the one served.
+
+### Changed
+- **`FIXED_DISCOUNT` and `THRESHOLD_DISCOUNT` amounts scale with the cart.** On
+  a $1,150 cart the fixed lane went from $5–$16 (0.4–1.4%) to $60–$180. Stores
+  at $100 carts and below are untouched on the fixed lane. The threshold lane is
+  the exception: small-cart stores now serve *smaller* threshold offers, because
+  those were already margin-negative (a $146 cart asked for $44 more funds $8 at
+  a 40% margin, not $20).
+- **Unknown vertical assumes 50% gross margin**, not 40% — a new install should
+  not be throttled to a low-margin ceiling before the cron classifies it. The
+  cost is that an unclassified electronics store is over-authorized for up to a
+  week.
+
+### Known issue introduced and fixed same-day
+- `af9bb56` scaled the threshold reward against the qualifying total instead of
+  the incremental spend, producing "spend $350 more, save $300" — a $160 loss on
+  a shopper who was already converting. It reached production. Fixed in
+  `db3f593`, which shipped alone for that reason. `MAX_GAP_MULTIPLE` guards only
+  how large the ASK may be per dollar saved; nothing capped the SAVING per
+  dollar of ask, and it never bound while the reward was tiny.
+
 ## Resparq AI - September 20, 2026 (The metrics contract)
 
 Recovered revenue is the number that justifies the subscription, so it has to

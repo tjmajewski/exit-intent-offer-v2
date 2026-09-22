@@ -49,7 +49,7 @@ full plan: [DECISION_ENGINE_BUILD_PLAN.md](./DECISION_ENGINE_BUILD_PLAN.md).
 | `VariantSegmentStat` | Per-(variant, segmentKey) counters at two granularities (exact composite + `d:{device}` coarse) |
 | `EvolutionCursor` | Per-(shop, baseline, segment) cycle cursor — replaces shop-level `lastEvolutionCycle` gating |
 | `Shop.usePropensityModel` | Serves the calibrated model instead of the hand-set curve (default false = shadow) |
-| `Shop.derivedVertical`, `Shop.aovBand` | Auto-derived cluster dims (weekly); trump self-reported `storeVertical` |
+| `Shop.derivedVertical`, `Shop.aovBand` | Auto-derived cluster dims (weekly). **`storeVertical` trumps `derivedVertical`** since 2026-09-22 — its only writer is the super-admin console, so it is an operator override |
 
 ### Decision-flow changes (apps.exit-intent.api.ai-decision.jsx)
 
@@ -429,6 +429,10 @@ breedNewVariant(parents, baseline, segment, shopId, settings)
 ```javascript
 export const genePools = {
   revenue_with_discount: {
+    // DOLLARS, not percent — but read as a dollar FLOOR and a percent of the
+    // spend they are measured against, whichever is larger. See
+    // scaleDollarOffer below; a flat pool does not scale, and [10..25] is a
+    // real offer on a $100 cart and noise on a $1,175 one.
     offerAmounts: [10, 15, 20, 25],
     headlines: [...],
     headlinesWithSocialProof: [...],
@@ -629,6 +633,36 @@ an offer DOWN from this ceiling, never up. `aggression = 0` short-circuits to
 announce-only everywhere. Regression-guarded by
 [`scripts/dev/verify-margin-invariant.mjs`](scripts/dev/verify-margin-invariant.mjs)
 and [`scripts/dev/golden-master.mjs`](scripts/dev/golden-master.mjs).
+
+**Where `assumedGrossMargin` comes from (2026-09-22).** Not the merchant. The
+setting has a reader and has never had a writer, so every store ran at the
+hardcoded `0.40` fallback. `grossMarginForShop(shop, explicit)` in
+`store-cluster.server.js` now infers it from the shop's vertical —
+`GROSS_MARGIN_BY_VERTICAL`, the low end of each vertical's DTC range, unknown
+0.50. Order: explicit setting → vertical prior → default. A margin field during
+onboarding is a blocker on getting a store live, and Shopify's cost-per-item
+needs a `read_inventory` scope this app does not hold.
+
+Note above ~50% margin the ceiling stops being margin-bound and becomes
+`aggrCap`-bound, so a generous prior cannot run away with the discount.
+
+**Offer amounts scale with the cart (2026-09-22).** `scaleDollarOffer(gene,
+basis)` reads a dollars-denominated gene as a dollar floor AND a percent of
+`basis`, whichever is larger, nice-rounded. `basis` is the **cart** for
+`FIXED_DISCOUNT` and the **incremental spend** (threshold − cart) for
+`THRESHOLD_DISCOUNT` — not the qualifying total, because a conditional offer is
+funded only by the margin on the spend it adds.
+
+```
+maxConditionalDiscount(cv, threshold, agm) = floor((threshold - cv) * agm * 0.5)
+```
+
+A threshold offer never gives back more than half the margin its ask generates.
+At agm 0.40 this is exactly the bound `MAX_GAP_MULTIPLE = 5` expresses from the
+other side, so the two constants agree by construction. It is also what makes
+the `conditional` exemption from the propensity taper true — that exemption
+rests on "a threshold costs nothing unless the basket grows", which holds only
+while the discount stays small relative to the growth.
 
 **Unified Decision Flow (both tiers):**
 

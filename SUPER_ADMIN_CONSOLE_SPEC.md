@@ -78,6 +78,23 @@ Read-only mirror of what the merchant sees, computed from DB (no metafield reads
 
 **Tab 3: Settings (editable)**
 - Form over the `Shop` row: mode, aiGoal, aggression, budget fields, trigger settings, modal content, discount settings, social proof fields, disabledLayouts, evolution controls, storeVertical.
+- **Store vertical is an operator override, and it is load-bearing** (2026-09-22).
+  It lives in the *Mode & AI* card as a `Select` over the vocabulary in
+  `store-cluster.server.js`, each option labelled with the gross margin it
+  implies and ordered by margin rather than alphabetically, because that is the
+  decision being made. Blank means "let the weekly cron decide".
+  - It sets the gross margin the **entire margin guard** runs on — there is no
+    merchant-entered margin (see `MARGIN_PROTECTION_SPEC.md`), so this field is
+    the only manual control over how much any store may discount.
+  - It **beats** `derivedVertical`. It used to lose: `shopClusterDims` returned
+    `derivedVertical || storeVertical`, so anything typed here was discarded the
+    moment the cron derived something. An override that loses to the thing it
+    overrides is not one.
+  - Help text names what auto-derive found, the margin currently in force, and
+    that the override wins — so setting it is not a guess.
+  - Free-text values saved before it became a dropdown still resolve through the
+    vocabulary; an unrecognisable one falls through to auto-derive rather than
+    blanking the vertical.
 - Writes go through the SAME helpers the merchant settings page uses (extract shared write logic from `app.settings.jsx` where needed) so admin edits can't create states the app can't produce itself.
 - Settings that also live in metafields get the same dual-write via `unauthenticated.admin`.
 - Every save audit-logged with before/after diff.

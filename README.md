@@ -262,7 +262,9 @@ Comprehensive documentation is available in the following files:
 - **[CRITICAL_NOTES.md](./CRITICAL_NOTES.md)** - Important fixes and gotchas
 
 ### Current State
-- **[HANDOFF-2026-09-20.md](./HANDOFF-2026-09-20.md)** - Latest handoff: the metrics contract, what shipped, what needs an operator
+- **[HANDOFF-2026-09-22.md](./HANDOFF-2026-09-22.md)** - Latest handoff: offers that scale with the cart, inferred gross margin, and a vertical derivation that had never worked
+- **[HANDOFF-2026-09-21.md](./HANDOFF-2026-09-21.md)** - The discount outage: no code ever reached a shopper for a week, and why it was invisible
+- **[HANDOFF-2026-09-20.md](./HANDOFF-2026-09-20.md)** - The metrics contract; §5.2 and its show-rate figure are corrected by 09-21 §1
 - **[HANDOFF-2026-09-19.md](./HANDOFF-2026-09-19.md)** - The audit this work came from; §1-§6 are still largely open
 - **[AI_AUDIT_2026-09-19_QA.md](./AI_AUDIT_2026-09-19_QA.md)** - Full QA findings with file and line numbers
 - **[AI_AUDIT_2026-09-19_ARCHITECTURE.md](./AI_AUDIT_2026-09-19_ARCHITECTURE.md)** - Full architecture review
