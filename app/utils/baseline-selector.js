@@ -164,6 +164,48 @@ export function selectBaseline(signals, _aiGoal) {
 }
 
 /**
+ * The no-discount pool a discount baseline downgrades to.
+ *
+ * The decision endpoint used `baseline.replace('with_discount', 'no_discount')`,
+ * which is correct for two of the three discount baselines and silently wrong
+ * for the third: `conversion_with_discount_fixed` becomes
+ * `conversion_no_discount_fixed`, which is NOT one of the six pools in
+ * gene-pools.js and never has been. getRandomGene then reads `.headlines` off
+ * undefined, the request 500s, and the shopper gets no modal AND no suppression
+ * row — indistinguishable from the engine deliberately choosing to spend
+ * nothing.
+ *
+ * Reachability at the live shop, which is why this is not a theoretical tidy-up:
+ * propensity clusters below 50, so most visitors take flatDiscountBaseline,
+ * which splits them by visitorId hash between the percentage and the fixed
+ * pool. At aggression 8 the cold-start roll withholds a discount 20% of the
+ * time. Roughly half of 20% of eligible shoppers therefore hit this, silently.
+ *
+ * An explicit table rather than string surgery, matching offerTypeForBaseline
+ * below: there is no dollars-denominated no-discount pool because a
+ * no-discount offer has no denomination, and a `.replace` cannot know that.
+ *
+ * @param {string} baseline
+ * @returns {string} an existing pool key
+ */
+export function noDiscountCounterpart(baseline) {
+  const MAP = {
+    revenue_with_discount: 'revenue_no_discount',
+    conversion_with_discount: 'conversion_no_discount',
+    // No `conversion_no_discount_fixed` exists, and none should.
+    conversion_with_discount_fixed: 'conversion_no_discount',
+    // Already carry no discount — downgrading is a no-op, not an error.
+    revenue_no_discount: 'revenue_no_discount',
+    conversion_no_discount: 'conversion_no_discount',
+    pure_reminder: 'pure_reminder'
+  };
+  // Unknown key: fall back to a pool that certainly exists rather than
+  // synthesising one that does not. Returning the input would reintroduce the
+  // exact crash this function removes.
+  return MAP[baseline] || 'conversion_no_discount';
+}
+
+/**
  * Get human-readable explanation of baseline choice
  * @param {string} baseline - The selected baseline
  * @returns {string} - Explanation text

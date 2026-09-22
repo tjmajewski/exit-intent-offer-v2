@@ -1,7 +1,7 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { createPercentageDiscount, createFixedDiscount, createThresholdDiscount, getDiscountCodeDetails } from "../utils/discount-codes";
-import { offerTypeForBaseline } from "../utils/baseline-selector.js";
+import { offerTypeForBaseline, noDiscountCounterpart } from "../utils/baseline-selector.js";
 import { hasPromoActive, normalisePromoInCart, promoGuardEnabled } from "../utils/promo-detect.js";
 import { getMetaInsight, shouldUseMetaLearning } from "../utils/meta-learning.js";
 import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
@@ -751,7 +751,7 @@ export async function action({ request }) {
 
       if (evidence.evidenceBased) {
         if (!evidence.useDiscount) {
-          const noDiscountBaseline = baseline.replace('with_discount', 'no_discount');
+          const noDiscountBaseline = noDiscountCounterpart(baseline);
           suppress(
             'judgement',
             'arm_evidence',
@@ -768,7 +768,7 @@ export async function action({ request }) {
         const discountRoll = Math.random();
         if (discountRoll > aggressionNormalized) {
           // Downgrade to no-discount version of the same goal
-          const noDiscountBaseline = baseline.replace('with_discount', 'no_discount');
+          const noDiscountBaseline = noDiscountCounterpart(baseline);
           suppress(
             'exploration',
             'cold_start_roll',
