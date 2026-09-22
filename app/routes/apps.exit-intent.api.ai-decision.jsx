@@ -9,7 +9,7 @@ import { composeSegmentKey } from "../utils/segment-key.js";
 import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
 import { recordTouch } from "../utils/journey.server.js";
 import { loadPropensityModel, scorePropensity } from "../utils/propensity-model.server.js";
-import { clusterKeysFor } from "../utils/store-cluster.server.js";
+import { clusterKeysFor, grossMarginForShop } from "../utils/store-cluster.server.js";
 import { getBaselineCvrPrior } from "../utils/cluster-priors.server.js";
 import { computePropensity } from "../utils/propensity.server.js";
 import { enforceRateLimit } from "../utils/rate-limit.server.js";
@@ -557,13 +557,22 @@ export async function action({ request }) {
     // first. Empty for unclustered shops — every prior lookup then no-ops.
     const shopClusterKeys = clusterKeysFor(shopRecord);
 
+    // Gross margin for the margin guard. There is no merchant-entered value
+    // (no UI writes settings.assumedGrossMargin, and asking for one during
+    // onboarding blocks getting a store live), so this is a prior inferred
+    // from the vertical the app derives itself from the store's product
+    // types. Resolved once here so all three guard call sites below cannot
+    // drift onto different numbers.
+    const effectiveGrossMargin = grossMarginForShop(shopRecord, settings.assumedGrossMargin);
+    console.log(`[Margin] ${shopRecord.shopifyDomain}: gross margin ${(effectiveGrossMargin * 100).toFixed(0)}% (vertical: ${shopRecord.derivedVertical || shopRecord.storeVertical || 'unknown'})`);
+
     const preScore = await decideOffer(signals, {
       plan: shopRecord.plan || 'pro',
       aggression: effectiveAggression,
       cartValue: signals.cartValue || 0,
       shopId: shopRecord.id,
       testMode: isTestMode,
-      assumedGrossMargin: settings.assumedGrossMargin,
+      assumedGrossMargin: effectiveGrossMargin,
       // Spec 2.3: subscription share is read off signals inside the engine;
       // the merchant's expected billing cycles comes from the shop record.
       subscriptionExpectedCycles: shopRecord.subscriptionExpectedCycles,
@@ -914,7 +923,7 @@ export async function action({ request }) {
         out: ceilingDiag,
         propensity: signals.propensityScore,
         aggression: effectiveAggression,
-        assumedGrossMargin: settings.assumedGrossMargin,
+        assumedGrossMargin: effectiveGrossMargin,
         subShare: marginSubShare,
         expectedCycles: shopRecord.subscriptionExpectedCycles,
         // A threshold only costs margin if the basket actually grows, so it is
@@ -957,7 +966,7 @@ export async function action({ request }) {
         // spend generates. This is what makes offerCeilingPercent's exemption
         // of conditional offers from the propensity taper actually true.
         const incrementalMax = maxConditionalDiscount(
-          signals.cartValue || 0, thr, settings.assumedGrossMargin
+          signals.cartValue || 0, thr, effectiveGrossMargin
         );
         if (cappedOfferAmount > incrementalMax) {
           console.log(`[Margin Guard] Threshold discount $${cappedOfferAmount} exceeds half the margin on a $${gap} upsell — capping to $${incrementalMax}`);

@@ -24,6 +24,7 @@ import {
   capThresholdByDiscount
 } from '../../app/utils/ai-decision.server.js';
 import { genePools } from '../../app/utils/gene-pools.js';
+import { grossMarginForShop } from '../../app/utils/store-cluster.server.js';
 
 const SHOP = process.argv[2];
 const DAYS = Number(process.argv[3] || 30);
@@ -49,12 +50,11 @@ const settings = await (async () => {
 })();
 
 const AGG = Math.max(0, Math.min(10, Number(process.argv[4] ?? settings.aggression)));
-// assumedGrossMargin is a metafield setting with no Shop column, so this
-// preview always uses the engine's own default. A store that has raised it
-// will discount MORE than shown here, never less.
+// Gross margin is inferred from the shop's derived vertical, exactly as the
+// decision endpoint does it. A 4th arg overrides, for modelling.
 const AGM = Number(process.argv[5]) > 0 && Number(process.argv[5]) < 1
   ? Number(process.argv[5])
-  : 0.40;
+  : grossMarginForShop(shop);
 
 const since = new Date(Date.now() - DAYS * 864e5);
 const imps = await db.variantImpression.findMany({
@@ -113,7 +113,7 @@ console.log(`${line}`);
 console.log(`  impressions with a cart value (${DAYS}d) .. ${carts.length}`);
 console.log(`  cart p10 / median / p90 ................ ${money(pct(0.1))} / ${money(pct(0.5))} / ${money(pct(0.9))}`);
 console.log(`  aggression ............................. ${AGG}  (${process.argv[4] ? 'CLI override' : settings.source})`);
-console.log(`  assumed gross margin ................... ${(AGM * 100).toFixed(0)}%  (${process.argv[5] ? 'CLI override' : 'engine default; not stored on Shop'})`);
+console.log(`  gross margin ........................... ${(AGM * 100).toFixed(0)}%  (${process.argv[5] ? 'CLI override' : `from vertical: ${shop.derivedVertical || shop.storeVertical || 'unknown'}`})`);
 
 const ceilFlat = {};
 offerCeilingPercent({ out: ceilFlat, propensity: 40, aggression: AGG, assumedGrossMargin: AGM });

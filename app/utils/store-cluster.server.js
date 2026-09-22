@@ -29,7 +29,7 @@ export const AOV_BAND_MID_MAX = 150;
 // before "fashion" so "fashion jewelry" clusters as jewelry).
 const VERTICAL_KEYWORDS = [
   ['jewelry', ['jewelry', 'jewellery', 'ring', 'necklace', 'bracelet', 'earring', 'pendant', 'gemstone', 'diamond', 'gold', 'silver']],
-  ['beauty', ['beauty', 'cosmetic', 'makeup', 'skincare', 'skin care', 'fragrance', 'perfume', 'hair care', 'haircare', 'nail']],
+  ['beauty', ['beauty', 'cosmetic', 'makeup', 'skincare', 'skin care', 'fragrance', 'perfume', 'hair', 'wig', 'extension', 'lash', 'braid', 'weave', 'nail']],
   ['electronics', ['electronic', 'phone', 'computer', 'laptop', 'tablet', 'camera', 'headphone', 'speaker', 'gadget', 'charger', 'cable', 'gaming', 'console']],
   ['health', ['health', 'supplement', 'vitamin', 'wellness', 'fitness', 'protein', 'medical', 'first aid']],
   ['food', ['food', 'snack', 'coffee', 'tea', 'chocolate', 'candy', 'beverage', 'drink', 'sauce', 'spice', 'grocery']],
@@ -48,6 +48,66 @@ export function mapProductTypeToVertical(text) {
     if (keywords.some((k) => t.includes(k))) return vertical;
   }
   return null;
+}
+
+// =============================================================================
+// GROSS MARGIN PRIOR, BY VERTICAL
+//
+// The margin guard (offerCeilingPercent, maxConditionalDiscount) needs a gross
+// margin and there is nowhere honest to get one. Shopify keeps cost-per-item on
+// InventoryItem.unitCost, which needs a `read_inventory` scope this app does
+// not hold, and which most merchants leave blank anyway. Asking the merchant
+// during onboarding is a blocker on getting a store live.
+//
+// So: infer it from the vertical the app already derives on its own, from the
+// store's own best-selling product types. No merchant input, no new scope, no
+// onboarding step.
+//
+// These are deliberately the LOW end of each vertical's real DTC range,
+// because the error is asymmetric. Too high and the engine authorizes
+// discounts the store's margin cannot fund, on real money, silently. Too low
+// and it under-offers, which shows up as a quiet modal the merchant can fix by
+// raising their aggression dial.
+//
+// Unknown is 50%: a new install should not be throttled to a low-margin
+// store's ceiling before the weekly cron has classified it, and the aggression
+// dial is the merchant's own lever if it reads too hot. Note this means an
+// unclassified electronics store is over-authorized for up to a week — the
+// cost of not blocking every install on a form field.
+// =============================================================================
+export const GROSS_MARGIN_BY_VERTICAL = {
+  beauty: 0.65,
+  health: 0.60,
+  jewelry: 0.55,
+  fashion: 0.55,
+  home: 0.45,
+  sports: 0.42,
+  pets: 0.42,
+  toys: 0.40,
+  food: 0.35,
+  electronics: 0.25,
+  // 'other' means the store sells 50 unrelated things — we know nothing, so
+  // it gets the same treatment as an unclassified store.
+  other: 0.50
+};
+
+export const DEFAULT_GROSS_MARGIN = 0.50;
+
+/**
+ * The gross margin to run the margin guard at for this shop.
+ *
+ * Order: an explicit merchant setting (there is no UI for one today, but the
+ * engine has always read it and a store with a real number should win), then
+ * the vertical prior, then the default.
+ *
+ * @param {Object} shop  Shop row (derivedVertical / storeVertical)
+ * @param {number} [explicit]  settings.assumedGrossMargin, if ever set
+ * @returns {number} 0..1
+ */
+export function grossMarginForShop(shop, explicit) {
+  if (Number(explicit) > 0 && Number(explicit) < 1) return Number(explicit);
+  const { vertical } = shopClusterDims(shop);
+  return GROSS_MARGIN_BY_VERTICAL[vertical] ?? DEFAULT_GROSS_MARGIN;
 }
 
 /** AOV dollars -> band label. */
