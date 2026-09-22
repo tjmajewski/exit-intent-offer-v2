@@ -51,6 +51,7 @@
     "jstat": "^1.9.6",
     "node-cron": "^4.2.1",
     "nodemailer": "^10.0.9",
+    "pdfkit": "^0.20.2",
     "prisma": "^6.19.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

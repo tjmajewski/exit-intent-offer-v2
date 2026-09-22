@@ -969,6 +969,17 @@ export default function AdminShopDetail() {
                 </Button>
               ))}
               <InfoPopover info={METRIC_INFO.shopPerformance} />
+              {/* The merchant-facing analysis document, over the window
+                  currently selected above. Plain link rather than a fetcher:
+                  the route returns a file with Content-Disposition, and a
+                  navigation is what makes the browser save it. */}
+              <Button
+                url={`/admin/shops/${shop.id}/report.pdf?days=${days}`}
+                download
+                variant="plain"
+              >
+                Export {days}d PDF
+              </Button>
             </InlineStack>
             <Card>
               {/* Funnel order, widest first: decisions is the top of it. If
