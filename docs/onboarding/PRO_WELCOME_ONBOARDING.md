@@ -52,27 +52,31 @@ Your dashboard is your command center for monitoring performance across all your
 - Formula: (Conversions ÷ Impressions) × 100
 - Pro benchmark: Aim for 5-8% conversion rate
 
-**Click Rate**
-- Percentage of visitors who clicked your CTA button
-- Formula: (Clicks ÷ Impressions) × 100
-- Healthy range: 10-20% click rate
+**Avg Order**
+- Average value of the orders your offers recovered
 
-**Revenue Per View**
-- Average revenue generated per impression
-- Formula: Total Revenue ÷ Total Impressions
-- Helps you understand ROI per visitor shown
+**With Resparq / Without Resparq (Control)**
+- Two tiles side by side, the comparison that answers "did it work"
+- 10% of your eligible visitors are held back and shown nothing at all. These
+  tiles put your treated conversion rate next to theirs.
+- Both are denominated in **customers, not page loads** — one shopper browsing
+  five pages counts once
+- The control tile reads **TBD** until 10 control customers have been seen. At
+  fewer than that the rate can only land on 0%, 10% or 20%, which is an honest
+  count and a poor estimate
+- AI and Guided modes only. Manual mode randomises nothing, so there is no
+  control group to compare against
 
-**Impression Count**
-- Total times modals were shown (last 30 days)
-- Clicks count
-- Conversions count
+Click Rate and Times Shown were removed as headline tiles on 2026-09-22. A
+shopper who sees the modal, closes it and buys an hour later is the intended
+outcome of a view-through product, and both tiles read 0% while exactly that
+was happening. Clicks are still tracked and still visible in Analytics.
 
 #### 3. Lifetime Metrics
 
 Pro plan unlocks lifetime tracking:
 - **Total Revenue (All-Time)**: Cumulative revenue since you started using Resparq
 - **Lifetime Conversion Rate**: Overall conversion rate across all time
-- **Lifetime Click Rate**: Overall click rate across all time
 - **Lifetime Revenue Per View**: Average revenue per impression across all time
 
 #### 4. AI Performance Section (When AI Mode Active)

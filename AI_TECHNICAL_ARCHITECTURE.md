@@ -1027,7 +1027,8 @@ model InterventionOutcome {
   shop            Shop     @relation(...)
 
   wasShown        Boolean              // true = modal shown, false = no_intervention
-  isHoldout       Boolean  @default(false) // true = 5% holdout group (excluded from learning)
+  isHoldout       Boolean  @default(false) // true = holdout group, 10% of visitors (excluded from learning)
+  visitorId       String?  // randomisation unit; lets the dashboard count PEOPLE per arm, not rows
   converted       Boolean  @default(false)
   revenue         Float?
   discountAmount  Float?
@@ -1922,7 +1923,7 @@ Per-store, per-score-bucket learning using Thompson Sampling (same Bayesian band
 │                                                               │
 │  1. Customer triggers AI decision                            │
 │     ↓                                                         │
-│  1.5 HOLDOUT CHECK: 5% random → no intervention              │
+│  1.5 HOLDOUT CHECK: 10% sticky per visitor → no intervention │
 │     → Stamp cart: exit_intent_holdout={aiDecisionId}         │
 │     → Record outcome(isHoldout: true) — excluded from learning│
 │     → If customer buys → webhook tracks holdout conversion   │
@@ -1998,7 +1999,7 @@ For new stores with no `InterventionOutcome` data:
 | `app/utils/intervention-threshold.server.js` | Core engine: `shouldIntervene()`, `recordInterventionOutcome()`, `recalculateThresholds()` |
 | `app/cron/threshold-learning-cycle.js` | Cron job: recalculate thresholds every 5 min when 50+ new outcomes |
 | `app/utils/ai-decision.server.js` | Calls `shouldIntervene()` instead of hardcoded rules |
-| `app/routes/apps.exit-intent.api.ai-decision.jsx` | 5% holdout coin flip, records `InterventionOutcome` on every show/no-show/holdout, returns `aiDecisionId` |
+| `app/routes/apps.exit-intent.api.ai-decision.jsx` | 10% sticky holdout coin flip (`HOLDOUT_RATE`), records `InterventionOutcome` on every show/no-show/holdout, returns `aiDecisionId` |
 | `app/routes/webhooks.orders.create.jsx` | Holdout conversion tracking, natural conversion tracking (by decision ID), intervention conversion tracking (by decision ID) |
 | `extensions/exit-intent-modal/assets/exit-intent-modal.js` | Stamps cart with unique `aiDecisionId` on no-intervention, holdout, and CTA click |
 

@@ -155,7 +155,7 @@ node scripts/dev/backfill-variant-segment-stats.mjs # rebuild cell stats from hi
 
 1. **No kill without evidence** — Bayesian confidence + a 50-impression floor; low-traffic stores never watch good variants die on noise.
 2. **Small stores run small populations** — Pro's 2-variant cap keeps every cell statistically meaningful at trial-merchant traffic.
-3. **Priors never gate** — every cross-store prior is pseudo-counts inside a sampler; exploration floors and the 5% holdout are untouched by pooling.
+3. **Priors never gate** — every cross-store prior is pseudo-counts inside a sampler; exploration floors and the 10% holdout are untouched by pooling.
 4. **Merchant control is absolute** — disabled layouts are clamped at serve time; brand-safety rules filter bred copy; aggression 0 forces pure reminders.
 
 ---
@@ -183,7 +183,7 @@ week, with no one writing copy or configuring tests.
   over as it accumulates. Every merchant who joins makes the system smarter
   for every other merchant — a compounding network effect.
 - Statistical discipline is built in: nothing is killed or crowned without
-  Bayesian confidence, and a permanent 5% control group measures the revenue
+  Bayesian confidence, and a permanent 10% control group measures the revenue
   the system actually causes.
 
 **Customer benefit:** merchants get the output of a full-time CRO

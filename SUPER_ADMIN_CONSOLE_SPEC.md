@@ -53,6 +53,7 @@ Flat routes under `app/routes/`, sibling of `app.*`:
 | `admin.logout.jsx` | `/admin/logout` | Clear cookie |
 | `admin._index.jsx` | `/admin` | Customer list |
 | `admin.shops.$shopId.jsx` | `/admin/shops/:shopId` | Customer detail — tabs below |
+| `admin.shops.$shopId.report[.]pdf.jsx` | `/admin/shops/:shopId/report.pdf?days=30` | Store-analysis PDF over the selected window (2026-09-22) |
 
 Polaris is already installed and NOT tied to embedding, so admin UI reuses it (consistent look, zero new deps).
 
@@ -75,6 +76,36 @@ Read-only mirror of what the merchant sees, computed from DB (no metafield reads
 - AI-mode shops: impressions/clicks/conversions/revenue/profit from `VariantImpression`, variant table from `Variant` (status, generation, profitPerImpression), intervention show/skip stats from `InterventionOutcome`.
 - Manual-mode shops: `StarterImpression` + `Conversion` aggregates.
 - Recent `AIDecision` rows (last 50, expandable signals JSON) — the "why did the AI do X for this customer" debugging view.
+- **"Where they accepted" card** (2026-09-22) — the offer can be accepted on three
+  surfaces (modal CTA, persistent pill, cart / mini-cart line) and the Clicks tile
+  counts all three as one number. This card splits them, read from `VisitorTouch`
+  accept responses (`cta_click` / `redeem` / `apply`) over the same window. Added
+  because "does anyone actually use the mini-cart line" was not answerable before.
+
+**Store-analysis PDF export** (2026-09-22)
+- Button on the Performance tab → `/admin/shops/:shopId/report.pdf?days=<window>`.
+  The 30-day analysis first assembled by hand for a customer, now repeatable.
+- Split deliberately in two: `store-report.server.js` builds the report as DATA,
+  `store-report-pdf.server.js` renders it. The content will be argued over for a
+  while, and that argument should never require touching layout code — nor should
+  a layout change be able to move a number. A later xlsx or in-email version reads
+  the same object.
+- **Every headline figure comes from `getShopMetrics`**, the module the merchant
+  dashboard and this console already share. A report that re-derived its own
+  revenue would eventually contradict the screen the merchant reads it next to.
+  Extra queries cover only what that module does not carry: cart shape, device
+  split, code redemption, delivery breakdown.
+- Findings are thresholds over measured data, not written notes, so the same
+  document says different things for different stores for defensible reasons. A
+  healthy store triggers none of them. Anything that cannot be derived belongs in
+  the operator's email, not in a generated document.
+- Written for a merchant to read: it states plainly that revenue is attributed
+  rather than caused, and that the control comparison is not ready yet.
+  Manual-mode stores drop the measurement section entirely.
+- Super-admin only, deliberately — it produces a document a human reads before
+  sending. Merchant-side it would be a self-serve report nobody checks first.
+- `pdfkit`, not headless Chromium: the app runs on a small Fly machine and
+  bundling a browser to set text in a box is not a trade worth making.
 
 **Tab 3: Settings (editable)**
 - Form over the `Shop` row: mode, aiGoal, aggression, budget fields, trigger settings, modal content, discount settings, social proof fields, disabledLayouts, evolution controls, storeVertical.

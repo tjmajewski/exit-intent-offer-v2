@@ -50,13 +50,16 @@ Your dashboard displays four critical metrics from the last 30 days:
    - The number of customers who completed a purchase after seeing your offer
    - Each order represents a recovered abandoned cart
 
-3. **Times Shown (Impressions)**
-   - How many times your modal was displayed to visitors
-   - Tracks against your 1,000/month limit
-
-4. **Success Rate (Conversion Rate)**
+3. **Success Rate (Conversion Rate)**
    - Percentage of people who saw your offer and completed a purchase
    - Industry benchmark: 3-5% is good, 5-8% is excellent, 8%+ is outstanding
+
+4. **Avg Order**
+   - Average value of the orders your offers recovered
+
+Times Shown is no longer one of the headline tiles — a display count tells you
+the app did something, not whether it worked. Your impression usage still
+appears under Usage Statistics below, where it matters for your plan limit.
 
 #### Usage Statistics
 Your dashboard also shows:
@@ -151,13 +154,13 @@ While advanced analytics are reserved for Pro and Enterprise tiers, you can stil
 - Count of completed purchases
 - Only counts orders where the customer interacted with your modal
 
-**Times Shown**
-- Total impressions in the current billing period
-- Resets monthly on your billing anniversary date
-
 **Success Rate**
 - Formula: (Orders Created ÷ Times Shown) × 100
 - Example: 50 orders from 1,000 impressions = 5% conversion rate
+
+**Times Shown** (Usage Statistics, not a headline tile)
+- Total impressions in the current billing period
+- Resets monthly on your billing anniversary date
 
 ### Upgrade for Advanced Analytics
 
@@ -166,6 +169,7 @@ Want more detailed insights? Upgrade to Pro or Enterprise to unlock:
 - **Conversion Tracking**: Detailed table with timestamps, order numbers, customer emails
 - **Date Range Filtering**: Analyze performance over custom time periods
 - **AI Variant Testing**: Automatically test different offers (Pro: 2 variants, Enterprise: 10 variants)
+- **A control group**: AI and Guided modes hold back 10% of visitors and show them nothing, so your dashboard can report the difference Resparq actually makes rather than crediting itself with every order. Starter's manual mode randomises nothing and has no control group.
 - **Export to Excel**: Download all conversion data (Enterprise only)
 
 ### Want AI to optimize your fixed offer? Upgrade to Pro for Guided mode

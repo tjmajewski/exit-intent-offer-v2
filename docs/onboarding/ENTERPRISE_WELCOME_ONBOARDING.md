@@ -73,27 +73,31 @@ Your dashboard provides comprehensive real-time insights across all dimensions.
 - Calculated across all active variants
 - Enterprise benchmark: 7-10% is excellent, 10%+ is exceptional
 
-**Click Rate**
-- Percentage of visitors who clicked your CTA
-- Early indicator of modal effectiveness
-- Healthy range: 12-25%
+**Avg Order**
+- Average value of the orders your offers recovered
 
-**Revenue Per View**
-- Average revenue generated per impression
-- Critical ROI metric
-- Formula: Total Revenue ÷ Total Impressions
+**With Resparq / Without Resparq (Control)**
+- Two tiles side by side, the comparison that answers "did it work"
+- 10% of your eligible visitors are held back and shown nothing at all. These
+  tiles put your treated conversion rate next to theirs.
+- Both are denominated in **customers, not page loads** — one shopper browsing
+  five pages counts once
+- The control tile reads **TBD** until 10 control customers have been seen. At
+  fewer than that the rate can only land on 0%, 10% or 20%, which is an honest
+  count and a poor estimate
+- AI and Guided modes only. Manual mode randomises nothing, so there is no
+  control group to compare against
 
-**Volume Metrics**
-- Total Impressions (unlimited - no cap warnings)
-- Total Clicks
-- Total Conversions
+Click Rate and Times Shown were removed as headline tiles on 2026-09-22. A
+shopper who sees the modal, closes it and buys an hour later is the intended
+outcome of a view-through product, and both tiles read 0% while exactly that
+was happening. Clicks are still tracked and still visible in Analytics.
 
 #### 3. Lifetime Metrics
 
 Track cumulative performance since inception:
 - **Total Revenue (All-Time)**
 - **Lifetime Conversion Rate**
-- **Lifetime Click Rate**
 - **Lifetime Revenue Per View**
 
 #### 4. AI Performance Section

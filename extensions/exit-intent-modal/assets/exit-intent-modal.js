@@ -1116,8 +1116,9 @@
       const dayOfWeek = now.getDay();   // 0-6 in customer's timezone (0=Sun)
 
       // 17. Stable visitor id — server hashes this for STICKY holdout
-      // assignment (same shopper stays in/out of the 5% holdout across
-      // visits instead of flickering per request).
+      // assignment (same shopper stays in/out of the holdout across visits
+      // instead of flickering per request). Rate lives server-side in
+      // ai-decision.jsx (HOLDOUT_RATE); nothing here depends on its value.
       let visitorId = null;
       try {
         visitorId = localStorage.getItem('resparqVisitorId');
@@ -2932,7 +2933,7 @@
         // Handle holdout group — stamp cart for incrementality tracking
         if (result.isHoldout) {
           console.log('%c AI DECISION: HOLDOUT GROUP', 'color: #64748b; font-weight: bold; font-size: 16px');
-          console.log('%c This customer is in the 5% holdout group for incrementality measurement', 'color: #64748b');
+          console.log('%c This customer is in the holdout group for incrementality measurement', 'color: #64748b');
           console.log('%c═══════════════════════════════════════════════', 'color: #8B5CF6; font-weight: bold');
           this.aiDecidedNoIntervention = true;
           stampArmOnCart('holdout', result.aiDecisionId || 'true');

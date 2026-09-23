@@ -153,10 +153,10 @@ Go beyond the current triggers with audience-level targeting.
 **Impact:** High — proves ROI to merchants, reduces churn ("this app made you $X")
 **Tier:** All tiers
 
-Show merchants the causal revenue lift from Resparq using the 5% holdout group.
+Show merchants the causal revenue lift from Resparq using the 10% holdout group.
 
 **Backend — SHIPPED:**
-- 5% holdout group randomly assigned at add-to-cart time (before hard overrides)
+- 10% holdout group, sticky per visitor, assigned at add-to-cart time (before hard overrides)
 - Holdout customers never see a modal, period — unbiased measurement
 - Cart attribute stamping (`exit_intent_holdout`) for webhook conversion tracking
 - Holdout outcomes stored in InterventionOutcome with `isHoldout: true`
@@ -175,7 +175,7 @@ Show merchants the causal revenue lift from Resparq using the 5% holdout group.
 **Key design decisions:**
 - Holdout coin flip happens BEFORE hard overrides to avoid systematic bias
 - Holdout never trains the AI — pure measurement group
-- ~10,000-20,000 eligible sessions needed for statistically meaningful results at 5% holdout + ~5% CVR
+- Raised 5% → 10% on 2026-09-22: halves the variance on the same traffic, at the cost of 5% more visitors seeing nothing
 
 ---
 

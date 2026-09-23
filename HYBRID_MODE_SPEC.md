@@ -38,7 +38,7 @@ warm.
 | 2 | What happens to the aggression slider? | **It does not exist in Hybrid.** Pinning the number *is* the aggression setting. The slider is AI-mode-only. |
 | 3 | Does the AI skip shoppers for margin reasons? | **No.** No margin-based suppression. Every eligible exit-intent shopper gets the offer. |
 | 4 | Timing / copy / layout? | **AI-controlled** (full variant engine + evolution, unchanged). |
-| 5 | Measurement holdout (5%)? | **Kept.** Proves Resparq's real lift per store (Hybrid vs nothing). Invisible to the merchant. |
+| 5 | Measurement holdout (10%)? | **Kept.** Proves Resparq's real lift per store (Hybrid vs nothing). Surfaced to the merchant since 2026-09-22 as the Control tile. |
 | 6 | $0 pinned offer? | **Announce-only** (`pure_reminder` baseline). Behaves exactly like AI aggression = 0. |
 | 7 | Learning continuity? | **Preserved.** Hybrid runs through the same learning writes as AI, so flipping to full AI later starts warm. |
 | 8 | Upsell mechanic? | **Capability CTA only — NO fabricated savings number.** A "Switch to Autopilot" CTA pitches what full AI adds (per-shopper offer sizing to protect margin). We do **NOT** claim "full AI would have saved you $X" — that counterfactual is unmeasurable (we only observe conversions that happened *with* the pinned offer; whether they'd convert at a smaller offer is unknowable). No shadow log. |
@@ -418,7 +418,7 @@ Run after implementation. **Expected result in bold.**
 - [ ] Pinned $0 → **announce-only** modal (`pure_reminder`), code = null.
 - [ ] Copy / layout / timing **still vary** across impressions (variant engine live).
 - [ ] `no_intervention` (targeting) **still possible** — a clearly non-abandoning visit can be skipped.
-- [ ] Holdout: ~**5%** of eligible visitors still get nothing, logged as holdout.
+- [ ] Holdout: ~**10%** of eligible visitors still get nothing, logged as holdout.
 - [ ] Learning writes present: `VariantImpression`, `InterventionOutcome`, `AIDecision`, `VisitorTouch` all written for Guided (not dev/preview traffic).
 
 ### Plan gating

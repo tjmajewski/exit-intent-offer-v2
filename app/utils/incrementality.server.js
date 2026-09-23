@@ -2,7 +2,7 @@
 //
 // The dashboard's recovered-revenue number is engagement-attributed GROSS
 // revenue: any order that touched the modal counts in full, including
-// customers who would have bought anyway. The 5% sticky holdout gives the
+// customers who would have bought anyway. The sticky holdout gives the
 // counterfactual: shown-CVR vs holdout-CVR. This helper turns that into a
 // lift factor the UI can multiply against gross revenue for an HONEST
 // "incremental revenue" estimate — and refuses to report anything until the

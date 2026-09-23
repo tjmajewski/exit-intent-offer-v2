@@ -23,7 +23,7 @@
 | **Archetype Priors (segment-aware bias)** | ✅ Limited (2 variants) | ✅ Full per-segment routing |
 | **Template (Layout) Priors — cross-store** | ❌ | ✅ |
 | **Adaptive Intervention Thresholds (+ cluster cold-start)** | ✅ | ✅ |
-| **5% Sticky Holdout / Incremental Revenue Card** | ✅ | ✅ |
+| **10% Sticky Holdout / Incremental Revenue Card** | ✅ | ✅ |
 | **Frequency Gates + Offer Pill + Cart Surfaces** | ✅ | ✅ |
 | **Visitor Journey Log** | ✅ | ✅ |
 | **Manual Variant Controls** | ❌ | ✅ |

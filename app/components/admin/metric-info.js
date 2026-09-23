@@ -62,7 +62,7 @@ export const METRIC_INFO = {
     importance:
       "The single best \"is the AI actually worth it\" number. It proves causation, not correlation — some of those shoppers would have bought anyway.",
     meaning:
-      "How much likelier a shopper is to convert when shown a modal vs the 5% control group that qualified but was deliberately not shown.",
+      "How much likelier a shopper is to convert when shown a modal vs the control group that qualified but was deliberately not shown (10% of visitors).",
     calculation:
       "Shown-group CVR minus holdout CVR, in percentage points, from InterventionOutcome (isHoldout flag). Displays n/a until the holdout group has ≥10 samples. Same source as each merchant's dashboard lift card.",
   },
@@ -89,7 +89,7 @@ export const METRIC_INFO = {
     importance:
       "The lift chart. The gap between the lines IS the AI's causal impact — if the lines touch, the modals aren't adding conversions and are just spending discount budget.",
     meaning:
-      "Conversion rate of shoppers shown a modal vs the 5% control group that qualified but saw nothing, over time.",
+      "Conversion rate of shoppers shown a modal vs the control group that qualified but saw nothing (10% of visitors), over time.",
     calculation:
       "Per bucket: shownConverted ÷ shown, and holdoutConverted ÷ holdout, from InterventionOutcome. Holdout is small (5%), so short windows are noisy — trust the trend, not single points.",
   },

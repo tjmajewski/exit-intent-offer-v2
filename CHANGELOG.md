@@ -1,5 +1,97 @@
 # @shopify/shopify-app-template-react-router
 
+## Resparq AI - September 22, 2026 (Measurement, not clicks)
+
+Everything below is committed but **not yet deployed** as of this entry. The
+merchant dashboard gave two of its three tiles to clicks, which is not the
+mechanism for a view-through product — a shopper who sees the modal, closes it
+and buys an hour later is the intended outcome, and both tiles read 0% while
+that was happening. A third of the screen argued against the product.
+
+### Added
+- **Arm comparison tiles** — *With Resparq* against *Without Resparq (Control)*,
+  replacing People Clicked, Click Rate and Times Shown. Denominated in
+  **customers, not rows**: the holdout coin is a sticky per-visitor hash, so one
+  shopper's every page load lands in the same arm and the arms do not produce
+  rows at the same rate. The control tile reads TBD until 10 control customers.
+  AI and Guided only — manual mode randomises nothing.
+- **`InterventionOutcome.visitorId`** + `@@index([shopId, isHoldout, visitorId])`
+  — the randomisation unit, denormalised so a distinct-customer count per arm is
+  one query rather than a join per dashboard load. Nullable; null rows are
+  excluded from BOTH arms rather than guessed at.
+- **`scripts/ops/backfill-outcome-visitors.mjs`** — fills `visitorId` on existing
+  rows from `AIDecision.signals`, falling back to `VisitorTouch`. Dry run by
+  default. **Without it both tiles read empty on deploy day.**
+- **Store-analysis PDF export** — `/admin/shops/:shopId/report.pdf?days=30`,
+  super-admin only. Report-as-data (`store-report.server.js`) and rendering
+  (`store-report-pdf.server.js`) are separate modules. Every headline figure comes
+  from `getShopMetrics`. Findings are thresholds over measured data, not notes.
+  Adds `pdfkit`.
+- **"Where they accepted" card** in the super admin — splits the single Clicks
+  number across modal CTA / pill redeem / cart line apply, read from the journey
+  log.
+
+### Changed
+- **HOLDOUT RATE 5% → 10%.** Estimate error scales with `1/(1-h) + 1/h`: 21.1 at
+  h=0.05, 11.1 at h=0.10. Doubling the control arm nearly **halves** the variance
+  on the same traffic, because at 5% the small arm dominates the error term, and
+  it halves the wait for a control group big enough to quote. The cost is 5% more
+  visitors seeing nothing, which is real merchant revenue — taken deliberately,
+  because a control group too small to read makes every revenue number the
+  product reports unfalsifiable. Privacy policy and Terms updated to disclose the
+  holdout; see the note below on why the *rate* change alone did not require it.
+- **Pending offer moved sessionStorage → localStorage.** The modal says the code
+  "expires in 24 hours" and `DiscountOffer.expiresAt` agrees, but the record died
+  with the tab, so neither the pill nor the cart banner could ever reach the 24h
+  window they both already checked. A mobile shopper who saw a $45 offer, closed
+  the tab and came back that evening held a valid code with no surface that would
+  offer it back.
+- **Mini-cart / cart line restyled** — label at full weight in the theme's text
+  color, and the Apply button now follows the modal's own rule (a default brand
+  accent of `#f59e0b` means "unset" and the theme's button color wins), so the
+  cart line no longer renders amber seconds after a black modal CTA.
+
+### Fixed
+- **A visitor could land in both arms.** The holdout rate change reassigns
+  everyone in buckets 5–9, and grouping rows by `isHoldout` counted such a visitor
+  once in EACH arm — both denominators inflated, and a post-change order landing
+  in the control numerator while their earlier treated row stayed in treatment's
+  denominator. Biased against the product, with nothing about the output looking
+  wrong. Each visitor now resolves to one arm before counting; anyone holding rows
+  in both is dropped and reported as `crossedArms`.
+- **The arm query could zero the whole dashboard.** It reads a column added the
+  same day, and production applies schema with `prisma db push` at container boot
+   — a request served before that push hits a missing column, the rejection escapes
+  `getShopMetrics`, and the loader's catch replaces every number on the page.
+  Wrapped: a failure returns null, which the tiles already render as hidden.
+- **Guided mode paid for a control group it could not see** — tiles were gated on
+  `mode === 'ai'`, but the decision endpoint flips the holdout coin for hybrid too.
+  New `hasControlArm` covers both.
+- **Cart-surface and pill accepts never reached the Clicks metric.** Clicks count
+  `VariantImpression.clicked` and only the modal CTA posted `track-click`, so a
+  shopper who ignored the modal and redeemed later read as zero clicks. Both
+  surfaces now post it with the surface they came from (idempotent per impression,
+  skipped in test/preview).
+- A redeemed offer survived in localStorage, re-mounting the pill for a used code;
+  the surface-arm escalation gate read both pill keys from the wrong storage; the
+  super-admin console printed `$0` for a decision with no amount, and printed raw
+  `{{amount}}` genes under "Visitor saw:" as though interpolation were broken in
+  production.
+- 232 tests, up from 164.
+
+### Legal / disclosure note
+Raising the holdout from 5% to 10% does **not** by itself require a privacy
+policy change: it alters how many visitors are held back, not the categories of
+data collected, the purposes, the recipients, or the retention — and a held-back
+visitor has *less* collected about them, not more. What was genuinely missing was
+any disclosure that controlled testing happens at all, and any mention of the
+random `resparqVisitorId` kept in the visitor's browser. Both privacy policies
+(`app/routes/privacy.jsx` and the website) now cover them. The Terms gained the
+merchant-facing half — 10% of your eligible traffic is shown nothing, and that
+costs you some orders — because that is a commercial term, not a privacy one.
+
+---
+
 ## Resparq AI - September 22, 2026 (Offers that scale with the cart)
 
 A store at aggression 8 was discounting almost nothing on a $1,150 median cart.

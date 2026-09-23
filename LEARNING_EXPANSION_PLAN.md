@@ -536,6 +536,21 @@ the *threshold* is what moves, so changing the rate REASSIGNS people. Going
 unexposed history into the treated arm. They are contaminated for both arms,
 and nothing in the schema records that they switched.
 
+**This happened, on 2026-09-22.** `HOLDOUT_RATE` went 5% → 10%, which flipped
+every visitor in buckets 5–9 from treatment to control. Grouping outcome rows
+by `isHoldout` then counted such a visitor once in EACH arm — both denominators
+inflated, and an order placed after the change landed in the control numerator
+while their earlier treated row kept them in treatment's denominator. Biased
+against the product, and nothing in the output looked wrong.
+
+The interim fix (`shop-metrics.server.js`) resolves each visitor to a single
+arm before counting and DROPS anyone holding rows in both, reporting the count
+as `crossedArms`. Their pre-change behaviour belongs to treatment and their
+post-change behaviour to control; no single bucket is honest about that, so
+they are not a clean observation of either. `crossedArms` should decay as those
+visitors stop returning — a count that keeps climbing means assignment is no
+longer sticky. It is a containment, not the fix this section describes.
+
 **So the clean shape is cohorts, not a dial.** Assign a visitor to a cohort at
 first contact and freeze it; each cohort is its own experiment with its own
 fixed rate; lift is computed per cohort and combined, rather than pooled over a

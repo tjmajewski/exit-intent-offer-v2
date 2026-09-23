@@ -33,7 +33,7 @@ Resparq uses a **genetic algorithm** + **Bayesian statistics** to automatically 
 Page Load (or Add-to-Cart) → Client Frequency Gates
   (once/session; cross-session cooldown 3d×2^ignores; max 5 shows/30d; 30d post-purchase quiet)
 → AI Activates → Signals Collected (~26 incl. time-of-day + re-show history)
-→ Holdout Check (5% STICKY per visitor → never show, stamp cart for incrementality)
+→ Holdout Check (10% STICKY per visitor → never show, stamp cart for incrementality)
 → Propensity Scored (hand-set curve + calibrated model in shadow; served per-shop flag)
 → Should We Show? (Adaptive Threshold per score bucket × device; cluster prior on cold start)
   → NO: stamp cart with decision ID, track natural conversion if purchase happens
@@ -413,7 +413,7 @@ Runs every 5 minutes. When a store has 50+ new intervention outcomes since last 
 
 ---
 
-## Incrementality Measurement (5% Holdout)
+## Incrementality Measurement (10% Holdout)
 
 ### Purpose
 
@@ -421,7 +421,7 @@ Proves the causal revenue lift from Resparq. Without a holdout, the system can o
 
 ### How It Works
 
-1. **Random Assignment**: 5% of eligible traffic is randomly assigned to the holdout group at add-to-cart time — before hard overrides, before Thompson Sampling, before any AI logic
+1. **Random Assignment**: 10% of eligible traffic is randomly assigned to the holdout group at add-to-cart time — before hard overrides, before Thompson Sampling, before any AI logic
 2. **No Intervention**: Holdout customers never see a modal, regardless of signals
 3. **Cart Stamping**: Holdout carts are stamped with `exit_intent_holdout: {aiDecisionId}` so the webhook can track conversions
 4. **Separate Tracking**: Holdout outcomes are stored with `isHoldout: true` in InterventionOutcome — excluded from the Thompson Sampling learning loop
@@ -431,13 +431,13 @@ Proves the causal revenue lift from Resparq. Without a holdout, the system can o
 
 - Holdout coin flip happens **before** hard overrides to avoid systematic bias (if holdout excluded hard-override signals, the comparison would be unfair)
 - Holdout outcomes **never** train the adaptive threshold system — they're measurement-only
-- 5% holdout is small enough that the revenue cost is minimal while still gathering enough data for statistical significance
+- 10% holdout costs real revenue and is chosen anyway: estimate error scales with `1/(1-h) + 1/h`, which is 21.1 at h=0.05 and 11.1 at h=0.10, so doubling the control arm nearly HALVES the variance on the same traffic. A control group too small to read makes every revenue number the product reports unfalsifiable
 - Unique decision IDs (not booleans) stamped on cart attributes for accurate webhook matching at any traffic volume
 
 ### Statistical Requirements
 
 - ~500-1000 holdout conversions needed for meaningful results
-- At 5% holdout rate and ~5% CVR, that's ~10,000-20,000 eligible sessions
+- At 10% holdout rate and ~5% CVR, that's roughly half the eligible sessions the old 5% rate needed
 - Bayesian comparison (same pattern as variant evolution) determines confidence
 
 ---
@@ -839,7 +839,7 @@ The analytics page reports two numbers:
   interacted with a Resparq offer. Includes people who would have bought
   anyway.
 - **Incremental revenue** — measured: the shown-group conversion rate vs the
-  5% holdout control's conversion rate, converted into the share of engaged
+  holdout control's conversion rate, converted into the share of engaged
   revenue Resparq actually CAUSED. Displayed only after 30 control visitors
   have been observed; before that the card says "Measuring — n of 30" rather
   than showing an invented number.
@@ -894,7 +894,7 @@ control group.
    offer gracefully downgrades to a small pill the shopper can redeem on
    their own terms.
 
-6. **It proves its own value honestly.** 5% of eligible shoppers are held
+6. **It proves its own value honestly.** 10% of eligible shoppers are held
    back and never see an offer. Merchants see two numbers: gross "engaged
    revenue" and control-measured "incremental revenue" — the dollars Resparq
    actually caused. Until the control sample is statistically meaningful, the

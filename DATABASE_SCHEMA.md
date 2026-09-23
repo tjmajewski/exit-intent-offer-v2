@@ -857,6 +857,40 @@ alone leaves the evidence table and the state table disagreeing.
 
 ---
 
+### `InterventionOutcome.visitorId` — the randomisation unit
+
+Added 2026-09-22 so the dashboard could count **people per arm, not rows**. The
+holdout coin is a sticky hash of `visitorId`, so one visitor's every page load
+lands in the same arm — and the two arms do not produce rows at the same rate.
+The live store's first control visitor produced 5 rows in 28 seconds against
+~1.7 for a typical treated visitor, so a pair of rates built on rows would have
+compared browsing depth as much as behaviour.
+
+Nullable on purpose: rows written before the column existed carry null, and an
+older cached storefront script can still post a decision without one. Both arm
+counts exclude null rather than guessing, so history is invisible to the tiles
+until backfilled:
+
+```bash
+flyctl ssh console -a resparq -C 'node scripts/ops/backfill-outcome-visitors.mjs'
+flyctl ssh console -a resparq -C 'node scripts/ops/backfill-outcome-visitors.mjs --apply'
+```
+
+It resolves `visitorId` from `AIDecision.signals`, falling back to
+`VisitorTouch`. Read-only without `--apply`.
+
+The index is `@@index([shopId, isHoldout, visitorId])` — the exact shape of the
+distinct-visitor-per-arm count both tiles read.
+
+**This is not a new collection of personal data.** `visitorId` is the
+app-generated random identifier already stored in `VisitorTouch` and
+`AIDecision.signals`; this denormalises it one table across so the dashboard
+does not join on every load. `InterventionOutcome` carries a real foreign key
+to `Shop`, so shop redaction already reaches it — unlike the tables listed in
+`app/utils/redaction-scope.js`.
+
+---
+
 ### Important Migrations
 
 **Recent migrations:**
@@ -865,6 +899,7 @@ alone leaves the evidence table and the state table disagreeing.
 - `add_discount_code` - Added discount code tracking
 - `add_cart_value_max_default` - Updated cart value max default to 999999
 - `20260721140000_add_subscription_expected_cycles` - `Shop.subscriptionExpectedCycles` (spec 2.3)
+- `InterventionOutcome.visitorId` + `@@index([shopId, isHoldout, visitorId])` (2026-09-22, applied by `db push`; needs the backfill above)
 
 ---
 

@@ -48,7 +48,7 @@ Plan/vertical/shop filters resolve to a `shopId[]` list first (one cheap `Shop` 
 
 **1. KPI tiles (filtered totals + delta vs previous period)**
 - AI decisions made · Show rate (`wasShown` %) · Impressions · CVR (shown→converted) · Revenue recovered · Profit (revenue − discount) · Profit per impression
-- **Holdout lift**: shown-group CVR vs 5% holdout CVR (`isHoldout`) — the single best "is the AI worth it" number.
+- **Holdout lift**: shown-group CVR vs 10% holdout CVR (`isHoldout`) — the single best "is the AI worth it" number.
 
 **2. Time-series charts** (auto-bucketed: hour when range ≤ 48h, day up to 90d, week beyond — with a manual day/week/month toggle)
 - **Modal impressions over time (added 2026-07-07 — troubleshooting requirement).** Primary chart, top of section. Count of `VariantImpression` rows (+ `StarterImpression` for manual-mode shops) per bucket. Purpose: instantly see "modals stopped showing." Supporting features:
