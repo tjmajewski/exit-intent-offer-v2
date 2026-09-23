@@ -98,6 +98,28 @@ async function main() {
   console.log(`  conversions       : ${totals?.conversions ?? 0}`);
   console.log(`  CVR               : ${(totals?.conversionRate ?? 0).toFixed(2)}%`);
 
+  // The two newest merchant-facing tiles. They were added after this script
+  // was written, which defeats its whole purpose — a number a merchant reads
+  // has to be checkable before the deploy that ships it, not after.
+  const arms = metrics?.last30Days?.arms ?? totals?.arms ?? null;
+  console.log('\nARM TILES (With Resparq / Without Resparq)');
+  if (!arms) {
+    console.log('  hidden — no arm data (manual mode, or the arm query failed)');
+  } else {
+    const pct = (n) => `${n.toFixed(1)}%`;
+    console.log(`  With Resparq      : ${pct(arms.treated.rate)}  (${arms.treated.converted} of ${arms.treated.customers} customers ordered)`);
+    console.log(`  Control           : ${arms.controlReady ? pct(arms.control.rate) : 'TBD'}  (${arms.control.converted} of ${arms.control.customers} customers ordered)`);
+    if (!arms.controlReady) {
+      console.log(`                      needs ${arms.controlMinimum} control customers to display a rate`);
+    }
+    // Non-zero is expected right after a HOLDOUT_RATE change and should decay.
+    // A number that keeps climbing means assignment is no longer sticky.
+    console.log(`  crossedArms       : ${arms.crossedArms}${arms.crossedArms > 0 ? '  (dropped from both arms — expected to decay after a rate change)' : ''}`);
+    if (arms.treated.customers === 0 && arms.control.customers === 0) {
+      console.log('  !! both arms empty — InterventionOutcome.visitorId is probably unbackfilled');
+    }
+  }
+
   console.log('\nVERIFIED LIFT CARD (getIncrementality)');
   console.log(`  shown (rendered)  : ${incr.shown}`);
   console.log(`  shown converted   : ${incr.shownConverted}`);
