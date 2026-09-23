@@ -91,7 +91,7 @@ export const METRIC_INFO = {
     meaning:
       "Conversion rate of shoppers shown a modal vs the control group that qualified but saw nothing (10% of visitors), over time.",
     calculation:
-      "Per bucket: shownConverted ÷ shown, and holdoutConverted ÷ holdout, from InterventionOutcome. Holdout is small (5%), so short windows are noisy — trust the trend, not single points.",
+      "Per bucket: shownConverted ÷ shown, and holdoutConverted ÷ holdout, from InterventionOutcome. Holdout is small (10%), so short windows are noisy — trust the trend, not single points.",
   },
   revenueProfit: {
     title: "Revenue & profit",

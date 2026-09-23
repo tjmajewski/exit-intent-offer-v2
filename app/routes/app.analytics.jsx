@@ -1008,7 +1008,7 @@ export default function Performance() {
 
             {/* Verified Lift (holdout-measured — proof, not projection) */}
             <div
-              title="Proven against the 5% of your shoppers who never see offers. No other exit-intent app verifies its lift against a real control group."
+              title="Proven against the 10% of your shoppers who never see offers. No other exit-intent app verifies its lift against a real control group."
               style={{
                 background: "white",
                 border: "1px solid #e5e7eb",
