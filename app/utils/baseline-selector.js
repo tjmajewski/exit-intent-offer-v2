@@ -96,6 +96,26 @@ export function offerTypeForBaseline(baseline) {
   }
 }
 
+/**
+ * The inverse: the pool whose copy is denominated for this offer type.
+ *
+ * Needed wherever the offer type is decided FIRST and the copy has to follow —
+ * today only Guided mode, where the merchant pins the type and amount. The AI
+ * path runs the other way round (pool first, type derived), so it cannot
+ * disagree with itself; Guided could, and did.
+ *
+ * Unknown types fall to the percentage pool, matching how the settings form
+ * treats an unset offer type.
+ *
+ * @param {'percentage'|'fixed'} offerType
+ * @returns {string} a key of genePools
+ */
+export function poolForOfferType(offerType) {
+  return offerType === 'fixed'
+    ? 'conversion_with_discount_fixed'
+    : 'conversion_with_discount';
+}
+
 // The flat lane holds both money-off archetypes. Selection is deterministic
 // per visitor rather than random so a shopper who reloads sees a consistent
 // offer, and is spread across the population so both pools accumulate data for

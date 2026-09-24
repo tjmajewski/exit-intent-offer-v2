@@ -414,6 +414,47 @@ export function pickFallbackCta(baseline) {
   return all[0] || null;
 }
 
+/**
+ * What denomination a copy template expects its amount in.
+ *
+ * `{{amount}}` is not self-describing. The storefront renders it as a bare
+ * number for a `percentage` decision — the `%` lives in the template — and as
+ * currency for `fixed` and `threshold`. So the SAME token produces "17" in one
+ * pool and "$17" in another, and the template is the only thing that says
+ * which was meant.
+ *
+ * Pair them wrong and the shopper reads `Take $17% off your order`. That is
+ * not a formatting blemish: it names a discount no store offers, in the one
+ * sentence the modal exists to deliver.
+ *
+ * @returns {'percent'|'currency'|'mixed'|null} null when the text names no
+ *   amount at all, and is therefore valid against any offer type.
+ */
+export function amountDenomination(text) {
+  if (typeof text !== 'string') return null;
+  const occurrences = text.match(/\{\{amount\}\}\s*%?/g);
+  if (!occurrences) return null;
+  let percent = 0;
+  for (const hit of occurrences) if (hit.endsWith('%')) percent++;
+  if (percent === 0) return 'currency';
+  if (percent === occurrences.length) return 'percent';
+  return 'mixed';
+}
+
+/**
+ * Would this copy misdescribe an offer of this type?
+ *
+ * Copy that names no amount is valid everywhere — most CTAs and every subhead
+ * that talks about checkout rather than money.
+ */
+export function misdescribesOffer(text, offerType) {
+  const denomination = amountDenomination(text);
+  if (denomination === null) return false;
+  if (denomination === 'mixed') return true;
+  const expected = offerType === 'percentage' ? 'percent' : 'currency';
+  return denomination !== expected;
+}
+
 // Does this text trip any banned-pattern regex for the archetype?
 // Belt-and-suspenders check: even if a string is in-pool, if it matches a banned
 // pattern the pool has drifted and the copy should be treated as unsafe.

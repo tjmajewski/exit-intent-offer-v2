@@ -10,6 +10,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { interpolate } from '../app/components/admin/decision-summary.js';
 
 const modal = readFileSync(
   new URL('../extensions/exit-intent-modal/assets/exit-intent-modal.js', import.meta.url), 'utf8');
@@ -166,34 +167,19 @@ describe('super-admin console shows what the shopper saw', () => {
   const summary = readFileSync(
     new URL('../app/components/admin/decision-summary.js', import.meta.url), 'utf8');
 
-  test('placeholders are filled before display', () => {
+  test('the displayed copy goes through interpolation, not the raw gene', () => {
     // The console printed the raw gene under "Visitor saw:", so an operator
     // read `Your {{amount}} discount expires in 24 hours` and concluded
     // interpolation was broken in production. It was not.
-    assert.match(summary, /function interpolate\(text, decision\)/);
-    assert.match(summary, /\.map\(part => interpolate\(part, decision\)\)/);
+    assert.match(summary, /interpolate\(part, decision, signals\)/);
+    assert.match(summary, /headline: interpolate\(decision\.headline \|\| null, decision, signals\)/);
   });
 
-  // Behavioural mirror of the console helper.
-  const interpolate = (text, decision) => {
-    if (typeof text !== 'string' || !text.includes('{{')) return text;
-    const money = (n) => {
-      if (n == null || n === '') return null;
-      const v = Number(n);
-      return Number.isFinite(v) ? `$${v % 1 === 0 ? v : v.toFixed(2)}` : null;
-    };
-    const amount = decision?.amount;
-    const values = {
-      '{{amount}}': decision?.type === 'percentage'
-        ? (amount == null || amount === '' || !Number.isFinite(Number(amount))
-            ? null : String(amount))
-        : money(amount),
-      '{{threshold}}': money(decision?.threshold),
-    };
-    let out = text;
-    for (const [t, v] of Object.entries(values)) if (v != null) out = out.split(t).join(v);
-    return out;
-  };
+  // The real helper, imported rather than re-implemented. This block used to
+  // carry its own copy of interpolate, which made it a mirror of a mirror:
+  // the console mirrors the storefront, and the test mirrored the console, so
+  // a drift in either could pass. Exercising the shipped function is the only
+  // version of this test that can catch one.
 
   test('a fixed offer renders as currency', () => {
     assert.equal(
@@ -229,5 +215,63 @@ describe('super-admin console shows what the shopper saw', () => {
   test('copy with no placeholders is returned untouched', () => {
     assert.equal(interpolate('Ready to finish up?', { type: 'no-discount', amount: 0 }),
       'Ready to finish up?');
+  });
+});
+
+// The two derived placeholders. The storefront computes both from the cart it
+// re-reads at render time; the console reconstructs them from the cart as it
+// stood when the decision was minted. Leaving them unfilled put a raw
+// `{{threshold_remaining}}` in a column headed "Visitor saw" — which reads as
+// a broken gene, and is exactly the false alarm this whole mirror exists to
+// prevent.
+describe('derived placeholders in the console mirror', () => {
+  const thresholdDecision = { type: 'threshold', amount: 70, threshold: 1500 };
+
+  test('remaining spend is filled from the recorded cart', () => {
+    assert.equal(
+      interpolate("You're just {{threshold_remaining}} away from {{amount}} off",
+        thresholdDecision, { cartValue: 1180 }),
+      "You're just $320 away from $70 off");
+  });
+
+  test('remaining spend rounds UP, the way the storefront does', () => {
+    // $1500 - $1187 = $313, rounded up to the nearest $5. Rounding down would
+    // understate the ask and promise a discount the cart would not qualify for.
+    assert.equal(
+      interpolate('Add {{threshold_remaining}} more', thresholdDecision, { cartValue: 1187 }),
+      'Add $315 more');
+  });
+
+  test('a cart already over the threshold asks for nothing, never a negative', () => {
+    assert.equal(
+      interpolate('Add {{threshold_remaining}} more', thresholdDecision, { cartValue: 1600 }),
+      'Add $0 more');
+  });
+
+  test('percent to goal is filled as a bare number', () => {
+    assert.equal(
+      interpolate('{{percent_to_goal}}% of the way there', thresholdDecision, { cartValue: 750 }),
+      '50% of the way there');
+  });
+
+  test('no recorded cart leaves both placeholders standing', () => {
+    // We do not know what the shopper saw. Saying "$0" would be a confident
+    // wrong number — the same failure the cartValue column already fixed.
+    const text = 'Add {{threshold_remaining}} to hit {{percent_to_goal}}%';
+    assert.equal(interpolate(text, thresholdDecision, {}), text);
+    assert.equal(interpolate(text, thresholdDecision, { cartValue: null }), text);
+  });
+
+  test('a flat offer has no threshold, so neither placeholder resolves', () => {
+    assert.equal(
+      interpolate('Add {{threshold_remaining}} more', { type: 'fixed', amount: 20 }, { cartValue: 300 }),
+      'Add {{threshold_remaining}} more');
+  });
+
+  test('the cart on the decision row is used when signals carry none', () => {
+    assert.equal(
+      interpolate('Add {{threshold_remaining}} more',
+        { ...thresholdDecision, cartValue: 1180 }, {}),
+      'Add $320 more');
   });
 });

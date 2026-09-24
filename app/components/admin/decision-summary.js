@@ -291,8 +291,20 @@ const TIMINGS = {
  * template) and a currency value otherwise. A placeholder with nothing to fill
  * it is left standing rather than blanked, so a genuinely broken gene still
  * looks broken here.
+ *
+ * `{{threshold_remaining}}` and `{{percent_to_goal}}` are derived, not stored:
+ * the storefront computes both from the cart it re-reads at render time. The
+ * console has the cart as it stood when the decision was minted, which is the
+ * same number unless the shopper changed the cart in between — so these two
+ * are a close reconstruction rather than a transcript. That is still much
+ * closer to the shopper's screen than leaving a raw `{{threshold_remaining}}`
+ * standing in a column headed "Visitor saw", which reads as a broken gene and
+ * is how this mirror drifted before.
+ *
+ * The rounding is the storefront's, deliberately: it rounds the remaining
+ * spend UP to the nearest $5 so the ask is never understated.
  */
-function interpolate(text, decision) {
+export function interpolate(text, decision, signals = {}) {
   if (typeof text !== "string" || !text.includes("{{")) return text;
   // Number(null) and Number("") are both 0, so a decision with no amount
   // would render "$0" — a confident wrong number in place of a placeholder
@@ -304,12 +316,25 @@ function interpolate(text, decision) {
     return `$${v % 1 === 0 ? v : v.toFixed(2)}`;
   };
   const amount = decision?.amount;
+
+  // Both derived tokens need a threshold AND a cart. Either missing leaves the
+  // placeholder standing, which is the honest rendering: we do not know.
+  const threshold = numberOrNull(decision?.threshold);
+  const cartValue = numberOrNull(signals?.cartValue ?? decision?.cartValue);
+  const canDerive = threshold != null && threshold > 0 && cartValue != null;
+
   const values = {
     "{{amount}}": decision?.type === "percentage"
       ? (amount == null || amount === "" || !Number.isFinite(Number(amount))
           ? null : String(amount))
       : money(amount),
-    "{{threshold}}": money(decision?.threshold),
+    "{{threshold}}": money(threshold),
+    "{{threshold_remaining}}": canDerive
+      ? money(Math.max(0, Math.ceil((threshold - cartValue) / 5) * 5))
+      : null,
+    "{{percent_to_goal}}": canDerive
+      ? String(Math.round((cartValue / threshold) * 100))
+      : null,
   };
   let out = text;
   for (const [token, value] of Object.entries(values)) {
@@ -401,7 +426,7 @@ export function summarizeDecision(row) {
     shown: decision.headline
       ? [decision.headline, decision.showSubhead === false ? null : decision.subhead, decision.cta]
           .filter(Boolean)
-          .map(part => interpolate(part, decision))
+          .map(part => interpolate(part, decision, signals))
           .join(" · ")
       : null,
     // The same underlying values the sentences above are built from, handed
@@ -410,9 +435,9 @@ export function summarizeDecision(row) {
     // changed is that scanning fifty rows no longer means reading fifty
     // paragraphs to find the one with a $3,000 cart.
     facts: {
-      headline: interpolate(decision.headline || null, decision),
-      subhead: decision.showSubhead === false ? null : interpolate(decision.subhead || null, decision),
-      cta: interpolate(decision.cta || null, decision),
+      headline: interpolate(decision.headline || null, decision, signals),
+      subhead: decision.showSubhead === false ? null : interpolate(decision.subhead || null, decision, signals),
+      cta: interpolate(decision.cta || null, decision, signals),
       propensity: P,
       // Number(null) and Number("") are both 0, so a decision with no recorded
       // cart rendered "$0" — a real zero cart and an unrecorded one became the

@@ -1,7 +1,7 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { createPercentageDiscount, createFixedDiscount, createThresholdDiscount, getDiscountCodeDetails } from "../utils/discount-codes";
-import { offerTypeForBaseline, noDiscountCounterpart } from "../utils/baseline-selector.js";
+import { offerTypeForBaseline, noDiscountCounterpart, poolForOfferType } from "../utils/baseline-selector.js";
 import { hasPromoActive, normalisePromoInCart, promoGuardEnabled } from "../utils/promo-detect.js";
 import { getMetaInsight, shouldUseMetaLearning } from "../utils/meta-learning.js";
 import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
@@ -716,13 +716,24 @@ export async function action({ request }) {
     // on to serve a real discount. The baseline verdict is recorded after every
     // override has run, further down.
 
-    // Hybrid forces a flat-discount decision. Pin > 0 → conversion_with_discount
-    // (flat %/$ copy pool); pin == 0 → pure_reminder (announce-only). Revenue
-    // (threshold) baselines are intentionally NOT used: threshold offers are out
-    // of scope for Hybrid v1 (spec §4), and their "spend $X more, save $Y" copy
-    // would misdescribe a flat pinned offer.
+    // Hybrid forces a flat-discount decision. Pin > 0 → the flat pool that
+    // matches the pinned denomination; pin == 0 → pure_reminder (announce-only).
+    // Revenue (threshold) baselines are intentionally NOT used: threshold
+    // offers are out of scope for Hybrid v1 (spec §4), and their "spend $X
+    // more, save $Y" copy would misdescribe a flat pinned offer.
+    //
+    // The pool has to follow hybridOfferType. This line used to pin
+    // conversion_with_discount for both, on the reading that it was "the flat
+    // %/$ copy pool" — it is not. Every headline in it is worded
+    // `{{amount}}%`, while `type` a few hundred lines below is the merchant's
+    // pin. A merchant who pinned $17 off got PERCENT_DISCOUNT copy against a
+    // `fixed` decision, and the storefront — correctly formatting {{amount}}
+    // as currency for a fixed offer — rendered `Take $17% off your order` to
+    // real shoppers. Confirmed on exit-intent-test-2.
     if (isHybrid) {
-      baseline = hybridOfferAmount > 0 ? 'conversion_with_discount' : 'pure_reminder';
+      baseline = hybridOfferAmount > 0
+        ? poolForOfferType(hybridOfferType)
+        : 'pure_reminder';
       console.log(`[Hybrid] Forced baseline: ${baseline} (pinned ${hybridOfferType} ${hybridOfferAmount})`);
     }
 
@@ -1048,8 +1059,21 @@ export async function action({ request }) {
     const {
       isValidSubhead, isValidHeadline, isValidCta,
       pickFallbackHeadline, pickFallbackCta, hasBannedClaim,
-      getArchetype
+      getArchetype, misdescribesOffer
     } = await import('../utils/gene-pools.js');
+
+    // The offer type this decision will actually carry. Computed here rather
+    // than at the decision literal below because the copy guards need it: copy
+    // and type have to be checked against each other, and by the time the
+    // literal is assembled the copy is already chosen.
+    const decisionOfferType = isHybrid ? hybridOfferType : servedOfferType;
+
+    // The pool whose copy is denominated for that type. Identical to `baseline`
+    // on every path today — it is the fallback source for the denomination
+    // guard below precisely so that stays true even when it isn't.
+    const denominationPool = decisionOfferType === 'threshold'
+      ? baseline
+      : (decisionOfferType === 'no-discount' ? baseline : poolForOfferType(decisionOfferType));
 
     // Resolve archetype name for this baseline — surfaced in decision payload
     // so the modal JS log, admin dashboards, and meta-learning aggregators all
@@ -1093,11 +1117,42 @@ export async function action({ request }) {
       effectiveCta = fallback;
     }
 
+    // Denomination guard. A template writes the unit around {{amount}} and the
+    // storefront fills the number according to decision.type, so the two have
+    // to agree or the shopper reads a unit nobody offered — `$17%`.
+    //
+    // The Guided-mode bug that produced that is fixed at its source above, so
+    // nothing should reach here mismatched. This stays because the failure is
+    // silent by nature: it renders a confident, well-formed sentence, passes
+    // every existing guard (the copy IS in its pool, it just isn't in THIS
+    // decision's pool), and the console faithfully mirrors it — so there is no
+    // surface on which it looks like a bug. The paths that could reintroduce
+    // it are the ones that already write copy across pools: crossover
+    // inheritance, meta-learning genes, generated candidates, and any future
+    // mode that pins a type before picking a pool.
+    if (misdescribesOffer(effectiveHeadline, decisionOfferType)) {
+      const fallback = pickFallbackHeadline(denominationPool);
+      console.warn(`[Denomination] Headline is denominated for the wrong offer type on variant ${selectedVariant.id} (type=${decisionOfferType}) — swapping. was="${effectiveHeadline}" now="${fallback}"`);
+      if (fallback) effectiveHeadline = fallback;
+    }
+    if (misdescribesOffer(effectiveCta, decisionOfferType)) {
+      const fallback = pickFallbackCta(denominationPool);
+      console.warn(`[Denomination] CTA is denominated for the wrong offer type on variant ${selectedVariant.id} (type=${decisionOfferType}) — swapping. was="${effectiveCta}" now="${fallback}"`);
+      if (fallback) effectiveCta = fallback;
+    }
+
     let effectiveShowSubhead = selectedVariant.showSubhead ?? true;
     if (effectiveShowSubhead &&
         (hasBannedClaim(baseline, selectedVariant.subhead) ||
          (!isValidSubhead(baseline, selectedVariant.subhead) && !(await isGeneratedCopy(db, baseline, 'subhead', selectedVariant.subhead))))) {
       console.warn(`[Brand Safety] Unsafe subhead on variant ${selectedVariant.id} — hiding. subhead="${selectedVariant.subhead}"`);
+      effectiveShowSubhead = false;
+    }
+
+    // Subhead has no fallback — it is optional by design, so a mismatch hides
+    // it rather than substituting a line the variant never earned.
+    if (effectiveShowSubhead && misdescribesOffer(selectedVariant.subhead, decisionOfferType)) {
+      console.warn(`[Denomination] Subhead is denominated for the wrong offer type on variant ${selectedVariant.id} (type=${decisionOfferType}) — hiding. subhead="${selectedVariant.subhead}"`);
       effectiveShowSubhead = false;
     }
 
@@ -1130,7 +1185,9 @@ export async function action({ request }) {
       // never threshold (hybrid forces conversion_with_discount, so this is
       // already a flat baseline — the override just carries a 'fixed' pin
       // through).
-      type: isHybrid ? hybridOfferType : servedOfferType,
+      // decisionOfferType, computed before the copy guards above so copy and
+      // type could be checked against each other.
+      type: decisionOfferType,
       amount: cappedOfferAmount,
       // Threshold is capped against the FINAL discount (post margin guard) so
       // the ask stays proportionate to the reward. See capThresholdByDiscount.
