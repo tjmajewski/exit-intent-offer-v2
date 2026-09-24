@@ -98,7 +98,7 @@ A store at aggression 8 was discounting almost nothing on a $1,150 median cart.
 The decision engine was not at fault: two of the three discount lanes were
 denominated in flat dollars sized for ~$100 carts. Chasing it surfaced that
 `derivedVertical` has never been populated for any store on the platform. Full
-detail in `HANDOFF-2026-09-22.md`.
+detail in `HANDOFF-2026-09-24.md`.
 
 ### Added
 - **`scaleDollarOffer(gene, basis)`** — the dollars-off lanes read their gene as

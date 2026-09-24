@@ -262,7 +262,7 @@ Comprehensive documentation is available in the following files:
 - **[CRITICAL_NOTES.md](./CRITICAL_NOTES.md)** - Important fixes and gotchas
 
 ### Current State
-- **[HANDOFF-2026-09-22.md](./HANDOFF-2026-09-22.md)** - Latest handoff: offers that scale with the cart, inferred gross margin, and a vertical derivation that had never worked
+- **[HANDOFF-2026-09-24.md](./HANDOFF-2026-09-24.md)** - Latest handoff: the decision log as a table, why modals never fired on mobile, and what a QA pass caught before it shipped. Carries the 09-22 session (cart-scaled offers, inferred gross margin, vertical derivation) in §0–§10
 - **[HANDOFF-2026-09-21.md](./HANDOFF-2026-09-21.md)** - The discount outage: no code ever reached a shopper for a week, and why it was invisible
 - **[HANDOFF-2026-09-20.md](./HANDOFF-2026-09-20.md)** - The metrics contract; §5.2 and its show-rate figure are corrected by 09-21 §1
 - **[HANDOFF-2026-09-19.md](./HANDOFF-2026-09-19.md)** - The audit this work came from; §1-§6 are still largely open
