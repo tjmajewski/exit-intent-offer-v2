@@ -24,6 +24,7 @@ import {
   enforceRateLimit,
   PROXY_LIMITS,
 } from '../app/utils/rate-limit.server.js';
+import { isValidShopDomain } from '../app/utils/shop-validation.js';
 
 // The IP every app-proxy request arrives with: Shopify's, not the shopper's.
 const SHOPIFY_PROXY_IP = '23.227.38.74';
@@ -93,6 +94,17 @@ describe('what counts as a shop', () => {
       assert.equal(getProxyShop(proxyRequest(bad)), null, `${bad} was accepted as a shop`);
     }
     assert.equal(getProxyShop(proxyRequest(null)), null, 'a missing shop param is not a shop');
+  });
+
+  test('a bucket can only be claimed by a domain the routes would accept', () => {
+    // Same validator the routes use to look a shop up. If the limiter were
+    // laxer, a value rejected downstream could still claim a bucket of its own
+    // and sidestep the limit on the way to being rejected.
+    for (const value of ['cami-wigs.myshopify.com', 'evil.com', '', '-lead.myshopify.com']) {
+      const bucketed = getProxyShop(proxyRequest(value)) !== null;
+      assert.equal(bucketed, isValidShopDomain(value.trim().toLowerCase()),
+        `${value}: limiter and route validators disagree`);
+    }
   });
 
   test('an unattributable request falls back to its IP, not to a shared bucket', () => {

@@ -35,6 +35,8 @@
  * exchange for the same weak evasion resistance.
  */
 
+import { isValidShopDomain } from "./shop-validation.js";
+
 const buckets = new Map();
 
 // Periodically drop expired buckets so the map doesn't grow unbounded.
@@ -83,16 +85,19 @@ export function getClientIp(request) {
   return "unknown";
 }
 
-// Shopify always appends `shop` to a proxied request's query string. Matched
-// strictly so a malformed or absent value falls into its own bucket rather
-// than silently becoming a shared one.
-const SHOP_DOMAIN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
-
 /**
  * The shop domain an app-proxy request claims to be for, or null.
  *
- * Unvalidated — the signature check that proves it happens later, in
- * `authenticate.public.appProxy`. Good enough to bucket by, and nothing else.
+ * Shopify appends `shop` to every proxied request's query string and signs it
+ * along with the rest — which is how `shop-settings` and `custom-css-public`
+ * have always found the store. So this is not a hopeful read of an optional
+ * field; if it were absent, those endpoints would already be broken.
+ *
+ * Unvalidated all the same — the signature check that PROVES it happens later,
+ * in `authenticate.public.appProxy`. Good enough to bucket by, and nothing
+ * else. Shares `isValidShopDomain` with the routes that look a shop up by this
+ * value, so a domain that would be rejected downstream cannot claim a bucket
+ * of its own here either.
  */
 export function getProxyShop(request) {
   let raw;
@@ -103,7 +108,7 @@ export function getProxyShop(request) {
   }
   if (!raw) return null;
   const shop = raw.trim().toLowerCase();
-  return SHOP_DOMAIN.test(shop) ? shop : null;
+  return isValidShopDomain(shop) ? shop : null;
 }
 
 /**
