@@ -14,6 +14,14 @@
 
 import { fmtDate } from "../../utils/format.js";
 
+// A finite number, or null. Absent must stay absent: every numeric column in
+// the console has to be able to tell "zero" from "we do not know".
+function numberOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 function money(n) {
   const value = Number(n);
   if (!Number.isFinite(value)) return null;
@@ -186,29 +194,46 @@ const SOURCES = {
   idle_cart_pickup: "pre-computed for an idle cart",
 };
 
-// What made this decision happen at all — a different question from both the
-// trigger (WHEN the modal was set to fire) and triggerReason (WHY the visitor
-// was flagged). Three storefront paths call the decision API and two server
-// paths mint rows without one, and they fail in different ways: a flood of
-// cart_update rows is a theme firing cart:updated on every keystroke, while a
-// flood of page rows is the session guard not holding.
-//
-// `requestReason` is sent by the storefront extension. Rows written before it
-// shipped carry none, and the honest render for those is "—" rather than a
-// guess — an assumed origin on a row that predates the field is exactly the
-// kind of invented fact this console exists to avoid.
-const ORIGINS = {
+// What the STOREFRONT says made this evaluation happen. `signals` is verbatim
+// client JSON, so this map holds only values a browser can legitimately
+// produce. It deliberately does not contain the server-side sources below: a
+// crafted requestReason of "cart_webhook" would otherwise have rendered a live
+// visitor's row as "no visitor was on the page", which is the console
+// asserting the one thing it exists to get right.
+const CLIENT_ORIGINS = {
   add_to_cart: { label: "cart add", detail: "The visitor added to an empty cart on this page." },
   cart_update: { label: "cart update", detail: "A cart:updated event fired after the page had loaded." },
-  page_load: { label: "page", detail: "The script initialised on a page load with items already in the cart." },
   cart_poll: { label: "cart poll", detail: "Neither cart:updated nor an add-to-cart click fired — the 3s poll caught the cart. The theme integration is degraded." },
+  page_load: { label: "page", detail: "The script initialised on a page load with items already in the cart." },
+};
+
+// What a SERVER writer says. Keyed off decision.source, which no client can
+// set — these rows are written by our own code, never posted in.
+const SERVER_ORIGINS = {
   cart_webhook: { label: "cart hook", detail: "Shopify's carts/update webhook, server-side — no visitor was on the page." },
   idle_cart_pickup: { label: "idle sweep", detail: "The server's idle-cart sweep, not a live visit." },
 };
 
+// A different question from both the trigger (WHEN the modal was set to fire)
+// and triggerReason (WHY the visitor was flagged): a flood of cart_update rows
+// is a theme firing cart:updated on every keystroke, a flood of page rows is
+// the session guard not holding, and the two look identical without this.
+//
+// Rows written before requestReason shipped carry none, and the honest render
+// for those is "—" rather than a guess.
 function originOf(decision, signals) {
-  const key = signals.requestReason || decision.source || null;
-  return ORIGINS[key] || (key ? { label: String(key).replace(/_/g, " "), detail: null } : null);
+  // Server source first and unconditionally: it is the trustworthy half, and
+  // a row that has one was not a live visit whatever its signals claim.
+  if (decision.source && SERVER_ORIGINS[decision.source]) {
+    return SERVER_ORIGINS[decision.source];
+  }
+  const claimed = signals.requestReason;
+  if (!claimed) return null;
+  if (CLIENT_ORIGINS[claimed]) return CLIENT_ORIGINS[claimed];
+  // An unrecognised value is still shown — a new reason should surface rather
+  // than vanish — but truncated, because it is untrusted text in a table cell
+  // whose width every other row pays for.
+  return { label: String(claimed).replace(/_/g, " ").slice(0, 24), detail: null };
 }
 
 // Short "who this was" chips. Null entries are dropped by the caller.
@@ -389,9 +414,11 @@ export function summarizeDecision(row) {
       subhead: decision.showSubhead === false ? null : interpolate(decision.subhead || null, decision),
       cta: interpolate(decision.cta || null, decision),
       propensity: P,
-      cartValue: Number.isFinite(Number(signals.cartValue ?? decision.cartValue))
-        ? Number(signals.cartValue ?? decision.cartValue)
-        : null,
+      // Number(null) and Number("") are both 0, so a decision with no recorded
+      // cart rendered "$0" — a real zero cart and an unrecorded one became the
+      // same cell. `??` does not help: it only skips undefined, and both
+      // writers store an explicit null.
+      cartValue: numberOrNull(signals.cartValue ?? decision.cartValue),
       device: signals.deviceType || null,
       visits: Number.isFinite(signals.visitFrequency) ? signals.visitFrequency : null,
       // How many modals this visitor has already been shown in the rolling
@@ -553,10 +580,15 @@ export function describeResult(result, source = null) {
 //   untracked      no outcome row at all — budget block, promo pause, test traffic
 export function resultKind(result, source = null) {
   if (!result) return SOURCES[source] ? "pre_decision" : "untracked";
-  if (result.converted) return "converted";
-  if (!result.wasShown) return "nothing_shown";
-  if (!result.rendered) return "not_rendered";
-  return "shown";
+  if (!result.wasShown) return result.converted ? "bought_anyway" : "nothing_shown";
+  // Rendered is checked BEFORE converted. recordInterventionConversion can
+  // attribute an order with proveRender:false, which leaves rendered=false, so
+  // a decision whose modal never displayed can still convert — and calling
+  // that "Converted" put a success badge on a row that also carried the reason
+  // it was never seen. The shopper bought; the modal had nothing to do with
+  // it, and the console must not imply otherwise.
+  if (!result.rendered) return result.converted ? "bought_anyway" : "not_rendered";
+  return result.converted ? "converted" : "shown";
 }
 
 // Why a decision never reached a screen, in words. Beaconed on pagehide, so
@@ -574,6 +606,11 @@ const MISS_REASONS = {
     detail:
       "A third-party popup held the screen and the gate gave up after about 60 seconds rather than stacking on top of it. The offer was never the visitor's to see.",
   },
+  left_before_dwell: {
+    label: "left before dwell",
+    detail:
+      "The dwell timer was still counting when the visitor left — they were on the page, but not for as long as the variant's timer asked for. Unlike idle, dwell cannot be reset by scrolling, so this one means the window is genuinely too long for how these shoppers browse.",
+  },
   trigger_never_fired: {
     label: "no trigger fired",
     detail:
@@ -584,6 +621,48 @@ const MISS_REASONS = {
 export function describeMiss(reason) {
   if (!reason) return null;
   return MISS_REASONS[reason] || { label: String(reason).replace(/_/g, " "), detail: null };
+}
+
+/**
+ * Collapse every InterventionOutcome row belonging to one decision into the
+ * single furthest state the visitor reached.
+ *
+ * One decision can own more than one row: a holdout that converts gets a
+ * second from the order webhook, and duplicate (shopId, aiDecisionId) pairs
+ * exist in production besides — the schema says so, and says why the unique
+ * index that would stop them cannot be added yet.
+ *
+ * Extracted from the loader so it can be tested. It could not be before, and
+ * the multi-row case the schema warns about had no coverage at all.
+ */
+export function foldOutcomeRows(outcomeRows, clickedById = new Map()) {
+  const byDecision = new Map();
+  for (const row of outcomeRows) {
+    const prev = byDecision.get(row.aiDecisionId);
+    byDecision.set(row.aiDecisionId, {
+      wasShown: (prev?.wasShown ?? false) || row.wasShown,
+      rendered: (prev?.rendered ?? false) || row.rendered,
+      isHoldout: (prev?.isHoldout ?? false) || row.isHoldout,
+      // Keep whichever row recorded a reason — a later null must not blank it.
+      missReason: prev?.missReason ?? row.missReason ?? null,
+      // No impression row means no click to read (pill openers mint none), so
+      // "not clicked" and "unknown" have to stay distinguishable.
+      hasImpression: (prev?.hasImpression ?? false) || clickedById.has(row.impressionId),
+      clicked: (prev?.clicked ?? false) || clickedById.get(row.impressionId) === true,
+      converted: (prev?.converted ?? false) || row.converted,
+      revenue: (prev?.revenue ?? 0) + (row.revenue || 0),
+      profit: (prev?.profit ?? 0) + (row.profit || 0),
+    });
+  }
+
+  // Render is terminal, here too. confirmInterventionRender clears the reason
+  // on the row it flips, but a duplicate pair can still put a rendered row
+  // beside an unrendered one that kept its reason — which would read
+  // "Shown · left before idle" on a single line.
+  for (const folded of byDecision.values()) {
+    if (folded.rendered) folded.missReason = null;
+  }
+  return byDecision;
 }
 
 // Counts for the one-line header above the log.

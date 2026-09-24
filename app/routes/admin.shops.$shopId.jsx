@@ -49,6 +49,7 @@ import {
   summarizeDecision,
   describeResult,
   resultKind,
+  foldOutcomeRows,
   tallyResults,
   relativeTime,
 } from "../components/admin/decision-summary.js";
@@ -315,7 +316,13 @@ export async function loader({ request, params }) {
   // promo pause, cart/idle pre-decision, or test traffic).
   const outcomeRows = recentDecisions.length
     ? await db.interventionOutcome.findMany({
-        where: { aiDecisionId: { in: recentDecisions.map((decision) => decision.id) } },
+        // shopId is in the predicate so this can use @@index([shopId, aiDecisionId]).
+        // Without it there is no usable index on aiDecisionId alone and every
+        // console load full-scanned the table.
+        where: {
+          shopId: shop.id,
+          aiDecisionId: { in: recentDecisions.map((decision) => decision.id) },
+        },
         select: {
           aiDecisionId: true,
           wasShown: true,
@@ -387,28 +394,7 @@ export async function loader({ request, params }) {
     : [];
   const clickedById = new Map(impressions.map((impression) => [impression.id, impression.clicked]));
 
-  // One decision can own more than one outcome row — a holdout that converts
-  // gets a second row from the order webhook — so collapse to the furthest
-  // the visitor got.
-  const resultByDecision = new Map();
-  for (const row of outcomeRows) {
-    const prev = resultByDecision.get(row.aiDecisionId);
-    resultByDecision.set(row.aiDecisionId, {
-      wasShown: (prev?.wasShown ?? false) || row.wasShown,
-      rendered: (prev?.rendered ?? false) || row.rendered,
-      isHoldout: (prev?.isHoldout ?? false) || row.isHoldout,
-      // A decision can own more than one outcome row; keep the first reason
-      // that exists rather than letting a later null blank it.
-      missReason: prev?.missReason ?? row.missReason ?? null,
-      // No impression row means no click to read (pill openers mint none), so
-      // "not clicked" and "unknown" have to stay distinguishable.
-      hasImpression: (prev?.hasImpression ?? false) || clickedById.has(row.impressionId),
-      clicked: (prev?.clicked ?? false) || clickedById.get(row.impressionId) === true,
-      converted: (prev?.converted ?? false) || row.converted,
-      revenue: (prev?.revenue ?? 0) + (row.revenue || 0),
-      profit: (prev?.profit ?? 0) + (row.profit || 0),
-    });
-  }
+  const resultByDecision = foldOutcomeRows(outcomeRows, clickedById);
 
   // The promo code each decision actually minted. AIDecision.offerId is a bare
   // string column with no Prisma relation behind it, so this is a second query
@@ -805,6 +791,10 @@ function TriggerPerformance({ rows }) {
 // prose kept intact in an expansion, which is where a diagnosis belongs.
 const RESULT_BADGE = {
   converted: { label: "Converted", tone: "success" },
+  // An order attributed to a decision whose surface never displayed. Not a
+  // success for the modal — the shopper bought without it — and it must not
+  // wear the same badge as one that did the work.
+  bought_anyway: { label: "Bought anyway", tone: "attention" },
   shown: { label: "Shown", tone: "info" },
   not_rendered: { label: "Never fired", tone: "warning" },
   nothing_shown: { label: "Nothing shown", tone: undefined },
@@ -819,7 +809,7 @@ const DECISION_VIEWS = [
   { id: "shown", label: "Shown", test: (row) => row.kind === "shown" || row.kind === "converted" },
   { id: "control", label: "Control", test: (row) => row.facts.isHoldout },
   { id: "not_rendered", label: "Never fired", test: (row) => row.kind === "not_rendered" },
-  { id: "miss_known", label: "Never fired, cause known", test: (row) => Boolean(row.facts.miss) },
+  { id: "miss_known", label: "Never fired, cause known", test: (row) => row.kind === "not_rendered" && Boolean(row.facts.miss) },
   { id: "promo", label: "With promo", test: (row) => Boolean(row.facts.promoCode) },
 ];
 
@@ -988,7 +978,7 @@ function DecisionRows({ row, position, now, open, onToggle }) {
               unscannable in the first place. */}
           <div style={CLAMP} title={facts.headline || ""}>
             <Text as="span" variant="bodySm" tone={facts.headline ? undefined : "subdued"}>
-              {facts.headline || "no copy — nothing was going to be shown"}
+              {facts.headline || noCopyReason(row)}
             </Text>
           </div>
         </IndexTable.Cell>
@@ -1111,6 +1101,17 @@ const CLAMP = {
 };
 
 const CODE_CLAMP = { ...CLAMP, maxWidth: "150px" };
+
+// Why a row has no copy. The single sentence this replaced — "nothing was
+// going to be shown" — was false on the largest group in the log: a
+// pre-decision from the cart webhook carries a real offer and no headline,
+// because determineOffer returns no copy gene at all. The row said it would
+// show nothing while its own Offer column named the discount.
+function noCopyReason(row) {
+  if (row.kind === "pre_decision") return "copy is chosen later, when a visitor actually arrives";
+  if (row.facts.offerLabel) return "an offer with no copy — the variant carried no headline gene";
+  return "nothing was going to be shown";
+}
 
 // "visit 4 · 2 shown before". A count of 0 is a real answer and must read as
 // one; null means the storefront was too old to report it, which is a

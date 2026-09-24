@@ -841,6 +841,19 @@
     constructor(settings = {}) {
   this.settings = settings;
   this.modalShown = false;
+  // Held for the duration of one showModal() call. modalShown only goes true
+  // at the very end, after an await, so this is what actually stops a trigger
+  // that fires twice from running the whole show twice.
+  this.showInFlight = false;
+  // Miss accounting. `armedTriggers` is what was wired for this page;
+  // dwellPending / idlePending are whether those timers were still counting
+  // when the page went away, which is what separates "they left before the
+  // timer" from "triggers were armed and none of them applied".
+  this.armedTriggers = new Set();
+  this.dwellPending = false;
+  this.idlePending = false;
+  this.missReason = null;
+  this.missReported = null;
   this.modalElement = null;
   this.sessionKey = 'exitIntentShown';
   this.cartItemCount = 0;
@@ -935,7 +948,10 @@
               if (e.clientY < 0 && !this.modalShown) this.showModal();
             });
           }
-          if (isMobileDevice()) this.setupMobileExitTriggers(() => this.showModal());
+          if (isMobileDevice()) {
+            this.setupDwellTrigger(decision.idleSeconds || 30, () => this.showModal());
+            this.setupTabReturnTrigger(() => this.showModal());
+          }
           this.setupIdleTrigger(isMobileDevice()
             ? Math.min(decision.idleSeconds || 30, 15)
             : (decision.idleSeconds || 30));
@@ -2236,7 +2252,8 @@
       // problem and has to have the same answer, or the two tiers disagree
       // about what an exit_intent gene means on a phone.
       if (isMobile && (triggerType === 'exit_intent' || triggerType === 'exit_intent_or_idle')) {
-        this.setupMobileExitTriggers(() => this.showModalWithOffer(decision), 'Enterprise AI');
+        this.setupDwellTrigger(idleSeconds, () => this.showModalWithOffer(decision), 'Enterprise AI');
+        this.setupTabReturnTrigger(() => this.showModalWithOffer(decision), 'Enterprise AI');
       }
       // Exit intent can't fire on mobile (no mouseout) — fall back to a capped idle timer
       if (isMobile && triggerType === 'exit_intent') {
@@ -2383,12 +2400,17 @@
       // the real mobile equivalents (back gesture, tab return, scroll flick)
       // plus the capped idle timer as a floor. The idle timer alone was the
       // whole mobile story before, and it almost never fired.
+      // Mobile has no mouseout, so a gene that asked for exit intent gets the
+      // two things a phone can honestly offer: a dwell timer that cannot be
+      // reset by scrolling, and the tab-return signal. The capped idle timer
+      // stays as a floor for the shopper who does go still.
       if (isMobile && (triggerType === 'exit_intent' || triggerType === 'exit_intent_or_idle')) {
-        this.setupMobileExitTriggers(() => this.showModal());
+        this.setupDwellTrigger(idleSeconds, () => this.showModal());
+        this.setupTabReturnTrigger(() => this.showModal());
       }
       if (isMobile && triggerType === 'exit_intent') {
         const mobileIdle = Math.min(idleSeconds, 15);
-        console.log(`[Pro AI] Mobile + exit_intent only → adding idle fallback (${mobileIdle}s)`);
+        console.log(`[Pro AI] Mobile + exit_intent only → adding idle floor (${mobileIdle}s)`);
         this.setupIdleTrigger(mobileIdle);
       }
 
@@ -2408,74 +2430,83 @@
      * Mobile's answer to exit intent.
      *
      * `mouseout` does not exist on a touch device, so an `exit_intent` gene
-     * has been quietly falling back to a capped idle timer — and idle resets
-     * on `touchmove` and `scroll`. A shopper who is scrolling never
-     * accumulates fifteen continuous seconds of stillness, so on mobile the
-     * gene could only fire for a visitor who stopped and stared. Everyone
-     * else left without the modal ever being armed for them, which is the
-     * bulk of the "never fired" rows in the decision log.
+     * fell through to a capped idle timer — and setupIdleTrigger resets on
+     * `touchmove` and `scroll`. A shopper who keeps scrolling never
+     * accumulates the stillness that timer waits for, so on mobile the gene
+     * could only fire for someone who stopped and stared. Everyone else left
+     * without ever being shown anything.
      *
-     * The gene pool has documented a "back-button (mobile fallback)" since it
-     * was written. This is that fallback, finally built:
+     * Two signals were tried here and removed, because both were worse than
+     * the problem:
      *
-     *   popstate         the back gesture, the closest thing mobile has to a
-     *                    mouse leaving the top of the window
-     *   visibilitychange the tab backgrounded — an app switch, a lock, a link
-     *                    out. Deliberately does NOT show while hidden: a modal
-     *                    rendered to a screen nobody is looking at would count
-     *                    as an impression that was never seen, which is the
-     *                    one thing this codebase must not manufacture. It
-     *                    shows on RETURN, and only after an absence long
-     *                    enough to be a real departure rather than a glance at
-     *                    a notification.
-     *   scroll reversal  a hard flick upward toward the address bar, the
-     *                    gesture that precedes leaving. Distinct from idle in
-     *                    that it fires DURING interaction, not after it stops.
+     *   popstate       fires on SAME-DOCUMENT history traversal. A real back
+     *                  gesture out of the store is cross-document: the page
+     *                  unloads and popstate never fires on it. So it missed
+     *                  every actual exit, and fired on the one thing it
+     *                  shouldn't — themes that pushState for collection
+     *                  filters (Dawn's FacetFiltersForm does), where backing
+     *                  out of a filter would have popped a modal.
+     *
+     *   scroll flick   240px inside 300ms is 800 px/s, which is an ordinary
+     *                  swipe, not a flick. iOS momentum scrolling and a
+     *                  theme's smooth scroll-to-top both clear it, and
+     *                  isMobileDevice() counts any window under 768px, so a
+     *                  narrow desktop window armed it too. Scroll velocity is
+     *                  not evidence of intent to leave.
+     *
+     * What is left is the one honest signal: the tab went away and came back.
+     * It deliberately does NOT show while hidden — a modal rendered to a
+     * screen nobody is looking at is an impression that was never seen — and
+     * the absence has to be long enough to be a departure rather than a
+     * glance at a notification. Ten seconds; three caught the notification
+     * shade, the app switcher and a screen tap.
      */
-    setupMobileExitTriggers(show, label = 'Pro AI') {
-      const RETURN_AFTER_MS = 3000;
-      const FLICK_PX = 240;   // distance of upward travel
-      const FLICK_MS = 300;   // within this window — a flick, not a slow scroll
+    setupTabReturnTrigger(show, label = 'Pro AI') {
+      const RETURN_AFTER_MS = 10000;
       let hiddenAt = 0;
-      let lastY = window.scrollY;
-      let lastT = Date.now();
 
-      const fire = (why) => {
-        if (this.modalShown) return;
-        console.log(`[${label}] Mobile exit signal: ${why}`);
-        show();
-      };
+      this.armedTriggers.add('tab_return');
 
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
           hiddenAt = Date.now();
           return;
         }
-        if (hiddenAt && Date.now() - hiddenAt >= RETURN_AFTER_MS) {
-          fire('returned after leaving the tab');
-        }
+        const away = hiddenAt ? Date.now() - hiddenAt : 0;
         hiddenAt = 0;
+        if (away >= RETURN_AFTER_MS && !this.modalShown) {
+          console.log(`[${label}] Mobile exit signal: returned after ${Math.round(away / 1000)}s away`);
+          show();
+        }
       });
 
-      window.addEventListener('popstate', () => fire('back gesture'));
+      console.log(`[${label}] Tab-return trigger armed (${RETURN_AFTER_MS / 1000}s)`);
+    }
 
-      window.addEventListener('scroll', () => {
-        const y = window.scrollY;
-        const t = Date.now();
-        const travelled = lastY - y;      // positive = moving up the page
-        const elapsed = t - lastT;
-        if (travelled >= FLICK_PX && elapsed <= FLICK_MS) {
-          fire('fast scroll back to the top');
-        }
-        // Re-baseline on any direction change or after the window lapses, so
-        // a long steady scroll up over ten seconds never reads as a flick.
-        if (travelled <= 0 || elapsed > FLICK_MS) {
-          lastY = y;
-          lastT = t;
-        }
-      }, { passive: true });
-
-      console.log(`[${label}] Mobile exit triggers armed (back, tab return, scroll flick)`);
+    /**
+     * Dwell: fire after N seconds ON THE PAGE, whatever the shopper is doing.
+     *
+     * This is the trigger that actually answers "why did nothing ever show on
+     * mobile". Idle waits for the shopper to STOP, and browsing is exactly
+     * the behaviour that keeps resetting it, so the two conditions the gene
+     * needs — a shopper engaged enough to be worth an offer, and a shopper
+     * sitting perfectly still — are close to mutually exclusive on a phone.
+     *
+     * Dwell has no such contradiction: it counts wall-clock time on a page
+     * with items in the cart and does not listen to interaction at all. It is
+     * a deliberate interruption rather than a guess at intent, which is the
+     * honest trade — and it is what the merchant is paying for.
+     */
+    setupDwellTrigger(seconds, show, label = 'Pro AI') {
+      this.armedTriggers.add('dwell');
+      this.dwellPending = true;
+      setTimeout(() => {
+        this.dwellPending = false;
+        if (this.modalShown) return;
+        console.log(`[${label}] Dwell trigger fired after ${seconds}s on the page`);
+        show();
+      }, seconds * 1000);
+      console.log(`[${label}] Dwell trigger armed: ${seconds}s (does not reset on interaction)`);
     }
 
     setupIdleTrigger(seconds, label = 'Pro AI') {
@@ -2485,6 +2516,7 @@
         if (idleTimer) clearTimeout(idleTimer);
         if (this.modalShown) return;
         idleTimer = setTimeout(() => {
+          this.idlePending = false;
           if (!this.modalShown) {
             console.log(`[${label}] Idle trigger fired after ${seconds}s of inactivity`);
             this.showModal();
@@ -2492,11 +2524,8 @@
         }, seconds * 1000);
       };
 
-      // An armed idle timer is the most common thing still pending when a
-      // page goes away, and on mobile it is the whole story. Recording it
-      // here separates "they never sat still long enough" from "triggers were
-      // armed and nothing happened", which have different fixes.
-      this.idleTimerArmed = true;
+      this.armedTriggers.add('idle');
+      this.idlePending = true;
 
       // Start the idle timer immediately
       resetIdle();
@@ -2642,6 +2671,25 @@
     
     async showModal() {
       if (this.modalShown || !this.modalElement) return;
+      // `this.modalShown` is not set until the very bottom of this method,
+      // after an await on updateModalWithAI — which awaits a /cart.js fetch
+      // on the Enterprise path. Any trigger that fires more than once during
+      // that window passed the guard above and ran the whole method again:
+      // two stampModalShown() calls (burning the 30-day frequency ceiling
+      // twice for one show), two impressions, two variant impressions — which
+      // inflates the bandit's denominator and suppresses the variant's own
+      // measured conversion rate. Desktop `mouseout` has always been able to
+      // fire repeatedly; nothing had ever held the door.
+      if (this.showInFlight) return;
+      this.showInFlight = true;
+      try {
+        return await this.showModalInner();
+      } finally {
+        this.showInFlight = false;
+      }
+    }
+
+    async showModalInner() {
 
       // COMPETING POPUP GATE: a third-party popup (email capture etc.) is on
       // screen — never stack on top of it. Poll until it clears, then re-enter.
@@ -2893,28 +2941,49 @@
      *
      * The absence of a confirm-render carried no cause: a decision that died
      * because the visitor closed the tab in three seconds left exactly the
-     * same row as one a third-party popup blocked for a minute. The console
-     * could say THAT a modal never fired and never WHY.
+     * same row as one a third-party popup blocked for a minute.
      *
-     * sendBeacon rather than fetch: this runs as the page is being torn down,
-     * where a normal request is cancelled. Best-effort by nature — a dropped
-     * beacon means the row keeps a null reason, which reads as "not recorded",
-     * never as a cause of its own.
+     * The first cut of this latched after one send, and registered on
+     * `visibilitychange` as well as `pagehide` because mobile Safari routinely
+     * skips the latter. Those two together were wrong: a five-second glance at
+     * a notification beaconed the generic reason and latched, so a specific
+     * cause discovered forty seconds later — a competing popup holding the
+     * screen — could never be sent. The reason reported the first moment the
+     * tab went away, not the cause.
+     *
+     * So: no latch. Re-send whenever the reason has actually changed, and let
+     * the server take the LAST reason while the row is still unrendered. Later
+     * is strictly better informed here — `competing_popup_dropped` is sticky
+     * once set, and the timer-pending reasons only become more accurate as the
+     * page ages.
+     *
+     * sendBeacon because this runs as the page is torn down, where a normal
+     * request is cancelled. Best-effort by nature: a dropped beacon leaves a
+     * null reason, which reads as "not recorded", never as a cause.
      */
+    missReasonNow() {
+      if (this.missReason) return this.missReason;       // a specific, known cause
+      if (this.dwellPending) return 'left_before_dwell';
+      if (this.idlePending) return 'left_before_idle';
+      return 'trigger_never_fired';
+    }
+
     reportDecisionMiss() {
       if (this.isPreview || isResparqTestMode()) return;
-      if (this.missReported) return;
       if (this.modalShown || this.pillOpenerShown) return;   // it did reach a screen
       if (!this.currentAiDecisionId) return;                 // nothing was decided to show
-      this.missReported = true;
-      const reason = this.missReason
-        || (this.idleTimerArmed ? 'left_before_idle' : 'trigger_never_fired');
+      const reason = this.missReasonNow();
+      if (this.missReported === reason) return;              // nothing new to say
       try {
         const body = new Blob(
           [JSON.stringify({ shop: window.Shopify.shop, aiDecisionId: this.currentAiDecisionId, reason })],
           { type: 'application/json' }
         );
-        navigator.sendBeacon('/apps/exit-intent/api/decision-miss', body);
+        // Only treat it as sent once the UA has actually accepted the queue —
+        // a refused beacon (buffer full) must not suppress the next attempt.
+        if (navigator.sendBeacon('/apps/exit-intent/api/decision-miss', body)) {
+          this.missReported = reason;
+        }
       } catch (_) { /* best-effort by design */ }
     }
 

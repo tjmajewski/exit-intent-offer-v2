@@ -18,9 +18,14 @@ import { enforceRateLimit } from "../utils/rate-limit.server.js";
  * "no reason recorded", never "no reason existed" — read the counts as a
  * lower bound on each cause, not a partition of the misses.
  *
- * First writer wins. pagehide can fire more than once per page (bfcache,
- * mobile app switches), and the FIRST reason is the true one: a later replay
- * would only ever overwrite a specific cause with the generic default.
+ * LAST writer wins while the row is still unrendered. The first cut of this
+ * took the first reason, on the theory that a replay could only ever downgrade
+ * a specific cause to a generic one. The opposite turned out to be true: the
+ * client beacons as soon as the tab is backgrounded, so a five-second glance
+ * at a notification wrote the generic reason and froze it, and a competing
+ * popup discovered forty seconds later could never be recorded. The client
+ * only re-sends when its reason actually changed, and a later reason is
+ * strictly better informed — so take the latest one.
  */
 
 // Closed vocabulary. An unrecognised reason is dropped rather than stored,
@@ -35,6 +40,11 @@ const REASONS = new Set([
   // still long enough. Distinct from trigger_never_fired because it is the
   // dominant mobile case and the fix for it is a different one.
   "left_before_idle",
+  // The mobile dwell timer was still counting. Distinct from left_before_idle
+  // because dwell cannot be reset by interaction: if this is the common mobile
+  // reason, shoppers are leaving inside the dwell window and the window is too
+  // long, which is a different fix from "they never sat still".
+  "left_before_dwell",
 ]);
 
 export async function action({ request }) {
@@ -75,7 +85,6 @@ export async function action({ request }) {
         aiDecisionId,
         wasShown: true,
         rendered: false,
-        missReason: null,
       },
       data: { missReason: reason },
     });
