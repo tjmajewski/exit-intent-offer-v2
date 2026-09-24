@@ -47,6 +47,25 @@ describe('reading the unit off a template', () => {
     assert.equal(amountDenomination('Save {{amount}} % today'), 'percent');
   });
 
+  test('the percent sign the model reaches for, not just the ASCII one', () => {
+    // Generated and meta-learning copy is model-written. Reading either of
+    // these as currency would swap out a CORRECT percentage headline — the
+    // guard misfiring on good copy, which is worse than not guarding.
+    assert.equal(amountDenomination('Take {{amount}}\uFF05 off'), 'percent');
+    assert.equal(amountDenomination('Take {{amount}} percent off'), 'percent');
+    assert.equal(misdescribesOffer('Take {{amount}} percent off', 'percentage'), false);
+    assert.equal(misdescribesOffer('Take {{amount}}\uFF05 off', 'fixed'), true);
+  });
+
+  test('a percent sign that belongs to something else is not the amount', () => {
+    // The unit has to be attached to the token, not merely present in the line.
+    assert.equal(amountDenomination('100% natural, {{amount}} off'), 'currency');
+  });
+
+  test('a different token that merely starts with amount is not the amount', () => {
+    assert.equal(amountDenomination('{{amount_total}} off'), null);
+  });
+
   test('a template that mixes units is wrong against everything', () => {
     assert.equal(amountDenomination('Save {{amount}}% or {{amount}} off'), 'mixed');
     assert.equal(misdescribesOffer('Save {{amount}}% or {{amount}} off', 'percentage'), true);

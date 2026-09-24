@@ -242,10 +242,14 @@ describe('derived placeholders in the console mirror', () => {
       'Add $315 more');
   });
 
-  test('a cart already over the threshold asks for nothing, never a negative', () => {
+  test('a cart already over the threshold shows the negative the shopper saw', () => {
+    // The storefront does not clamp this at zero, so the modal really does
+    // render "-$100". The console is a transcript: clamping here would make it
+    // read better than the screen it is reporting on, and an admin chasing
+    // that copy would never find it. The storefront bug is tracked separately.
     assert.equal(
       interpolate('Add {{threshold_remaining}} more', thresholdDecision, { cartValue: 1600 }),
-      'Add $0 more');
+      'Add $-100 more');
   });
 
   test('percent to goal is filled as a bare number', () => {

@@ -127,7 +127,7 @@ export function getProxyShop(request) {
  * carry a server-minted decision id, and cost one write — and dropping one
  * does not fail loudly, it quietly under-counts the evolution and threshold
  * learners while leaving a row that reads as "never rendered". A wrong number
- * there corrupts data; a wrong number on `mint` costs a discount code.
+ * there corrupts data; a wrong number on a minting tier costs a discount code.
  */
 export const PROXY_LIMITS = {
   // Shopper telemetry: confirm-render, decision-miss, track-click,
@@ -138,9 +138,19 @@ export const PROXY_LIMITS = {
   // A decision per arriving visitor: ai-decision, enrich-signals. Admin API
   // round-trips and DB writes, so bounded well under `beacon`, but still far
   // above any real store's arrival rate.
+  //
+  // ai-decision ALSO mints a real price rule in unique-code mode, which reads
+  // like it belongs on `mint` below. It does not, and the reason is worth
+  // stating: on that route the minting rate IS the visitor arrival rate —
+  // every shopper who gets a unique code causes exactly one mint. A tighter
+  // cap there would not bound minting per visitor, it would turn visitors
+  // away. What bounds the spend on that path is checkBudget, plus the fact
+  // that an app-proxy signature is required, so this is real storefront
+  // traffic rather than an open endpoint.
   decide: { limit: 300, windowMs: 60_000 },
-  // Creates a real Shopify price rule. The bound that stops a bot loop from
-  // minting unlimited codes lives here.
+  // generate-code: mints a price rule on demand, decoupled from any visitor
+  // arrival, so here a tight cap genuinely does bound minting. This is the one
+  // tier where the limit is the thing stopping a loop from minting freely.
   mint: { limit: 120, windowMs: 60_000 },
   // One-time per install: init-variants.
   setup: { limit: 60, windowMs: 60_000 },

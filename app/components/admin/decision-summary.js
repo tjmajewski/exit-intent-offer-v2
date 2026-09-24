@@ -329,8 +329,16 @@ export function interpolate(text, decision, signals = {}) {
           ? null : String(amount))
       : money(amount),
     "{{threshold}}": money(threshold),
+    // No clamp at zero, deliberately. The storefront has none either
+    // (exit-intent-modal.js, resolveModalContent), so a cart already past the
+    // threshold shows the shopper a NEGATIVE remaining spend. Clamping here
+    // would make the console read better than the modal did, which is the one
+    // thing this function must not do — it is a transcript, and an admin
+    // debugging that copy needs to see the "-$5" the shopper saw. The
+    // storefront bug is real and tracked separately; it is not fixed by
+    // hiding it here.
     "{{threshold_remaining}}": canDerive
-      ? money(Math.max(0, Math.ceil((threshold - cartValue) / 5) * 5))
+      ? money(Math.ceil((threshold - cartValue) / 5) * 5)
       : null,
     "{{percent_to_goal}}": canDerive
       ? String(Math.round((cartValue / threshold) * 100))

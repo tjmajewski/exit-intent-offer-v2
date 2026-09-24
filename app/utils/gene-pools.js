@@ -432,10 +432,14 @@ export function pickFallbackCta(baseline) {
  */
 export function amountDenomination(text) {
   if (typeof text !== 'string') return null;
-  const occurrences = text.match(/\{\{amount\}\}\s*%?/g);
+  // `％` is the fullwidth percent sign (U+FF05) and `percent` is the spelled
+  // form. Neither appears in the static pools, but generated and
+  // meta-learning copy is written by a model, which reaches for both. Reading
+  // them as currency would swap out a correct percentage headline.
+  const occurrences = text.match(/\{\{amount\}\}\s*(?:[%\uFF05]|percent\b)?/gi);
   if (!occurrences) return null;
   let percent = 0;
-  for (const hit of occurrences) if (hit.endsWith('%')) percent++;
+  for (const hit of occurrences) if (/[%\uFF05]$|percent$/i.test(hit)) percent++;
   if (percent === 0) return 'currency';
   if (percent === occurrences.length) return 'percent';
   return 'mixed';

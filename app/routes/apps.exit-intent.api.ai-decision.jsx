@@ -1068,12 +1068,24 @@ export async function action({ request }) {
     // literal is assembled the copy is already chosen.
     const decisionOfferType = isHybrid ? hybridOfferType : servedOfferType;
 
-    // The pool whose copy is denominated for that type. Identical to `baseline`
-    // on every path today — it is the fallback source for the denomination
-    // guard below precisely so that stays true even when it isn't.
-    const denominationPool = decisionOfferType === 'threshold'
-      ? baseline
-      : (decisionOfferType === 'no-discount' ? baseline : poolForOfferType(decisionOfferType));
+    // Where the denomination guard below draws a replacement line from.
+    //
+    // Keyed off what the SELECTED POOL serves, not off decisionOfferType. The
+    // two disagree on exactly one path: a Guided pin of $0 forces
+    // `pure_reminder` while decisionOfferType stays the merchant's pinned
+    // 'percentage', and keying off the type there would offer percent-discount
+    // copy as the fallback for an announce-only modal. Unreachable today —
+    // pure_reminder carries no {{amount}}, so the guard never fires on it —
+    // but the wrong answer sitting one gene-edit away is not worth keeping.
+    //
+    // A pool that serves no discount, or serves a threshold, is its own
+    // fallback source. Only the two flat lanes can be substituted for each
+    // other, which is the mismatch this guard exists to catch.
+    const poolOfferType = offerTypeForBaseline(baseline);
+    const denominationPool =
+      (poolOfferType === 'no-discount' || poolOfferType === 'threshold')
+        ? baseline
+        : poolForOfferType(decisionOfferType);
 
     // Resolve archetype name for this baseline — surfaced in decision payload
     // so the modal JS log, admin dashboards, and meta-learning aggregators all
