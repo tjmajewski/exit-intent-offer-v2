@@ -243,10 +243,11 @@ describe('derived placeholders in the console mirror', () => {
   });
 
   test('a cart already over the threshold shows the negative the shopper saw', () => {
-    // The storefront does not clamp this at zero, so the modal really does
-    // render "-$100". The console is a transcript: clamping here would make it
-    // read better than the screen it is reporting on, and an admin chasing
-    // that copy would never find it. The storefront bug is tracked separately.
+    // The storefront does not clamp this at zero at any of its three call
+    // sites. Whether the shopper saw the negative depends on which render path
+    // ran — the live one rewrites the headline on a qualifying cart, the
+    // fallback does not — so the console cannot tidy it to "$0" without
+    // printing something that matches neither path. HANDOFF §18.6.
     assert.equal(
       interpolate('Add {{threshold_remaining}} more', thresholdDecision, { cartValue: 1600 }),
       'Add $-100 more');

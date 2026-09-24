@@ -329,14 +329,17 @@ export function interpolate(text, decision, signals = {}) {
           ? null : String(amount))
       : money(amount),
     "{{threshold}}": money(threshold),
-    // No clamp at zero, deliberately. The storefront has none either
-    // (exit-intent-modal.js, resolveModalContent), so a cart already past the
-    // threshold shows the shopper a NEGATIVE remaining spend. Clamping here
-    // would make the console read better than the modal did, which is the one
-    // thing this function must not do — it is a transcript, and an admin
-    // debugging that copy needs to see the "-$5" the shopper saw. The
-    // storefront bug is real and tracked separately; it is not fixed by
-    // hiding it here.
+    // No clamp at zero, deliberately — the storefront has none either, at any
+    // of its three call sites. Whether a shopper actually SEES the negative
+    // depends on which render path ran: the live one (resolveModalContent)
+    // replaces the whole headline on a qualifying cart, so it never surfaces
+    // there, while the fallback (updateModalWithAI) lets it through.
+    // HANDOFF-2026-09-24 §18.6 has the detail.
+    //
+    // Clamping here would pick one of those outcomes and print it for both.
+    // This function is a transcript: where the stored copy would have rendered
+    // a negative, an admin needs to see the negative, not a tidied "$0" that
+    // matches neither path.
     "{{threshold_remaining}}": canDerive
       ? money(Math.ceil((threshold - cartValue) / 5) * 5)
       : null,
