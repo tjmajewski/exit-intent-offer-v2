@@ -935,6 +935,7 @@
               if (e.clientY < 0 && !this.modalShown) this.showModal();
             });
           }
+          if (isMobileDevice()) this.setupMobileExitTriggers(() => this.showModal());
           this.setupIdleTrigger(isMobileDevice()
             ? Math.min(decision.idleSeconds || 30, 15)
             : (decision.idleSeconds || 30));
@@ -951,6 +952,17 @@
 
       // Create modal HTML
       this.createModal();
+
+      // Report an unrendered decision as the page goes away. Registered once,
+      // here, rather than on each trigger path: the handler reads state at
+      // fire time, so it covers every path including the ones that arm no
+      // triggers at all. Both events, because mobile Safari routinely skips
+      // pagehide and fires only visibilitychange; reportDecisionMiss is
+      // idempotent, so a browser that fires both sends one beacon.
+      window.addEventListener('pagehide', () => this.reportDecisionMiss());
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) this.reportDecisionMiss();
+      });
       
       // Inject custom CSS if Enterprise tier
       if (this.settings.plan === 'enterprise') {
@@ -2220,6 +2232,12 @@
         this.setupIdleTrigger(idleSeconds, 'Enterprise AI');
       }
 
+      // Same mobile exit signals the Pro path arms — this surface has the same
+      // problem and has to have the same answer, or the two tiers disagree
+      // about what an exit_intent gene means on a phone.
+      if (isMobile && (triggerType === 'exit_intent' || triggerType === 'exit_intent_or_idle')) {
+        this.setupMobileExitTriggers(() => this.showModalWithOffer(decision), 'Enterprise AI');
+      }
       // Exit intent can't fire on mobile (no mouseout) — fall back to a capped idle timer
       if (isMobile && triggerType === 'exit_intent') {
         const mobileIdle = Math.min(idleSeconds, 15);
@@ -2361,8 +2379,13 @@
         this.setupIdleTrigger(idleSeconds);
       }
 
-      // On mobile with exit_intent-only strategy, fall back to idle with capped delay
-      // (exit intent can't fire on mobile — mouseout doesn't happen)
+      // Mobile has no mouseout, so any gene that asked for exit intent gets
+      // the real mobile equivalents (back gesture, tab return, scroll flick)
+      // plus the capped idle timer as a floor. The idle timer alone was the
+      // whole mobile story before, and it almost never fired.
+      if (isMobile && (triggerType === 'exit_intent' || triggerType === 'exit_intent_or_idle')) {
+        this.setupMobileExitTriggers(() => this.showModal());
+      }
       if (isMobile && triggerType === 'exit_intent') {
         const mobileIdle = Math.min(idleSeconds, 15);
         console.log(`[Pro AI] Mobile + exit_intent only → adding idle fallback (${mobileIdle}s)`);
@@ -2381,6 +2404,80 @@
      * Resets on mouse movement, scroll, touch, or keyboard activity.
      * This is the primary trigger for mobile (where exit intent doesn't work).
      */
+    /**
+     * Mobile's answer to exit intent.
+     *
+     * `mouseout` does not exist on a touch device, so an `exit_intent` gene
+     * has been quietly falling back to a capped idle timer — and idle resets
+     * on `touchmove` and `scroll`. A shopper who is scrolling never
+     * accumulates fifteen continuous seconds of stillness, so on mobile the
+     * gene could only fire for a visitor who stopped and stared. Everyone
+     * else left without the modal ever being armed for them, which is the
+     * bulk of the "never fired" rows in the decision log.
+     *
+     * The gene pool has documented a "back-button (mobile fallback)" since it
+     * was written. This is that fallback, finally built:
+     *
+     *   popstate         the back gesture, the closest thing mobile has to a
+     *                    mouse leaving the top of the window
+     *   visibilitychange the tab backgrounded — an app switch, a lock, a link
+     *                    out. Deliberately does NOT show while hidden: a modal
+     *                    rendered to a screen nobody is looking at would count
+     *                    as an impression that was never seen, which is the
+     *                    one thing this codebase must not manufacture. It
+     *                    shows on RETURN, and only after an absence long
+     *                    enough to be a real departure rather than a glance at
+     *                    a notification.
+     *   scroll reversal  a hard flick upward toward the address bar, the
+     *                    gesture that precedes leaving. Distinct from idle in
+     *                    that it fires DURING interaction, not after it stops.
+     */
+    setupMobileExitTriggers(show, label = 'Pro AI') {
+      const RETURN_AFTER_MS = 3000;
+      const FLICK_PX = 240;   // distance of upward travel
+      const FLICK_MS = 300;   // within this window — a flick, not a slow scroll
+      let hiddenAt = 0;
+      let lastY = window.scrollY;
+      let lastT = Date.now();
+
+      const fire = (why) => {
+        if (this.modalShown) return;
+        console.log(`[${label}] Mobile exit signal: ${why}`);
+        show();
+      };
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          hiddenAt = Date.now();
+          return;
+        }
+        if (hiddenAt && Date.now() - hiddenAt >= RETURN_AFTER_MS) {
+          fire('returned after leaving the tab');
+        }
+        hiddenAt = 0;
+      });
+
+      window.addEventListener('popstate', () => fire('back gesture'));
+
+      window.addEventListener('scroll', () => {
+        const y = window.scrollY;
+        const t = Date.now();
+        const travelled = lastY - y;      // positive = moving up the page
+        const elapsed = t - lastT;
+        if (travelled >= FLICK_PX && elapsed <= FLICK_MS) {
+          fire('fast scroll back to the top');
+        }
+        // Re-baseline on any direction change or after the window lapses, so
+        // a long steady scroll up over ten seconds never reads as a flick.
+        if (travelled <= 0 || elapsed > FLICK_MS) {
+          lastY = y;
+          lastT = t;
+        }
+      }, { passive: true });
+
+      console.log(`[${label}] Mobile exit triggers armed (back, tab return, scroll flick)`);
+    }
+
     setupIdleTrigger(seconds, label = 'Pro AI') {
       let idleTimer = null;
 
@@ -2394,6 +2491,12 @@
           }
         }, seconds * 1000);
       };
+
+      // An armed idle timer is the most common thing still pending when a
+      // page goes away, and on mobile it is the whole story. Recording it
+      // here separates "they never sat still long enough" from "triggers were
+      // armed and nothing happened", which have different fixes.
+      this.idleTimerArmed = true;
 
       // Start the idle timer immediately
       resetIdle();
@@ -2562,6 +2665,9 @@
           } else if (attempts >= 40) {
             clearInterval(poll);
             this.competingPopupWait = false;
+            // Name the cause now, while it is known. By pagehide this is
+            // indistinguishable from a visitor who simply left.
+            this.missReason = 'competing_popup_dropped';
             console.log('[Competing Popup] Still up after 60s — dropping this attempt');
           }
         }, 1500);
@@ -2782,6 +2888,36 @@
      * the attempt, customer left) must not count as shows in any learning
      * loop. Idempotent server-side; fire-and-forget.
      */
+    /**
+     * Tell the server WHY a decision never reached a screen.
+     *
+     * The absence of a confirm-render carried no cause: a decision that died
+     * because the visitor closed the tab in three seconds left exactly the
+     * same row as one a third-party popup blocked for a minute. The console
+     * could say THAT a modal never fired and never WHY.
+     *
+     * sendBeacon rather than fetch: this runs as the page is being torn down,
+     * where a normal request is cancelled. Best-effort by nature — a dropped
+     * beacon means the row keeps a null reason, which reads as "not recorded",
+     * never as a cause of its own.
+     */
+    reportDecisionMiss() {
+      if (this.isPreview || isResparqTestMode()) return;
+      if (this.missReported) return;
+      if (this.modalShown || this.pillOpenerShown) return;   // it did reach a screen
+      if (!this.currentAiDecisionId) return;                 // nothing was decided to show
+      this.missReported = true;
+      const reason = this.missReason
+        || (this.idleTimerArmed ? 'left_before_idle' : 'trigger_never_fired');
+      try {
+        const body = new Blob(
+          [JSON.stringify({ shop: window.Shopify.shop, aiDecisionId: this.currentAiDecisionId, reason })],
+          { type: 'application/json' }
+        );
+        navigator.sendBeacon('/apps/exit-intent/api/decision-miss', body);
+      } catch (_) { /* best-effort by design */ }
+    }
+
     confirmRenderServed() {
       if (this.isPreview) return;
       if (!this.currentImpressionId && !this.currentAiDecisionId) return;

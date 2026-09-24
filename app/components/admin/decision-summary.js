@@ -336,7 +336,7 @@ export function summarizeDecision(row) {
         showCount: null, ignoreStreak: null, daysSinceLastShow: null,
         trafficSource: null, confidence: null,
         promoCode: null, offerLabel: null, redeemed: null,
-        origin: null, isHoldout: false,
+        origin: null, miss: null, isHoldout: false,
       },
       result: row.result ?? null,
       source: null,
@@ -411,6 +411,7 @@ export function summarizeDecision(row) {
       offerLabel: offerLabelOf(decision),
       redeemed: row.offer ? Boolean(row.offer.redeemed) : null,
       origin: originOf(decision, signals),
+      miss: describeMiss(row.result?.missReason),
       // Which arm. The outcome row is authoritative (it is stamped on every
       // tracked decision); the decision type only says "holdout" when the
       // holdout branch itself wrote the row.
@@ -556,6 +557,33 @@ export function resultKind(result, source = null) {
   if (!result.wasShown) return "nothing_shown";
   if (!result.rendered) return "not_rendered";
   return "shown";
+}
+
+// Why a decision never reached a screen, in words. Beaconed on pagehide, so
+// null is "nothing was recorded" — a dropped beacon, blocked storage, or a
+// storefront script cached from before the beacon shipped — and never a cause
+// of its own. Read these as a lower bound on each cause, not a partition.
+const MISS_REASONS = {
+  left_before_idle: {
+    label: "left before idle",
+    detail:
+      "The idle timer was still counting when the visitor left. On mobile this is the common one: idle resets on every scroll and touch, so a shopper who keeps moving never accumulates the stillness the timer is waiting for.",
+  },
+  competing_popup_dropped: {
+    label: "blocked by another popup",
+    detail:
+      "A third-party popup held the screen and the gate gave up after about 60 seconds rather than stacking on top of it. The offer was never the visitor's to see.",
+  },
+  trigger_never_fired: {
+    label: "no trigger fired",
+    detail:
+      "Triggers were armed, no idle timer was among them, and none of them fired before the page went away.",
+  },
+};
+
+export function describeMiss(reason) {
+  if (!reason) return null;
+  return MISS_REASONS[reason] || { label: String(reason).replace(/_/g, " "), detail: null };
 }
 
 // Counts for the one-line header above the log.

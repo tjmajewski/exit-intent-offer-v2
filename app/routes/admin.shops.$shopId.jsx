@@ -325,6 +325,7 @@ export async function loader({ request, params }) {
           // outcome column is the one that is set on every tracked decision,
           // so it is what the console filters and colours on.
           isHoldout: true,
+          missReason: true,
           converted: true,
           revenue: true,
           profit: true,
@@ -396,6 +397,9 @@ export async function loader({ request, params }) {
       wasShown: (prev?.wasShown ?? false) || row.wasShown,
       rendered: (prev?.rendered ?? false) || row.rendered,
       isHoldout: (prev?.isHoldout ?? false) || row.isHoldout,
+      // A decision can own more than one outcome row; keep the first reason
+      // that exists rather than letting a later null blank it.
+      missReason: prev?.missReason ?? row.missReason ?? null,
       // No impression row means no click to read (pill openers mint none), so
       // "not clicked" and "unknown" have to stay distinguishable.
       hasImpression: (prev?.hasImpression ?? false) || clickedById.has(row.impressionId),
@@ -815,6 +819,7 @@ const DECISION_VIEWS = [
   { id: "shown", label: "Shown", test: (row) => row.kind === "shown" || row.kind === "converted" },
   { id: "control", label: "Control", test: (row) => row.facts.isHoldout },
   { id: "not_rendered", label: "Never fired", test: (row) => row.kind === "not_rendered" },
+  { id: "miss_known", label: "Never fired, cause known", test: (row) => Boolean(row.facts.miss) },
   { id: "promo", label: "With promo", test: (row) => Boolean(row.facts.promoCode) },
 ];
 
@@ -964,7 +969,17 @@ function DecisionRows({ row, position, now, open, onToggle }) {
         </IndexTable.Cell>
 
         <IndexTable.Cell>
-          <Badge tone={badge.tone}>{badge.label}</Badge>
+          {/* The reason sits under the badge rather than in a column of its
+              own: it exists on one row in ten, and a column that is empty
+              nine times out of ten costs width every row pays for. */}
+          <BlockStack gap="0">
+            <Badge tone={badge.tone}>{badge.label}</Badge>
+            {facts.miss && (
+              <Text as="span" variant="bodySm" tone="subdued">
+                {facts.miss.label}
+              </Text>
+            )}
+          </BlockStack>
         </IndexTable.Cell>
 
         <IndexTable.Cell>
@@ -1066,6 +1081,11 @@ function DecisionRows({ row, position, now, open, onToggle }) {
                 <Text as="p" tone="subdued" variant="bodySm">
                   {detailLine(row, now).join(" · ")}
                 </Text>
+                {facts.miss?.detail && (
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    {facts.miss.detail}
+                  </Text>
+                )}
                 {facts.origin?.detail && (
                   <Text as="p" tone="subdued" variant="bodySm">
                     {facts.origin.detail}

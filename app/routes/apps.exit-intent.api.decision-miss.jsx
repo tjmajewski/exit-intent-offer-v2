@@ -1,0 +1,88 @@
+import { json } from "@remix-run/node";
+import { authenticate } from "../shopify.server";
+import { enforceRateLimit } from "../utils/rate-limit.server.js";
+
+/**
+ * Why a decision never reached a screen.
+ *
+ * confirm-render is the happy path: the surface displayed, learning counters
+ * move. Its absence was the only record of a miss, and absence carries no
+ * cause — a decision that died because the visitor closed the tab in three
+ * seconds left exactly the same row as one a third-party popup blocked for a
+ * full minute. The console could say THAT a modal never fired and never WHY,
+ * which is a dead end for the one failure mode with no other instrumentation.
+ *
+ * So the client beacons a reason on pagehide. Best-effort by construction:
+ * sendBeacon can be dropped, storage can be blocked, and an older cached
+ * storefront script sends nothing at all. A null missReason therefore means
+ * "no reason recorded", never "no reason existed" — read the counts as a
+ * lower bound on each cause, not a partition of the misses.
+ *
+ * First writer wins. pagehide can fire more than once per page (bfcache,
+ * mobile app switches), and the FIRST reason is the true one: a later replay
+ * would only ever overwrite a specific cause with the generic default.
+ */
+
+// Closed vocabulary. An unrecognised reason is dropped rather than stored,
+// so a stale or tampered client cannot write arbitrary strings into a column
+// the console renders.
+const REASONS = new Set([
+  // Triggers were armed and none of them fired before the page went away.
+  "trigger_never_fired",
+  // A third-party popup held the screen until the gate gave up (~60s).
+  "competing_popup_dropped",
+  // The idle timer was still counting when the visitor left — they never sat
+  // still long enough. Distinct from trigger_never_fired because it is the
+  // dominant mobile case and the fix for it is a different one.
+  "left_before_idle",
+]);
+
+export async function action({ request }) {
+  // Public app-proxy endpoint — same posture as confirm-render. The limit is
+  // higher because a miss is beaconed per page rather than per show.
+  const limited = enforceRateLimit(request, "decision-miss", {
+    limit: 60,
+    windowMs: 60_000,
+  });
+  if (limited) return limited;
+
+  try {
+    const { session } = await authenticate.public.appProxy(request);
+    const { aiDecisionId, reason } = await request.json();
+
+    if (!aiDecisionId) {
+      return json({ error: "Missing aiDecisionId" }, { status: 400 });
+    }
+    if (!REASONS.has(reason)) {
+      return json({ error: "Unknown reason" }, { status: 400 });
+    }
+
+    const { default: db } = await import("../db.server.js");
+    const shopRecord = await db.shop.findUnique({
+      where: { shopifyDomain: session.shop },
+    });
+    if (!shopRecord) {
+      return json({ error: "Shop not found" }, { status: 404 });
+    }
+
+    // Scoped to this shop's own unrendered shown rows. A decision that has
+    // since been confirmed rendered must not pick up a miss reason: the
+    // beacon and the confirm race on a modal shown in the last moments of a
+    // page, and the confirm is the stronger evidence.
+    const { count } = await db.interventionOutcome.updateMany({
+      where: {
+        shopId: shopRecord.id,
+        aiDecisionId,
+        wasShown: true,
+        rendered: false,
+        missReason: null,
+      },
+      data: { missReason: reason },
+    });
+
+    return json({ success: true, recorded: count > 0 });
+  } catch (error) {
+    console.error("[Decision Miss] Error:", error);
+    return json({ error: "Internal server error" }, { status: 500 });
+  }
+}

@@ -327,9 +327,14 @@ export async function recordInterventionOutcome(db, {
 export async function confirmInterventionRender(db, { shopId, aiDecisionId }) {
   if (!aiDecisionId) return false;
 
+  // Rendering is terminal, and it clears any miss reason the client already
+  // beaconed. The two race by design: a backgrounded tab reports a miss on
+  // visibilitychange, and the mobile exit triggers then show the modal when
+  // the visitor comes back. Without this clear, that row would claim both
+  // that it rendered and that it never did.
   const flipped = await db.interventionOutcome.updateMany({
     where: { shopId, aiDecisionId, wasShown: true, rendered: false },
-    data: { rendered: true }
+    data: { rendered: true, missReason: null }
   });
   if (flipped.count === 0) return false;
 

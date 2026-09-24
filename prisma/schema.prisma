@@ -551,6 +551,12 @@ model InterventionOutcome {
   // What happened
   wasShown       Boolean // true = modal shown, false = no_intervention
   rendered       Boolean @default(false) // wasShown rows: client confirmed the surface actually rendered (decisions are minted at prefetch, before any trigger fires). wasShown=false rows are created rendered=true (nothing to render).
+  // Why a wasShown row never rendered, beaconed from the client on pagehide.
+  // Null means either it DID render or the page died before the beacon left
+  // (sendBeacon is best-effort, and an older cached storefront script sends
+  // nothing at all) — so absence is not evidence of any particular cause.
+  // Values: trigger_never_fired | competing_popup_dropped | left_before_idle.
+  missReason     String?
   isHoldout      Boolean @default(false) // true = holdout group, 10% of visitors (excluded from learning)
   converted      Boolean @default(false)
   revenue        Float?
