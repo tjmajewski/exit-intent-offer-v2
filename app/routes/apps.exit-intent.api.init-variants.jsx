@@ -1,14 +1,11 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { initializeCopyVariants } from "../utils/copy-variants.js";
-import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { enforceProxyRateLimit, PROXY_LIMITS } from "../utils/rate-limit.server.js";
 import { isValidShopDomain } from "../utils/shop-validation.js";
 
 export async function action({ request }) {
-  const limited = enforceRateLimit(request, "init-variants", {
-    limit: 10,
-    windowMs: 60_000,
-  });
+  const limited = enforceProxyRateLimit(request, "init-variants", PROXY_LIMITS.setup);
   if (limited) return limited;
 
   const { default: db } = await import("../db.server.js");

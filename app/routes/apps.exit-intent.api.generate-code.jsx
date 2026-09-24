@@ -1,7 +1,7 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { createPercentageDiscount, createFixedDiscount, derivePrefixFromShop } from "../utils/discount-codes";
-import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { enforceProxyRateLimit, PROXY_LIMITS } from "../utils/rate-limit.server.js";
 import { isValidShopDomain } from "../utils/shop-validation.js";
 
 /**
@@ -16,12 +16,10 @@ import { isValidShopDomain } from "../utils/shop-validation.js";
  *   Body: { shop: "mystore.myshopify.com" }
  */
 export async function action({ request }) {
-  // Per-IP rate limit: code generation hits the Shopify Admin API and the DB
-  // on every call, so abuse is especially expensive. Keep this tight.
-  const limited = enforceRateLimit(request, "generate-code", {
-    limit: 20,
-    windowMs: 60_000,
-  });
+  // Per-shop rate limit: code generation hits the Shopify Admin API and the DB
+  // on every call, so abuse is especially expensive. Keep this the tightest
+  // tier that a real storefront never reaches.
+  const limited = enforceProxyRateLimit(request, "generate-code", PROXY_LIMITS.mint);
   if (limited) return limited;
 
   try {

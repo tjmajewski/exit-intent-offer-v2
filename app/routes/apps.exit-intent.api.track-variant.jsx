@@ -1,16 +1,13 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { trackVariantPerformance } from "../utils/copy-variants.js";
-import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { enforceProxyRateLimit, PROXY_LIMITS } from "../utils/rate-limit.server.js";
 import { isValidShopDomain } from "../utils/shop-validation.js";
 
 export async function action({ request }) {
-  // Per-IP rate limit — this endpoint is public via app proxy and attackers
+  // Per-shop rate limit — this endpoint is public via app proxy and attackers
   // could otherwise hammer it to inflate variant stats or DoS the DB.
-  const limited = enforceRateLimit(request, "track-variant", {
-    limit: 60,
-    windowMs: 60_000,
-  });
+  const limited = enforceProxyRateLimit(request, "track-variant", PROXY_LIMITS.beacon);
   if (limited) return limited;
 
   const { default: db } = await import("../db.server.js");

@@ -1,9 +1,38 @@
 /**
  * Simple in-memory rate limiter for public app-proxy endpoints.
  *
- * Keyed by IP + route. Uses a fixed window with automatic cleanup.
- * Not distributed — fine for single-process deployments. For multi-instance
- * deployments, swap for a Redis-backed implementation.
+ * Fixed window with automatic cleanup. Not distributed — fine for
+ * single-process deployments. For multi-instance deployments, swap for a
+ * Redis-backed implementation.
+ *
+ * TWO KINDS OF CALLER, AND THEY MUST NOT SHARE A KEY.
+ *
+ * A direct browser request (admin login) reaches us from the operator's own
+ * machine, so the connecting IP identifies them and `enforceRateLimit` is
+ * right.
+ *
+ * An app-proxy request does not. Shopify receives the shopper's call to
+ * `/apps/exit-intent/...` on the storefront and re-issues it to us, so the
+ * connection is opened by Shopify's proxy and every platform-controlled IP
+ * header resolves to Shopify — the same value for every shopper on every
+ * store. Keying those routes by IP put the whole platform in ONE bucket: a
+ * single busy store could throttle a different merchant's shoppers, and the
+ * loss correlated with platform-wide traffic at that minute rather than with
+ * anything the store did. Worse, the endpoints it silently dropped are the
+ * ones that move learning counters — a throttled confirm-render leaves a row
+ * indistinguishable from a modal that genuinely never rendered.
+ *
+ * So app-proxy routes use `enforceProxyRateLimit`, which buckets on the shop
+ * domain Shopify puts in the proxied query string.
+ *
+ * Known tradeoff: that `shop` value is read BEFORE `authenticate.public
+ * .appProxy` validates the request signature, so a crafted request can pick
+ * its own bucket and evade the limiter. It cannot do anything with the
+ * request — signature validation still rejects it a few lines later — so what
+ * remains is the cost of reaching that check. That is the right trade: the
+ * limiter exists to keep one store's traffic from becoming another store's
+ * outage, and a shared global bucket guaranteed exactly that failure in
+ * exchange for the same weak evasion resistance.
  */
 
 const buckets = new Map();
@@ -33,6 +62,12 @@ function startCleanup() {
  * a client can send their own value and rotate it per request to bypass the
  * per-IP limiter — we only fall back to its first hop when no
  * platform-controlled header is present.
+ *
+ * NOT A SHOPPER IDENTIFIER ON AN APP-PROXY ROUTE. "The real client" there is
+ * Shopify's proxy, which opened the connection; the shopper is upstream of it
+ * and appears only in an `X-Forwarded-For` hop this function deliberately
+ * ignores as spoofable. Use `getProxyShop` / `enforceProxyRateLimit` on those
+ * routes. This stays correct for requests that reach us directly.
  */
 export function getClientIp(request) {
   const headers = request.headers;
@@ -47,6 +82,64 @@ export function getClientIp(request) {
 
   return "unknown";
 }
+
+// Shopify always appends `shop` to a proxied request's query string. Matched
+// strictly so a malformed or absent value falls into its own bucket rather
+// than silently becoming a shared one.
+const SHOP_DOMAIN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
+
+/**
+ * The shop domain an app-proxy request claims to be for, or null.
+ *
+ * Unvalidated — the signature check that proves it happens later, in
+ * `authenticate.public.appProxy`. Good enough to bucket by, and nothing else.
+ */
+export function getProxyShop(request) {
+  let raw;
+  try {
+    raw = new URL(request.url).searchParams.get("shop");
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  const shop = raw.trim().toLowerCase();
+  return SHOP_DOMAIN.test(shop) ? shop : null;
+}
+
+/**
+ * Per-shop-per-minute ceilings, by what the endpoint costs and what a drop
+ * costs us.
+ *
+ * These numbers changed meaning when the key did. The old ones were a
+ * platform-wide total — 10/min on `ai-decision` was "ten decisions a minute
+ * across every store on Resparq". Carried over unchanged they would have
+ * become a hard per-store traffic ceiling, converting a platform bug into a
+ * per-merchant outage at the eleventh visitor in a minute. So they are set
+ * for what one busy store plausibly does, not for what the platform does
+ * today at ~4.5 impressions a day.
+ *
+ * `beacon` is deliberately the most generous. Those endpoints are idempotent,
+ * carry a server-minted decision id, and cost one write — and dropping one
+ * does not fail loudly, it quietly under-counts the evolution and threshold
+ * learners while leaving a row that reads as "never rendered". A wrong number
+ * there corrupts data; a wrong number on `mint` costs a discount code.
+ */
+export const PROXY_LIMITS = {
+  // Shopper telemetry: confirm-render, decision-miss, track-click,
+  // track-variant, track-starter, journey.
+  beacon: { limit: 600, windowMs: 60_000 },
+  // Cheap reads of shop-scoped config: shop-settings, custom-css-public.
+  read: { limit: 600, windowMs: 60_000 },
+  // A decision per arriving visitor: ai-decision, enrich-signals. Admin API
+  // round-trips and DB writes, so bounded well under `beacon`, but still far
+  // above any real store's arrival rate.
+  decide: { limit: 300, windowMs: 60_000 },
+  // Creates a real Shopify price rule. The bound that stops a bot loop from
+  // minting unlimited codes lives here.
+  mint: { limit: 120, windowMs: 60_000 },
+  // One-time per install: init-variants.
+  setup: { limit: 60, windowMs: 60_000 },
+};
 
 /**
  * Check whether a request should be rate-limited.
@@ -74,14 +167,7 @@ export function checkRateLimit(key, { limit, windowMs }) {
   return { allowed, remaining, resetAt: existing.resetAt, retryAfter };
 }
 
-/**
- * Convenience: enforce a rate limit on a Request and return a 429 Response
- * if exceeded, or `null` if the request may proceed.
- */
-export function enforceRateLimit(request, routeKey, opts) {
-  const ip = getClientIp(request);
-  const result = checkRateLimit(`${routeKey}:${ip}`, opts);
-  if (result.allowed) return null;
+function tooManyRequests(result) {
   return new Response(
     JSON.stringify({ error: "Too many requests" }),
     {
@@ -92,4 +178,35 @@ export function enforceRateLimit(request, routeKey, opts) {
       },
     },
   );
+}
+
+/**
+ * Enforce a per-IP rate limit on a Request that reached us DIRECTLY, and
+ * return a 429 Response if exceeded or `null` if it may proceed.
+ *
+ * For anything behind Shopify's app proxy use `enforceProxyRateLimit` — see
+ * the note on `getClientIp`.
+ */
+export function enforceRateLimit(request, routeKey, opts) {
+  const ip = getClientIp(request);
+  const result = checkRateLimit(`${routeKey}:${ip}`, opts);
+  if (result.allowed) return null;
+  return tooManyRequests(result);
+}
+
+/**
+ * Enforce a per-SHOP rate limit on an app-proxy Request.
+ *
+ * A request with no usable `shop` in its query string cannot be attributed to
+ * a store and will fail signature validation moments later, so those share a
+ * per-IP bucket of their own. That bucket is the one place the old global
+ * behaviour survives, and it is where it belongs: garbage and probes, never a
+ * real shopper.
+ */
+export function enforceProxyRateLimit(request, routeKey, opts) {
+  const shop = getProxyShop(request);
+  const subject = shop ? `shop:${shop}` : `unattributed:${getClientIp(request)}`;
+  const result = checkRateLimit(`${routeKey}:${subject}`, opts);
+  if (result.allowed) return null;
+  return tooManyRequests(result);
 }

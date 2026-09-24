@@ -1,7 +1,7 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
-import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { enforceProxyRateLimit, PROXY_LIMITS } from "../utils/rate-limit.server.js";
 import { isValidShopDomain } from "../utils/shop-validation.js";
 
 /**
@@ -14,11 +14,8 @@ import { isValidShopDomain } from "../utils/shop-validation.js";
  * - Outcomes (click, conversion)
  */
 export async function action({ request }) {
-  // Per-IP rate limit — public app-proxy endpoint with DB writes.
-  const limited = enforceRateLimit(request, "track-starter", {
-    limit: 30,
-    windowMs: 60_000,
-  });
+  // Per-shop rate limit — public app-proxy endpoint with DB writes.
+  const limited = enforceProxyRateLimit(request, "track-starter", PROXY_LIMITS.beacon);
   if (limited) return limited;
 
   const { default: db } = await import("../db.server.js");

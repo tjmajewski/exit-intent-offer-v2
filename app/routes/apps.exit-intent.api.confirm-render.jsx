@@ -1,6 +1,6 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { enforceProxyRateLimit, PROXY_LIMITS } from "../utils/rate-limit.server.js";
 
 /**
  * Render confirmation — the second phase of impression accounting.
@@ -18,11 +18,10 @@ import { enforceRateLimit } from "../utils/rate-limit.server.js";
  * rendered=false and carry no learning weight.
  */
 export async function action({ request }) {
-  // Public app-proxy endpoint — same posture as track-click.
-  const limited = enforceRateLimit(request, "confirm-render", {
-    limit: 30,
-    windowMs: 60_000,
-  });
+  // Public app-proxy endpoint — same posture as track-click. Keyed per shop:
+  // a dropped confirm leaves rendered=false forever, which reads as a modal
+  // that never fired.
+  const limited = enforceProxyRateLimit(request, "confirm-render", PROXY_LIMITS.beacon);
   if (limited) return limited;
 
   try {

@@ -12,7 +12,7 @@ import { loadPropensityModel, scorePropensity } from "../utils/propensity-model.
 import { clusterKeysFor, grossMarginForShop } from "../utils/store-cluster.server.js";
 import { getBaselineCvrPrior } from "../utils/cluster-priors.server.js";
 import { computePropensity } from "../utils/propensity.server.js";
-import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { enforceProxyRateLimit, PROXY_LIMITS } from "../utils/rate-limit.server.js";
 import { getEnabledLayoutIds } from "../utils/templates.js";
 
 // Spec 2.5: customer tags written by the major subscription apps —
@@ -31,13 +31,10 @@ function fnv1a(str) {
 }
 
 export async function action({ request }) {
-  // Per-IP rate limit — public app-proxy endpoint; each call does multiple
+  // Per-shop rate limit — public app-proxy endpoint; each call does multiple
   // Admin API round-trips + DB writes and (unique mode) creates a real Shopify
   // discount code. Without this a bot loop mints unlimited price rules.
-  const limited = enforceRateLimit(request, "ai-decision", {
-    limit: 10,
-    windowMs: 60_000,
-  });
+  const limited = enforceProxyRateLimit(request, "ai-decision", PROXY_LIMITS.decide);
   if (limited) return limited;
 
   const { default: db } = await import("../db.server.js");

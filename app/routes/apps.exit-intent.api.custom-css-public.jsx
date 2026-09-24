@@ -1,15 +1,12 @@
 import { json } from "@remix-run/node";
-import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { enforceProxyRateLimit, PROXY_LIMITS } from "../utils/rate-limit.server.js";
 import { isValidShopDomain } from "../utils/shop-validation.js";
 
 // Public endpoint - no authentication required (called by modal JavaScript)
 export async function loader({ request }) {
-  // Per-IP rate limit: CSS is cached client-side (5 min) so legitimate
+  // Per-shop rate limit: CSS is cached client-side (5 min) so legitimate
   // traffic sits well below this ceiling.
-  const limited = enforceRateLimit(request, "custom-css-public", {
-    limit: 60,
-    windowMs: 60_000,
-  });
+  const limited = enforceProxyRateLimit(request, "custom-css-public", PROXY_LIMITS.read);
   if (limited) return limited;
 
   const { default: db } = await import("../db.server.js");

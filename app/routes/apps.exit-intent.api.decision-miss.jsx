@@ -1,6 +1,6 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { enforceProxyRateLimit, PROXY_LIMITS } from "../utils/rate-limit.server.js";
 
 /**
  * Why a decision never reached a screen.
@@ -48,12 +48,10 @@ const REASONS = new Set([
 ]);
 
 export async function action({ request }) {
-  // Public app-proxy endpoint — same posture as confirm-render. The limit is
-  // higher because a miss is beaconed per page rather than per show.
-  const limited = enforceRateLimit(request, "decision-miss", {
-    limit: 60,
-    windowMs: 60_000,
-  });
+  // Public app-proxy endpoint — same posture as confirm-render, and the same
+  // tier. A miss is beaconed per decided page rather than per show, so this
+  // saturates first of the two; `beacon` is sized for that.
+  const limited = enforceProxyRateLimit(request, "decision-miss", PROXY_LIMITS.beacon);
   if (limited) return limited;
 
   try {

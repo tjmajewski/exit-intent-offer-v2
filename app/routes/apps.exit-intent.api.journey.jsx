@@ -1,6 +1,6 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { enforceProxyRateLimit, PROXY_LIMITS } from "../utils/rate-limit.server.js";
 import { isLearningWriteSkipped } from "../utils/dev-shop-guard.server.js";
 import { recordTouch, CLIENT_ALLOWED_TOUCHES } from "../utils/journey.server.js";
 
@@ -10,10 +10,7 @@ import { recordTouch, CLIENT_ALLOWED_TOUCHES } from "../utils/journey.server.js"
 // are written server-side — the CLIENT_ALLOWED_TOUCHES allowlist stops a
 // browser from forging those rows.
 export async function action({ request }) {
-  const limited = enforceRateLimit(request, "journey", {
-    limit: 60,
-    windowMs: 60_000,
-  });
+  const limited = enforceProxyRateLimit(request, "journey", PROXY_LIMITS.beacon);
   if (limited) return limited;
 
   try {

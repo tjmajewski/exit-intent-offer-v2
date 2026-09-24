@@ -1,15 +1,12 @@
 import { json } from "@remix-run/node";
-import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { enforceProxyRateLimit, PROXY_LIMITS } from "../utils/rate-limit.server.js";
 import { isValidShopDomain } from "../utils/shop-validation.js";
 
 // Public endpoint - returns shop settings for modal initialization
 export async function loader({ request }) {
-  // Per-IP rate limit: settings are cached client-side, so legitimate
+  // Per-shop rate limit: settings are cached client-side, so legitimate
   // traffic sits well below this ceiling.
-  const limited = enforceRateLimit(request, "shop-settings", {
-    limit: 120,
-    windowMs: 60_000,
-  });
+  const limited = enforceProxyRateLimit(request, "shop-settings", PROXY_LIMITS.read);
   if (limited) return limited;
 
   const url = new URL(request.url);

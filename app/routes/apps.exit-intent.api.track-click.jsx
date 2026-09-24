@@ -1,15 +1,12 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { trackAnalyticsEvent } from "../utils/analytics-metafield.js";
-import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { enforceProxyRateLimit, PROXY_LIMITS } from "../utils/rate-limit.server.js";
 
 export async function action({ request }) {
-  // Per-IP rate limit — public app-proxy endpoint; without it, replayed
+  // Per-shop rate limit — public app-proxy endpoint; without it, replayed
   // impressionIds could hammer the DB (click counting itself is idempotent).
-  const limited = enforceRateLimit(request, "track-click", {
-    limit: 30,
-    windowMs: 60_000,
-  });
+  const limited = enforceProxyRateLimit(request, "track-click", PROXY_LIMITS.beacon);
   if (limited) return limited;
 
   try {

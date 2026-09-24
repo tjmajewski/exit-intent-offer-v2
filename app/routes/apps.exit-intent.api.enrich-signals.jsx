@@ -1,14 +1,11 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { computePropensity } from "../utils/propensity.server.js";
-import { enforceRateLimit } from "../utils/rate-limit.server.js";
+import { enforceProxyRateLimit, PROXY_LIMITS } from "../utils/rate-limit.server.js";
 
 export async function action({ request }) {
-  // Per-IP rate limit — public app-proxy endpoint doing Admin API round-trips.
-  const limited = enforceRateLimit(request, "enrich-signals", {
-    limit: 30,
-    windowMs: 60_000,
-  });
+  // Per-shop rate limit — public app-proxy endpoint doing Admin API round-trips.
+  const limited = enforceProxyRateLimit(request, "enrich-signals", PROXY_LIMITS.decide);
   if (limited) return limited;
 
   const { admin } = await authenticate.public.appProxy(request);
