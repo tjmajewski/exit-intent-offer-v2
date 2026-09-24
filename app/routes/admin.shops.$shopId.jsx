@@ -24,8 +24,11 @@ import {
   Select,
   Checkbox,
   Button,
+  ButtonGroup,
   DataTable,
   Divider,
+  IndexTable,
+  Box,
 } from "@shopify/polaris";
 import { requireSuperAdmin, ADMIN_RESPONSE_HEADERS } from "../utils/admin-auth.server.js";
 import { logAdminAction, diffFields } from "../utils/admin-audit.server.js";
@@ -41,10 +44,11 @@ import {
   describeCopy,
   settingsDrift,
 } from "../components/admin/live-config.js";
-import { fmtDate, fmtDateTime, fmtNum } from "../utils/format.js";
+import { fmtDate, fmtDateTime, fmtNum, fmtMoney, fmtTimeET, fmtDayET, fmtDateTimeET } from "../utils/format.js";
 import {
   summarizeDecision,
   describeResult,
+  resultKind,
   tallyResults,
   relativeTime,
 } from "../components/admin/decision-summary.js";
@@ -296,7 +300,7 @@ export async function loader({ request, params }) {
       where: { shopId: shop.id },
       orderBy: { createdAt: "desc" },
       take: 50,
-      select: { id: true, decision: true, signals: true, createdAt: true },
+      select: { id: true, decision: true, signals: true, createdAt: true, offerId: true },
     }),
     db.adminAuditLog.findMany({
       where: { shopId: shop.id },
@@ -316,6 +320,11 @@ export async function loader({ request, params }) {
           aiDecisionId: true,
           wasShown: true,
           rendered: true,
+          // Which arm the visitor was randomised into. The decision JSON only
+          // says "holdout" when the holdout branch itself minted the row; the
+          // outcome column is the one that is set on every tracked decision,
+          // so it is what the console filters and colours on.
+          isHoldout: true,
           converted: true,
           revenue: true,
           profit: true,
@@ -386,6 +395,7 @@ export async function loader({ request, params }) {
     resultByDecision.set(row.aiDecisionId, {
       wasShown: (prev?.wasShown ?? false) || row.wasShown,
       rendered: (prev?.rendered ?? false) || row.rendered,
+      isHoldout: (prev?.isHoldout ?? false) || row.isHoldout,
       // No impression row means no click to read (pill openers mint none), so
       // "not clicked" and "unknown" have to stay distinguishable.
       hasImpression: (prev?.hasImpression ?? false) || clickedById.has(row.impressionId),
@@ -395,6 +405,22 @@ export async function loader({ request, params }) {
       profit: (prev?.profit ?? 0) + (row.profit || 0),
     });
   }
+
+  // The promo code each decision actually minted. AIDecision.offerId is a bare
+  // string column with no Prisma relation behind it, so this is a second query
+  // rather than an include — batched over the 50 rows, not one per row.
+  //
+  // A decision with an offerId whose DiscountOffer has since been deleted
+  // resolves to null and renders as "no code", which is the honest answer: the
+  // console must not invent a code it cannot read back.
+  const offerIds = recentDecisions.map((d) => d.offerId).filter(Boolean);
+  const offers = offerIds.length
+    ? await db.discountOffer.findMany({
+        where: { id: { in: offerIds } },
+        select: { id: true, discountCode: true, amount: true, offerType: true, redeemed: true },
+      })
+    : [];
+  const offerById = new Map(offers.map((offer) => [offer.id, offer]));
 
   // AI mode has no single discount — the engine recomputes it per visitor.
   // Walk the propensity axis with the store's own aggression and margin so the
@@ -487,6 +513,7 @@ export async function loader({ request, params }) {
     recentDecisions: recentDecisions.map((decision) => ({
       ...decision,
       result: resultByDecision.get(decision.id) || null,
+      offer: decision.offerId ? offerById.get(decision.offerId) || null : null,
     })),
     auditEntries,
     // One server-side clock for every relative timestamp on this page. Computing
@@ -760,101 +787,347 @@ function TriggerPerformance({ rows }) {
   );
 }
 
-// Recent AI decisions, written for a person. The raw JSON is one click away
-// because that is what you paste into a query when something looks wrong.
+// Recent AI decisions — one line per decision, everything else behind a click.
+//
+// This was a stack of full sentences per row: a badge, a trigger phrase, a
+// status badge, a timestamp, a reason, a status detail, a copy line, and a
+// dot-joined context string. Every one of those sentences was true and useful
+// when you were reading ONE decision. Fifty deep it was unreadable, because
+// finding the anomalous row means comparing the same field across rows, and
+// prose puts that field in a different place on every line.
+//
+// So: fixed columns, one line tall, numbers right-aligned with tabular figures
+// (a $3,000 cart among $90 carts should be visible without reading), and the
+// prose kept intact in an expansion, which is where a diagnosis belongs.
+const RESULT_BADGE = {
+  converted: { label: "Converted", tone: "success" },
+  shown: { label: "Shown", tone: "info" },
+  not_rendered: { label: "Never fired", tone: "warning" },
+  nothing_shown: { label: "Nothing shown", tone: undefined },
+  pre_decision: { label: "Pre-decided", tone: undefined },
+  untracked: { label: "Untracked", tone: undefined },
+};
+
+// Saved views. Each is a predicate over the summarized row, so adding one
+// never means touching the table.
+const DECISION_VIEWS = [
+  { id: "all", label: "All", test: () => true },
+  { id: "shown", label: "Shown", test: (row) => row.kind === "shown" || row.kind === "converted" },
+  { id: "control", label: "Control", test: (row) => row.facts.isHoldout },
+  { id: "not_rendered", label: "Never fired", test: (row) => row.kind === "not_rendered" },
+  { id: "promo", label: "With promo", test: (row) => Boolean(row.facts.promoCode) },
+];
+
 function DecisionLog({ decisions, mode, now }) {
-  const [showRaw, setShowRaw] = useState(false);
-  const [showUntracked, setShowUntracked] = useState(true);
+  const [view, setView] = useState("all");
+  const [device, setDevice] = useState("all");
+  const [expanded, setExpanded] = useState(null);
+
   const all = decisions.map((decision) => {
     const row = summarizeDecision(decision);
-    return { ...row, status: describeResult(row.result, row.source) };
+    return {
+      ...row,
+      status: describeResult(row.result, row.source),
+      kind: resultKind(row.result, row.source),
+    };
   });
-  const rows = showUntracked ? all : all.filter((row) => row.result);
+
+  const viewTest = (DECISION_VIEWS.find((v) => v.id === view) || DECISION_VIEWS[0]).test;
+  const rows = all.filter(
+    (row) => viewTest(row) && (device === "all" || row.facts.device === device)
+  );
   const tally = tallyResults(all);
+  const controls = all.filter((row) => row.facts.isHoldout).length;
 
   return (
-    <Card>
-      <BlockStack gap="300">
-        <InlineStack align="space-between" blockAlign="center">
-          <Text as="h3" variant="headingMd">
-            Recent AI decisions
-          </Text>
-          <InlineStack gap="300">
-            <Button variant="plain" onClick={() => setShowUntracked((value) => !value)}>
-              {showUntracked ? "Hide untracked" : "Show all"}
-            </Button>
-            <Button variant="plain" onClick={() => setShowRaw((value) => !value)}>
-              {showRaw ? "Hide raw JSON" : "Show raw JSON"}
-            </Button>
-          </InlineStack>
-        </InlineStack>
-
-        <Text as="p" tone="subdued" variant="bodySm">
-          Last {tally.total} decisions · {tally.rendered} actually shown ·{" "}
-          {tally.converted} converted · {tally.preDecisions} pre-decisions that never
-          surfaced · {tally.untracked} untracked
-        </Text>
-
-        {!makesAIDecisions(mode) && (
-          <Banner tone="info">
-            This store is on {describeMode(mode).label}, so the AI makes no decisions.
-            Anything listed below predates the mode change.
-          </Banner>
-        )}
-
-        {rows.length === 0 && (
-          <Text as="p" tone="subdued" variant="bodySm">
-            No decisions recorded yet.
-          </Text>
-        )}
-
-        {rows.map((row, index) => (
-          <BlockStack key={row.id} gap="150">
-            {index > 0 && <Divider />}
-            <InlineStack gap="200" blockAlign="center" wrap>
-              <Badge tone={row.outcome.tone}>{row.outcome.label}</Badge>
-              {/* The offer alone doesn't say what the decision was: 17% off on
-                  exit intent and 17% off after 30s idle are different calls the
-                  AI made, so the trigger sits with the amount, not below it. */}
-              {row.trigger && (
-                <Text as="span" variant="bodyMd">
-                  {row.trigger}
-                </Text>
-              )}
-              <Badge tone={row.status.tone}>{row.status.label}</Badge>
+    <Card padding="0">
+      <BlockStack gap="0">
+        <Box padding="400" paddingBlockEnd="300">
+          <BlockStack gap="300">
+            <InlineStack align="space-between" blockAlign="center" gap="400" wrap>
+              <Text as="h3" variant="headingMd">
+                Recent AI decisions
+              </Text>
               <Text as="span" tone="subdued" variant="bodySm">
-                {relativeTime(row.createdAt, now)} · {fmtDateTime(row.createdAt)}
+                Last {tally.total} · {tally.rendered} shown · {tally.converted} converted ·{" "}
+                {controls} control · {tally.preDecisions} pre-decided · {tally.untracked} untracked
               </Text>
             </InlineStack>
-            <Text as="p" variant="bodyMd">
-              {row.why}
-            </Text>
-            {row.status.detail && (
-              <Text as="p" tone="subdued" variant="bodySm">
-                {row.status.detail}
+
+            <InlineStack gap="300" blockAlign="center" wrap>
+              <ButtonGroup variant="segmented">
+                {DECISION_VIEWS.map((option) => (
+                  <Button
+                    key={option.id}
+                    size="slim"
+                    pressed={view === option.id}
+                    onClick={() => setView(option.id)}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </ButtonGroup>
+              <Box width="160px">
+                <Select
+                  label="Device"
+                  labelHidden
+                  value={device}
+                  onChange={setDevice}
+                  options={[
+                    { label: "Any device", value: "all" },
+                    { label: "Desktop", value: "desktop" },
+                    { label: "Mobile", value: "mobile" },
+                  ]}
+                />
+              </Box>
+              <Text as="span" tone="subdued" variant="bodySm">
+                Times are US Eastern. Click a row for the reasoning, the full copy and the raw JSON.
               </Text>
-            )}
-            {row.shown && (
-              <Text as="p" tone="subdued" variant="bodySm">
-                {row.shownReached ? "Visitor saw" : "Would have shown"}: {row.shown}
-              </Text>
-            )}
-            {row.context.length > 0 && (
-              <Text as="p" tone="subdued" variant="bodySm">
-                {row.context.join(" · ")}
-              </Text>
-            )}
-            {showRaw && (
-              <Text as="p" tone="subdued" variant="bodySm" breakWord>
-                <code>{row.raw}</code>
-              </Text>
+            </InlineStack>
+
+            {!makesAIDecisions(mode) && (
+              <Banner tone="info">
+                This store is on {describeMode(mode).label}, so the AI makes no decisions.
+                Anything listed below predates the mode change.
+              </Banner>
             )}
           </BlockStack>
-        ))}
+        </Box>
+
+        <IndexTable
+          resourceName={{ singular: "decision", plural: "decisions" }}
+          itemCount={rows.length}
+          selectable={false}
+          headings={[
+            { title: "Arm" },
+            { title: "Time (ET)" },
+            { title: "Result" },
+            { title: "Copy shown" },
+            { title: "Offer" },
+            { title: "Cart", alignment: "end" },
+            { title: "P", alignment: "end" },
+            { title: "Visitor" },
+            { title: "Origin" },
+          ]}
+          emptyState={
+            <Box padding="500">
+              <Text as="p" tone="subdued" alignment="center">
+                {all.length === 0
+                  ? "No decisions recorded yet."
+                  : "No decisions match this filter."}
+              </Text>
+            </Box>
+          }
+        >
+          {rows.map((row, index) => (
+            <DecisionRows
+              key={row.id}
+              row={row}
+              position={index}
+              now={now}
+              open={expanded === row.id}
+              onToggle={() => setExpanded((current) => (current === row.id ? null : row.id))}
+            />
+          ))}
+        </IndexTable>
       </BlockStack>
     </Card>
   );
 }
+
+// A decision renders as one compact row plus, when opened, a full-width row
+// carrying everything the columns had to drop. Both live here so the two can
+// never drift out of sync about which decision they describe.
+function DecisionRows({ row, position, now, open, onToggle }) {
+  const facts = row.facts;
+  const badge = RESULT_BADGE[row.kind] || RESULT_BADGE.untracked;
+
+  return (
+    <>
+      <IndexTable.Row id={row.id} position={position} onClick={onToggle} tone={open ? "subdued" : undefined}>
+        <IndexTable.Cell>
+          {/* Blank for the treated arm on purpose. A column where 90% of rows
+              say the same thing teaches the eye to skip it; a column that is
+              empty except where it matters is read at a glance. */}
+          {facts.isHoldout ? <Badge tone="attention">Control</Badge> : null}
+        </IndexTable.Cell>
+
+        <IndexTable.Cell>
+          <BlockStack gap="0">
+            <Text as="span" variant="bodySm" numeric>
+              {fmtTimeET(row.createdAt)}
+            </Text>
+            <Text as="span" variant="bodySm" tone="subdued" numeric>
+              {fmtDayET(row.createdAt)}
+            </Text>
+          </BlockStack>
+        </IndexTable.Cell>
+
+        <IndexTable.Cell>
+          <Badge tone={badge.tone}>{badge.label}</Badge>
+        </IndexTable.Cell>
+
+        <IndexTable.Cell>
+          {/* The headline only, clamped. The subhead and CTA are in the
+              expansion: three lines of copy per row is what made this log
+              unscannable in the first place. */}
+          <div style={CLAMP} title={facts.headline || ""}>
+            <Text as="span" variant="bodySm" tone={facts.headline ? undefined : "subdued"}>
+              {facts.headline || "no copy — nothing was going to be shown"}
+            </Text>
+          </div>
+        </IndexTable.Cell>
+
+        <IndexTable.Cell>
+          {facts.offerLabel ? (
+            <BlockStack gap="0">
+              <Text as="span" variant="bodySm" fontWeight="semibold">
+                {facts.offerLabel}
+              </Text>
+              {facts.promoCode ? (
+                // Threshold codes run to 30+ characters
+                // (EXITSPEND669.95-MSXLSQKQ8HRI9K). Left to wrap, one of them
+                // widened the Offer column past the Copy column and pushed the
+                // whole table sideways, so the code is clamped and the full
+                // string lives in the title and the expansion.
+                <div style={CODE_CLAMP} title={facts.promoCode}>
+                  <Text as="span" variant="bodySm" tone="subdued">
+                    <code>{facts.promoCode}</code>
+                  </Text>
+                </div>
+              ) : (
+                <Text as="span" variant="bodySm" tone="subdued">
+                  no code minted
+                </Text>
+              )}
+            </BlockStack>
+          ) : (
+            <Text as="span" variant="bodySm" tone="subdued">
+              —
+            </Text>
+          )}
+        </IndexTable.Cell>
+
+        <IndexTable.Cell>
+          <Text as="span" variant="bodySm" numeric alignment="end">
+            {facts.cartValue === null ? "—" : fmtMoney(facts.cartValue)}
+          </Text>
+        </IndexTable.Cell>
+
+        <IndexTable.Cell>
+          <Text as="span" variant="bodySm" numeric alignment="end">
+            {facts.propensity === null ? "—" : facts.propensity}
+          </Text>
+        </IndexTable.Cell>
+
+        <IndexTable.Cell>
+          {/* Device, visit number and prior exposure read as one thought —
+              "a repeat visitor who has already seen two of these" — so they
+              share a cell rather than costing three columns. */}
+          <BlockStack gap="0">
+            <Text as="span" variant="bodySm">
+              {facts.device || "unknown device"}
+            </Text>
+            <Text as="span" variant="bodySm" tone="subdued">
+              {describeVisitor(facts)}
+            </Text>
+          </BlockStack>
+        </IndexTable.Cell>
+
+        <IndexTable.Cell>
+          <Text as="span" variant="bodySm" tone="subdued">
+            {facts.origin ? facts.origin.label : "—"}
+          </Text>
+        </IndexTable.Cell>
+      </IndexTable.Row>
+
+      {open && (
+        // The half-step position keeps this row strictly between its parent
+        // and the next one. Position only drives shift-key range selection,
+        // which is off here (selectable={false}), so it never has to be a
+        // whole number — it just must not collide with a real row's index.
+        <IndexTable.Row id={`${row.id}-detail`} position={position + 0.5} tone="subdued">
+          <IndexTable.Cell colSpan={9}>
+            <Box padding="300" paddingInlineStart="400">
+              <BlockStack gap="200">
+                <Text as="p" variant="bodyMd">
+                  {row.why}
+                </Text>
+                {row.status.detail && (
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    {row.status.detail}
+                  </Text>
+                )}
+                {row.shown && (
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    {row.shownReached ? "Visitor saw" : "Would have shown"}: {row.shown}
+                  </Text>
+                )}
+                <Text as="p" tone="subdued" variant="bodySm">
+                  {detailLine(row, now).join(" · ")}
+                </Text>
+                {facts.origin?.detail && (
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    {facts.origin.detail}
+                  </Text>
+                )}
+                <Text as="p" tone="subdued" variant="bodySm" breakWord>
+                  <code>{row.raw}</code>
+                </Text>
+              </BlockStack>
+            </Box>
+          </IndexTable.Cell>
+        </IndexTable.Row>
+      )}
+    </>
+  );
+}
+
+const CLAMP = {
+  maxWidth: "320px",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const CODE_CLAMP = { ...CLAMP, maxWidth: "150px" };
+
+// "visit 4 · 2 shown before". A count of 0 is a real answer and must read as
+// one; null means the storefront was too old to report it, which is a
+// different thing and says so.
+function describeVisitor(facts) {
+  const visit = facts.visits === null ? null : facts.visits <= 1 ? "first visit" : `visit ${facts.visits}`;
+  const seen =
+    facts.showCount === null
+      ? null
+      : facts.showCount === 0
+        ? "never shown one"
+        : `${facts.showCount} shown before`;
+  const parts = [visit, seen].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "no visitor history";
+}
+
+// The facts that did not earn a column, for the expansion.
+function detailLine(row, facts_now) {
+  const facts = row.facts;
+  return [
+    fmtDateTimeET(row.createdAt),
+    relativeTime(row.createdAt, facts_now),
+    row.trigger ? `fires ${row.trigger}` : null,
+    facts.subhead,
+    facts.cta ? `CTA "${facts.cta}"` : null,
+    facts.trafficSource ? `from ${facts.trafficSource}` : null,
+    facts.confidence ? `${facts.confidence} confidence` : null,
+    Number.isFinite(facts.ignoreStreak) && facts.ignoreStreak > 0
+      ? `ignored ${facts.ignoreStreak} in a row`
+      : null,
+    facts.daysSinceLastShow === null ? null : `last shown ${facts.daysSinceLastShow}d ago`,
+    facts.promoCode ? `code ${facts.promoCode}` : null,
+    facts.redeemed === null ? null : facts.redeemed ? "code redeemed" : "code not redeemed",
+    `decision ${row.id}`,
+  ].filter(Boolean);
+}
+
 
 export default function AdminShopDetail() {
   const {

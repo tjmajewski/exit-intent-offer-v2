@@ -160,7 +160,13 @@ function whyOf(decision, propensity) {
     return "Paused automatically so it would not stack on top of a site-wide promo.";
   }
   if (reasoning) return reasoning;
-  return decision.headline ? `Showed: “${decision.headline}”` : "No reason recorded.";
+  // This used to fall back to quoting the headline. The copy now has its own
+  // column and its own line in the expansion, so repeating it here only made
+  // the same sentence appear twice under one decision — and it quoted the
+  // RAW gene, `{{amount}}` and all, which is what made an operator read
+  // "Your {{amount}}% discount" and conclude interpolation was broken in
+  // production. A row with no reasoning has no reasoning; say so.
+  return "No reason recorded.";
 }
 
 // WHY the visitor was flagged as worth an offer — a different axis from the
@@ -179,6 +185,31 @@ const SOURCES = {
   cart_webhook: "pre-computed from a cart update",
   idle_cart_pickup: "pre-computed for an idle cart",
 };
+
+// What made this decision happen at all — a different question from both the
+// trigger (WHEN the modal was set to fire) and triggerReason (WHY the visitor
+// was flagged). Three storefront paths call the decision API and two server
+// paths mint rows without one, and they fail in different ways: a flood of
+// cart_update rows is a theme firing cart:updated on every keystroke, while a
+// flood of page rows is the session guard not holding.
+//
+// `requestReason` is sent by the storefront extension. Rows written before it
+// shipped carry none, and the honest render for those is "—" rather than a
+// guess — an assumed origin on a row that predates the field is exactly the
+// kind of invented fact this console exists to avoid.
+const ORIGINS = {
+  add_to_cart: { label: "cart add", detail: "The visitor added to an empty cart on this page." },
+  cart_update: { label: "cart update", detail: "A cart:updated event fired after the page had loaded." },
+  page_load: { label: "page", detail: "The script initialised on a page load with items already in the cart." },
+  cart_poll: { label: "cart poll", detail: "Neither cart:updated nor an add-to-cart click fired — the 3s poll caught the cart. The theme integration is degraded." },
+  cart_webhook: { label: "cart hook", detail: "Shopify's carts/update webhook, server-side — no visitor was on the page." },
+  idle_cart_pickup: { label: "idle sweep", detail: "The server's idle-cart sweep, not a live visit." },
+};
+
+function originOf(decision, signals) {
+  const key = signals.requestReason || decision.source || null;
+  return ORIGINS[key] || (key ? { label: String(key).replace(/_/g, " "), detail: null } : null);
+}
 
 // Short "who this was" chips. Null entries are dropped by the caller.
 function contextOf(decision, signals) {
@@ -296,7 +327,17 @@ export function summarizeDecision(row) {
       context: [],
       trigger: null,
       shownReached: false,
-    shown: null,
+      shown: null,
+      // Every column the table reads has to exist on this branch too, or a
+      // single pre-JSON row takes the whole log down with it.
+      facts: {
+        headline: null, subhead: null, cta: null,
+        propensity: null, cartValue: null, device: null, visits: null,
+        showCount: null, ignoreStreak: null, daysSinceLastShow: null,
+        trafficSource: null, confidence: null,
+        promoCode: null, offerLabel: null, redeemed: null,
+        origin: null, isHoldout: false,
+      },
       result: row.result ?? null,
       source: null,
       raw: row.decision,
@@ -338,10 +379,60 @@ export function summarizeDecision(row) {
           .map(part => interpolate(part, decision))
           .join(" · ")
       : null,
+    // The same underlying values the sentences above are built from, handed
+    // back unformatted so a table can put each one in its own column. The
+    // prose stays: it is the expanded view, where a diagnosis belongs. What
+    // changed is that scanning fifty rows no longer means reading fifty
+    // paragraphs to find the one with a $3,000 cart.
+    facts: {
+      headline: interpolate(decision.headline || null, decision),
+      subhead: decision.showSubhead === false ? null : interpolate(decision.subhead || null, decision),
+      cta: interpolate(decision.cta || null, decision),
+      propensity: P,
+      cartValue: Number.isFinite(Number(signals.cartValue ?? decision.cartValue))
+        ? Number(signals.cartValue ?? decision.cartValue)
+        : null,
+      device: signals.deviceType || null,
+      visits: Number.isFinite(signals.visitFrequency) ? signals.visitFrequency : null,
+      // How many modals this visitor has already been shown in the rolling
+      // 30-day window, BEFORE this decision. 0 is a real answer ("never seen
+      // one") and must not collapse into the null that means "the storefront
+      // was too old to tell us".
+      showCount: Number.isFinite(signals.modalShowCount) ? signals.modalShowCount : null,
+      ignoreStreak: Number.isFinite(signals.modalIgnoreStreak) ? signals.modalIgnoreStreak : null,
+      daysSinceLastShow: Number.isFinite(signals.daysSinceLastShow) ? signals.daysSinceLastShow : null,
+      trafficSource: signals.trafficSource || null,
+      confidence: decision.confidence || null,
+      // The code actually minted for this decision, joined from DiscountOffer
+      // by the loader. The decision JSON never carried it — only the API
+      // response did — so before this join the console could say a discount
+      // was offered but never which code to go look up.
+      promoCode: row.offer?.discountCode || null,
+      offerLabel: offerLabelOf(decision),
+      redeemed: row.offer ? Boolean(row.offer.redeemed) : null,
+      origin: originOf(decision, signals),
+      // Which arm. The outcome row is authoritative (it is stamped on every
+      // tracked decision); the decision type only says "holdout" when the
+      // holdout branch itself wrote the row.
+      isHoldout: Boolean(row.result?.isHoldout) || decision.type === "holdout",
+    },
     result: row.result ?? null,
     source: decision.source || null,
     raw: row.decision,
   };
+}
+
+// The offer in three characters where possible — "20%", "$5", "$10>$75" — for
+// a column that has to sit beside a promo code without wrapping. A zero-amount
+// decision has no offer to name, whatever its type claims.
+function offerLabelOf(decision) {
+  const amount = Number(decision.amount);
+  if (!Number.isFinite(amount) || amount === 0) return null;
+  if (decision.type === "percentage") return `${amount}%`;
+  if (decision.type === "threshold" && decision.threshold) {
+    return `${money(amount)} over ${money(decision.threshold)}`;
+  }
+  return money(amount);
 }
 
 export function relativeTime(value, now = Date.now()) {
@@ -446,6 +537,25 @@ export function describeResult(result, source = null) {
       ? "Took the offer but no order has attributed to it."
       : "Shown and ignored so far.",
   };
+}
+
+// One machine-readable word for what became of a decision, so the table can
+// pick an icon and the filters can group on it without re-deriving any of
+// describeResult's branching. Kept beside describeResult deliberately: the two
+// must never disagree about the same row.
+//
+//   converted      an order attributed to it
+//   shown          rendered on a real screen, no order yet
+//   not_rendered   decided, but the trigger never fired
+//   nothing_shown  the decision itself was to show nothing (or a holdout)
+//   pre_decision   computed server-side ahead of any visit
+//   untracked      no outcome row at all — budget block, promo pause, test traffic
+export function resultKind(result, source = null) {
+  if (!result) return SOURCES[source] ? "pre_decision" : "untracked";
+  if (result.converted) return "converted";
+  if (!result.wasShown) return "nothing_shown";
+  if (!result.rendered) return "not_rendered";
+  return "shown";
 }
 
 // Counts for the one-line header above the log.

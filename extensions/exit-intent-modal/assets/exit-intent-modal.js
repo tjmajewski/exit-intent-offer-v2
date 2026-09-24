@@ -1140,6 +1140,13 @@
       return {
         signalsVersion,
         visitorId,
+        // What made this evaluation happen. The operator console groups on it:
+        // a flood of cart_update rows is a theme firing cart:updated on every
+        // keystroke, a flood of page_load rows is the session guard not
+        // holding, and the two look identical without this field. Set by
+        // whichever path activated the AI; page_load is the honest default for
+        // the init path, which runs on a page that already had a cart.
+        requestReason: this.decisionRequestReason || 'page_load',
         modalShowCount,
         modalIgnoreStreak,
         daysSinceLastShow,
@@ -2413,13 +2420,19 @@
       // guard while the others are still awaiting and each one activates the
       // AI — one page load, three AIDecision rows seconds apart.
       let checking = false;
-      const activate = async () => {
+      const activate = async (reason) => {
         if (activated || checking || this.modalShown) return;
         checking = true;
         try {
           const hasItems = await this.hasItemsInCart();
           if (!hasItems) return;
           activated = true;
+          // The cart went from empty to filled while the page was open, so
+          // whichever listener won the race is the true origin of this
+          // decision. The poll is the fallback that fires when a theme
+          // emits neither event, and it is worth telling apart from the
+          // other two: it means the theme integration is degraded.
+          this.decisionRequestReason = reason;
 
           console.log(`[${aiMode === 'enterprise' ? 'Enterprise AI' : 'Pro AI'}] Cart now has items — activating AI`);
 
@@ -2434,7 +2447,7 @@
       };
 
       // Listen for Shopify cart update events
-      document.addEventListener('cart:updated', () => setTimeout(activate, 300));
+      document.addEventListener('cart:updated', () => setTimeout(() => activate('cart_update'), 300));
 
       // Listen for add-to-cart button clicks (fallback for themes without cart:updated)
       document.addEventListener('click', (e) => {
@@ -2443,7 +2456,7 @@
         );
         if (addBtn) {
           // Small delay for the cart API to update
-          setTimeout(activate, 800);
+          setTimeout(() => activate('add_to_cart'), 800);
         }
       });
 
@@ -2453,7 +2466,7 @@
           clearInterval(pollInterval);
           return;
         }
-        await activate();
+        await activate('cart_poll');
       }, 3000);
     }
 
