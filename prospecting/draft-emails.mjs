@@ -353,26 +353,30 @@ const ZOHO_HOSTS = [
   'imappro.zoho.jp', 'imap.zoho.jp',
 ];
 
-if (has('--test-connection')) {
+// Both --test-connection and --push need this. Keeping it in one place is the
+// whole point: the first version validated only in the test path, so --push
+// happily attempted a login with a placeholder address.
+function requireCredentials() {
   if (!zoho.user || !zoho.pass) {
     console.error('set ZOHO_USER and ZOHO_APP_PASSWORD first (Zoho > Settings > Security > App Passwords)');
     process.exit(1);
   }
-
   // The setup instructions carry example values, and pasting one verbatim
-  // fails as an auth error ten times over before saying anything useful.
+  // fails as an auth error rather than as an obviously wrong value.
   if (/^(you@yourdomain\.com|your-actual@address\.com|user@example\.com)$/i.test(zoho.user)) {
     console.error(`ZOHO_USER is still the placeholder "${zoho.user}". Set it to your real Zoho address.`);
     process.exit(1);
   }
-
-  // Paste artefacts are a real cause of "invalid credentials", and the value is
-  // never printed, only described.
+  // Paste artefacts cause the same error. The value is described, never echoed.
   const rawPass = process.env.ZOHO_APP_PASSWORD || '';
   if (rawPass !== rawPass.trim()) console.error('note: password has leading/trailing whitespace, trimming it');
   if (/\s/.test(rawPass.trim())) console.error('note: password contains a space. Zoho app passwords usually have none. Check the paste.');
   if (!zoho.user.includes('@')) console.error(`note: ZOHO_USER is "${zoho.user}" with no @. Zoho normally wants the full address.`);
   zoho.pass = rawPass.trim();
+}
+
+if (has('--test-connection')) {
+  requireCredentials();
 
   const hosts = process.env.ZOHO_IMAP_HOST ? [process.env.ZOHO_IMAP_HOST] : ZOHO_HOSTS;
   console.error(`user: ${zoho.user}`);
@@ -598,12 +602,24 @@ if (review || eml) {
 }
 
 if (push) {
-  if (!zoho.user || !zoho.pass) {
-    console.error('set ZOHO_USER and ZOHO_APP_PASSWORD to push. previewed only.');
-    console.error('note: Zoho\'s free plan does not expose IMAP. use --review instead.');
+  requireCredentials();
+  let res;
+  try {
+    res = await imapAppend(zoho, messages);
+  } catch (err) {
+    // A stack trace here says nothing useful: every real cause is configuration.
+    console.error(`\npush FAILED on ${zoho.host}: ${err.message}`);
+    if (/AUTHENTICATIONFAILED|Invalid credentials/i.test(err.message)) {
+      console.error(process.env.ZOHO_IMAP_HOST
+        ? 'ZOHO_IMAP_HOST is set, so only that host was tried. Run --test-connection to check the others.'
+        : 'No ZOHO_IMAP_HOST set, so this used imap.zoho.com. Paid accounts are usually on imappro.zoho.com.');
+      console.error('Run: node prospecting/draft-emails.mjs --test-connection');
+    } else if (/NO \[?TRYCREATE|Mailbox does not exist|NONEXISTENT/i.test(err.message)) {
+      console.error(`No folder named "${zoho.folder}". Run --test-connection to list them, then set ZOHO_DRAFTS_FOLDER.`);
+    }
+    console.error('Nothing was drafted and the ledger is unchanged. --review works without IMAP.');
     process.exit(1);
   }
-  const res = await imapAppend(zoho, messages);
   console.error(`appended ${res.appended} draft(s) to "${zoho.folder}" on ${zoho.host}`);
   mkdirSync('prospecting/state', { recursive: true });
   state.drafted.push(...picked.map((p) => ({ domain: p.row.domain, score: p.score.total, at: new Date().toISOString() })));
