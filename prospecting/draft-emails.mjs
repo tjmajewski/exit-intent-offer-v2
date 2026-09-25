@@ -135,25 +135,27 @@ const money = (n) => `$${Number(n).toLocaleString('en-US', { maximumFractionDigi
 // Order matters: the holdout is the claim worth making, so it goes first and
 // the thin track record lands as the reason it exists rather than as an
 // apology the reader hits before any value.
-// Taylor's voice, from a sample he wrote himself. Warmer and less clipped than
-// a founder firing off one-liners: "we" for the company, the positioning
-// paragraph doing the real work, and a low-stakes close with somewhere to go
-// and read instead of replying.
+// Taylor's voice. The thing that makes cold email read as machine-written is
+// not word choice, it is rhythm: every sentence the same length, every negation
+// formal ("could not" instead of "couldn't"), every paragraph exactly one tidy
+// idea. So the copy below deliberately runs ragged. A two word sentence next to
+// a twenty word one. Contractions everywhere. A concession before the pitch.
+// Keep that if you edit it.
 const SITE = 'www.resparq.ai';
 
-// The core of every first-contact email. Small store owners do not buy an exit
-// intent widget; they buy not having to build or maintain one.
-const POSITIONING = `Resparq was built for small store owners, so they can run advanced abandoned cart strategies in the click of a button (no maintenance or coding required), strategies that large corporations use teams to maintain.`;
+// What they are actually buying is not a widget, it is not having to build or
+// maintain one. Short sentence first so the paragraph does not open flat.
+const POSITIONING = `That's what we built Resparq for. Small stores running the kind of abandoned cart setup big brands pay a team to maintain, without the maintenance or the code.`;
 
-// One store, about $3,000 attributed, two weeks. "A few thousand dollars" is
-// accurate and stays a recovery claim, not a lift claim. There is still no
-// measured lift figure and this must never imply one.
-const PROOF = `We're early, but we've seen success so far by being able to successfully recover a few thousand dollars for a store in just two weeks.`;
+// One store, about $3,000 attributed, two weeks. Two short sentences on
+// purpose: this is where the rhythm breaks and the email stops sounding
+// like a brochure. Stays a recovery claim, never a lift claim.
+const PROOF = `We're early. One store's been live two weeks and it's pulled back a few thousand dollars so far.`;
 
-const CLOSE = `Worth a 10 minute conversation? You can also learn more here on how it works: ${SITE}`;
+// Two ways to respond, one of which costs them nothing.
+const CLOSE = `Worth 10 minutes? Or there's more at ${SITE} if you'd rather just read.`;
 
-// Follow-ups stay short. The first email made the argument; repeating it at
-// length reads as pressure, and the second one says plainly that it is the last.
+// Follow-ups are short and a little offhand. Anything longer reads as pressure.
 function renderFollowUp(row, contact, stage) {
   const name = contact?.firstName || null;
   const greeting = name ? `Hi ${name},\n\n` : '';
@@ -162,9 +164,9 @@ function renderFollowUp(row, contact, stage) {
   if (stage === 1) {
     return {
       subject,
-      body: `${greeting}Just floating this back up in case it got buried.
+      body: `${greeting}Bumping this in case it got buried.
 
-If cart recovery is not where your head is right now, no problem at all, just say so and I will leave you to it.
+If cart recovery isn't where your head's at right now, no worries, just say so and I'll leave you to it.
 
 Thanks,
 Taylor`,
@@ -173,29 +175,30 @@ Taylor`,
 
   return {
     subject,
-    body: `${greeting}Last one from me on this.
+    body: `${greeting}Last one from me.
 
-If it is worth a look later in the year, reply any time and I will pick it back up. Otherwise I will assume the timing is wrong and stop here.
+If it's worth a look later on, reply any time. Otherwise I'll assume the timing's off.
 
 Thanks,
 Taylor`,
   };
 }
 
-// Subject lines state what was actually found, so they read like a person
-// wrote them rather than a merge field.
+// Plain and lowercase. No "quick question", which every filter and every
+// recipient has learned to distrust.
 function subjectFor(row) {
   const vendors = (row.vendors || []).join(' and ');
+  const one = row.vendors?.length === 1 ? vendors : 'popup';
   switch (row.scenario) {
     case 'E_HIGH_AOV_GREENFIELD':
-      return 'cart recovery on your higher priced items';
+      return 'abandoned carts on your higher priced items';
     case 'B_EMAIL_ONLY':
-      return `${vendors || 'your popup'} on arrival, nothing on exit`;
+      return `${vendors || 'your popup'} on arrival, nothing on the way out`;
     case 'C_VENDOR_EXIT_CAPABLE':
-      return `a question about your ${row.vendors?.length === 1 ? vendors : 'popup'} setup`;
+      return `does your ${one} fire on exit?`;
     case 'A_GREENFIELD':
     default:
-      return 'cart recovery on your store';
+      return 'nothing catching your abandoned carts';
   }
 }
 
@@ -207,46 +210,46 @@ function render(row, anger, contact) {
   const vendors = (row.vendors || []).join(' and ');
   const med = cat.available && usd ? money(cat.medianPrice) : null;
 
-  // High AOV gets the qualitative line, because "high value items" is the
-  // argument and a number would only shrink it. Everything else gets one
-  // concrete figure, and a store priced under the subscription gets orders per
-  // month rather than a months figure that would be false.
+  // High AOV carries its own argument, so it gets a clause in the opening
+  // rather than a line of arithmetic. Everything else gets one figure, and a
+  // store priced under the subscription gets orders per month rather than a
+  // months number that would be false.
   let valueLine;
   if (row.scenario === 'E_HIGH_AOV_GREENFIELD') {
     valueLine = '';
   } else if (med && row.paybackMonths) {
-    valueLine = `\n\nYour median item is around ${med}, so one recovered order covers about ${row.paybackMonths} ${row.paybackMonths === 1 ? 'month' : 'months'} of Resparq at ${money(MONTHLY_PRICE)}/mo.`;
+    valueLine = `\n\nYour median item's around ${med}, so one saved cart covers about ${row.paybackMonths} ${row.paybackMonths === 1 ? 'month' : 'months'} of us.`;
   } else if (med && row.ordersPerMonth) {
-    valueLine = `\n\nYour median item is around ${med}, so ${row.ordersPerMonth} recovered orders in a month covers Resparq at ${money(MONTHLY_PRICE)}/mo.`;
+    valueLine = `\n\nYour median item's around ${med}, so it'd take about ${row.ordersPerMonth} saved carts a month to cover us.`;
   } else {
-    valueLine = `\n\nResparq is ${money(MONTHLY_PRICE)}/mo flat, so the bar is one recovered order a month.`;
+    valueLine = `\n\nWe're ${money(MONTHLY_PRICE)}/mo flat, so the bar is one saved cart a month.`;
   }
 
   let opening;
   switch (row.scenario) {
     case 'E_HIGH_AOV_GREENFIELD':
-      opening = `I went through ${row.domain} and as I was browsing I noticed I could not find a cart recovery strategy. With all the high value items on your site that can be a huge difference maker.`;
+      opening = `Was going through ${row.domain} and couldn't find anything that catches people on their way out with a cart. Might be deliberate. But at your price points one saved cart is real money.`;
       break;
     case 'B_EMAIL_ONLY':
-      opening = `I went through ${row.domain} and noticed you are collecting emails with ${vendors}, which is the hard part already done. What I could not find was anything that steps in once someone has a cart and starts to leave.`;
+      opening = `Was on ${row.domain} and saw you're running ${vendors} to collect emails. That's the hard part done. What I couldn't find was anything that steps in once someone's got a cart and starts to leave.`;
       break;
     case 'C_VENDOR_EXIT_CAPABLE':
       // A detected vendor means the store could run exit intent, not that it
-      // does, so this asks rather than tells.
-      opening = `I went through ${row.domain} and saw you are running ${vendors || 'a popup tool'}, so you are already thinking about this. What I could not tell from the outside is whether anything fires when someone with a cart starts to leave, and if it does, whether everyone gets the same code.`;
+      // does. Asking is also just what a person would do.
+      opening = `Was on ${row.domain} and saw ${vendors || 'a popup tool'} running, so you're already on this. What I can't tell from outside is whether anything fires when someone with a cart heads for the exit. And if it does, whether everyone gets the same code.`;
       break;
     case 'A_GREENFIELD':
     default:
-      opening = `I went through ${row.domain} and as I was browsing I noticed I could not find a cart recovery strategy.`;
+      opening = `Was going through ${row.domain} and couldn't find anything that catches people on their way out with a cart.`;
       break;
   }
 
   if (row.discountHints?.length) {
-    opening += ` I did see ${row.discountHints[0]} on the site, which is worth aiming at the people about to leave rather than everyone who arrives.`;
+    opening += ` Saw the ${row.discountHints[0]} on the site too. That's the kind of thing worth pointing at people who are leaving rather than everyone who shows up.`;
   }
 
   const billing = anger && anger.monthsAgo != null && anger.monthsAgo <= 18
-    ? `\n\nOne thing worth saying, since the reviews in this category are full of surprise usage bills: Resparq is a flat ${money(MONTHLY_PRICE)}/mo. No usage fees and no per impression charges.`
+    ? `\n\nOne thing, since this category's reviews are full of surprise usage bills: we're flat ${money(MONTHLY_PRICE)}/mo. No usage fees, no per impression charges.`
     : '';
 
   return {
