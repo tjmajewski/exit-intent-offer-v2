@@ -1066,7 +1066,19 @@ export async function action({ request }) {
     // than at the decision literal below because the copy guards need it: copy
     // and type have to be checked against each other, and by the time the
     // literal is assembled the copy is already chosen.
-    const decisionOfferType = isHybrid ? hybridOfferType : servedOfferType;
+    // The `|| "percentage"` is load-bearing, not defensive noise. A Guided shop
+    // whose metafield predates the settings default can have hybridOfferType
+    // undefined with a non-zero amount pinned. `poolForOfferType(undefined)`
+    // then returns the PERCENT pool, so the copy is `{{amount}}%` — but an
+    // undefined type reaches the storefront, which formats the amount as
+    // currency, and `Take $17% off your order` comes back. The guard below
+    // fires on the undefined type and swaps in percent copy from the same
+    // pool, so it cannot save it either. Defaulting to the type the pool
+    // actually is makes copy and type agree, which is the whole point of the
+    // guard.
+    const decisionOfferType = isHybrid
+      ? hybridOfferType || "percentage"
+      : servedOfferType;
 
     // Where the denomination guard below draws a replacement line from.
     //

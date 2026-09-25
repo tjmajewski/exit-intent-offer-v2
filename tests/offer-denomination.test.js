@@ -150,6 +150,25 @@ describe('Guided mode picks the pool its pin is denominated in', () => {
       'Guided mode pins a constant copy pool regardless of the pinned offer type');
   });
 
+  test('an undefined Guided pin cannot reach the storefront as a bare type', () => {
+    // The residual $17% path. A Guided metafield written before
+    // app.settings.jsx started defaulting hybridOfferType can have the type
+    // undefined with an amount pinned. poolForOfferType(undefined) gives the
+    // PERCENT pool, so the copy is `{{amount}}%` and is correct for it — but an
+    // undefined `type` in the payload makes the storefront format the amount as
+    // currency, and the sentence comes back `Take $17% off your order`. The
+    // guard cannot catch it: it fires, then draws a replacement from the same
+    // percent pool.
+    //
+    // So the default has to be the type the pool actually IS.
+    assert.equal(offerTypeForBaseline(poolForOfferType(undefined)), 'percentage');
+
+    const src = readFileSync(
+      new URL('../app/routes/apps.exit-intent.api.ai-decision.jsx', import.meta.url), 'utf8');
+    assert.match(src, /isHybrid\s*\n?\s*\?\s*hybridOfferType \|\| "percentage"/,
+      'a Guided pin with no offer type can reach the storefront untyped');
+  });
+
   test('the served decision type and the copy guards read the same variable', () => {
     const src = readFileSync(
       new URL('../app/routes/apps.exit-intent.api.ai-decision.jsx', import.meta.url), 'utf8');

@@ -182,7 +182,16 @@ export function checkRateLimit(key, { limit, windowMs }) {
   return { allowed, remaining, resetAt: existing.resetAt, retryAfter };
 }
 
-function tooManyRequests(result) {
+function tooManyRequests(result, routeKey, subject) {
+  // A throttle has to say so. On `ai-decision` a 429 costs the shopper their
+  // modal entirely — `getAIDecision` parses the valid JSON body, sees !ok and
+  // latches `aiDecidedNoIntervention`, so the modal never shows. Without this
+  // line the only trace is a bare 429 in the Fly access log, with no shop and
+  // no route, which is precisely the shape of the September outage that went a
+  // week unnoticed.
+  console.warn(
+    `[rate-limit] 429 ${routeKey} ${subject} retryAfter=${result.retryAfter}s`,
+  );
   return new Response(
     JSON.stringify({ error: "Too many requests" }),
     {
@@ -206,7 +215,7 @@ export function enforceRateLimit(request, routeKey, opts) {
   const ip = getClientIp(request);
   const result = checkRateLimit(`${routeKey}:${ip}`, opts);
   if (result.allowed) return null;
-  return tooManyRequests(result);
+  return tooManyRequests(result, routeKey, ip);
 }
 
 /**
@@ -223,5 +232,5 @@ export function enforceProxyRateLimit(request, routeKey, opts) {
   const subject = shop ? `shop:${shop}` : `unattributed:${getClientIp(request)}`;
   const result = checkRateLimit(`${routeKey}:${subject}`, opts);
   if (result.allowed) return null;
-  return tooManyRequests(result);
+  return tooManyRequests(result, routeKey, subject);
 }
