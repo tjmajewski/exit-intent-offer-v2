@@ -312,10 +312,29 @@ if (useLusha && !key) {
   process.exit(1);
 }
 
+// Lusha answers a malformed key with "Invalid API key format", which is a
+// 400 rather than a 401 and so reads like a request problem. Describe the
+// value first, never echoing it, so an obvious paste error is obvious here.
+const cleanKey = (key || '').trim().replace(/^["']|["']$/g, '');
+if (useLusha) {
+  if (cleanKey !== key) console.error('note: trimmed whitespace or quotes from LUSHA_API_KEY');
+  if (/^(your|xxx|api|lusha)[-_]?key$/i.test(cleanKey) || cleanKey.includes('<')) {
+    console.error(`LUSHA_API_KEY looks like a placeholder (${cleanKey.length} chars). Set the real key.`);
+    process.exit(1);
+  }
+  if (cleanKey.length < 16) {
+    console.error(`LUSHA_API_KEY is only ${cleanKey.length} characters, which is too short for a Lusha key.`);
+    console.error('Copy it from Lusha > API. If your plan has no API section, the API is not included.');
+    process.exit(1);
+  }
+  console.error(`lusha key: ${cleanKey.length} chars, ${/^[A-Za-z0-9-]+$/.test(cleanKey) ? 'alphanumeric' : 'contains punctuation'}`);
+}
+
 console.error(`${targets.length} domain(s), free scrape${useLusha ? ' + Lusha' : ''}${spend ? ' + REVEAL (spends credits)' : ''}\n`);
 
 let resolved = 0;
 let lushaCalls = 0;
+let lushaBroken = false;
 let revealed = 0;
 
 for (const { domain, storeName } of targets) {
@@ -333,9 +352,9 @@ for (const { domain, storeName } of targets) {
   let title = '';
   let confidence = email ? 'high' : best ? (best.source.startsWith('jsonld') ? 'high' : 'medium') : '';
 
-  if (useLusha && !email) {
+  if (useLusha && !lushaBroken && !email) {
     try {
-      const people = await lushaProspect(domain, key);
+      const people = await lushaProspect(domain, cleanKey);
       lushaCalls++;
       if (people.length) {
         const p = people[0];
@@ -344,7 +363,7 @@ for (const { domain, storeName } of targets) {
         source = 'lusha:prospecting';
         confidence = 'high';
         if (spend && (p.contactId || p.id)) {
-          const enriched = await lushaEnrich([p.contactId || p.id], key);
+          const enriched = await lushaEnrich([p.contactId || p.id], cleanKey);
           revealed++;
           const e = enriched[0]?.emails?.[0];
           email = (typeof e === 'string' ? e : e?.address || e?.email) || '';
@@ -353,8 +372,14 @@ for (const { domain, storeName } of targets) {
       }
     } catch (err) {
       console.error(`  ${domain.padEnd(30)} lusha: ${err.message}`);
-      if (err.status === 401 || err.status === 403) {
-        console.error('  stopping: the key was rejected, so every further call would fail the same way.');
+      // A bad key can arrive as 400 "Invalid API key format" rather than 401,
+      // so match on what the message says, not only on the status.
+      const keyProblem = err.status === 401 || err.status === 403
+        || /api[_ ]?key|unauthori[sz]ed|forbidden|invalid key/i.test(err.message);
+      if (keyProblem) {
+        console.error('\n  stopping: the key was rejected, so every further call fails identically.');
+        console.error('  Lusha > API for the real key. No API section means the plan does not include it.');
+        lushaBroken = true;
         break;
       }
     }
