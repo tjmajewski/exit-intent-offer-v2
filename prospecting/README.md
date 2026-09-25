@@ -184,6 +184,63 @@ of always at the top. The slide says which touch it is and how overdue.
 **`--replied` and `--dead` are the only thing preventing a third email to
 someone who already answered or declined.** Nothing else infers it.
 
+## find-contacts.mjs
+
+```
+node prospecting/find-contacts.mjs                  # free scrape only
+node prospecting/find-contacts.mjs --lusha          # + Lusha search, no credits spent
+node prospecting/find-contacts.mjs --lusha --spend  # + reveal emails, SPENDS CREDITS
+```
+
+Merges into `contacts.csv` and never overwrites a row that already has an
+email, so hand-researched contacts survive a re-run.
+
+### Why two phases
+
+Lusha's contact endpoints cannot start from a bare domain. `/v3/contacts/search`
+needs a name, an email, or a LinkedIn URL. Only `/v3/contacts/prospecting` goes
+domain to people, filtered by seniority, and every revealed email costs a
+credit. So the free phase exists to find a name first, which makes the paid
+phase cheaper or unnecessary.
+
+### What the free phase actually yields
+
+Roughly one store in ten, and that is being generous. Measured on a real batch
+of 31: three names, of which two were genuinely the owner. Small DTC brands do
+not put their founder on the site. **Do not plan around this number** — it is
+the reason the Lusha path exists.
+
+What it looks for, best source first:
+
+| Source | Trust |
+|---|---|
+| `jsonld:founders` / `jsonld:employee` | High. Structured, explicit. |
+| `prose:*` | Medium. "I'm X", "founded by X", "X, founder". |
+| `brand-is-a-person` | Medium. The store is named after its owner. |
+
+JSON-LD `author` is deliberately ignored: Shopify themes and apps put their own
+developer there, which is how a theme author ends up looking like a founder.
+
+Names are checked against a list of given names before being accepted. Without
+that, "Thrift Goblin" and "Gospel Musicians" both parse as people, and an early
+run produced a near-100% false positive rate. Missing a real founder is cheap;
+putting a wrong name in an email is not.
+
+`brandname@gmail.com` is classified generic, not personal. The local part being
+the brand again means it reaches the shop rather than a person, which is the
+thing this is meant to avoid. Those land in `notes` as a fallback.
+
+### Lusha
+
+Set `LUSHA_API_KEY`. `--lusha` searches only, which costs a search action;
+`--spend` is required before anything reveals an email and consumes a credit.
+The split is deliberate, so a mistyped command cannot burn credits.
+
+**Check your Lusha plan has API access at all.** The browser extension and the
+API are sold separately, and a seat that works in the browser may return 401
+here. The tool stops the whole run on a 401 or 403 rather than failing the same
+way once per domain.
+
 ### Contacts
 
 Fill `prospecting/contacts.csv` (`domain,email,name,title`) from Lusha or the

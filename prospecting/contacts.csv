@@ -1,3 +1,35 @@
-# Fill from Lusha / About pages / LinkedIn. Domain must match the scan exactly.
-# Rows without an email still get a draft, addressed to you with a NEEDS CONTACT banner.
-domain,email,name,title
+# domain,email,name,title,source,confidence,notes
+# Rows with an email are used as-is and never overwritten by a re-run.
+# confidence: lusha > jsonld > brand-is-a-person > prose. Verify before sending.
+domain,email,name,title,source,confidence,notes
+truecolorwholesale.com,,,,,,ig: @truecolorwholesale
+attirefocusboutique.com,,,,,,ig: @attirefocusboutique1
+sundazesurf.com,,Manon Erne,,jsonld:founders,high,ig: @sundaze_surf
+kayladevitoart.com,,Kayla DeVito,,brand-is-a-person,medium,generic: hello@kayladevitofineart.com; ig: @kayladevitofineart
+importatoy.com,,,,,,generic: sales@importatoy.co.za; ig: @importatoy
+ros3clothing.com,,,,,,generic: ros3clothingco@gmail.com; ig: @r.o.s_3
+efurustudio.com,,,,,,ig: @efurucreativehomestudio
+hillcountrykidsclothing.com,,,,,,
+swaddelini.com,,,,,,generic: support@swaddelini.com; ig: @swaddelini
+miabambinaboutique.com,,,,,,generic: miabambinaboutique@yahoo.ca; ig: @miabambinaboutique_
+thecustomgoodsco.com,,,,,,ig: @customcollectivejewelry
+atlantaluxurybags.com,,,,,,generic: sales@atlantaluxurybags.com returns@atlantaluxurybags.com; ig: @atlantaluxurybags
+bulletproofpetproducts.com,,,,,,generic: bulletproofpetproducts@gmail.com
+fashrevo.com,,,,,,
+orasamazingherbal.com,,,,,,ig: @orasamazingherbal
+gospelmusicians.com,,,,,,ig: @gospelmusicians
+carverjunk.com,,Carver Junk,,brand-is-a-person,medium,ig: @biographyapparelco
+butterandcrust.com,,,,,,ig: @butter_and_crust
+oribio.co,,,,,,ig: @oribio.co
+purecleanperformance.com,,,,,,ig: @pure.cleanperformance
+minimellocloset.com,,,,,,ig: @minimello.closet
+delightjewel.com,,,,,,
+thriftgoblin.com,,,,,,ig: @thriftgoblin
+kneadmorefun.com,,,,,,
+puainta.com,,,,,,generic: service@puainta.com; ig: @puainta
+coltswoof.com,,,,,,generic: hello@coltswoof.com; ig: @coltswoof
+northones.com,,,,,,ig: @north.ones
+blandabeauty.com,,,,,,ig: @blandabeauty
+hellogorgeousskincare.com,,,,,,generic: orders@hellogorgeous.com; ig: @affordable_natural_antiaging
+neverenoughcutestuff.com,,,,,,ig: @neverenoughcutestuffboutique
+twelve28market.com,,,,,,ig: @twelve28market
