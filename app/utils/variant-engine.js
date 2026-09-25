@@ -517,8 +517,18 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
     throw new Error(`No live variants found for shop ${shopId}, baseline ${baseline}, segment ${segment}`);
   }
 
+  // Priors are consulted only when a Thompson Sampling tournament actually
+  // runs. Three paths return before that, and on each of them "did archetype
+  // biasing fire?" has an answer — no — that used to reach the logs as silence.
+  // The caller's `priorsGate` line prints on these paths too, so without this
+  // they were the exact false confirmation the logging exists to remove.
+  const logNoTournament = (reason) => {
+    console.log(` [Priors] Archetype biasing NOT CONSULTED (${reason}) — no tournament ran`);
+  };
+
   // If only one variant, return it
   if (liveVariants.length === 1) {
+    logNoTournament('only_one_live_variant');
     return liveVariants[0];
   }
 
@@ -637,6 +647,7 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
   // Champion gets 70% of traffic
   if (champion && !championSuspended && Math.random() < 0.7) {
     console.log(` Champion ${champion.variantId} selected (70% traffic)`);
+    logNoTournament('champion_70pct_shortcut');
     return champion;
   }
 
@@ -648,6 +659,7 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
 
   if (contenders.length === 0) {
     // Edge case: champion is the only variant
+    logNoTournament('champion_is_only_variant');
     return champion;
   }
 
@@ -679,15 +691,19 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
         console.log(` [Priors] Archetype biasing active (source=${source}, archetypes=${priors.size})`);
       } else {
         priorsSkipReason = 'no_data';
-        console.log(` [Priors] Archetype biasing INACTIVE (source=none, no data at this segmentKey: ${segmentKey || 'n/a'}) — sampling is uniform`);
+        console.log(` [Priors] Archetype biasing INACTIVE (source=none, no data at this segmentKey: ${segmentKey || 'n/a'}) — no archetype weighting applied`);
       }
     } catch (err) {
       priorsSkipReason = 'error';
       console.error(' [Priors] Failed to compute archetype priors:', err.message);
     }
   } else {
+    // Not "sampling is uniform" — cluster priors, per-cell segment stats and
+    // trigger stats all still shape the Beta samples below. Only the archetype
+    // multiplier is absent, and a log in a commit about misleading logs should
+    // not overstate its own scope.
     priorsSkipReason = enableArchetypePriors ? 'no_segment_key' : 'disabled_for_plan';
-    console.log(` [Priors] Archetype biasing INACTIVE (${priorsSkipReason}) — sampling is uniform`);
+    console.log(` [Priors] Archetype biasing INACTIVE (${priorsSkipReason}) — no archetype weighting applied`);
   }
 
   // Sprint 3: 3-level hierarchical template posterior. Pools templateId
@@ -696,6 +712,7 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
   // Same conditional-log blind spot as archetype priors above, and the same fix.
   let templatePriors = null;
   let templatePriorsSource = 'none';
+  let templatePriorsSkipReason = enableTemplatePriors ? null : 'disabled_for_plan';
   if (enableTemplatePriors) {
     try {
       const db = await getDb();
@@ -709,11 +726,18 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
         templatePriorsSource = source;
         console.log(` [Priors] Template biasing active (source=${source}, templates=${priors.size})`);
       } else {
-        console.log(` [Priors] Template biasing INACTIVE (source=none, no data for baseline ${baseline}) — sampling is uniform`);
+        // Two different causes return source=none from computeTemplatePriors:
+        // no signal at all, and plenty of signal for a single template
+        // (`templates.size < 2`). Naming only the first would be a guess.
+        templatePriorsSkipReason = 'no_data_or_single_template';
+        console.log(` [Priors] Template biasing INACTIVE (source=none, no signal or only one template with signal for baseline ${baseline}) — no template weighting applied`);
       }
     } catch (err) {
+      templatePriorsSkipReason = 'error';
       console.error(' [Priors] Failed to compute template priors:', err.message);
     }
+  } else {
+    console.log(' [Priors] Template biasing INACTIVE (disabled_for_plan) — Enterprise only');
   }
 
   // Thompson Sampling: Sample from beta distribution for each variant.
@@ -785,7 +809,7 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
   const winner = samples[0].variant;
   const winnerArchetype = getArchetype(winner.baseline)?.archetypeName || 'none';
   const cellsResolved = contenders.filter(v => resolveCell(v.id)).length;
-  console.log(` Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)}${triggerStats ? `, trigger: ${triggerReason}` : ''}, priors=${priorsSource}${priorsSkipReason ? `(${priorsSkipReason})` : ''}, archetype=${winnerArchetype}${enableTemplatePriors ? `, templatePriors=${templatePriorsSource}, template=${winner.templateId}` : ''}${clusterPrior ? `, clusterPrior=${clusterPrior.source} cvr=${clusterPrior.cvr.toFixed(3)}` : ''}${cellsResolved > 0 ? `, cellStats=${cellsResolved}/${contenders.length}` : ''})`);
+  console.log(` Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)}${triggerStats ? `, trigger: ${triggerReason}` : ''}, priors=${priorsSource}${priorsSkipReason ? `(${priorsSkipReason})` : ''}, archetype=${winnerArchetype}, templatePriors=${templatePriorsSource}${templatePriorsSkipReason ? `(${templatePriorsSkipReason})` : ''}, template=${winner.templateId}${clusterPrior ? `, clusterPrior=${clusterPrior.source} cvr=${clusterPrior.cvr.toFixed(3)}` : ''}${cellsResolved > 0 ? `, cellStats=${cellsResolved}/${contenders.length}` : ''})`);
 
   return winner;
 }

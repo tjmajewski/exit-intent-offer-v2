@@ -14,6 +14,7 @@ import { getBaselineCvrPrior } from "../utils/cluster-priors.server.js";
 import { computePropensity } from "../utils/propensity.server.js";
 import { enforceProxyRateLimit, PROXY_LIMITS } from "../utils/rate-limit.server.js";
 import { getEnabledLayoutIds } from "../utils/templates.js";
+import { resolvePlanTier } from "../utils/plan.server.js";
 
 // Spec 2.5: customer tags written by the major subscription apps —
 // Recharge ("Active Subscriber"), Appstle, Skio and friends all tag the
@@ -193,7 +194,7 @@ export async function action({ request }) {
     // Settings.mode='ai' could be set on a Starter shop (e.g. downgrade after
     // upgrade), but the AI engine must not run for Starter. Treat as not-enabled.
     // Plan gate applies to Hybrid too — it runs the same AI engine (spec §9).
-    const shopPlan = shopRecord.plan || 'starter';
+    const shopPlan = resolvePlanTier(shopRecord.plan);
     if (shopPlan === 'starter') {
       const modeLabel = isHybrid ? 'Guided' : 'AI';
       console.log(`[AI Decision] Blocked: shop ${shop} on Starter plan — ${modeLabel} mode requires Pro or Enterprise`);
@@ -331,7 +332,7 @@ export async function action({ request }) {
     } catch (e) {
       console.error('[AI Decision] Propensity model scoring failed (legacy served):', e.message);
     }
-    console.log(`[AI Decision] Propensity P=${signals.propensityScore} (legacy=${legacyPropensity}${signals.propensityScoreModel !== undefined ? `, model=${signals.propensityScoreModel}${shopRecord.usePropensityModel ? ' SERVED' : ' shadow'}` : ''}, ${shopRecord.plan || 'pro'})`);
+    console.log(`[AI Decision] Propensity P=${signals.propensityScore} (legacy=${legacyPropensity}${signals.propensityScoreModel !== undefined ? `, model=${signals.propensityScoreModel}${shopRecord.usePropensityModel ? ' SERVED' : ' shadow'}` : ''}, ${resolvePlanTier(shopRecord.plan)})`);
 
     // ORDERING: signal enrichment + propensity MUST run before the holdout
     // branch below. They used to run after it, so every holdout row was written
@@ -432,7 +433,7 @@ export async function action({ request }) {
     // PRE-CHECK: the unified decideOffer engine determines whether intervention
     // is warranted (enables "no_intervention" as a learned outcome). Both tiers
     // share the same propensity metric, show/skip logic, and margin ceiling.
-    const isEnterprisePlan = (shopRecord.plan || 'pro') === 'enterprise';
+    const isEnterprisePlan = resolvePlanTier(shopRecord.plan) === 'enterprise';
 
     // Enterprise promotional intelligence: check for active site-wide promos and
     // adjust aggression before the decision runs. Pro is detect-only (the
@@ -578,7 +579,7 @@ export async function action({ request }) {
     console.log(`[Margin] ${shopRecord.shopifyDomain}: gross margin ${(effectiveGrossMargin * 100).toFixed(0)}% (vertical: ${shopRecord.derivedVertical || shopRecord.storeVertical || 'unknown'})`);
 
     const preScore = await decideOffer(signals, {
-      plan: shopRecord.plan || 'pro',
+      plan: resolvePlanTier(shopRecord.plan),
       aggression: effectiveAggression,
       cartValue: signals.cartValue || 0,
       shopId: shopRecord.id,
@@ -879,7 +880,11 @@ export async function action({ request }) {
     // whichever wins this segmentKey (or falls back to meta-learning). When
     // both variants share an archetype, priors are a no-op and Thompson
     // Sampling runs uniformly.
-    const planTierForPriors = shopRecord.plan || 'pro';
+    // resolvePlanTier, not `|| 'pro'`. The column defaults to "starter", so the
+    // old fallback turned an unset plan into a paid tier and switched archetype
+    // priors on for it. §23.1's "on for every shop, always" was never true —
+    // starter stores have priors off, which is what `disabled_for_plan` reports.
+    const planTierForPriors = resolvePlanTier(shopRecord.plan);
     const prioriEnabled = planTierForPriors === 'enterprise' || planTierForPriors === 'pro';
 
     // Phase 4c: cluster CVR prior for this baseline — pseudo-counts that

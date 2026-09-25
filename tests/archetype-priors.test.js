@@ -33,12 +33,13 @@ function rows(archetype, count, converted = 0) {
 // returns; `insights` maps `${segment}::${insightType}` to a stored row.
 // Records the where clause it was called with so the filters can be asserted.
 function fakeDb({ impressions = [], insights = {} } = {}) {
-  const calls = { findManyWhere: null, insightKeys: [] };
+  const calls = { findManyWhere: null, findManySelect: null, insightKeys: [] };
   return {
     calls,
     variantImpression: {
-      findMany: async ({ where }) => {
+      findMany: async ({ where, select }) => {
         calls.findManyWhere = where;
+        calls.findManySelect = select;
         return impressions;
       }
     },
@@ -122,14 +123,18 @@ describe('what the own-shop query actually counts', () => {
     assert.equal(where.segmentKey, KEY);
     assert.ok(where.timestamp.gte instanceof Date);
 
+    // Tolerance is one hour, not a fraction of a day: this compares a Date built
+    // inside the function against Date.now() here, so a tight bound is a flake
+    // and anything wrong with the window is wrong by days.
     const windowDays = (Date.now() - where.timestamp.gte.getTime()) / 86400000;
-    assert.ok(Math.abs(windowDays - 30) < 0.01, `window is ${windowDays} days, not the documented 30`);
+    assert.ok(Math.abs(windowDays - 30) < 1 / 24, `window is ${windowDays} days, not the documented 30`);
   });
 });
 
 describe('the multiplier shape', () => {
   test('best gets 1.30, worst gets 0.85', async () => {
-    const db = fakeDb({ impressions: [...rows('PERCENT_DISCOUNT', 25, 10), ...rows('FIXED_DISCOUNT', 25, 1)] });
+    // Loser first, again so insertion order cannot stand in for the sort.
+    const db = fakeDb({ impressions: [...rows('FIXED_DISCOUNT', 25, 1), ...rows('PERCENT_DISCOUNT', 25, 10)] });
     const { priors } = await computeArchetypePriors(db, 'shop_1', { segmentKey: KEY });
     assert.equal(priors.get('PERCENT_DISCOUNT'), 1.30);
     assert.equal(priors.get('FIXED_DISCOUNT'), 0.85);
@@ -138,12 +143,50 @@ describe('the multiplier shape', () => {
   test('ranking is by conversion rate, not by volume', async () => {
     // FIXED has more conversions in absolute terms and more rows; PERCENT has
     // the better rate. Rate must win, or the priors just amplify traffic mix.
-    const db = fakeDb({ impressions: [...rows('PERCENT_DISCOUNT', 10, 5), ...rows('FIXED_DISCOUNT', 40, 8)] });
+    //
+    // FIXED is listed FIRST deliberately. Map insertion order plus a stable sort
+    // means a build that ignored `converted` entirely — or dropped the sort —
+    // would rank whichever archetype appears first, so listing the intended
+    // winner first made this test pass on a broken implementation.
+    const db = fakeDb({ impressions: [...rows('FIXED_DISCOUNT', 40, 8), ...rows('PERCENT_DISCOUNT', 10, 5)] });
     const { priors } = await computeArchetypePriors(db, 'shop_1', { segmentKey: KEY });
     assert.ok(
       priors.get('PERCENT_DISCOUNT') > priors.get('FIXED_DISCOUNT'),
       'the higher-volume archetype outranked the higher-converting one'
     );
+  });
+
+  test('conversions are actually read, not just counted as impressions', async () => {
+    // Identical row counts, different conversion counts, worst listed first.
+    // A build that never looked at `converted` would tie every archetype and
+    // fall back to insertion order, ranking FIXED top.
+    const db = fakeDb({
+      impressions: [...rows('FIXED_DISCOUNT', 25, 0), ...rows('PERCENT_DISCOUNT', 25, 25)]
+    });
+    const { priors } = await computeArchetypePriors(db, 'shop_1', { segmentKey: KEY });
+    assert.equal(priors.get('PERCENT_DISCOUNT'), 1.30, 'a 100% CVR archetype did not outrank a 0% one');
+    assert.equal(priors.get('FIXED_DISCOUNT'), 0.85);
+  });
+
+  test('three archetypes are ordered by rate regardless of input order', async () => {
+    // Pins the sort itself: deleting it leaves this order unchanged and wrong.
+    const db = fakeDb({
+      impressions: [
+        ...rows('FIXED_DISCOUNT', 20, 2),      // 0.10 — middle
+        ...rows('SOFT_UPSELL', 20, 0),         // 0.00 — worst
+        ...rows('PERCENT_DISCOUNT', 20, 10)    // 0.50 — best
+      ]
+    });
+    const { priors } = await computeArchetypePriors(db, 'shop_1', { segmentKey: KEY });
+    assert.equal(priors.get('PERCENT_DISCOUNT'), 1.30);
+    assert.equal(priors.get('FIXED_DISCOUNT'), 1.075);
+    assert.equal(priors.get('SOFT_UPSELL'), 0.85);
+  });
+
+  test('the query selects the conversion flag it ranks on', async () => {
+    const db = fakeDb();
+    await computeArchetypePriors(db, 'shop_1', { segmentKey: KEY });
+    assert.deepEqual(db.calls.findManySelect, { archetype: true, converted: true });
   });
 
   test('the middle of three is interpolated, not rounded to an extreme', async () => {
@@ -162,7 +205,10 @@ describe('the multiplier shape', () => {
     assert.equal(priors.get('SOFT_UPSELL'), 0.85);
   });
 
-  test('a single ranked archetype from meta gets the top boost', async () => {
+  test('a single-archetype leaderboard is refused, like the own-shop path refuses one', async () => {
+    // A lone archetype at MAX_BOOST with every other archetype neutral is still
+    // a 1.30 tilt on evidence with no comparison. tryOwnShopPriors has always
+    // rejected that shape; the meta paths used to accept it.
     const db = fakeDb({
       insights: {
         [`${KEY}::archetype_performance_by_key`]: insight([
@@ -170,8 +216,30 @@ describe('the multiplier shape', () => {
         ])
       }
     });
-    const { priors } = await computeArchetypePriors(db, 'shop_1', { segmentKey: KEY });
-    assert.equal(priors.get('PERCENT_DISCOUNT'), 1.30);
+    const { priors, source } = await computeArchetypePriors(db, 'shop_1', { segmentKey: KEY });
+    assert.equal(source, 'none');
+    assert.equal(priors.size, 0);
+  });
+
+  test('a one-archetype key leaderboard does not block a usable vertical one', async () => {
+    const db = fakeDb({
+      insights: {
+        [`${KEY}::archetype_performance_by_key`]: insight([
+          { archetype: 'SOFT_UPSELL', conversionRate: 0.9 }
+        ]),
+        ['beauty::mobile_paid::archetype_performance_by_vertical']: insight([
+          { archetype: 'PERCENT_DISCOUNT', conversionRate: 0.2 },
+          { archetype: 'FIXED_DISCOUNT', conversionRate: 0.1 }
+        ])
+      }
+    });
+    const { priors, source } = await computeArchetypePriors(db, 'shop_1', {
+      segmentKey: KEY,
+      segment: 'mobile_paid',
+      storeVertical: 'beauty'
+    });
+    assert.equal(source, 'meta_by_vertical');
+    assert.equal(priors.has('SOFT_UPSELL'), false);
   });
 
   test('every multiplier stays inside the conservative band', async () => {

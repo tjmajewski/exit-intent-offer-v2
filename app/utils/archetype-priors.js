@@ -56,7 +56,7 @@ export async function computeArchetypePriors(prisma, shopId, ctx = {}) {
   // ---- 2. Meta-learning insight keyed by segmentKey ----
   if (segmentKey) {
     const metaByKey = await getArchetypeLeaderboardByKey(prisma, segmentKey);
-    if (metaByKey && Array.isArray(metaByKey.rankings)) {
+    if (hasSpread(metaByKey)) {
       return { priors: rankingsToPriors(metaByKey.rankings), source: 'meta_by_key' };
     }
   }
@@ -64,13 +64,29 @@ export async function computeArchetypePriors(prisma, shopId, ctx = {}) {
   // ---- 3. Meta-learning insight keyed by (vertical, legacy segment) ----
   if (storeVertical && segment) {
     const metaByVertical = await getArchetypeLeaderboardByVertical(prisma, storeVertical, segment);
-    if (metaByVertical && Array.isArray(metaByVertical.rankings)) {
+    if (hasSpread(metaByVertical)) {
       return { priors: rankingsToPriors(metaByVertical.rankings), source: 'meta_by_vertical' };
     }
   }
 
   // ---- 4. No signal — uniform ----
   return { priors: new Map(), source: 'none' };
+}
+
+/**
+ * A leaderboard is usable only if it ranks at least two archetypes.
+ *
+ * `tryOwnShopPriors` has always enforced this ("need spread to differentiate"),
+ * but the meta paths used to call `rankingsToPriors` directly — and on a
+ * single-entry ranking that hands the lone archetype MAX_BOOST with nothing to
+ * compare it against, while every other archetype stays neutral at 1.0. So it
+ * biased on evidence the own-shop path rejects as insufficient. A one-archetype
+ * insight is a normal output of `aggregateArchetypePerformance`, which filters
+ * per archetype at its own impression floor, so this was reachable, not
+ * theoretical. One rule for all three sources.
+ */
+function hasSpread(insight) {
+  return !!insight && Array.isArray(insight.rankings) && insight.rankings.length >= 2;
 }
 
 /**
@@ -122,6 +138,9 @@ function rankingsToPriors(rankings) {
   const n = rankings.length;
   if (n === 0) return priors;
   if (n === 1) {
+    // Unreachable from computeArchetypePriors — all three sources now require
+    // spread (see hasSpread). Kept so a direct caller cannot divide by zero
+    // below, not as a sanctioned way to boost a lone archetype.
     priors.set(rankings[0].archetype, MAX_BOOST);
     return priors;
   }

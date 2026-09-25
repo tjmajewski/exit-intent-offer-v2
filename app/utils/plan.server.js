@@ -19,7 +19,23 @@
 
 import db from "../db.server.js";
 
-const VALID_TIERS = ["starter", "pro", "enterprise"];
+export const VALID_TIERS = ["starter", "pro", "enterprise"];
+
+/**
+ * Resolve a raw `Shop.plan` value to a valid tier.
+ *
+ * The storefront decision path cannot call `getShopPlan` (it has the shop row
+ * already and no admin session), so it used to inline its own fallback — and
+ * did it four times as `shopRecord.plan || 'pro'`, which is the WRONG default:
+ * the column defaults to "starter" (`schema.prisma`) and this function's own
+ * fallback is "starter", so `|| 'pro'` silently upgraded any row with a null or
+ * empty plan into a paid tier — including turning archetype priors on for it.
+ * One resolver, so the storefront and the admin UI cannot disagree about what
+ * an unset plan means.
+ */
+export function resolvePlanTier(plan) {
+  return VALID_TIERS.includes(plan) ? plan : "starter";
+}
 
 /**
  * Fetch the plan object for the current shop.
@@ -36,7 +52,7 @@ export async function getShopPlan(session) {
     select: { plan: true, subscriptionId: true },
   });
 
-  const tier = VALID_TIERS.includes(shopRecord?.plan) ? shopRecord.plan : "starter";
+  const tier = resolvePlanTier(shopRecord?.plan);
 
   return {
     tier,
