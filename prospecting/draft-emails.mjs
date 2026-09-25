@@ -359,6 +359,13 @@ if (has('--test-connection')) {
     process.exit(1);
   }
 
+  // The setup instructions carry example values, and pasting one verbatim
+  // fails as an auth error ten times over before saying anything useful.
+  if (/^(you@yourdomain\.com|your-actual@address\.com|user@example\.com)$/i.test(zoho.user)) {
+    console.error(`ZOHO_USER is still the placeholder "${zoho.user}". Set it to your real Zoho address.`);
+    process.exit(1);
+  }
+
   // Paste artefacts are a real cause of "invalid credentials", and the value is
   // never printed, only described.
   const rawPass = process.env.ZOHO_APP_PASSWORD || '';
