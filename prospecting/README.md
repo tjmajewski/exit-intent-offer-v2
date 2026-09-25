@@ -152,7 +152,27 @@ store's own About page. Rows without an email still get a draft, addressed to
 you, subject prefixed `[NEEDS CONTACT: domain]`, with a banner naming the store
 and country. The draft doubles as the research worklist.
 
-### Zoho setup
+### Zoho free plan does not expose IMAP
+
+`--push` needs IMAP, which Zoho gates behind a paid plan. On the free plan the
+IMAP settings page reads "This feature is not available for your account".
+
+Use `--review` instead. It writes a local page with every draft in rank order,
+a copy button per field and a mailto link, which you paste into Zoho's web
+compose. Same 12 cap, same ordering, same ledger, no credentials needed.
+
+```
+node prospecting/draft-emails.mjs --review
+open prospecting/out/drafts-<stamp>/review.html
+```
+
+`--eml` writes one RFC822 file per draft in the same folder, for any client
+that can import them.
+
+Paying for Zoho Mail Lite restores IMAP and makes `--push` work as designed.
+Check current pricing; it is roughly a dollar a month billed annually.
+
+### Zoho setup (paid plans only)
 
 ```
 export ZOHO_USER='you@yourdomain.com'

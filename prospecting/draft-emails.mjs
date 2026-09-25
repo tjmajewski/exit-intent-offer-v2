@@ -1,7 +1,9 @@
 // Turn scan rows into reviewable email drafts, best lead first, 12 at a time.
 //
 //   node prospecting/draft-emails.mjs                    # preview 12 in terminal
-//   node prospecting/draft-emails.mjs --push             # also put them in Zoho Drafts
+//   node prospecting/draft-emails.mjs --review           # browser page, copy/paste into Zoho
+//   node prospecting/draft-emails.mjs --eml              # one .eml file per draft
+//   node prospecting/draft-emails.mjs --push             # Zoho Drafts (needs IMAP, a paid plan)
 //   node prospecting/draft-emails.mjs --limit 5
 //   node prospecting/draft-emails.mjs --include-drafted  # ignore the ledger
 //   node prospecting/draft-emails.mjs --reset            # clear the ledger
@@ -9,6 +11,11 @@
 //
 // Drafts only. There is deliberately no SMTP code in this file, so the worst
 // this can do to a stranger's inbox is nothing. Sending stays a human action.
+//
+// Zoho's free plan does not expose IMAP, so --push only works on a paid plan.
+// --review is the no-cost path: it writes a local page with every draft in
+// rank order, a copy button per field, and a mailto link, which you paste into
+// Zoho's web compose. Same ordering, same cap, same ledger.
 //
 // A refresh gives you the NEXT 12, not the same 12: every drafted domain is
 // recorded in prospecting/state/drafted.json. --reset starts over.
@@ -28,6 +35,8 @@ const has = (flag) => process.argv.includes(flag);
 
 const limit = parseInt(arg('--limit', String(DEFAULT_LIMIT)), 10);
 const push = has('--push');
+const review = has('--review');
+const eml = has('--eml');
 
 const newestIn = (dir, prefix, ext) => {
   if (!existsSync(dir)) return null;
@@ -302,8 +311,8 @@ const imapAppend = (cfg, messages) => imapSession(cfg, async ({ send, q }) => {
 function toMime({ from, to, subject, body }) {
   const date = new Date().toUTCString();
   return [
-    `From: ${from}`,
-    `To: ${to}`,
+    ...(from ? [`From: ${from}`] : []),
+    ...(to ? [`To: ${to}`] : ['To: ']),
     `Subject: ${subject}`,
     `Date: ${date}`,
     'MIME-Version: 1.0',
@@ -387,31 +396,159 @@ console.error(`reviews:  ${reviewsPath || 'none'}`);
 console.error(`contacts: ${contacts.size} loaded`);
 console.error(`eligible: ${ranked.length}, drafting top ${picked.length}\n`);
 
+// Whatever address you will actually send from. Only --push truly needs it.
+const me = zoho.from || process.env.RESPARQ_FROM || '';
+
 const messages = [];
+const drafts = [];
 picked.forEach((p, i) => {
   const { subject, body } = render(p.row, p.anger, p.contact);
+  // --review and --eml need no Zoho credentials, so the from/to placeholders
+  // must not depend on them being set.
   const needsContact = !p.contact?.email;
-  const to = needsContact ? zoho.from : p.contact.email;
+  const to = needsContact ? '' : p.contact.email;
   const finalSubject = needsContact ? `[NEEDS CONTACT: ${p.row.domain}] ${subject}` : subject;
   const banner = needsContact
     ? `>> No contact yet for ${p.row.domain}. Find the founder or head of ecommerce, put them in the To: line, delete this banner.\n>> Store name: ${p.anger?.storeName || '?'} | ${p.anger?.country || '?'}\n\n`
     : '';
 
-  messages.push(toMime({ from: zoho.from, to, subject: finalSubject, body: banner + body }));
+  messages.push(toMime({ from: me, to, subject: finalSubject, body: banner + body }));
+  drafts.push({
+    rank: i + 1, domain: p.row.domain, to, subject: finalSubject, body: banner + body,
+    score: p.score.total, scenario: p.row.scenario,
+    why: Object.entries(p.score.parts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v > 0 ? '+' : ''}${v}`),
+    storeName: p.anger?.storeName || null, country: p.anger?.country || null,
+    needsContact,
+  });
 
   const top = Object.entries(p.score.parts).sort((a, b) => b[1] - a[1]).map(([k]) => k).join(', ');
   console.error(`${String(i + 1).padStart(2)}. ${p.row.domain.padEnd(30)} score ${String(p.score.total).padStart(3)}  ${p.row.scenario}`);
   console.error(`    why: ${top || 'no signals'}`);
-  if (!push) {
+  if (!push && !review && !eml) {
     console.error(`    subj: ${finalSubject}`);
     console.error(banner + body ? `    ${(banner + body).split('\n').join('\n    ')}` : '');
   }
   console.error('');
 });
 
+
+// ------------------------------------------------- no-IMAP output paths
+
+const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+function reviewPage(list) {
+  const cards = list.map((d) => `
+  <article class="card${d.needsContact ? ' needs' : ''}">
+    <header>
+      <span class="rank">${d.rank}</span>
+      <div class="ident">
+        <h2>${esc(d.domain)}</h2>
+        <p class="meta">${esc(d.scenario)} &middot; score ${d.score}${d.storeName ? ` &middot; ${esc(d.storeName)}` : ''}${d.country ? ` &middot; ${esc(d.country)}` : ''}</p>
+      </div>
+      ${d.needsContact ? '<span class="flag">needs contact</span>' : ''}
+    </header>
+    <ul class="why">${d.why.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>
+    <div class="field">
+      <label>To</label>
+      <div class="row"><code>${d.to ? esc(d.to) : '&mdash; fill in after you find the contact'}</code>${d.to ? `<button data-copy="${esc(d.to)}">copy</button>` : ''}</div>
+    </div>
+    <div class="field">
+      <label>Subject</label>
+      <div class="row"><code>${esc(d.subject)}</code><button data-copy="${esc(d.subject)}">copy</button></div>
+    </div>
+    <div class="field">
+      <label>Body</label>
+      <pre id="b${d.rank}">${esc(d.body)}</pre>
+      <div class="actions">
+        <button data-copy-el="b${d.rank}">copy body</button>
+        <a class="mailto" href="mailto:${d.to ? encodeURIComponent(d.to) : ''}?subject=${encodeURIComponent(d.subject)}&body=${encodeURIComponent(d.body)}">open in mail client</a>
+      </div>
+    </div>
+  </article>`).join('');
+
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Resparq drafts</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --ink:#1a1a18; --muted:#6b6b66; --line:#e2e2dd; --accent:#1c5d99; --flag:#9a4a1e; --flagbg:#fdf0e6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#16161a; --card:#1e1e23; --ink:#eceCe8; --muted:#9a9a94; --line:#32323a; --accent:#7fb3e0; --flag:#e0a070; --flagbg:#2e2318; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:32px 20px 80px; }
+  .wrap { max-width:820px; margin:0 auto; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 28px; font-size:13px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-bottom:18px; }
+  .card.needs { border-left:3px solid var(--flag); }
+  header { display:flex; align-items:flex-start; gap:12px; }
+  .rank { font-variant-numeric:tabular-nums; font-weight:700; color:var(--muted); min-width:24px; }
+  .ident { flex:1; }
+  h2 { font-size:16px; margin:0; word-break:break-all; }
+  .meta { margin:2px 0 0; font-size:12px; color:var(--muted); }
+  .flag { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--flag); background:var(--flagbg); padding:3px 8px; border-radius:20px; white-space:nowrap; }
+  .why { list-style:none; display:flex; flex-wrap:wrap; gap:6px; padding:0; margin:12px 0 4px 36px; }
+  .why li { font-size:11px; color:var(--muted); border:1px solid var(--line); border-radius:4px; padding:2px 6px; }
+  .field { margin:14px 0 0 36px; }
+  label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:4px; }
+  .row { display:flex; align-items:center; gap:8px; }
+  code { flex:1; font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--bg); border:1px solid var(--line); border-radius:5px; padding:6px 8px; overflow-x:auto; }
+  pre { font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; background:var(--bg); border:1px solid var(--line); border-radius:5px; padding:12px; margin:0; overflow-x:auto; }
+  button { font:inherit; font-size:12px; cursor:pointer; background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:5px; padding:5px 11px; }
+  button:hover { border-color:var(--accent); color:var(--accent); }
+  button.done { border-color:var(--accent); color:var(--accent); }
+  .actions { display:flex; align-items:center; gap:12px; margin-top:8px; }
+  .mailto { font-size:12px; color:var(--accent); }
+  @media (max-width:640px){ .why,.field{margin-left:0;} }
+</style></head><body><div class="wrap">
+<h1>Resparq drafts</h1>
+<p class="sub">${list.length} draft${list.length === 1 ? '' : 's'}, best lead first. Copy into Zoho web compose. Nothing here sends.</p>
+${cards}
+</div>
+<script>
+  function copy(text, btn) {
+    const done = () => { const t = btn.textContent; btn.textContent = 'copied'; btn.classList.add('done');
+      setTimeout(() => { btn.textContent = t; btn.classList.remove('done'); }, 1200); };
+    if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(text).then(done); return; }
+    // file:// is not a secure context in every browser, so keep the old path.
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } finally { ta.remove(); }
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.copy != null) copy(b.dataset.copy, b);
+    else if (b.dataset.copyEl) copy(document.getElementById(b.dataset.copyEl).textContent, b);
+  });
+</script></body></html>`;
+}
+
+if (review || eml) {
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  const dir = `prospecting/out/drafts-${stamp}`;
+  mkdirSync(dir, { recursive: true });
+  if (eml) {
+    drafts.forEach((d, i) => {
+      const safe = d.domain.replace(/[^a-z0-9.-]/gi, '_');
+      writeFileSync(`${dir}/${String(i + 1).padStart(2, '0')}-${safe}.eml`, messages[i]);
+    });
+    console.error(`wrote ${drafts.length} .eml file(s) to ${dir}/`);
+  }
+  if (review) {
+    const page = `${dir}/review.html`;
+    writeFileSync(page, reviewPage(drafts));
+    console.error(`wrote ${page}`);
+    console.error(`open it:  open ${page}`);
+  }
+  mkdirSync('prospecting/state', { recursive: true });
+  state.drafted.push(...picked.map((p) => ({ domain: p.row.domain, score: p.score.total, at: new Date().toISOString() })));
+  writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
+  console.error(`ledger: ${state.drafted.length} domain(s) drafted to date`);
+}
+
 if (push) {
   if (!zoho.user || !zoho.pass) {
     console.error('set ZOHO_USER and ZOHO_APP_PASSWORD to push. previewed only.');
+    console.error('note: Zoho\'s free plan does not expose IMAP. use --review instead.');
     process.exit(1);
   }
   const res = await imapAppend(zoho, messages);
@@ -420,6 +557,6 @@ if (push) {
   state.drafted.push(...picked.map((p) => ({ domain: p.row.domain, score: p.score.total, at: new Date().toISOString() })));
   writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
   console.error(`ledger: ${state.drafted.length} domains drafted to date`);
-} else {
-  console.error('preview only. --push to put these in Zoho Drafts (nothing is ever sent).');
+} else if (!review && !eml) {
+  console.error('preview only. --review writes a browser page, --eml writes files, --push needs Zoho IMAP.');
 }
