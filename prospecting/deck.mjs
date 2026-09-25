@@ -157,14 +157,36 @@ export async function buildDeck(drafts, outPath, meta = {}) {
     }
 
     // ---- right: the email itself
-    s.addText('TO', {
-      x: 5.1, y: 1.55, w: 7.6, h: 0.24, isTextBox: true, margin: 0,
-      fontSize: 10, bold: true, color: ACCENT, charSpacing: 1, fontFace: 'Calibri',
-    });
-    s.addText(d.to || 'fill in after you find the contact', {
-      x: 5.1, y: 1.8, w: 7.6, h: 0.28, isTextBox: true, margin: 0,
-      fontSize: 13, color: d.to ? WHITE : MUTED, italic: !d.to, fontFace: 'Calibri',
-    });
+    if (d.to) {
+      s.addText('TO', {
+        x: 5.1, y: 1.55, w: 7.6, h: 0.24, isTextBox: true, margin: 0,
+        fontSize: 10, bold: true, color: ACCENT, charSpacing: 1, fontFace: 'Calibri',
+      });
+      s.addText(d.to, {
+        x: 5.1, y: 1.8, w: 7.6, h: 0.28, isTextBox: true, margin: 0,
+        fontSize: 13, color: WHITE, fontFace: 'Calibri',
+      });
+    } else {
+      // No contact yet, so the slot that would hold the address holds the
+      // searches that find one. Clickable straight out of the deck.
+      s.addText('FIND THE CONTACT', {
+        x: 5.1, y: 1.55, w: 7.6, h: 0.24, isTextBox: true, margin: 0,
+        fontSize: 10, bold: true, color: ACCENT, charSpacing: 1, fontFace: 'Calibri',
+      });
+      const links = (d.research || []).slice(0, 4);
+      const slot = 7.6 / Math.max(links.length, 1);
+      links.forEach(([label, url], i) => {
+        s.addShape(pres.ShapeType.roundRect, {
+          x: 5.1 + i * slot, y: 1.82, w: slot - 0.12, h: 0.34,
+          fill: { color: CARD }, rectRadius: 0.16, line: { color: ACCENT, width: 0.75 },
+        });
+        s.addText(label.replace(/^Google: /, '').replace(/^LinkedIn /, 'LI '), {
+          x: 5.1 + i * slot, y: 1.82, w: slot - 0.12, h: 0.34, isTextBox: true, margin: 0,
+          fontSize: 9.5, color: ACCENT, align: 'center', valign: 'middle', fontFace: 'Calibri',
+          hyperlink: { url, tooltip: label },
+        });
+      });
+    }
 
     s.addText('SUBJECT', {
       x: 5.1, y: 2.2, w: 7.6, h: 0.24, isTextBox: true, margin: 0,

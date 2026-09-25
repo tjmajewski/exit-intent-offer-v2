@@ -33,6 +33,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import tls from 'node:tls';
+import { researchLinks } from './research-links.mjs';
 
 const MONTHLY_PRICE = 50;
 const DEFAULT_LIMIT = 12;
@@ -670,6 +671,15 @@ picked.forEach((p, i) => {
     why: Object.entries(p.score.parts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v > 0 ? '+' : ''}${v}`),
     storeName: p.anger?.storeName || null, country: p.anger?.country || null,
     needsContact,
+    // Slides for a lead with no contact carry the searches that find one, so
+    // the deck is the whole worklist rather than a thing you leave to go look
+    // something up elsewhere.
+    research: needsContact
+      ? researchLinks(p.row.domain, p.anger?.storeName, {
+          instagram: (p.contact?.notes || '').match(/ig: @([\w.]+)/)?.[1],
+          name: p.contact?.name,
+        })
+      : [],
   });
 
   const top = Object.entries(p.score.parts).sort((a, b) => b[1] - a[1]).map(([k]) => k).join(', ');

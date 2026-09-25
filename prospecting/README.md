@@ -230,6 +230,29 @@ putting a wrong name in an email is not.
 the brand again means it reaches the shop rather than a person, which is the
 thing this is meant to avoid. Those land in `notes` as a fallback.
 
+### When the Lusha plan has no API
+
+The browser extension and the API are sold separately, and a plan can have the
+first without the second. In that case the lookup is a human clicking through
+searches, so the searches come pre-composed.
+
+Every deck slide for a lead with no contact carries clickable research links
+where the To: address would go: a `site:linkedin.com/in` Google search for the
+brand plus founder titles, LinkedIn people and company search, the store's
+Instagram when one was found, and its contact page. That Google search beats
+LinkedIn's own: no login, the obvious profile ranks first, and the headline in
+the result usually confirms whether the person runs the store.
+
+`--worklist` writes the same links as a standalone page, sorted by catalogue
+value so research time goes where a recovered order is worth most.
+
+```
+node prospecting/find-contacts.mjs --worklist
+```
+
+Paste what you find into `contacts.csv` and re-run `--pptx`. Rows with an email
+are used as-is and never overwritten.
+
 ### Lusha
 
 Set `LUSHA_API_KEY`. `--lusha` searches only, which costs a search action;

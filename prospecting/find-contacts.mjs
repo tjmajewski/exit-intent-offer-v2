@@ -3,6 +3,7 @@
 //   node prospecting/find-contacts.mjs                  # free scrape only
 //   node prospecting/find-contacts.mjs --lusha          # + Lusha search (no credits spent)
 //   node prospecting/find-contacts.mjs --lusha --spend  # + reveal emails (SPENDS CREDITS)
+//   node prospecting/find-contacts.mjs --worklist       # research page for manual lookup
 //   node prospecting/find-contacts.mjs --domains a.com,b.com
 //
 // Merges findings into prospecting/contacts.csv without ever overwriting a row
@@ -19,6 +20,7 @@
 // eponymous brand, where the store is named after the person who runs it.
 
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { researchLinks, prettyBrand } from './research-links.mjs';
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 const PAGES = ['/pages/about', '/pages/about-us', '/pages/our-story', '/pages/contact', '/pages/meet-the-team', '/'];
@@ -244,6 +246,84 @@ async function lushaEnrich(contactIds, key) {
   return res?.data || res?.contacts || [];
 }
 
+
+// ---------------------------------------------------------------- worklist
+
+// When the Lusha plan has no API, the lookup is a human clicking through
+// searches. That is fine, but the clicking should be pre-aimed: one page,
+// every lead, every search already composed, and somewhere obvious to paste
+// the answer. No LinkedIn scraping happens here and none should — these are
+// just links for a person to open.
+const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+function worklistPage(items) {
+  const cards = items.map((it, i) => `
+  <article class="card">
+    <header>
+      <span class="rank">${i + 1}</span>
+      <div>
+        <h2>${esc(it.domain)}</h2>
+        <p class="meta">${esc(it.brand)}${it.country ? ` &middot; ${esc(it.country)}` : ''}${it.score != null ? ` &middot; score ${it.score}` : ''}</p>
+      </div>
+    </header>
+    ${it.value ? `<p class="value">Median item <strong>$${Math.round(it.value).toLocaleString('en-US')}</strong></p>` : ''}
+    ${it.name ? `<p class="lead">Possible: <strong>${esc(it.name)}</strong> <span class="src">${esc(it.source)}</span> &mdash; verify before using</p>` : ''}
+    ${it.notes ? `<p class="notes">${esc(it.notes)}</p>` : ''}
+    <div class="links">${it.links.map(([label, href]) =>
+      `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}</a>`).join('')}</div>
+    <div class="paste">
+      <code>${esc(it.domain)},<span class="ph">email</span>,<span class="ph">Name</span>,<span class="ph">Title</span>,manual,high,</code>
+      <button data-copy="${esc(it.domain)},,,,manual,high,">copy row</button>
+    </div>
+  </article>`).join('');
+
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Contact research</title>
+<style>
+  :root{--bg:#f7f7f5;--card:#fff;--ink:#1a1a18;--muted:#6b6b66;--line:#e2e2dd;--accent:#4b3fd4;}
+  @media (prefers-color-scheme:dark){:root{--bg:#16161a;--card:#1e1e23;--ink:#ecece8;--muted:#9a9a94;--line:#32323a;--accent:#8b8bff;}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:32px 20px 80px}
+  .wrap{max-width:820px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 28px;font-size:13px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:14px}
+  header{display:flex;gap:12px;align-items:flex-start}
+  .rank{font-variant-numeric:tabular-nums;font-weight:700;color:var(--muted);min-width:22px}
+  h2{font-size:15px;margin:0;word-break:break-all}
+  .meta{margin:2px 0 0;font-size:12px;color:var(--muted)}
+  .lead{margin:8px 0 0 34px;font-size:13px}
+  .value{margin:10px 0 0 34px;font-size:13px;color:var(--muted)}
+  .src{font-size:11px;color:var(--muted)}
+  .notes{margin:6px 0 0 34px;font-size:12px;color:var(--muted)}
+  .links{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 0 34px}
+  .links a{font-size:12px;text-decoration:none;color:var(--accent);border:1px solid var(--line);border-radius:5px;padding:4px 9px}
+  .links a:hover{border-color:var(--accent)}
+  .paste{display:flex;align-items:center;gap:8px;margin:12px 0 0 34px}
+  code{flex:1;font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:6px 8px;overflow-x:auto;white-space:nowrap}
+  .ph{color:var(--muted)}
+  button{font:inherit;font-size:12px;cursor:pointer;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:5px 10px}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button.done{border-color:var(--accent);color:var(--accent)}
+  @media(max-width:640px){.lead,.notes,.links,.paste{margin-left:0}}
+</style></head><body><div class="wrap">
+<h1>Contact research</h1>
+<p class="sub">${items.length} lead${items.length === 1 ? '' : 's'} with no contact yet, best first. Open the searches, find the owner, paste a row into prospecting/contacts.csv.</p>
+${cards}
+</div>
+<script>
+  function copy(t,b){const o=b.textContent;const d=()=>{b.textContent='copied';b.classList.add('done');
+    setTimeout(()=>{b.textContent=o;b.classList.remove('done')},1200)};
+    if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t).then(d);return}
+    const a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';
+    document.body.appendChild(a);a.select();try{document.execCommand('copy');d()}finally{a.remove()}}
+  document.addEventListener('click',e=>{const b=e.target.closest('button');
+    if(b&&b.dataset.copy!=null)copy(b.dataset.copy,b)});
+</script></body></html>`;
+}
+
 // ---------------------------------------------------------------- csv
 
 const CSV = arg('--contacts', 'prospecting/contacts.csv');
@@ -400,6 +480,36 @@ for (const { domain, storeName } of targets) {
 }
 
 saveCsv(rows);
+
+if (has('--worklist')) {
+  const scored = new Map();
+  if (scanPath && existsSync(scanPath)) {
+    for (const r of JSON.parse(readFileSync(scanPath, 'utf8'))) scored.set(r.domain, r);
+  }
+  const items = targets
+    .filter(({ domain }) => !rows.get(domain)?.email)
+    .map(({ domain, storeName }) => {
+      const rec = rows.get(domain) || {};
+      const scan = scored.get(domain) || {};
+      const notes = rec.notes || '';
+      return {
+        domain,
+        brand: prettyBrand(domain, storeName),
+        name: rec.name || '',
+        source: rec.source || '',
+        notes,
+        // Research time is finite, so spend it on the stores where a recovered
+        // order is worth the most. Only USD prices are comparable.
+        value: scan.currency === 'USD' ? (scan.catalog?.medianPrice ?? 0) : 0,
+        links: researchLinks(domain, storeName, { instagram: (notes.match(/ig: @([\w.]+)/) || [])[1], name: rec.name }),
+      };
+    })
+    .sort((a, b) => b.value - a.value);
+  const out = `prospecting/out/contact-research-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.html`;
+  writeFileSync(out, worklistPage(items));
+  console.error(`\nwrote ${out} (${items.length} lead(s) still needing a contact)`);
+  console.error(`open it:  open ${out}`);
+}
 
 console.error('');
 console.error(`resolved something for ${resolved}/${targets.length}`);
