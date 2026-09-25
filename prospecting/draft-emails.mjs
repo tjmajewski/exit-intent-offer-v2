@@ -341,24 +341,69 @@ const zoho = {
   from: process.env.ZOHO_FROM || process.env.ZOHO_USER,
 };
 
+// Zoho splits IMAP across two hostnames and five data centres, and picking the
+// wrong one fails as "Invalid credentials" rather than as a wrong host, which
+// sends you hunting for a password problem that isn't there. Paid and custom
+// domain accounts generally live on imappro; free personal ones on imap.
+const ZOHO_HOSTS = [
+  'imappro.zoho.com', 'imap.zoho.com',
+  'imappro.zoho.eu', 'imap.zoho.eu',
+  'imappro.zoho.in', 'imap.zoho.in',
+  'imappro.zoho.com.au', 'imap.zoho.com.au',
+  'imappro.zoho.jp', 'imap.zoho.jp',
+];
+
 if (has('--test-connection')) {
   if (!zoho.user || !zoho.pass) {
     console.error('set ZOHO_USER and ZOHO_APP_PASSWORD first (Zoho > Settings > Security > App Passwords)');
     process.exit(1);
   }
+
+  // Paste artefacts are a real cause of "invalid credentials", and the value is
+  // never printed, only described.
+  const rawPass = process.env.ZOHO_APP_PASSWORD || '';
+  if (rawPass !== rawPass.trim()) console.error('note: password has leading/trailing whitespace, trimming it');
+  if (/\s/.test(rawPass.trim())) console.error('note: password contains a space. Zoho app passwords usually have none. Check the paste.');
+  if (!zoho.user.includes('@')) console.error(`note: ZOHO_USER is "${zoho.user}" with no @. Zoho normally wants the full address.`);
+  zoho.pass = rawPass.trim();
+
+  const hosts = process.env.ZOHO_IMAP_HOST ? [process.env.ZOHO_IMAP_HOST] : ZOHO_HOSTS;
+  console.error(`user: ${zoho.user}`);
+  console.error(`trying ${hosts.length} host(s)...\n`);
+
+  let winner = null;
+  for (const host of hosts) {
+    const cfg = { ...zoho, host };
+    try {
+      await imapLogin(cfg);
+      console.error(`  ${host.padEnd(22)} OK`);
+      winner = host;
+      break;
+    } catch (err) {
+      console.error(`  ${host.padEnd(22)} ${err.message.slice(0, 70)}`);
+    }
+  }
+
+  if (!winner) {
+    console.error('\nNo host accepted these credentials. In order of likelihood:');
+    console.error('  1. IMAP not enabled yet: Zoho Mail > Settings > Mail Accounts > your address > IMAP');
+    console.error('  2. Login password used where an app-specific password is required');
+    console.error('  3. App password generated before IMAP was enabled: regenerate it');
+    console.error('  4. ZOHO_USER should be the full email address');
+    process.exit(1);
+  }
+
+  console.error(`\nlogin OK on ${winner}`);
+  if (winner !== 'imap.zoho.com') console.error(`add to your shell:  export ZOHO_IMAP_HOST='${winner}'`);
   try {
-    await imapLogin(zoho);
-    console.error(`login OK as ${zoho.user} on ${zoho.host}`);
-    const folders = await imapFolders(zoho);
+    const folders = await imapFolders({ ...zoho, host: winner });
     console.error(`folders: ${folders.join(', ')}`);
     const match = folders.find((f) => f.toLowerCase() === zoho.folder.toLowerCase());
     console.error(match
       ? `drafts folder "${zoho.folder}" found`
       : `WARNING: no folder named "${zoho.folder}". Set ZOHO_DRAFTS_FOLDER to one of the above.`);
   } catch (err) {
-    console.error(`login FAILED: ${err.message}`);
-    console.error('checks: IMAP enabled in Zoho Mail settings, app-specific password (not your login password), and the right regional host.');
-    process.exit(1);
+    console.error(`folder list failed: ${err.message}`);
   }
   process.exit(0);
 }
