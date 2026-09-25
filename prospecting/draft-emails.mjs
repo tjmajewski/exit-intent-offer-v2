@@ -5,7 +5,7 @@
 //   node prospecting/draft-emails.mjs --limit 5
 //   node prospecting/draft-emails.mjs --include-drafted  # ignore the ledger
 //   node prospecting/draft-emails.mjs --reset            # clear the ledger
-//   node prospecting/draft-emails.mjs --test-connection  # check Zoho creds only
+//   node prospecting/draft-emails.mjs --test-connection  # creds + folder list
 //
 // Drafts only. There is deliberately no SMTP code in this file, so the worst
 // this can do to a stranger's inbox is nothing. Sending stays a human action.
@@ -203,74 +203,101 @@ function loadAnger() {
 
 // ---------------------------------------------------------------- IMAP
 
-// Minimal IMAP APPEND. No dependency, and no code path that can send mail.
-function imapAppend({ host, port, user, pass, folder, messages, testOnly }) {
+// Minimal IMAP client: LIST and APPEND only. No dependency, and deliberately
+// no command that can send mail. Line-based rather than chunk-based, because
+// a tagged response and a continuation request can arrive in the same packet.
+function imapSession({ host, port, user, pass }, run) {
   return new Promise((resolve, reject) => {
     const socket = tls.connect({ host, port, servername: host }, () => {});
     let buf = '';
     let tag = 0;
-    const queue = [];
-    let waiting = null;
-    let appended = 0;
+    let pending = null;      // { id, resolve, reject, untagged: [] }
+    let literal = null;      // body to write when the server says "+"
+    let greeted = false;
 
-    const send = (cmd, literalBody) => new Promise((res, rej) => {
+    const fail = (err) => { socket.destroy(); reject(err); };
+    socket.setTimeout(45000, () => fail(new Error('IMAP timeout')));
+    socket.on('error', fail);
+
+    // IMAP quoted strings escape backslash and double quote. App passwords are
+    // usually alphanumeric, but a password that isn't would otherwise produce a
+    // confusing BAD instead of an obvious auth failure.
+    const q = (v) => `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+
+    const send = (cmd, literalBody = null) => new Promise((res, rej) => {
       const id = `a${++tag}`;
-      queue.push({ id, res, rej, literalBody });
+      pending = { id, resolve: res, reject: rej, untagged: [] };
+      literal = literalBody;
       socket.write(`${id} ${cmd}\r\n`);
     });
 
-    socket.setTimeout(30000, () => { socket.destroy(); reject(new Error('IMAP timeout')); });
-    socket.on('error', reject);
-
-    socket.on('data', async (chunk) => {
+    socket.on('data', (chunk) => {
       buf += chunk.toString('utf8');
-      // Server asks for the literal with a continuation line.
-      if (buf.includes('\r\n') && /^\+ /m.test(buf) && waiting?.literalBody) {
-        socket.write(waiting.literalBody + '\r\n');
-        buf = '';
-        return;
-      }
       let idx;
       while ((idx = buf.indexOf('\r\n')) > -1) {
         const line = buf.slice(0, idx);
         buf = buf.slice(idx + 2);
-        const m = line.match(/^a(\d+) (OK|NO|BAD)\s*(.*)$/);
-        if (!m) continue;
-        const entry = queue.find((q) => q.id === `a${m[1]}`);
-        if (!entry) continue;
-        queue.splice(queue.indexOf(entry), 1);
-        waiting = null;
-        if (m[2] === 'OK') entry.res(m[3]);
-        else entry.rej(new Error(`${m[2]} ${m[3]}`));
-      }
-    });
 
-    socket.once('data', async () => {
-      try {
-        await send(`LOGIN "${user}" "${pass}"`);
-        if (testOnly) {
-          await send('LOGOUT').catch(() => {});
-          socket.end();
-          return resolve({ ok: true, appended: 0, testOnly: true });
+        if (!greeted) {
+          greeted = true;
+          Promise.resolve(run({ send, q }))
+            .then((value) => { socket.end(); resolve(value); })
+            .catch(fail);
+          continue;
         }
-        for (const raw of messages) {
-          const bytes = Buffer.byteLength(raw, 'utf8');
-          waiting = { literalBody: raw };
-          const p = send(`APPEND "${folder}" (\\Draft) {${bytes}}`, raw);
-          queue[queue.length - 1].literalBody = raw;
-          await p;
-          appended++;
+
+        if (line.startsWith('+')) {
+          if (literal != null) {
+            socket.write(literal + '\r\n');
+            literal = null;
+          }
+          continue;
         }
-        await send('LOGOUT').catch(() => {});
-        socket.end();
-        resolve({ ok: true, appended });
-      } catch (err) {
-        socket.destroy();
-        reject(err);
+
+        if (line.startsWith('*')) {
+          pending?.untagged.push(line);
+          continue;
+        }
+
+        const m = line.match(/^(a\d+) (OK|NO|BAD)\s*(.*)$/);
+        if (!m || !pending || pending.id !== m[1]) continue;
+        const done = pending;
+        pending = null;
+        literal = null;
+        if (m[2] === 'OK') done.resolve({ text: m[3], untagged: done.untagged });
+        else done.reject(new Error(`${m[2]} ${m[3]}`));
       }
     });
   });
 }
+
+const imapLogin = (cfg) => imapSession(cfg, async ({ send, q }) => {
+  await send(`LOGIN ${q(cfg.user)} ${q(cfg.pass)}`);
+  await send('LOGOUT').catch(() => {});
+  return { ok: true };
+});
+
+const imapFolders = (cfg) => imapSession(cfg, async ({ send, q }) => {
+  await send(`LOGIN ${q(cfg.user)} ${q(cfg.pass)}`);
+  const res = await send('LIST "" "*"');
+  await send('LOGOUT').catch(() => {});
+  return res.untagged
+    .map((l) => (l.match(/"([^"]*)"\s*$/) || l.match(/\s(\S+)\s*$/) || [])[1])
+    .filter(Boolean);
+});
+
+const imapAppend = (cfg, messages) => imapSession(cfg, async ({ send, q }) => {
+  await send(`LOGIN ${q(cfg.user)} ${q(cfg.pass)}`);
+  let appended = 0;
+  for (const raw of messages) {
+    // Literal length is in bytes, and the body must use CRLF line endings.
+    const body = raw.replace(/\r?\n/g, '\r\n');
+    await send(`APPEND ${q(cfg.folder)} (\\Draft) {${Buffer.byteLength(body, 'utf8')}}`, body);
+    appended++;
+  }
+  await send('LOGOUT').catch(() => {});
+  return { ok: true, appended };
+});
 
 function toMime({ from, to, subject, body }) {
   const date = new Date().toUTCString();
@@ -311,10 +338,17 @@ if (has('--test-connection')) {
     process.exit(1);
   }
   try {
-    await imapAppend({ ...zoho, messages: [], testOnly: true });
+    await imapLogin(zoho);
     console.error(`login OK as ${zoho.user} on ${zoho.host}`);
+    const folders = await imapFolders(zoho);
+    console.error(`folders: ${folders.join(', ')}`);
+    const match = folders.find((f) => f.toLowerCase() === zoho.folder.toLowerCase());
+    console.error(match
+      ? `drafts folder "${zoho.folder}" found`
+      : `WARNING: no folder named "${zoho.folder}". Set ZOHO_DRAFTS_FOLDER to one of the above.`);
   } catch (err) {
     console.error(`login FAILED: ${err.message}`);
+    console.error('checks: IMAP enabled in Zoho Mail settings, app-specific password (not your login password), and the right regional host.');
     process.exit(1);
   }
   process.exit(0);
@@ -380,7 +414,7 @@ if (push) {
     console.error('set ZOHO_USER and ZOHO_APP_PASSWORD to push. previewed only.');
     process.exit(1);
   }
-  const res = await imapAppend({ ...zoho, messages });
+  const res = await imapAppend(zoho, messages);
   console.error(`appended ${res.appended} draft(s) to "${zoho.folder}" on ${zoho.host}`);
   mkdirSync('prospecting/state', { recursive: true });
   state.drafted.push(...picked.map((p) => ({ domain: p.row.domain, score: p.score.total, at: new Date().toISOString() })));
