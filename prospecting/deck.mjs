@@ -38,7 +38,10 @@ function factLines(d) {
   if (cat.available && d.currency === 'USD') {
     out.push(['Median item', money(cat.medianPrice)]);
     if (cat.maxPrice) out.push(['Top item', money(cat.maxPrice)]);
+    // Same honesty split as the email: months only when one order actually
+    // covers one, orders per month when it does not.
     if (d.paybackMonths) out.push(['One order covers', `${d.paybackMonths} mo at $50/mo`]);
+    else if (d.ordersPerMonth) out.push(['Pays for itself at', `${d.ordersPerMonth} recovered orders/mo`]);
   } else if (cat.available) {
     out.push(['Prices', `${d.currency || 'unknown'}, not converted`]);
   } else {

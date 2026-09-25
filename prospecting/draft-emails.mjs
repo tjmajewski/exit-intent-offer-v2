@@ -131,37 +131,68 @@ const money = (n) => `$${Number(n).toLocaleString('en-US', { maximumFractionDigi
 // attributed. No lift number exists yet and inventing one is the fastest way
 // to sound like every other popup app in their inbox, so the absence is said
 // out loud and turned into the pitch for the holdout.
-const PROOF = `Quick context so you can weigh it properly: Resparq is early. One store is live, two weeks in, with three recovered checkouts and about $3,000 in attributed revenue. Their traffic is too low for me to claim a lift percentage yet, and I am not going to pretend otherwise. The app runs a holdout group, so what you would get is your own measured number rather than mine.`;
+//
+// Order matters: the holdout is the claim worth making, so it goes first and
+// the thin track record lands as the reason it exists rather than as an
+// apology the reader hits before any value.
+const PROOF = `Resparq holds 5% of exits back as a control, so the lift number you end up with is your own, not mine. Mine is thin anyway: one store live two weeks, three recovered checkouts, about $3,000 in attributed revenue, not enough volume to quote a lift figure.`;
+
+// Both the first touch and the follow-ups need this, and a follow-up that says
+// "re:" should carry the subject the first one actually used.
+function subjectFor(row) {
+  const vendor = (row.vendors || [])[0];
+  switch (row.scenario) {
+    case 'E_HIGH_AOV_GREENFIELD':
+      return `nothing fires when your cart leaves`;
+    case 'A_GREENFIELD':
+      return `your cart has no exit offer`;
+    case 'B_EMAIL_ONLY':
+      return `${vendor || 'capture'} on arrival, nothing on exit`;
+    case 'C_VENDOR_EXIT_CAPABLE':
+    default:
+      // Name the tool only when there is one of it. With two detected vendors,
+      // naming the first is a coin flip about which one is the popup.
+      return (row.vendors || []).length === 1
+        ? `does your ${vendor} fire on exit?`
+        : `does your popup fire on exit?`;
+  }
+}
 
 // Follow-ups are short on purpose. The first email already made the argument;
 // repeating it at length reads as pressure rather than persistence, and the
 // third touch says plainly that it is the last one.
 function renderFollowUp(row, contact, stage) {
-  const name = contact?.firstName || 'there';
+  // No name means no greeting. "Hi there" announces that the sender does not
+  // know who they are writing to, which is worse than opening with the point.
+  const greeting = contact?.firstName ? `Hi ${contact.firstName},\n\n` : '';
   const cat = row.catalog || {};
   const usd = row.currency === 'USD';
-  const priced = cat.available && usd && row.paybackMonths;
+  // Same guard as the first touch: below the monthly price, one order does not
+  // cover a month, so that claim is not made.
+  const priced = cat.available && usd && row.paybackMonths && cat.medianPrice >= MONTHLY_PRICE;
+  const subject = `re: ${subjectFor(row)}`;
 
   if (stage === 1) {
+    const argument = priced
+      ? `At your prices one recovered order covers about ${row.paybackMonths} ${row.paybackMonths === 1 ? 'month' : 'months'} of Resparq, which is the whole argument.`
+      : `Resparq is ${money(MONTHLY_PRICE)}/mo flat, so the bar is one recovered order a month.`;
     return {
-      subject: `re: ${row.domain}`,
-      body: `Hi ${name},
+      subject,
+      body: `${greeting}Bumping this once in case it got buried.
 
-Following up on the note about exit intent on ${row.domain}.${priced ? ` The short version: at your prices one recovered order covers about ${row.paybackMonths} ${row.paybackMonths === 1 ? 'month' : 'months'}.` : ''}
+${argument}
 
-If this is not a priority right now, say so and I will stop.
+If it is not a priority, "not now" is a full answer and I will stop.
 
 Taylor`,
     };
   }
 
   return {
-    subject: `re: ${row.domain}`,
-    body: `Hi ${name},
+    subject,
+    body: `${greeting}Last one from me.
 
-Last one from me on this.
-
-If exit intent is something you want to look at later in the year, reply and I will check back then. Otherwise I will leave you alone.
+If exit intent moves up your list later in the year, reply and I will pick it up then. Otherwise I will assume the timing is wrong and leave it there.
 
 Taylor`,
   };
@@ -170,55 +201,69 @@ Taylor`,
 function render(row, anger, contact) {
   const cat = row.catalog || {};
   const usd = row.currency === 'USD';
-  const name = contact?.firstName || 'there';
+  // No name means no greeting at all. "Hi there" is a merge field admitting it
+  // came up empty, and starting on the observation reads more like a person.
+  const greeting = contact?.firstName ? `Hi ${contact.firstName},\n\n` : '';
   const med = cat.available && usd ? money(cat.medianPrice) : null;
   const payback = row.paybackMonths;
   const vendors = (row.vendors || []).join(' and ');
 
-  const mathLine = med && payback
-    ? `Median item on the site runs about ${med}. At ${money(MONTHLY_PRICE)}/mo, one recovered order covers roughly ${payback} ${payback === 1 ? 'month' : 'months'}.`
-    : `Hard for me to read your pricing from the outside, so I will not guess at the numbers.`;
+  // The one number in the email. Three cases, because paybackMonths floors at 1
+  // and a store whose median item is under the monthly price would otherwise be
+  // told one order covers a month, which it does not. Below that line the
+  // honest figure is how many orders it takes.
+  // When the catalogue could not be priced there is no number at all, so the
+  // line falls back to the break-even bar, which is a statement about the price
+  // rather than a claim about their results.
+  const orders = med ? Math.ceil(MONTHLY_PRICE / cat.medianPrice) : null;
+  const mathLine = med && payback && cat.medianPrice >= MONTHLY_PRICE
+    ? `Your median item is around ${med}. One recovered order covers about ${payback} ${payback === 1 ? 'month' : 'months'} of Resparq at ${money(MONTHLY_PRICE)}/mo.`
+    : med
+      ? `Your median item is around ${med}, so ${orders} recovered orders in a month pays for Resparq at ${money(MONTHLY_PRICE)}/mo.`
+      : `I am not going to guess at your numbers from the outside, so no math from me. Resparq is ${money(MONTHLY_PRICE)}/mo flat, so the bar is one recovered order a month.`;
 
-  let subject;
+  const subject = subjectFor(row);
   let opening;
+  // Low friction on purpose. Asking a stranger for ten minutes of their time is
+  // a bigger request than the email has earned, so the ask is a yes/no that
+  // costs them one reply and spends my time instead.
+  let ask = `Want me to sketch what I would set up?`;
 
   switch (row.scenario) {
     case 'E_HIGH_AOV_GREENFIELD':
-      subject = `exit offer on ${row.domain}?`;
-      opening = `I went through ${row.domain} and could not find an exit intent offer on the way out of the cart. At your price points that is the expensive kind of gap.`;
+      opening = `I went through ${row.domain} looking for an offer that fires when a loaded cart heads for the exit, and did not find one. At your price points that is the first thing I would add.`;
       break;
     case 'A_GREENFIELD':
-      subject = `${row.domain} cart abandonment`;
-      opening = `I went through ${row.domain} and did not see anything catching people on the way out of the cart.`;
+      opening = `I went through ${row.domain} and did not find anything that fires when a loaded cart heads for the exit.`;
       break;
     case 'B_EMAIL_ONLY':
-      subject = `${row.domain}: capture on arrival, nothing on exit`;
-      opening = `You are running ${vendors} to collect emails, but I did not see anything firing when someone abandons a cart. You catch them arriving and lose them leaving.`;
+      opening = `You run ${vendors} on ${row.domain}, so arrivals are covered. I did not find anything firing when a loaded cart heads for the exit instead.`;
       break;
     case 'C_VENDOR_EXIT_CAPABLE':
     default:
-      subject = `question about your ${vendors || 'popup'} setup`;
-      opening = `You have ${vendors || 'a popup tool'} on ${row.domain}, so you already believe in this. My question is narrower: is it handing the same discount to everyone, including the people who were going to buy anyway?`;
+      // A detected vendor means the store could be running exit intent, not
+      // that it is. Telling an owner what their own popup does is how you get
+      // deleted, so this asks.
+      opening = `You already run ${vendors || 'a popup tool'} on ${row.domain}, so one narrow question: is anything firing on exit, and if it is, does everyone get the same code, including the people who were going to buy anyway?`;
+      ask = `If that is already covered, say so and I will drop it.`;
       break;
   }
 
   if (row.discountHints?.length) {
-    opening += ` I noticed ${row.discountHints[0]} on the site, which is the part worth targeting rather than broadcasting.`;
+    opening += ` I also saw ${row.discountHints[0]} on the site, which is worth aiming at the people leaving rather than everyone who arrives.`;
   }
 
   const angerLine = anger && anger.monthsAgo != null && anger.monthsAgo <= 18
-    ? `\n\nI will also say: the reviews for these tools are full of people surprised by usage-based billing. Resparq is a flat ${money(MONTHLY_PRICE)}/mo. No usage fees, no per-impression charge.`
+    ? `\n\nOne thing, since the reviews in this category are full of surprise usage bills: Resparq is a flat ${money(MONTHLY_PRICE)}/mo. No usage fees, no per-impression charge.`
     : '';
 
-  const body = `Hi ${name},
-
-${opening}
+  const body = `${greeting}${opening}
 
 ${mathLine}${angerLine}
 
 ${PROOF}
 
-Worth ten minutes?
+${ask}
 
 Taylor`;
 
@@ -667,6 +712,7 @@ picked.forEach((p, i) => {
     overdueDays: isFollowUp ? p.st.overdueDays : null,
     catalog: p.row.catalog || {}, currency: p.row.currency || null,
     vendors: p.row.vendors || [], paybackMonths: p.row.paybackMonths ?? null,
+    ordersPerMonth: p.row.ordersPerMonth ?? null,
     discountHints: p.row.discountHints || [],
     why: Object.entries(p.score.parts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v > 0 ? '+' : ''}${v}`),
     storeName: p.anger?.storeName || null, country: p.anger?.country || null,

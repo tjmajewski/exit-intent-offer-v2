@@ -216,7 +216,15 @@ async function scanDomain(raw) {
   row.scenario = classify(vendors, catalog, row.currency);
   // Only safe in USD. Anything else needs an FX rate we deliberately don't fetch.
   if (catalog.available && row.currency === 'USD') {
-    row.paybackMonths = Math.max(1, Math.round(catalog.medianPrice / MONTHLY_PRICE));
+    // Flooring at 1 would claim a $15 order covers a $50 month, which is a
+    // false sentence in an email. Below the subscription price the honest
+    // framing is how many orders a month it takes, not how many months.
+    row.paybackMonths = catalog.medianPrice >= MONTHLY_PRICE
+      ? Math.round(catalog.medianPrice / MONTHLY_PRICE)
+      : null;
+    row.ordersPerMonth = catalog.medianPrice >= MONTHLY_PRICE
+      ? null
+      : Math.ceil(MONTHLY_PRICE / catalog.medianPrice);
   } else if (catalog.available) {
     row.paybackMonths = null;
     row.paybackNote = row.currency ? `prices in ${row.currency}, not converted` : 'currency unknown';
@@ -245,7 +253,7 @@ async function pool(items, limit, fn) {
 function toCsv(rows) {
   const cols = [
     'domain', 'isShopify', 'scenario', 'currency', 'medianPrice', 'maxPrice', 'productCount',
-    'paybackMonths', 'paybackNote', 'vendors', 'exitIntentCapable', 'discountHints', 'passwordProtected', 'error',
+    'paybackMonths', 'ordersPerMonth', 'paybackNote', 'vendors', 'exitIntentCapable', 'discountHints', 'passwordProtected', 'error',
   ];
   const cell = (v) => {
     if (v == null) return '';
