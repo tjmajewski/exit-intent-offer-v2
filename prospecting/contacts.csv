@@ -1,0 +1,3 @@
+# Fill from Lusha / About pages / LinkedIn. Domain must match the scan exactly.
+# Rows without an email still get a draft, addressed to you with a NEEDS CONTACT banner.
+domain,email,name,title

@@ -95,3 +95,80 @@ The review text is captured because it tells you what they actually hate,
 which is usually billing surprises rather than the popup itself. Naming a
 review in the email can read as surveillance. Use it to pick the angle, not as
 a quote.
+
+## draft-emails.mjs
+
+Turns scan rows into reviewable drafts, best lead first, 12 at a time.
+
+```
+node prospecting/draft-emails.mjs             # preview 12 in the terminal
+node prospecting/draft-emails.mjs --push      # also put them in Zoho Drafts
+node prospecting/draft-emails.mjs --limit 5
+node prospecting/draft-emails.mjs --include-drafted
+node prospecting/draft-emails.mjs --reset     # clear the ledger
+```
+
+Reads the newest `scan-*.json` and `reviews-*.json` in `out/` unless you pass
+`--scan` / `--reviews`. **Re-scan before drafting** if the scan predates a
+scanner change; a row missing `currency` scores as if its catalog were
+unreadable.
+
+### Drafts only
+
+There is no SMTP code in the file. It appends to the Drafts folder over IMAP
+with the `\Draft` flag and nothing else, so nothing can reach a stranger's
+inbox without you pressing send.
+
+### The 12 cap and the ledger
+
+Every pushed domain is recorded in `prospecting/state/drafted.json`. Triggering
+again gives you the **next** 12, not the same 12. The ledger only advances on
+`--push`, so previewing as often as you like costs nothing.
+
+### Ranking
+
+Sorted by a likelihood-to-engage score. There is **no outcome data behind these
+weights** — nothing has been sent, so nothing has replied. They are a prior.
+Each row prints which signals fired, and the components are kept so that once
+replies come in you can see what actually predicted them and re-weight instead
+of guessing twice. Edit `WEIGHTS` at the top of the file.
+
+| Signal | Why |
+|---|---|
+| `angryRecently` +30 | Complained about a popup app within ~18 months |
+| `noVendor` +25 | Nothing installed, nothing to rip out |
+| `highAov` +25 | Median >= $150 USD, the thesis |
+| `hasContact` +20 | A named human beats a guess |
+| `catalogReadable` +15 | We can say something specific |
+| `noCatalog` **-15** | Pricing unreadable, so the draft goes generic and weak |
+
+That penalty matters: a store we can't price gets an email with no concrete
+line in it, which is a worse email regardless of how big the store is.
+
+### Contacts
+
+Fill `prospecting/contacts.csv` (`domain,email,name,title`) from Lusha or the
+store's own About page. Rows without an email still get a draft, addressed to
+you, subject prefixed `[NEEDS CONTACT: domain]`, with a banner naming the store
+and country. The draft doubles as the research worklist.
+
+### Zoho setup
+
+```
+export ZOHO_USER='you@yourdomain.com'
+export ZOHO_APP_PASSWORD='...'      # Zoho > Settings > Security > App Passwords
+node prospecting/draft-emails.mjs --test-connection
+```
+
+Optional: `ZOHO_IMAP_HOST` (default `imap.zoho.com`), `ZOHO_IMAP_PORT` (993),
+`ZOHO_DRAFTS_FOLDER` (`Drafts`), `ZOHO_FROM`.
+
+### Copy rules baked into the templates
+
+No uplift percentages, no conversion averages, no testimonials, no customer
+counts. The only track record cited is the one live store: three recovered
+checkouts, about $3,000 attributed, two weeks in, stated as attributed rather
+than causal and paired with an explicit "too early to claim a lift number."
+That last clause is the differentiator, since every other popup app in the
+inbox is claiming one. The concrete numbers in each email are the prospect's
+own scraped prices. No em dashes.
