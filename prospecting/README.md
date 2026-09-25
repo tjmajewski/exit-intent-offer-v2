@@ -145,6 +145,45 @@ of guessing twice. Edit `WEIGHTS` at the top of the file.
 That penalty matters: a store we can't price gets an email with no concrete
 line in it, which is a worse email regardless of how big the store is.
 
+### PowerPoint export
+
+```
+cd prospecting && npm install      # one time, installs pptxgenjs
+cd .. && node prospecting/draft-emails.mjs --pptx
+```
+
+Writes `outreach.pptx` next to the other outputs: a title slide, one slide per
+email, and a closing slide of the tracking commands. Each email slide carries
+the body at readable size, the subject, the recipient, the scan evidence behind
+the pitch, and the score breakdown.
+
+`prospecting/` is its own npm package on purpose. The root `package.json` claims
+only `extensions/*` as workspaces, so installing here leaves the Shopify app's
+dependency tree and its deploy untouched.
+
+### Recording sends and follow-ups
+
+Drafting is not sending, so the ledger cannot know what went out until you say
+so:
+
+```
+node prospecting/draft-emails.mjs --sent kayladevitoart.com
+node prospecting/draft-emails.mjs --replied kayladevitoart.com
+node prospecting/draft-emails.mjs --dead kayladevitoart.com
+node prospecting/draft-emails.mjs --status
+```
+
+A sent lead leaves the pool and returns on its own when a follow-up is due:
+four days after the first touch, ten days after the second, then never again.
+Three touches total.
+
+A due follow-up re-enters scored at its base plus 20, plus one point per day
+overdue capped at 14, so it lands wherever it deserves in a later batch instead
+of always at the top. The slide says which touch it is and how overdue.
+
+**`--replied` and `--dead` are the only thing preventing a third email to
+someone who already answered or declined.** Nothing else infers it.
+
 ### Contacts
 
 Fill `prospecting/contacts.csv` (`domain,email,name,title`) from Lusha or the

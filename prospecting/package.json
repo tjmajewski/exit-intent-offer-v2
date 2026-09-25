@@ -1,0 +1,9 @@
+{
+  "name": "resparq-prospecting",
+  "private": true,
+  "type": "module",
+  "description": "Cold outreach tooling. Isolated from the Shopify app on purpose: the root package.json only claims extensions/* as workspaces, so installing here leaves the app's dependency tree and deploy untouched.",
+  "dependencies": {
+    "pptxgenjs": "^3.12.0"
+  }
+}

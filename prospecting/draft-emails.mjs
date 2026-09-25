@@ -1,6 +1,11 @@
 // Turn scan rows into reviewable email drafts, best lead first, 12 at a time.
 //
 //   node prospecting/draft-emails.mjs                    # preview 12 in terminal
+//   node prospecting/draft-emails.mjs --pptx             # one slide per email
+//   node prospecting/draft-emails.mjs --sent <domain>    # record that you sent it
+//   node prospecting/draft-emails.mjs --replied <domain> # they answered: stop following up
+//   node prospecting/draft-emails.mjs --dead <domain>    # not interested: stop following up
+//   node prospecting/draft-emails.mjs --status           # pipeline at a glance
 //   node prospecting/draft-emails.mjs --review           # browser page, copy/paste into Zoho
 //   node prospecting/draft-emails.mjs --eml              # one .eml file per draft
 //   node prospecting/draft-emails.mjs --push             # Zoho Drafts (needs IMAP, a paid plan)
@@ -19,6 +24,12 @@
 //
 // A refresh gives you the NEXT 12, not the same 12: every drafted domain is
 // recorded in prospecting/state/drafted.json. --reset starts over.
+//
+// Once you mark a domain --sent, it leaves the pool and comes back on its own
+// as a follow-up when one is due, scored so it lands wherever it deserves in a
+// later batch rather than always at the top. Marking --replied or --dead stops
+// that, which is the only thing standing between this and nagging someone who
+// already said no.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import tls from 'node:tls';
@@ -26,6 +37,12 @@ import tls from 'node:tls';
 const MONTHLY_PRICE = 50;
 const DEFAULT_LIMIT = 12;
 const STATE_PATH = 'prospecting/state/drafted.json';
+
+// Days after a send before the next touch is due. Three touches total, then
+// the lead is left alone whether or not it ever answered.
+const FOLLOWUP_DAYS = [4, 10];
+const FOLLOWUP_BONUS = 20;      // a contacted lead is warmer than a cold one
+const OVERDUE_CAP = 14;         // but an ancient follow-up should not outrank everything
 
 const arg = (flag, fallback) => {
   const i = process.argv.indexOf(flag);
@@ -37,6 +54,7 @@ const limit = parseInt(arg('--limit', String(DEFAULT_LIMIT)), 10);
 const push = has('--push');
 const review = has('--review');
 const eml = has('--eml');
+const pptx = has('--pptx');
 
 const newestIn = (dir, prefix, ext) => {
   if (!existsSync(dir)) return null;
@@ -113,6 +131,40 @@ const money = (n) => `$${Number(n).toLocaleString('en-US', { maximumFractionDigi
 // to sound like every other popup app in their inbox, so the absence is said
 // out loud and turned into the pitch for the holdout.
 const PROOF = `Quick context so you can weigh it properly: Resparq is early. One store is live, two weeks in, with three recovered checkouts and about $3,000 in attributed revenue. Their traffic is too low for me to claim a lift percentage yet, and I am not going to pretend otherwise. The app runs a holdout group, so what you would get is your own measured number rather than mine.`;
+
+// Follow-ups are short on purpose. The first email already made the argument;
+// repeating it at length reads as pressure rather than persistence, and the
+// third touch says plainly that it is the last one.
+function renderFollowUp(row, contact, stage) {
+  const name = contact?.firstName || 'there';
+  const cat = row.catalog || {};
+  const usd = row.currency === 'USD';
+  const priced = cat.available && usd && row.paybackMonths;
+
+  if (stage === 1) {
+    return {
+      subject: `re: ${row.domain}`,
+      body: `Hi ${name},
+
+Following up on the note about exit intent on ${row.domain}.${priced ? ` The short version: at your prices one recovered order covers about ${row.paybackMonths} ${row.paybackMonths === 1 ? 'month' : 'months'}.` : ''}
+
+If this is not a priority right now, say so and I will stop.
+
+Taylor`,
+    };
+  }
+
+  return {
+    subject: `re: ${row.domain}`,
+    body: `Hi ${name},
+
+Last one from me on this.
+
+If exit intent is something you want to look at later in the year, reply and I will check back then. Otherwise I will leave you alone.
+
+Taylor`,
+  };
+}
 
 function render(row, anger, contact) {
   const cat = row.catalog || {};
@@ -325,10 +377,114 @@ function toMime({ from, to, subject, body }) {
 
 // ---------------------------------------------------------------- main
 
-if (has('--reset')) {
+// ---------------------------------------------------------------- ledger
+
+const DAY = 86400000;
+const emptyLead = () => ({ drafted: [], sent: [], replied: null, dead: null });
+
+function loadState() {
+  if (!existsSync(STATE_PATH)) return { version: 2, leads: {} };
+  const raw = JSON.parse(readFileSync(STATE_PATH, 'utf8'));
+  if (raw.version === 2) return raw;
+  // v1 was a flat list of drafted domains with no notion of sending.
+  const leads = {};
+  for (const d of raw.drafted || []) {
+    leads[d.domain] = leads[d.domain] || emptyLead();
+    leads[d.domain].drafted.push(d.at);
+  }
+  return { version: 2, leads };
+}
+
+function saveState(st) {
   mkdirSync('prospecting/state', { recursive: true });
-  writeFileSync(STATE_PATH, JSON.stringify({ drafted: [] }, null, 2));
+  writeFileSync(STATE_PATH, JSON.stringify(st, null, 2));
+}
+
+const normDomain = (d) => String(d).trim().toLowerCase()
+  .replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+
+// Where a lead stands right now: not yet touched, waiting out a gap between
+// touches, due for the next one, finished, or closed by hand.
+function leadStage(lead, now = Date.now()) {
+  if (!lead) return { state: 'cold', stage: 0 };
+  if (lead.replied) return { state: 'replied', stage: lead.sent.length };
+  if (lead.dead) return { state: 'dead', stage: lead.sent.length };
+  const sends = lead.sent.length;
+  if (sends === 0) return { state: 'cold', stage: 0 };
+  if (sends > FOLLOWUP_DAYS.length) return { state: 'exhausted', stage: sends };
+  const last = new Date(lead.sent[sends - 1].at).getTime();
+  const waitDays = FOLLOWUP_DAYS[sends - 1];
+  const dueAt = last + waitDays * DAY;
+  const overdueDays = Math.floor((now - dueAt) / DAY);
+  return overdueDays >= 0
+    ? { state: 'followup-due', stage: sends, overdueDays, dueAt }
+    : { state: 'followup-waiting', stage: sends, daysUntil: Math.ceil((dueAt - now) / DAY), dueAt };
+}
+
+const state = loadState();
+const leadFor = (domain) => state.leads[domain] || null;
+
+if (has('--reset')) {
+  saveState({ version: 2, leads: {} });
   console.error('ledger cleared');
+  process.exit(0);
+}
+
+// --sent / --replied / --dead each take one or more domains.
+for (const [flag, apply, verb] of [
+  ['--sent', (l) => l.sent.push({ at: new Date().toISOString(), stage: l.sent.length + 1 }), 'sent'],
+  ['--replied', (l) => { l.replied = new Date().toISOString(); }, 'replied'],
+  ['--dead', (l) => { l.dead = new Date().toISOString(); }, 'closed'],
+]) {
+  const i = process.argv.indexOf(flag);
+  if (i === -1) continue;
+  const targets = process.argv.slice(i + 1).filter((a) => !a.startsWith('--')).map(normDomain);
+  if (!targets.length) {
+    console.error(`${flag} needs at least one domain`);
+    process.exit(1);
+  }
+  for (const d of targets) {
+    state.leads[d] = state.leads[d] || emptyLead();
+    apply(state.leads[d]);
+    const st = leadStage(state.leads[d]);
+    let note = '';
+    if (verb === 'sent') {
+      note = st.state === 'exhausted'
+        ? ', no further follow-ups (3 touches reached)'
+        : `, follow-up ${st.stage + 1} due in ${FOLLOWUP_DAYS[st.stage - 1]} days`;
+    }
+    console.error(`${d}: ${verb} (touch ${state.leads[d].sent.length})${note}`);
+  }
+  saveState(state);
+  process.exit(0);
+}
+
+if (has('--status')) {
+  const entries = Object.entries(state.leads);
+  if (!entries.length) {
+    console.error('ledger empty');
+    process.exit(0);
+  }
+  const buckets = {};
+  for (const [domain, lead] of entries) {
+    const st = leadStage(lead);
+    (buckets[st.state] = buckets[st.state] || []).push({ domain, lead, st });
+  }
+  const order = ['followup-due', 'followup-waiting', 'cold', 'replied', 'dead', 'exhausted'];
+  for (const key of order) {
+    const list = buckets[key];
+    if (!list) continue;
+    console.error(`\n${key} (${list.length})`);
+    for (const { domain, lead, st } of list.sort((a, b) => a.domain.localeCompare(b.domain))) {
+      const when = key === 'followup-due' ? `  due ${st.overdueDays} day(s) ago`
+        : key === 'followup-waiting' ? `  due in ${st.daysUntil} day(s)`
+        : '';
+      console.error(`  ${domain.padEnd(32)} touches ${lead.sent.length}${when}`);
+    }
+  }
+  const total = entries.length;
+  const sent = entries.filter(([, l]) => l.sent.length).length;
+  console.error(`\n${total} lead(s) tracked, ${sent} contacted`);
   process.exit(0);
 }
 
@@ -428,22 +584,41 @@ const rows = JSON.parse(readFileSync(scanPath, 'utf8')).filter((r) => r.isShopif
 const contacts = loadContacts();
 const anger = loadAnger();
 
-const state = existsSync(STATE_PATH) ? JSON.parse(readFileSync(STATE_PATH, 'utf8')) : { drafted: [] };
-const already = new Set(state.drafted.map((d) => d.domain));
-
+// A lead is eligible if it has never been drafted, or if it was sent and a
+// follow-up has come due. Everything else is deliberately out: mid-cadence
+// leads, replies, closed leads, and anything that has had its three touches.
 const ranked = rows
   .map((row) => {
     const a = anger.get(row.domain);
     const c = contacts.get(row.domain);
-    return { row, anger: a, contact: c, score: scoreRow(row, a, c) };
+    const lead = leadFor(row.domain);
+    const st = leadStage(lead);
+    const score = scoreRow(row, a, c);
+    if (st.state === 'followup-due') {
+      // A contacted lead outranks a cold one at the same base score, and an
+      // overdue one climbs further, but the bonus is capped so a forgotten
+      // follow-up cannot permanently own the top of the list.
+      score.parts.followUp = FOLLOWUP_BONUS;
+      const overdue = Math.min(st.overdueDays, OVERDUE_CAP);
+      if (overdue > 0) score.parts.overdue = overdue;
+      score.total += FOLLOWUP_BONUS + overdue;
+    }
+    return { row, anger: a, contact: c, score, lead, st };
   })
-  .filter((r) => has('--include-drafted') || !already.has(r.row.domain))
+  .filter((r) => {
+    if (r.st.state === 'followup-due') return true;
+    if (r.st.state !== 'cold') return false;         // waiting, replied, dead, exhausted
+    if (has('--include-drafted')) return true;
+    return !(r.lead?.drafted?.length);               // already drafted, never sent
+  })
   .sort((a, b) => b.score.total - a.score.total);
 
 const picked = ranked.slice(0, limit);
 
 if (!picked.length) {
-  console.error(`nothing left to draft (${already.size} already drafted). --include-drafted or --reset to revisit.`);
+  const tracked = Object.keys(state.leads).length;
+  console.error(`nothing eligible right now (${tracked} lead(s) tracked).`);
+  console.error('--status to see what is waiting, --include-drafted to revisit, --reset to start over.');
   process.exit(0);
 }
 
@@ -455,10 +630,25 @@ console.error(`eligible: ${ranked.length}, drafting top ${picked.length}\n`);
 // Whatever address you will actually send from. Only --push truly needs it.
 const me = zoho.from || process.env.RESPARQ_FROM || '';
 
+function recordDrafted(list) {
+  const at = new Date().toISOString();
+  for (const p of list) {
+    state.leads[p.row.domain] = state.leads[p.row.domain] || emptyLead();
+    state.leads[p.row.domain].drafted.push(at);
+  }
+  saveState(state);
+  const tracked = Object.keys(state.leads).length;
+  console.error(`ledger: ${tracked} lead(s) tracked`);
+  console.error('after you send one: node prospecting/draft-emails.mjs --sent <domain>');
+}
+
 const messages = [];
 const drafts = [];
 picked.forEach((p, i) => {
-  const { subject, body } = render(p.row, p.anger, p.contact);
+  const isFollowUp = p.st.state === 'followup-due';
+  const { subject, body } = isFollowUp
+    ? renderFollowUp(p.row, p.contact, p.st.stage)
+    : render(p.row, p.anger, p.contact);
   // --review and --eml need no Zoho credentials, so the from/to placeholders
   // must not depend on them being set.
   const needsContact = !p.contact?.email;
@@ -472,13 +662,19 @@ picked.forEach((p, i) => {
   drafts.push({
     rank: i + 1, domain: p.row.domain, to, subject: finalSubject, body: banner + body,
     score: p.score.total, scenario: p.row.scenario,
+    touch: isFollowUp ? p.st.stage + 1 : 1,
+    overdueDays: isFollowUp ? p.st.overdueDays : null,
+    catalog: p.row.catalog || {}, currency: p.row.currency || null,
+    vendors: p.row.vendors || [], paybackMonths: p.row.paybackMonths ?? null,
+    discountHints: p.row.discountHints || [],
     why: Object.entries(p.score.parts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v > 0 ? '+' : ''}${v}`),
     storeName: p.anger?.storeName || null, country: p.anger?.country || null,
     needsContact,
   });
 
   const top = Object.entries(p.score.parts).sort((a, b) => b[1] - a[1]).map(([k]) => k).join(', ');
-  console.error(`${String(i + 1).padStart(2)}. ${p.row.domain.padEnd(30)} score ${String(p.score.total).padStart(3)}  ${p.row.scenario}`);
+  const touchLabel = isFollowUp ? ` [follow-up ${p.st.stage + 1}${p.st.overdueDays > 0 ? `, ${p.st.overdueDays}d overdue` : ''}]` : '';
+  console.error(`${String(i + 1).padStart(2)}. ${p.row.domain.padEnd(30)} score ${String(p.score.total).padStart(3)}  ${p.row.scenario}${touchLabel}`);
   console.error(`    why: ${top || 'no signals'}`);
   if (!push && !review && !eml) {
     console.error(`    subj: ${finalSubject}`);
@@ -578,7 +774,7 @@ ${cards}
 </script></body></html>`;
 }
 
-if (review || eml) {
+if (review || eml || pptx) {
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
   const dir = `prospecting/out/drafts-${stamp}`;
   mkdirSync(dir, { recursive: true });
@@ -589,16 +785,19 @@ if (review || eml) {
     });
     console.error(`wrote ${drafts.length} .eml file(s) to ${dir}/`);
   }
+  if (pptx) {
+    const { buildDeck } = await import('./deck.mjs');
+    const out = `${dir}/outreach.pptx`;
+    await buildDeck(drafts, out, { date: stamp.slice(0, 10) });
+    console.error(`wrote ${out}`);
+  }
   if (review) {
     const page = `${dir}/review.html`;
     writeFileSync(page, reviewPage(drafts));
     console.error(`wrote ${page}`);
     console.error(`open it:  open ${page}`);
   }
-  mkdirSync('prospecting/state', { recursive: true });
-  state.drafted.push(...picked.map((p) => ({ domain: p.row.domain, score: p.score.total, at: new Date().toISOString() })));
-  writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
-  console.error(`ledger: ${state.drafted.length} domain(s) drafted to date`);
+  recordDrafted(picked);
 }
 
 if (push) {
@@ -621,10 +820,7 @@ if (push) {
     process.exit(1);
   }
   console.error(`appended ${res.appended} draft(s) to "${zoho.folder}" on ${zoho.host}`);
-  mkdirSync('prospecting/state', { recursive: true });
-  state.drafted.push(...picked.map((p) => ({ domain: p.row.domain, score: p.score.total, at: new Date().toISOString() })));
-  writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
-  console.error(`ledger: ${state.drafted.length} domains drafted to date`);
+  recordDrafted(picked);
 } else if (!review && !eml) {
-  console.error('preview only. --review writes a browser page, --eml writes files, --push needs Zoho IMAP.');
+  console.error('preview only. --pptx writes a deck, --review a browser page, --eml files, --push needs Zoho IMAP.');
 }

@@ -34,3 +34,4 @@ linkedin-drafts/
 
 # Prospect scan output (regenerated, not source)
 prospecting/out/
+prospecting/node_modules/
