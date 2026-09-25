@@ -32,6 +32,12 @@ actual popup needs a real browser, which is a separate later step.
 `discountHints` is regex over homepage copy. Useful colour for a draft email,
 not a measurement.
 
+`currency` matters more than it looks. `/products.json` returns prices in the
+shop's own currency and carries no currency field, so a Colombian store shows a
+median of 75000. `paybackMonths` is therefore only computed for USD stores;
+everything else gets `paybackNote` instead. Never quote a price from a row
+whose currency is not USD without converting it first.
+
 ### Scenarios
 
 | Scenario | Meaning |
@@ -40,3 +46,52 @@ not a measurement.
 | `A_GREENFIELD` | No vendor at all. |
 | `C_VENDOR_EXIT_CAPABLE` | Exit-intent-capable vendor present. Needs browser check. |
 | `B_EMAIL_ONLY` | Capture vendor with no exit-intent trigger. |
+
+## scrape-app-reviews.mjs
+
+Feeds domains to the scanner by finding stores that are **already unhappy** with
+a popup app. Happy reviewers are a bad list — the product is working for them.
+1-3 star reviewers bought into the category, pay for it, and are annoyed today.
+
+```
+node prospecting/scrape-app-reviews.mjs
+node prospecting/scrape-app-reviews.mjs --apps privy,optimonk --pages 5
+node prospecting/scrape-app-reviews.mjs --no-resolve
+```
+
+Writes `reviews-<stamp>.json` (full review text per store) and
+`reviews-<stamp>-domains.txt`, which `scan-stores.mjs` reads directly:
+
+```
+node prospecting/scan-stores.mjs prospecting/out/reviews-<stamp>-domains.txt
+```
+
+### App handles
+
+The App Store 404s unknown handles, and the handle is often not the brand name:
+`justuno` and `wheelio` both 404. Verify at `apps.shopify.com/<handle>` before
+adding. Full app URLs are accepted and stripped to the handle.
+
+### Domain resolution
+
+Reviews give a store **name**, never a URL. Resolution slugifies the name and
+tries `.com`, `.co`, `.shop`, `.store`, then checks the brand actually appears
+on the page:
+
+| Confidence | Meaning |
+|---|---|
+| `high` | Shopify **and** brand token in `<title>` |
+| `medium` | Shopify, brand only in body text |
+| `not-shopify` | Domain answered but isn't Shopify |
+| `none` | Nothing responded |
+
+Only `high` and `medium` reach the domains file. Expect roughly half of names
+to resolve; the rest are still in the JSON with name plus country, which is
+usually enough to find by hand.
+
+### On quoting reviews in outreach
+
+The review text is captured because it tells you what they actually hate,
+which is usually billing surprises rather than the popup itself. Naming a
+review in the email can read as surveillance. Use it to pick the angle, not as
+a quote.

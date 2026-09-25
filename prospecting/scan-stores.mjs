@@ -87,6 +87,24 @@ function detectShopify(html, headers, finalUrl) {
   return hints;
 }
 
+// /products.json reports prices in the SHOP's currency with no currency field
+// on the payload, so a store priced in COP or JPY looks like it sells $75,000
+// t-shirts. Pull the active currency off the homepage so the payback math can
+// refuse to run rather than quote a nonsense number into an email.
+function detectCurrency(html) {
+  const patterns = [
+    /Shopify\.currency\s*=\s*\{[^}]*?"active"\s*:\s*"([A-Z]{3})"/,
+    /"currency"\s*:\s*"([A-Z]{3})"/,
+    /itemprop="priceCurrency"[^>]*content="([A-Z]{3})"/,
+    /property="product:price:currency"[^>]*content="([A-Z]{3})"/,
+  ];
+  for (const re of patterns) {
+    const m = html.match(re);
+    if (m) return m[1];
+  }
+  return null;
+}
+
 function detectVendors(html) {
   const lower = html.toLowerCase();
   return VENDORS.filter((v) => v.sigs.some((s) => lower.includes(s.toLowerCase())));
@@ -156,9 +174,10 @@ async function fetchCatalogFrom(base) {
 
 // The scenario drives which email template gets used. Deliberately coarse:
 // the browser pass refines VENDOR_CAPABLE into "actually fires" vs "doesn't".
-function classify(vendors, catalog) {
+function classify(vendors, catalog, currency) {
   const aov = catalog.available ? catalog.medianPrice : null;
-  const highAov = aov != null && aov >= 150;
+  // The $150 cut is a USD figure, so a non-USD store is never 'high AOV' here.
+  const highAov = aov != null && aov >= 150 && currency === 'USD';
   if (!vendors.length) return highAov ? 'E_HIGH_AOV_GREENFIELD' : 'A_GREENFIELD';
   if (vendors.some((v) => v.exitIntent)) return 'C_VENDOR_EXIT_CAPABLE';
   return 'B_EMAIL_ONLY';
@@ -190,12 +209,17 @@ async function scanDomain(raw) {
   row.vendors = vendors.map((v) => v.name);
   row.exitIntentCapable = vendors.some((v) => v.exitIntent);
   row.discountHints = detectDiscounts(home.body);
+  row.currency = detectCurrency(home.body);
 
   const catalog = await fetchCatalog(origin);
   row.catalog = catalog;
-  row.scenario = classify(vendors, catalog);
-  if (catalog.available) {
+  row.scenario = classify(vendors, catalog, row.currency);
+  // Only safe in USD. Anything else needs an FX rate we deliberately don't fetch.
+  if (catalog.available && row.currency === 'USD') {
     row.paybackMonths = Math.max(1, Math.round(catalog.medianPrice / MONTHLY_PRICE));
+  } else if (catalog.available) {
+    row.paybackMonths = null;
+    row.paybackNote = row.currency ? `prices in ${row.currency}, not converted` : 'currency unknown';
   }
   return row;
 }
@@ -220,8 +244,8 @@ async function pool(items, limit, fn) {
 
 function toCsv(rows) {
   const cols = [
-    'domain', 'isShopify', 'scenario', 'medianPrice', 'maxPrice', 'productCount',
-    'paybackMonths', 'vendors', 'exitIntentCapable', 'discountHints', 'passwordProtected', 'error',
+    'domain', 'isShopify', 'scenario', 'currency', 'medianPrice', 'maxPrice', 'productCount',
+    'paybackMonths', 'paybackNote', 'vendors', 'exitIntentCapable', 'discountHints', 'passwordProtected', 'error',
   ];
   const cell = (v) => {
     if (v == null) return '';
