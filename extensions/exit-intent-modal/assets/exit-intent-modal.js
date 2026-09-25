@@ -234,6 +234,73 @@
   }
 
   // ============================================================
+  // THRESHOLD COPY — one source, because two diverged and one was wrong
+  // ============================================================
+  //
+  // A threshold offer says "spend $X more, get $Y off". Two things make its
+  // copy dangerous, and both bit:
+  //
+  // 1. The remaining spend goes negative once the cart already qualifies.
+  //    `Math.ceil((threshold - cartValue) / 5) * 5` is -100 on a cart $100 past
+  //    a threshold, and that value interpolates straight into any gene carrying
+  //    `{{threshold_remaining}}` — `You're just $-100 away from $70 off`.
+  // 2. Evolved copy frames the reward without naming the requirement, so a
+  //    conditional discount reads as an unconditional one.
+  //
+  // `resolveModalContent` grew correct handling for both. `updateModalWithAI` —
+  // the fallback path taken whenever the template registry is unavailable or
+  // `?resparqLiveAI=0` is set — kept an older guard that tested whether the
+  // headline mentioned the OFFER (`off`/`save`/`away`/`unlock`) rather than the
+  // CONDITION. Every threshold headline mentions the offer, so that guard
+  // always declined to act, and the negative rendered. Two copies of this logic
+  // is what allowed one to be fixed and the other not, so there is now one.
+
+  // Remaining spend, rounded UP to the nearest $5 so the ask is never
+  // understated, and never below zero — a qualified cart has nothing left to
+  // spend, not a negative amount.
+  function thresholdRemainingFor(threshold, cartValue) {
+    if (threshold == null) return 0;
+    return Math.max(0, Math.ceil((threshold - cartValue) / 5) * 5);
+  }
+
+  // The headline/subhead a threshold decision should actually show.
+  //
+  // Returns the copy unchanged when the gene already states the condition, so
+  // evolved copy keeps its edge wherever it is honest.
+  function resolveThresholdCopy(decision, cartValue, headline, subhead, showSubhead) {
+    // `threshold != null` first: `cartValue >= null` coerces to `cartValue >= 0`,
+    // true for any non-empty cart, which would declare an unqualified customer
+    // qualified.
+    const qualified = decision.threshold != null && cartValue >= decision.threshold;
+    const remainingText = formatCurrency(thresholdRemainingFor(decision.threshold, cartValue));
+    const thresholdText = decision.threshold != null ? formatCurrency(decision.threshold) : null;
+
+    if (qualified) {
+      return {
+        qualified,
+        changed: true,
+        headline: `You unlocked ${formatCurrency(decision.amount)} off!`,
+        subhead: `Your cart qualifies. This discount is applied at checkout.`,
+      };
+    }
+
+    // Test the REQUIREMENT, not the reward. A gene naming a dollar amount with
+    // no qualifying spend — every urgency headline — passes a reward test and
+    // renders as an unconditional discount.
+    const visible = showSubhead ? `${headline} ${subhead}` : headline;
+    const statesCondition = visible.includes(remainingText) ||
+      (thresholdText !== null && visible.includes(thresholdText));
+    if (statesCondition) return { qualified, changed: false, headline, subhead };
+
+    return {
+      qualified,
+      changed: true,
+      headline: `You're ${remainingText} away from ${formatCurrency(decision.amount)} off`,
+      subhead: `Add a little more to your cart and save on your entire order.`,
+    };
+  }
+
+  // ============================================================
   // JOURNEY EVENTS — client-observable touches (modal dismissals,
   // pill mount/redeem/dismiss) reported to the server-side journey
   // log. Fire-and-forget; test mode and preview never report.
@@ -2279,7 +2346,26 @@
           })
         });
         
-        return await response.json();
+        // A non-200 body is an error envelope, not signals. Returning it
+        // unchecked sent `{error: "Too many requests"}` on as the signals
+        // payload: truthy, so ai-decision accepted it, and the decision was
+        // made on cartValue 0 and a default propensity score — a modal that
+        // renders normally with an offer chosen from nothing. The catch below
+        // already knew the right answer for this; the success path just never
+        // asked whether it was on it.
+        if (!response.ok) {
+          console.warn(`[Enterprise AI] enrich-signals ${response.status} — using basic signals`);
+          return basicSignals;
+        }
+
+        const enriched = await response.json();
+        // Same reasoning one level down: a 200 carrying an error envelope, or
+        // anything that isn't an object, is not signals either.
+        if (!enriched || typeof enriched !== 'object' || enriched.error) {
+          console.warn('[Enterprise AI] enrich-signals returned no usable signals — using basic signals');
+          return basicSignals;
+        }
+        return enriched;
       } catch (error) {
         console.error('[Enterprise AI] Error enriching signals:', error);
         return basicSignals; // Fallback to basic signals
@@ -3262,8 +3348,10 @@
         // Get current cart value
         const cartValue = await this.getCartValue();
         
-        // Calculate threshold remaining (rounded up to nearest $5)
-        const thresholdRemaining = decision.threshold ? Math.ceil((decision.threshold - cartValue) / 5) * 5 : 0;
+        // Rounded up to the nearest $5 and floored at zero — see
+        // thresholdRemainingFor. An unclamped value put `$-100` in front of
+        // shoppers on this path.
+        const thresholdRemaining = thresholdRemainingFor(decision.threshold, cartValue);
         const percentToGoal = decision.threshold ? Math.round((cartValue / decision.threshold) * 100) : 0;
         
         // Replace placeholders in variant genes
@@ -3343,26 +3431,32 @@
           const secondaryBtn = modal.querySelector('#modal-secondary-cta');
           const primaryBtn = modal.querySelector('#modal-primary-cta');
 
-          // Get current cart value for threshold messaging
-          const cartValue = await this.getCartValue();
-          const thresholdRemaining = Math.ceil((decision.threshold - cartValue) / 5) * 5;
-
-          // ENFORCE: Headline/subhead MUST mention the offer.
-          // AI or gene pool may produce generic copy (e.g., "Don't Leave Empty-Handed!")
-          // that says nothing about the threshold deal — override it.
+          // ENFORCE condition-stating copy, through the same helper
+          // resolveModalContent uses. The guard here used to test whether the
+          // headline mentioned the OFFER, which every threshold headline does,
+          // so it never fired and a qualified cart rendered `$-100 away`.
           const headlineEl = modal.querySelector('h2');
           const bodyEl = modal.querySelector('p');
-          const headlineLC = (headlineEl?.textContent || '').toLowerCase();
-          const mentionsOffer = headlineLC.includes('off') || headlineLC.includes('save') || headlineLC.includes('away') || headlineLC.includes('unlock');
-          if (!mentionsOffer && headlineEl && bodyEl) {
-            if (cartValue >= decision.threshold) {
-              headlineEl.textContent = `You unlocked ${formatCurrency(decision.amount)} off!`;
-              bodyEl.textContent = `Your cart qualifies. This discount is applied at checkout.`;
-            } else {
-              headlineEl.textContent = `You're ${formatCurrency(thresholdRemaining)} away from ${formatCurrency(decision.amount)} off`;
-              bodyEl.textContent = `Add a little more to your cart and save on your entire order.`;
+          if (headlineEl && bodyEl) {
+            const resolved = resolveThresholdCopy(
+              decision,
+              cartValue,
+              headlineEl.textContent || '',
+              bodyEl.textContent || '',
+              bodyEl.style.display !== 'none',
+            );
+            if (resolved.changed) {
+              headlineEl.textContent = resolved.headline;
+              bodyEl.textContent = resolved.subhead;
+              // The subhead carries the condition now, so it has to be visible
+              // even if the showSubhead gene hid it.
+              bodyEl.style.display = '';
+              console.log(
+                resolved.qualified
+                  ? '[Threshold] Cart already qualifies — replaced goal copy'
+                  : '[Threshold] Copy did not state the condition — replaced',
+              );
             }
-            console.log('[Threshold] Overrode generic copy with threshold-aware messaging');
           }
 
           if (secondaryBtn) {
@@ -3501,7 +3595,7 @@
 
       // --- Variant copy (evolution system: Enterprise) ---
       if (decision.variant) {
-        const thresholdRemaining = decision.threshold ? Math.ceil((decision.threshold - cartValue) / 5) * 5 : 0;
+        const thresholdRemaining = thresholdRemainingFor(decision.threshold, cartValue);
         const percentToGoal = decision.threshold ? Math.round((cartValue / decision.threshold) * 100) : 0;
         const replacements = {
           '{{amount}}': decision.type === 'percentage' ? decision.amount : formatCurrency(decision.amount),
@@ -3548,31 +3642,16 @@
         }
 
         if (decision.type === 'threshold') {
-          // ENFORCE condition-stating copy. A threshold offer is only honest if
-          // the visible copy names BOTH the reward and the requirement. The
-          // previous guard tested only for the reward ('off'/'save'/'unlock'),
-          // so any gene naming a dollar amount without the qualifying spend —
-          // every urgency headline did — passed and rendered what looked like
-          // an unconditional discount. Test the requirement explicitly instead.
-          //
-          // `threshold != null` first: `cartValue >= null` coerces to
-          // `cartValue >= 0`, which is true for any non-empty cart and would
-          // declare an unqualified customer qualified.
-          const qualified = decision.threshold != null && cartValue >= decision.threshold;
-          const remainingText = formatCurrency(thresholdRemaining);
-          const thresholdText = decision.threshold != null ? formatCurrency(decision.threshold) : null;
-          const visible = showSubhead ? `${headline} ${subhead}` : headline;
-          const statesCondition = visible.includes(remainingText) ||
-            (thresholdText !== null && visible.includes(thresholdText));
-
-          if (qualified) {
-            // Evolved copy still frames this as a goal to reach; it isn't one.
-            headline = `You unlocked ${formatCurrency(decision.amount)} off!`;
-            subhead = `Your cart qualifies. This discount is applied at checkout.`;
-          } else if (!statesCondition) {
-            headline = `You're ${remainingText} away from ${formatCurrency(decision.amount)} off`;
-            subhead = `Add a little more to your cart and save on your entire order.`;
-          }
+          // ENFORCE condition-stating copy — a threshold offer is only honest
+          // if the visible copy names both the reward and the requirement.
+          // resolveThresholdCopy documents why the test is on the requirement.
+          const resolved = resolveThresholdCopy(decision, cartValue, headline, subhead, showSubhead);
+          const qualified = resolved.qualified;
+          headline = resolved.headline;
+          subhead = resolved.subhead;
+          // Replacement copy carries the condition in the subhead, so it has to
+          // be shown even where the showSubhead gene would hide it.
+          if (resolved.changed) showSubhead = true;
           showSecondary = true;
           secondaryCta = 'Checkout Now';
           // Primary CTA must encourage shopping, never checkout
