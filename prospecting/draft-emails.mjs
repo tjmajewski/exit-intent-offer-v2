@@ -2,9 +2,9 @@
 //
 //   node prospecting/draft-emails.mjs                    # preview 12 in terminal
 //   node prospecting/draft-emails.mjs --pptx             # one slide per email
-//   node prospecting/draft-emails.mjs --sent <domain>    # record that you sent it
-//   node prospecting/draft-emails.mjs --replied <domain> # they answered: stop following up
-//   node prospecting/draft-emails.mjs --dead <domain>    # not interested: stop following up
+//   node prospecting/draft-emails.mjs --sent yourstore.com    # record that you sent it
+//   node prospecting/draft-emails.mjs --replied yourstore.com # they answered: stop following up
+//   node prospecting/draft-emails.mjs --dead yourstore.com    # not interested: stop following up
 //   node prospecting/draft-emails.mjs --status           # pipeline at a glance
 //   node prospecting/draft-emails.mjs --review           # browser page, copy/paste into Zoho
 //   node prospecting/draft-emails.mjs --eml              # one .eml file per draft
@@ -639,7 +639,7 @@ function recordDrafted(list) {
   saveState(state);
   const tracked = Object.keys(state.leads).length;
   console.error(`ledger: ${tracked} lead(s) tracked`);
-  console.error('after you send one: node prospecting/draft-emails.mjs --sent <domain>');
+  console.error(`after you send one: node prospecting/draft-emails.mjs --sent ${list[0].row.domain}`);
 }
 
 const messages = [];

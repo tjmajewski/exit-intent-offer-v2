@@ -79,7 +79,7 @@ export async function buildDeck(drafts, outPath, meta = {}) {
   title.addText('Nothing here has been sent. After you send one, record it so the follow-up schedules itself.', {
     x: 0.9, y: 5.6, w: 11.5, h: 0.4, isTextBox: true, margin: 0, fontSize: 13, color: MUTED, italic: true, fontFace: 'Calibri',
   });
-  title.addText('node prospecting/draft-emails.mjs --sent <domain>', {
+  title.addText('node prospecting/draft-emails.mjs --sent yourstore.com', {
     x: 0.9, y: 6.05, w: 11.5, h: 0.4, isTextBox: true, margin: 0, fontSize: 13, color: ACCENT, fontFace: 'Courier New',
   });
 
@@ -198,9 +198,9 @@ export async function buildDeck(drafts, outPath, meta = {}) {
     fontSize: 38, bold: true, color: WHITE, fontFace: 'Calibri',
   });
   const steps = [
-    ['Record it', 'node prospecting/draft-emails.mjs --sent <domain>', 'Drops the lead out of the pool and schedules touch two for four days out.'],
-    ['They answered', 'node prospecting/draft-emails.mjs --replied <domain>', 'Stops all follow-ups. Use this the moment anyone replies.'],
-    ['Not interested', 'node prospecting/draft-emails.mjs --dead <domain>', 'Also stops follow-ups. The only thing preventing a third email to someone who declined.'],
+    ['Record it', 'node prospecting/draft-emails.mjs --sent yourstore.com', 'Drops the lead out of the pool and schedules touch two for four days out.'],
+    ['They answered', 'node prospecting/draft-emails.mjs --replied yourstore.com', 'Stops all follow-ups. Use this the moment anyone replies.'],
+    ['Not interested', 'node prospecting/draft-emails.mjs --dead yourstore.com', 'Also stops follow-ups. The only thing preventing a third email to someone who declined.'],
     ['Next batch', 'node prospecting/draft-emails.mjs --pptx', 'Twelve more, with any due follow-ups mixed in wherever they rank.'],
   ];
   let sy = 2.5;
