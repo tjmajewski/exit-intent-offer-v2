@@ -297,8 +297,21 @@ export async function loader({ request, params }) {
         profitPerImpression: true,
       },
     }),
+    // Visitor decisions only. The cart webhook and idle cart pickup both used
+    // to file "pre-decisions" for shoppers who were not on the site, and at
+    // ~2 rows per cart edit they crowded the real ones out of the last 50 —
+    // one console load showed 39 pre-decisions and 2 impressions. Both writers
+    // are gone (2026-09-25) and scripts/ops/purge-pre-decisions.mjs clears the
+    // backlog, but the filter stays: this log answers "what did the AI do to a
+    // shopper", and a row with no shopper can never be an answer to it.
     db.aIDecision.findMany({
-      where: { shopId: shop.id },
+      where: {
+        shopId: shop.id,
+        NOT: [
+          { decision: { contains: '"source":"cart_webhook"' } },
+          { decision: { contains: '"source":"idle_cart_pickup"' } },
+        ],
+      },
       orderBy: { createdAt: "desc" },
       take: 50,
       select: { id: true, decision: true, signals: true, createdAt: true, offerId: true },

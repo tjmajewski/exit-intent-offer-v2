@@ -1,5 +1,52 @@
 # @shopify/shopify-app-template-react-router
 
+## Resparq AI - September 25, 2026 (The decision log means one thing again)
+
+The super-admin decision log showed 39 pre-decisions, 1 control and 2
+impressions in its last 50 rows. The pre-decisions were the app's own
+bookkeeping about shoppers who were not on the site, and they were burying the
+rows that describe what a visitor actually saw.
+
+### Removed
+- **Cart-webhook pre-decisions.** `carts/create` + `carts/update` both pointed
+  at one handler that ran the offer engine on every cart change and filed the
+  result as an `AIDecision`. Nothing ever read those rows: the storefront
+  pickup they were written for was never built, and the handler never persisted
+  the cart token, so a row could not have been matched to a visitor in any
+  case. Every one of them also scored identically (`deviceType: "unknown"`,
+  `pageViews: 0`, `timeOnSite: 0` — a webhook has no browser session), so the
+  log filled with the same sentence at two rows per cart edit. The
+  subscriptions are gone from `shopify.app.toml` and `shopify.server.js`; the
+  route stays as a 200 no-op until the next `shopify app deploy` propagates,
+  because an unroutable webhook retries.
+- **Idle cart pickup** (`app/utils/idle-cart-pickup.server.js` and its call in
+  `app._index.jsx`). Same shape, hourly, up to 50 rows per run. Its comment
+  said "store AI decision for learning", which was never true — the propensity
+  calibrator reaches decisions through `InterventionOutcome.aiDecisionId`, and
+  a decision for an absent shopper never gets an outcome row. It cost an
+  `abandonedCheckouts` query per hour and bought nothing.
+
+### Changed
+- **The decision log reads visitor decisions only.** The console query excludes
+  both pre-decision sources. Belt as well as braces — the writers are gone —
+  but the filter states what the log is for: a row with no shopper behind it
+  can never answer "what did the AI do to a shopper".
+
+### Added
+- **`scripts/ops/purge-pre-decisions.mjs`** — clears the rows the two retired
+  writers already filed. Dry run by default. Refuses to delete anything that
+  turns out to have an `InterventionOutcome`, since that would contradict the
+  premise of the purge.
+
+### Not affected, checked rather than assumed
+Learning, attribution and money are untouched. Training joins through
+`InterventionOutcome`, which these rows never had; `shouldIntervene` reads the
+bandit counters and never bumps them; no discount code was ever minted on
+either path; the merchant dashboard does not count decisions. The damage was
+confined to the console and to the super-admin **AI decisions** KPI, which
+counted every row — that one corrects itself once the purge runs.
+
+
 ## Resparq AI - September 22, 2026 (Measurement, not clicks)
 
 Everything below is committed but **not yet deployed** as of this entry. The

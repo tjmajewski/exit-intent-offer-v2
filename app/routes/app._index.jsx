@@ -260,14 +260,14 @@ export async function loader({ request }) {
     const canonicalPlan = await getShopPlan(session);
     plan = { ...plan, tier: canonicalPlan.tier };
 
-    // Idle cart pickup: On first load, evaluate any abandoned carts
-    // that existed before the app was enabled. Fire-and-forget to avoid
-    // slowing down the admin page load.
-    if (shopRecord) {
-      import("../utils/idle-cart-pickup.server.js")
-        .then(({ pickupIdleCarts }) => pickupIdleCarts(admin, shopDomain))
-        .catch((e) => console.error("[Idle Cart Pickup] Background error:", e));
-    }
+    // Idle cart pickup used to run here: once an hour, on dashboard load, it
+    // pulled up to 50 abandoned checkouts and filed an AIDecision for each.
+    // Removed 2026-09-25 with the cart-webhook pre-decisions, for the same
+    // reason — the rows had no reader. "Store AI decision for learning" was
+    // wrong on its face: training joins decisions through InterventionOutcome,
+    // and a row for a shopper who was never on the site never gets one. All it
+    // bought was an abandonedCheckouts query per hour and 50 more lines
+    // between the console and the decisions a visitor actually saw.
 
     if (plan && plan.tier === 'pro' && shopRecord) {
       const activePromo = await db.promotion.findFirst({

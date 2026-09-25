@@ -37,10 +37,9 @@ api_version = "2026-01"
   topics = [ "orders/cancelled", "orders/updated" ]
   uri = "/webhooks/orders/reversal"
 
-  # Cart events (for proactive AI decisions on add-to-cart)
-  [[webhooks.subscriptions]]
-  topics = [ "carts/create", "carts/update" ]
-  uri = "/webhooks/carts/update"
+  # No cart subscription. carts/create + carts/update used to mint AIDecision
+  # pre-decisions nobody read — see webhooks.carts.update.jsx for the full
+  # reasoning. Removing the topics here is what actually stops the traffic.
 
   # GDPR Mandatory Webhooks (use compliance_topics, not topics)
   [[webhooks.subscriptions]]
