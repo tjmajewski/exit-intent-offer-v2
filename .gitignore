@@ -30,7 +30,12 @@ database.sqlite
 # `git add -A` during a code change cannot sweep them into a commit.
 instagram-drafts/
 linkedin-drafts/
-.claude/
+.claude/*
+# Batman is versioned with the code it drives. The pattern above ignores the
+# contents rather than the directory itself, because git will not descend into
+# an excluded directory and a negation under one can never match.
+!.claude/skills/
+
 
 # Prospect scan output (regenerated, not source)
 prospecting/out/
