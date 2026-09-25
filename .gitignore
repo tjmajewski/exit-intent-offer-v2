@@ -31,3 +31,6 @@ database.sqlite
 instagram-drafts/
 linkedin-drafts/
 .claude/
+
+# Prospect scan output (regenerated, not source)
+prospecting/out/

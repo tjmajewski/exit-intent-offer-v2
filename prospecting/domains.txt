@@ -1,0 +1,4 @@
+# One domain per line. Blank lines and # comments ignored.
+# Protocol and paths are stripped, so pasting full URLs is fine.
+#
+#   node prospecting/scan-stores.mjs prospecting/domains.txt
