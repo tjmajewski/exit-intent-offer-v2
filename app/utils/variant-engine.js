@@ -655,8 +655,16 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
   // look up the archetype leaderboard for this segmentKey and compute a
   // per-archetype multiplier. Tilts sampling toward archetypes that win
   // this persona × scenario without disabling exploration.
+  //
+  // Both outcomes are logged. On a low-traffic store the honest answer is
+  // `none` on every decision — the own-shop source needs 50 RENDERED rows in a
+  // single segmentKey — and when only the success case logged, that state was
+  // invisible: silence was the sole evidence of inaction, and the caller's
+  // unconditional `priorsGate` line (sourced from the plan tier, not from any
+  // prior) read as confirmation the biasing was working.
   let archetypePriors = null;
   let priorsSource = 'none';
+  let priorsSkipReason = null;
   if (enableArchetypePriors && (segmentKey || storeVertical)) {
     try {
       const db = await getDb();
@@ -669,15 +677,23 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
         archetypePriors = priors;
         priorsSource = source;
         console.log(` [Priors] Archetype biasing active (source=${source}, archetypes=${priors.size})`);
+      } else {
+        priorsSkipReason = 'no_data';
+        console.log(` [Priors] Archetype biasing INACTIVE (source=none, no data at this segmentKey: ${segmentKey || 'n/a'}) — sampling is uniform`);
       }
     } catch (err) {
+      priorsSkipReason = 'error';
       console.error(' [Priors] Failed to compute archetype priors:', err.message);
     }
+  } else {
+    priorsSkipReason = enableArchetypePriors ? 'no_segment_key' : 'disabled_for_plan';
+    console.log(` [Priors] Archetype biasing INACTIVE (${priorsSkipReason}) — sampling is uniform`);
   }
 
   // Sprint 3: 3-level hierarchical template posterior. Pools templateId
   // performance across the store + cross-store meta and tilts sampling toward
   // winning layouts. Independent of archetype priors — both multipliers stack.
+  // Same conditional-log blind spot as archetype priors above, and the same fix.
   let templatePriors = null;
   let templatePriorsSource = 'none';
   if (enableTemplatePriors) {
@@ -692,6 +708,8 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
         templatePriors = priors;
         templatePriorsSource = source;
         console.log(` [Priors] Template biasing active (source=${source}, templates=${priors.size})`);
+      } else {
+        console.log(` [Priors] Template biasing INACTIVE (source=none, no data for baseline ${baseline}) — sampling is uniform`);
       }
     } catch (err) {
       console.error(' [Priors] Failed to compute template priors:', err.message);
@@ -767,7 +785,7 @@ export async function selectVariantForImpression(shopId, baseline, segment = 'al
   const winner = samples[0].variant;
   const winnerArchetype = getArchetype(winner.baseline)?.archetypeName || 'none';
   const cellsResolved = contenders.filter(v => resolveCell(v.id)).length;
-  console.log(` Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)}${triggerStats ? `, trigger: ${triggerReason}` : ''}${archetypePriors ? `, priors=${priorsSource}, archetype=${winnerArchetype}` : ''}${templatePriors ? `, templatePriors=${templatePriorsSource}, template=${winner.templateId}` : ''}${clusterPrior ? `, clusterPrior=${clusterPrior.source} cvr=${clusterPrior.cvr.toFixed(3)}` : ''}${cellsResolved > 0 ? `, cellStats=${cellsResolved}/${contenders.length}` : ''})`);
+  console.log(` Thompson Sampling selected ${winner.variantId} (sample: ${samples[0].sample.toFixed(4)}${triggerStats ? `, trigger: ${triggerReason}` : ''}, priors=${priorsSource}${priorsSkipReason ? `(${priorsSkipReason})` : ''}, archetype=${winnerArchetype}${enableTemplatePriors ? `, templatePriors=${templatePriorsSource}, template=${winner.templateId}` : ''}${clusterPrior ? `, clusterPrior=${clusterPrior.source} cvr=${clusterPrior.cvr.toFixed(3)}` : ''}${cellsResolved > 0 ? `, cellStats=${cellsResolved}/${contenders.length}` : ''})`);
 
   return winner;
 }

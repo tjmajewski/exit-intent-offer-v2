@@ -908,7 +908,13 @@ export async function action({ request }) {
         clusterPrior
       }
     );
-    console.log(`[Variant Selection] Selected ${selectedVariant.variantId} (Gen ${selectedVariant.generation}, trigger: ${triggerReason}, segmentKey: ${segmentKey}, priors: ${prioriEnabled ? planTierForPriors : 'off'})`);
+    // `priorsGate`, not `priors`. This value is the plan gate — whether priors
+    // were ALLOWED to run — and says nothing about whether any prior was
+    // applied. Read as `priors: pro` it was a false confirmation: it printed on
+    // every decision while archetype biasing had never once fired. Whether a
+    // prior actually biased anything is the `priors=<source>` field on
+    // selectVariantForImpression's own Thompson Sampling line.
+    console.log(`[Variant Selection] Selected ${selectedVariant.variantId} (Gen ${selectedVariant.generation}, trigger: ${triggerReason}, segmentKey: ${segmentKey}, priorsGate: ${prioriEnabled ? planTierForPriors : 'off'})`);
 
     // Step 4: Build decision from variant genes
     // Cap the offer amount based on aggression level.
