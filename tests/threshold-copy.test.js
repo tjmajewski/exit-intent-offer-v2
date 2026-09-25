@@ -24,6 +24,11 @@ import { readFileSync } from 'node:fs';
 const src = readFileSync(
   new URL('../extensions/exit-intent-modal/assets/exit-intent-modal.js', import.meta.url), 'utf8');
 
+// The structural pins below scan for patterns that must not appear in CODE.
+// The comments explaining why quote those very patterns, so strip them first —
+// otherwise the documentation fails the test it is documenting.
+const code = src.replace(/^\s*\/\/.*$/gm, '');
+
 // Lift the two helpers out of the asset's IIFE and run them for real, against a
 // formatCurrency matching the asset's own (USD, no decimals).
 function loadHelpers() {
@@ -125,30 +130,84 @@ describe('threshold copy states the condition', () => {
     assert.equal(visible.changed, false);
   });
 
-  test('a null threshold does not declare a non-empty cart qualified', () => {
-    // `cartValue >= null` coerces to `cartValue >= 0` — true for every cart.
-    const r = resolveThresholdCopy({ type: 'threshold', threshold: null, amount: 70 }, 100, 'Generic', 'Copy', true);
-    assert.equal(r.qualified, false);
+  test('a null threshold claims no condition at all', () => {
+    // Two wrong answers were available here. `cartValue >= null` coerces to
+    // `cartValue >= 0`, so the naive comparison called every non-empty cart
+    // qualified and promised an unlocked discount. Clamping the remaining spend
+    // instead produced `You're $0 away from $70 off`. Neither is true: there is
+    // no condition to state, so state none.
+    for (const threshold of [null, undefined]) {
+      const r = resolveThresholdCopy({ type: 'threshold', threshold, amount: 70 }, 100, 'Generic', 'Copy', true);
+      assert.equal(r.qualified, false, 'an unqualified cart was told it unlocked the discount');
+      assert.equal(r.headline, 'Get $70 off your order');
+      assert.doesNotMatch(r.headline, /away|unlocked|\$0/);
+    }
   });
 });
 
 describe('both render paths go through the one helper', () => {
-  test('neither path computes remaining spend inline any more', () => {
-    const inline = src.match(/Math\.ceil\(\(\s*decision\.threshold - cartValue\s*\)\s*\/\s*5\s*\)\s*\*\s*5/g);
-    assert.equal(inline, null,
-      'a render path is computing remaining spend itself again — it will go negative');
+  test('no render path computes remaining spend inline any more', () => {
+    // Deliberately loose. The first version of this test pinned the exact
+    // expression `decision.threshold - cartValue` and passed while TWO more
+    // copies sat in the file spelled differently — one with `defaultCartValue`,
+    // one with `(decision.threshold || 0) - cartValue`, which is negative for
+    // every non-empty cart when the threshold is null. Match any `Math.ceil`
+    // over a subtraction divided by 5, and allow only the helper's own.
+    const inline = [...code.matchAll(/Math\.ceil\([^;\n]*-[^;\n]*\/\s*5\s*\)\s*\*\s*5/g)];
+    assert.equal(inline.length, 1,
+      `expected only thresholdRemainingFor to compute remaining spend, found ${inline.length}: ` +
+      inline.map(m => m[0]).join(' | '));
+    assert.match(inline[0][0], /^Math\.ceil\(\(threshold - cartValue\)/,
+      'the one remaining computation is not the helper\'s');
+    // And it is inside the clamp.
+    assert.match(code, /Math\.max\(0, Math\.ceil\(\(threshold - cartValue\) \/ 5\) \* 5\)/);
+  });
+
+  test('no render path decides "qualified" with its own comparison', () => {
+    // `cartValue >= decision.threshold` coerces a null threshold to 0, so every
+    // non-empty cart read as qualified. Three sites had it; one of them also
+    // drove the primary CTA, so the button disagreed with the headline.
+    const comparisons = [...code.matchAll(/>=\s*decision\.threshold/g)];
+    assert.equal(comparisons.length, 1,
+      `expected only resolveThresholdCopy to decide qualification, found ${comparisons.length} comparisons`);
+    // And the one that remains is the helper's, standing behind the early
+    // return that handles a null threshold — so it can never see one.
+    assert.match(code, /if \(decision\.threshold == null\) \{/,
+      'the helper no longer short-circuits on a null threshold');
+    const guardAt = code.indexOf('if (decision.threshold == null) {');
+    assert.ok(guardAt !== -1 && guardAt < code.indexOf('const qualified = cartValue >='),
+      'the null-threshold guard no longer precedes the comparison');
   });
 
   test('the fallback path no longer tests for the reward instead of the requirement', () => {
-    assert.doesNotMatch(src, /const mentionsOffer\s*=/,
+    assert.doesNotMatch(code, /const mentionsOffer\s*=/,
       'the guard that never fired is back');
   });
 
-  test('updateModalWithAI and resolveModalContent both call resolveThresholdCopy', () => {
-    const calls = src.match(/resolveThresholdCopy\(/g) || [];
-    // One definition + two call sites.
-    assert.ok(calls.length >= 3,
-      `expected both render paths to call the helper, found ${calls.length - 1} call site(s)`);
+  test('all four render paths call resolveThresholdCopy', () => {
+    // updateModalWithAI variant + Pro-default, resolveModalContent variant +
+    // Pro-default. Four, not two — the first sweep found two and the other two
+    // were spelled differently enough to hide.
+    const calls = code.match(/resolveThresholdCopy\(/g) || [];
+    assert.equal(calls.length, 5,
+      `expected 1 definition + 4 call sites, found ${calls.length} total`);
+  });
+
+  test('the Pro-default paths pass empty copy, so the helper always writes', () => {
+    // No gene to preserve there — `statesCondition` must be false so the
+    // sentence is generated rather than left blank.
+    const r = resolveThresholdCopy({ type: 'threshold', threshold: 250, amount: 70 }, 100, '', '', false);
+    assert.equal(r.changed, true);
+    assert.equal(r.headline, "You're $150 away from $70 off");
+    assert.ok(r.subhead, 'the Pro default path would render an empty subhead');
+  });
+
+  test('a null threshold on the Pro-default path renders neither a negative nor $0', () => {
+    // The old line was `Math.ceil(((decision.threshold || 0) - cartValue) / 5) * 5`
+    // with qualified false, so the negative branch was the one taken.
+    const r = resolveThresholdCopy({ type: 'threshold', threshold: null, amount: 70 }, 100, '', '', false);
+    assert.doesNotMatch(r.headline, /-\$|\$-|\$0/, `rendered ${r.headline}`);
+    assert.equal(r.headline, 'Get $70 off your order');
   });
 });
 

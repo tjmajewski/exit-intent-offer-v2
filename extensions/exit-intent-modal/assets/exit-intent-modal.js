@@ -271,9 +271,25 @@
     // `threshold != null` first: `cartValue >= null` coerces to `cartValue >= 0`,
     // true for any non-empty cart, which would declare an unqualified customer
     // qualified.
-    const qualified = decision.threshold != null && cartValue >= decision.threshold;
+    // A threshold decision with no threshold is malformed data, and there is no
+    // honest conditional sentence to write for it: the shopper has not qualified
+    // (so "unlocked" would be a lie) and there is no spend to name (so "away
+    // from" reads `$0 away`, which is what the clamp turns the old negative
+    // into). State the discount plainly and claim no condition. Loud, because
+    // the backend should never send this.
+    if (decision.threshold == null) {
+      console.warn('[Threshold] Decision carries no threshold — falling back to unconditional copy');
+      return {
+        qualified: false,
+        changed: true,
+        headline: `Get ${formatCurrency(decision.amount)} off your order`,
+        subhead: `Complete your order and save.`,
+      };
+    }
+
+    const qualified = cartValue >= decision.threshold;
     const remainingText = formatCurrency(thresholdRemainingFor(decision.threshold, cartValue));
-    const thresholdText = decision.threshold != null ? formatCurrency(decision.threshold) : null;
+    const thresholdText = formatCurrency(decision.threshold);
 
     if (qualified) {
       return {
@@ -288,8 +304,7 @@
     // no qualifying spend — every urgency headline — passes a reward test and
     // renders as an unconditional discount.
     const visible = showSubhead ? `${headline} ${subhead}` : headline;
-    const statesCondition = visible.includes(remainingText) ||
-      (thresholdText !== null && visible.includes(thresholdText));
+    const statesCondition = visible.includes(remainingText) || visible.includes(thresholdText);
     if (statesCondition) return { qualified, changed: false, headline, subhead };
 
     return {
@@ -3437,14 +3452,14 @@
           // so it never fired and a qualified cart rendered `$-100 away`.
           const headlineEl = modal.querySelector('h2');
           const bodyEl = modal.querySelector('p');
+          const resolved = resolveThresholdCopy(
+            decision,
+            cartValue,
+            headlineEl?.textContent || '',
+            bodyEl?.textContent || '',
+            bodyEl ? bodyEl.style.display !== 'none' : false,
+          );
           if (headlineEl && bodyEl) {
-            const resolved = resolveThresholdCopy(
-              decision,
-              cartValue,
-              headlineEl.textContent || '',
-              bodyEl.textContent || '',
-              bodyEl.style.display !== 'none',
-            );
             if (resolved.changed) {
               headlineEl.textContent = resolved.headline;
               bodyEl.textContent = resolved.subhead;
@@ -3466,8 +3481,15 @@
 
           // ENFORCE: Primary CTA must encourage shopping, never checkout.
           // Always override — "Complete My Order", "Checkout Now", etc. all conflict.
+          //
+          // `resolved.qualified`, not `cartValue >= decision.threshold`. That
+          // comparison coerces a null threshold to 0, so every non-empty cart
+          // read as qualified and an unqualified shopper was told to keep
+          // shopping under a headline asking them to add more. It also has to
+          // agree with the copy above, which is the other reason to read it off
+          // the same value.
           if (primaryBtn) {
-            primaryBtn.textContent = cartValue >= decision.threshold ? 'Keep Shopping' : 'Add Items & Save';
+            primaryBtn.textContent = resolved.qualified ? 'Keep Shopping' : 'Add Items & Save';
           }
 
           // Store threshold offer for cart monitor. Guarded: this sits upstream
@@ -3510,14 +3532,13 @@
         this.currentOfferAmount = decision.amount;
       } else if (decision.type === 'threshold') {
         const defaultCartValue = await this.getCartValue();
-        const defaultRemaining = Math.ceil((decision.threshold - defaultCartValue) / 5) * 5;
-        if (defaultCartValue >= decision.threshold) {
-          headline.textContent = `You unlocked ${formatCurrency(decision.amount)} off!`;
-          body.textContent = `Your cart qualifies. This discount is applied at checkout.`;
-        } else {
-          headline.textContent = `You're ${formatCurrency(defaultRemaining)} away from ${formatCurrency(decision.amount)} off`;
-          body.textContent = `Add a little more to your cart and save on your entire order.`;
-        }
+        // Empty copy in, so `statesCondition` is false and the helper always
+        // writes the sentence — there is no gene to preserve on this path. Same
+        // rule as the other three call sites, including the null-threshold guard
+        // the inline `>=` here did not have.
+        const defaultResolved = resolveThresholdCopy(decision, defaultCartValue, '', '', false);
+        headline.textContent = defaultResolved.headline;
+        body.textContent = defaultResolved.subhead;
         this.settings.discountCode = decision.code;
         this.settings.offerType = 'threshold';
         this.currentOfferAmount = decision.amount;
@@ -3529,10 +3550,12 @@
           secondaryBtn.textContent = 'Checkout Now';
         }
 
-        // Primary CTA encourages shopping if below threshold, otherwise keep shopping
+        // Primary CTA encourages shopping if below threshold, otherwise keep
+        // shopping. Reads the helper's verdict so it cannot disagree with the
+        // copy just written above it.
         const primaryBtn = modal.querySelector('#modal-primary-cta');
         if (primaryBtn) {
-          primaryBtn.textContent = defaultCartValue >= decision.threshold ? 'Keep Shopping' : 'Add Items & Save';
+          primaryBtn.textContent = defaultResolved.qualified ? 'Keep Shopping' : 'Add Items & Save';
         }
 
         // 🆕 STORE THRESHOLD INFO FOR CART MONITORING (guarded — see above:
@@ -3701,17 +3724,15 @@
         offerType = 'fixed';
         amountText = formatCurrency(decision.amount);
       } else if (decision.type === 'threshold') {
-        // `threshold != null` first: `cartValue >= null` coerces to
-        // `cartValue >= 0` and would qualify any non-empty cart.
-        const qualified = decision.threshold != null && cartValue >= decision.threshold;
-        const remaining = Math.ceil(((decision.threshold || 0) - cartValue) / 5) * 5;
-        if (qualified) {
-          headline = `You unlocked ${formatCurrency(decision.amount)} off!`;
-          subhead = `Your cart qualifies. This discount is applied at checkout.`;
-        } else {
-          headline = `You're ${formatCurrency(remaining)} away from ${formatCurrency(decision.amount)} off`;
-          subhead = `Add a little more to your cart and save on your entire order.`;
-        }
+        // Empty copy in — no gene to preserve on the Pro default path, so the
+        // helper always writes the sentence. This replaces a local `remaining`
+        // that read `(decision.threshold || 0) - cartValue`: with a null
+        // threshold that is negative for every non-empty cart, and `qualified`
+        // is false, so the negative branch was the one taken.
+        const resolvedDefault = resolveThresholdCopy(decision, cartValue, '', '', false);
+        const qualified = resolvedDefault.qualified;
+        headline = resolvedDefault.headline;
+        subhead = resolvedDefault.subhead;
         discountCode = decision.code;
         offerType = 'threshold';
         showSecondary = true;
