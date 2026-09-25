@@ -135,139 +135,133 @@ const money = (n) => `$${Number(n).toLocaleString('en-US', { maximumFractionDigi
 // Order matters: the holdout is the claim worth making, so it goes first and
 // the thin track record lands as the reason it exists rather than as an
 // apology the reader hits before any value.
-const PROOF = `Resparq holds 5% of exits back as a control, so the lift number you end up with is your own, not mine. Mine is thin anyway: one store live two weeks, three recovered checkouts, about $3,000 in attributed revenue, not enough volume to quote a lift figure.`;
+// Taylor's voice, from a sample he wrote himself. Warmer and less clipped than
+// a founder firing off one-liners: "we" for the company, the positioning
+// paragraph doing the real work, and a low-stakes close with somewhere to go
+// and read instead of replying.
+const SITE = 'www.resparq.ai';
 
-// Both the first touch and the follow-ups need this, and a follow-up that says
-// "re:" should carry the subject the first one actually used.
-function subjectFor(row) {
-  const vendor = (row.vendors || [])[0];
-  switch (row.scenario) {
-    case 'E_HIGH_AOV_GREENFIELD':
-      return `nothing fires when your cart leaves`;
-    case 'A_GREENFIELD':
-      return `your cart has no exit offer`;
-    case 'B_EMAIL_ONLY':
-      return `${vendor || 'capture'} on arrival, nothing on exit`;
-    case 'C_VENDOR_EXIT_CAPABLE':
-    default:
-      // Name the tool only when there is one of it. With two detected vendors,
-      // naming the first is a coin flip about which one is the popup.
-      return (row.vendors || []).length === 1
-        ? `does your ${vendor} fire on exit?`
-        : `does your popup fire on exit?`;
-  }
-}
+// The core of every first-contact email. Small store owners do not buy an exit
+// intent widget; they buy not having to build or maintain one.
+const POSITIONING = `Resparq was built for small store owners, so they can run advanced abandoned cart strategies in the click of a button (no maintenance or coding required), strategies that large corporations use teams to maintain.`;
 
-// Follow-ups are short on purpose. The first email already made the argument;
-// repeating it at length reads as pressure rather than persistence, and the
-// third touch says plainly that it is the last one.
+// One store, about $3,000 attributed, two weeks. "A few thousand dollars" is
+// accurate and stays a recovery claim, not a lift claim. There is still no
+// measured lift figure and this must never imply one.
+const PROOF = `We're early, but we've seen success so far by being able to successfully recover a few thousand dollars for a store in just two weeks.`;
+
+const CLOSE = `Worth a 10 minute conversation? You can also learn more here on how it works: ${SITE}`;
+
+// Follow-ups stay short. The first email made the argument; repeating it at
+// length reads as pressure, and the second one says plainly that it is the last.
 function renderFollowUp(row, contact, stage) {
-  // No name means no greeting. "Hi there" announces that the sender does not
-  // know who they are writing to, which is worse than opening with the point.
-  const greeting = contact?.firstName ? `Hi ${contact.firstName},\n\n` : '';
-  const cat = row.catalog || {};
-  const usd = row.currency === 'USD';
-  // Same guard as the first touch: below the monthly price, one order does not
-  // cover a month, so that claim is not made.
-  const priced = cat.available && usd && row.paybackMonths && cat.medianPrice >= MONTHLY_PRICE;
+  const name = contact?.firstName || null;
+  const greeting = name ? `Hi ${name},\n\n` : '';
   const subject = `re: ${subjectFor(row)}`;
 
   if (stage === 1) {
-    const argument = priced
-      ? `At your prices one recovered order covers about ${row.paybackMonths} ${row.paybackMonths === 1 ? 'month' : 'months'} of Resparq, which is the whole argument.`
-      : `Resparq is ${money(MONTHLY_PRICE)}/mo flat, so the bar is one recovered order a month.`;
     return {
       subject,
-      body: `${greeting}Bumping this once in case it got buried.
+      body: `${greeting}Just floating this back up in case it got buried.
 
-${argument}
+If cart recovery is not where your head is right now, no problem at all, just say so and I will leave you to it.
 
-If it is not a priority, "not now" is a full answer and I will stop.
-
+Thanks,
 Taylor`,
     };
   }
 
   return {
     subject,
-    body: `${greeting}Last one from me.
+    body: `${greeting}Last one from me on this.
 
-If exit intent moves up your list later in the year, reply and I will pick it up then. Otherwise I will assume the timing is wrong and leave it there.
+If it is worth a look later in the year, reply any time and I will pick it back up. Otherwise I will assume the timing is wrong and stop here.
 
+Thanks,
 Taylor`,
   };
+}
+
+// Subject lines state what was actually found, so they read like a person
+// wrote them rather than a merge field.
+function subjectFor(row) {
+  const vendors = (row.vendors || []).join(' and ');
+  switch (row.scenario) {
+    case 'E_HIGH_AOV_GREENFIELD':
+      return 'cart recovery on your higher priced items';
+    case 'B_EMAIL_ONLY':
+      return `${vendors || 'your popup'} on arrival, nothing on exit`;
+    case 'C_VENDOR_EXIT_CAPABLE':
+      return `a question about your ${row.vendors?.length === 1 ? vendors : 'popup'} setup`;
+    case 'A_GREENFIELD':
+    default:
+      return 'cart recovery on your store';
+  }
 }
 
 function render(row, anger, contact) {
   const cat = row.catalog || {};
   const usd = row.currency === 'USD';
-  // No name means no greeting at all. "Hi there" is a merge field admitting it
-  // came up empty, and starting on the observation reads more like a person.
-  const greeting = contact?.firstName ? `Hi ${contact.firstName},\n\n` : '';
-  const med = cat.available && usd ? money(cat.medianPrice) : null;
-  const payback = row.paybackMonths;
+  const name = contact?.firstName || null;
+  const greeting = name ? `Hi ${name},\n\n` : '';
   const vendors = (row.vendors || []).join(' and ');
+  const med = cat.available && usd ? money(cat.medianPrice) : null;
 
-  // The one number in the email. Three cases, because paybackMonths floors at 1
-  // and a store whose median item is under the monthly price would otherwise be
-  // told one order covers a month, which it does not. Below that line the
-  // honest figure is how many orders it takes.
-  // When the catalogue could not be priced there is no number at all, so the
-  // line falls back to the break-even bar, which is a statement about the price
-  // rather than a claim about their results.
-  const orders = med ? Math.ceil(MONTHLY_PRICE / cat.medianPrice) : null;
-  const mathLine = med && payback && cat.medianPrice >= MONTHLY_PRICE
-    ? `Your median item is around ${med}. One recovered order covers about ${payback} ${payback === 1 ? 'month' : 'months'} of Resparq at ${money(MONTHLY_PRICE)}/mo.`
-    : med
-      ? `Your median item is around ${med}, so ${orders} recovered orders in a month pays for Resparq at ${money(MONTHLY_PRICE)}/mo.`
-      : `I am not going to guess at your numbers from the outside, so no math from me. Resparq is ${money(MONTHLY_PRICE)}/mo flat, so the bar is one recovered order a month.`;
+  // High AOV gets the qualitative line, because "high value items" is the
+  // argument and a number would only shrink it. Everything else gets one
+  // concrete figure, and a store priced under the subscription gets orders per
+  // month rather than a months figure that would be false.
+  let valueLine;
+  if (row.scenario === 'E_HIGH_AOV_GREENFIELD') {
+    valueLine = '';
+  } else if (med && row.paybackMonths) {
+    valueLine = `\n\nYour median item is around ${med}, so one recovered order covers about ${row.paybackMonths} ${row.paybackMonths === 1 ? 'month' : 'months'} of Resparq at ${money(MONTHLY_PRICE)}/mo.`;
+  } else if (med && row.ordersPerMonth) {
+    valueLine = `\n\nYour median item is around ${med}, so ${row.ordersPerMonth} recovered orders in a month covers Resparq at ${money(MONTHLY_PRICE)}/mo.`;
+  } else {
+    valueLine = `\n\nResparq is ${money(MONTHLY_PRICE)}/mo flat, so the bar is one recovered order a month.`;
+  }
 
-  const subject = subjectFor(row);
   let opening;
-  // Low friction on purpose. Asking a stranger for ten minutes of their time is
-  // a bigger request than the email has earned, so the ask is a yes/no that
-  // costs them one reply and spends my time instead.
-  let ask = `Want me to sketch what I would set up?`;
-
   switch (row.scenario) {
     case 'E_HIGH_AOV_GREENFIELD':
-      opening = `I went through ${row.domain} looking for an offer that fires when a loaded cart heads for the exit, and did not find one. At your price points that is the first thing I would add.`;
-      break;
-    case 'A_GREENFIELD':
-      opening = `I went through ${row.domain} and did not find anything that fires when a loaded cart heads for the exit.`;
+      opening = `I went through ${row.domain} and as I was browsing I noticed I could not find a cart recovery strategy. With all the high value items on your site that can be a huge difference maker.`;
       break;
     case 'B_EMAIL_ONLY':
-      opening = `You run ${vendors} on ${row.domain}, so arrivals are covered. I did not find anything firing when a loaded cart heads for the exit instead.`;
+      opening = `I went through ${row.domain} and noticed you are collecting emails with ${vendors}, which is the hard part already done. What I could not find was anything that steps in once someone has a cart and starts to leave.`;
       break;
     case 'C_VENDOR_EXIT_CAPABLE':
+      // A detected vendor means the store could run exit intent, not that it
+      // does, so this asks rather than tells.
+      opening = `I went through ${row.domain} and saw you are running ${vendors || 'a popup tool'}, so you are already thinking about this. What I could not tell from the outside is whether anything fires when someone with a cart starts to leave, and if it does, whether everyone gets the same code.`;
+      break;
+    case 'A_GREENFIELD':
     default:
-      // A detected vendor means the store could be running exit intent, not
-      // that it is. Telling an owner what their own popup does is how you get
-      // deleted, so this asks.
-      opening = `You already run ${vendors || 'a popup tool'} on ${row.domain}, so one narrow question: is anything firing on exit, and if it is, does everyone get the same code, including the people who were going to buy anyway?`;
-      ask = `If that is already covered, say so and I will drop it.`;
+      opening = `I went through ${row.domain} and as I was browsing I noticed I could not find a cart recovery strategy.`;
       break;
   }
 
   if (row.discountHints?.length) {
-    opening += ` I also saw ${row.discountHints[0]} on the site, which is worth aiming at the people leaving rather than everyone who arrives.`;
+    opening += ` I did see ${row.discountHints[0]} on the site, which is worth aiming at the people about to leave rather than everyone who arrives.`;
   }
 
-  const angerLine = anger && anger.monthsAgo != null && anger.monthsAgo <= 18
-    ? `\n\nOne thing, since the reviews in this category are full of surprise usage bills: Resparq is a flat ${money(MONTHLY_PRICE)}/mo. No usage fees, no per-impression charge.`
+  const billing = anger && anger.monthsAgo != null && anger.monthsAgo <= 18
+    ? `\n\nOne thing worth saying, since the reviews in this category are full of surprise usage bills: Resparq is a flat ${money(MONTHLY_PRICE)}/mo. No usage fees and no per impression charges.`
     : '';
 
-  const body = `${greeting}${opening}
+  return {
+    subject: subjectFor(row),
+    body: `${greeting}${opening}${valueLine}
 
-${mathLine}${angerLine}
+${POSITIONING}
 
-${PROOF}
+${PROOF}${billing}
 
-${ask}
+${CLOSE}
 
-Taylor`;
-
-  return { subject, body };
+Thanks,
+Taylor`,
+  };
 }
 
 // ---------------------------------------------------------------- inputs
