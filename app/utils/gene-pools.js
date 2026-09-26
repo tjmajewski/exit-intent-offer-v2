@@ -446,6 +446,27 @@ export function amountDenomination(text) {
 }
 
 /**
+ * Copy for a surface that ended up with no offer to make.
+ *
+ * Reached when the engine intended a discount and could not deliver one — the
+ * Shopify discount mutation threw, or returned no code. The variant's own
+ * genes are written for the offer that was supposed to exist ('Take
+ * {{amount}}% off your order'), and the client interpolates {{amount}} as
+ * currency for anything that is not a percentage, so serving those genes with
+ * a zeroed amount renders "Take $0% off your order" above a CTA that redeems
+ * nothing.
+ *
+ * Every string here is free of {{placeholders}} and names no amount, so it is
+ * valid against misdescribesOffer() for any offer type. It also promises
+ * nothing waiting at checkout, because in this case nothing is.
+ */
+export const OFFER_UNDELIVERABLE_COPY = Object.freeze({
+  headline: 'You left something in your cart',
+  subhead: 'Pick up right where you left off',
+  cta: 'Complete My Order'
+});
+
+/**
  * Would this copy misdescribe an offer of this type?
  *
  * Copy that names no amount is valid everywhere — most CTAs and every subhead

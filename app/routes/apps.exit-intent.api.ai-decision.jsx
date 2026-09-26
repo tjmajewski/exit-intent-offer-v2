@@ -1520,7 +1520,10 @@ export async function action({ request }) {
           throw new Error(`unhandled decision.type "${decision.type}" on the discount path`);
         }
       } catch (err) {
-        console.error(`[${modeLabel}] Discount minting failed (${decision.type}/${decision.amount}):`, err.message);
+        // `err?.message ?? String(err)`, not `err.message`: a non-Error throw
+        // would make this catch throw, fall through to the outer handler, and
+        // restore the 500 this branch exists to remove.
+        console.error(`[${modeLabel}] Discount minting failed (${decision.type}/${decision.amount}):`, err?.message ?? String(err));
         discountResult = null;
       }
     }
@@ -1545,8 +1548,30 @@ export async function action({ request }) {
       console.warn(`[${modeLabel}] Serving no-discount copy — the offer could not be created.`);
       const wantedType = decision.type;
       const wantedAmount = decision.amount;
+      // Neutral copy FIRST, before the type flips.
+      //
+      // The variant's genes are written for the offer that was supposed to
+      // exist — 'Take {{amount}}% off your order' — and the client
+      // interpolates {{amount}} as currency for anything that is not a
+      // percentage. Zeroing the amount without rewriting the copy renders
+      // "Take $0% off your order" above a CTA that redeems nothing. That is
+      // the exact defect this file already carries a comment about having
+      // shipped once; it must not come back through the failure path.
+      //
+      // Unlike the generic-code branch below, there is no code to promise
+      // here, so the subhead cannot say one is waiting at checkout.
+      const { OFFER_UNDELIVERABLE_COPY } = await import('../utils/gene-pools.js');
+      decision.headline    = OFFER_UNDELIVERABLE_COPY.headline;
+      decision.subhead     = OFFER_UNDELIVERABLE_COPY.subhead;
+      decision.cta         = OFFER_UNDELIVERABLE_COPY.cta;
+      decision.showSubhead = true;
       decision.type   = 'no-discount';
       decision.amount = 0;
+      // Cleared with the amount. A live threshold against a zeroed amount
+      // renders "You're just $130 away from $0 off", and it would also skip
+      // the threshold copy-enforcement branch that guarantees such copy names
+      // both the reward and the requirement.
+      decision.threshold = null;
       decision.code   = null;
       offerAmount     = 0;
       // Onto `decision`, not the `offerSuppression` variable: the payload

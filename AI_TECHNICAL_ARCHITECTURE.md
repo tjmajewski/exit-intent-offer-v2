@@ -39,7 +39,7 @@ full plan: [DECISION_ENGINE_BUILD_PLAN.md](./DECISION_ENGINE_BUILD_PLAN.md).
 | `app/utils/store-cluster.server.js` | Vertical derivation (offline-token Admin API, keyword majority vote) + AOV band from Conversions; `clusterKeysFor()` fallback chain |
 | `app/utils/cluster-priors.server.js` | Cluster prior IO (`baseline_cvr_prior`, `threshold_prior` insights) + `blendWithPrior()` pseudo-count math used by both bandits |
 | `app/utils/discount-arm.server.js` | Evidence-gated discounting: per-(shop, bucket) discount/no-discount arms, Monte-Carlo P(win), `requiredConfidence = 0.95 − aggression × 0.045` |
-| `app/utils/incrementality.server.js` | Shown-vs-holdout CVR → lift factor for the merchant "Incremental revenue" card (gated behind 30 control visitors) |
+| `app/utils/metrics-contract.server.js` | M1-M4, including M3 verified lift: intent-to-treat treated-vs-holdout CVR for the merchant "Verified Lift" card (gated behind 30 control decisions). Replaced `incrementality.server.js`, which compared RENDERED-only CVR against the holdout — a per-protocol number, selected on something that happened after randomisation — and was unwindowed. |
 
 ### New tables / columns
 
