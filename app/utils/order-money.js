@@ -32,6 +32,17 @@ const ARM_SHOWN = 'shown';
 const ARM_SKIP = 'skip';
 const ARM_HOLDOUT = 'holdout';
 
+/**
+ * How far past the order's own timestamp a cart stamp may claim to be before
+ * it is treated as a skewed clock rather than a real decision.
+ *
+ * Stamp times come from the shopper's browser, so they carry whatever that
+ * device believes the time is. An hour absorbs ordinary drift and a timezone
+ * handled wrongly somewhere upstream, without letting a wildly wrong clock own
+ * a cart permanently.
+ */
+const CLOCK_SKEW_TOLERANCE_MS = 60 * 60 * 1000;
+
 /** Epoch millis from a Date, an ISO string, or a number. Null when unusable. */
 function toTime(v) {
   if (v == null) return null;
@@ -243,12 +254,45 @@ export function readCartStamps(noteAttributes, { orderedAt = null, windowDays = 
     };
   }
 
+  // Stamp clocks belong to the SHOPPER'S BROWSER — `at` is a client
+  // Date.now() written by stampArmOnCart. A device whose clock runs fast
+  // stamps a timestamp in the future and wins recency against every honest
+  // stamp on that cart, forever.
+  //
+  // This used to self-heal: the next stamp blanked its siblings, so a skewed
+  // value was erased on the following page load. Stamps are additive now, so
+  // it never gets erased. Anything claiming to be from after the order was
+  // placed did not describe a decision that preceded the order, so it is not
+  // evidence about that order and cannot win. Small tolerance for ordinary
+  // clock drift; a null orderedAt (legacy caller) disables the bound rather
+  // than discarding everything.
+  const orderedTimeForBound = toTime(orderedAt);
+  const skewBound = orderedTimeForBound == null
+    ? Infinity
+    : orderedTimeForBound + CLOCK_SKEW_TOLERANCE_MS;
+  const trusted = candidates.filter(c => c.at <= skewBound);
+  // If every stamp looks skewed, fall back to the full set rather than
+  // resolving to no arm at all — a wrong arm is recoverable downstream, an
+  // absent one silently drops the order out of both.
+  const ranked = trusted.length > 0 ? trusted : candidates;
+
   // Newest wins. Ties go to the render candidate: if a decision stamp and its
   // own render stamp carry the same timestamp they describe one event, and
   // the render is the more specific fact about it.
-  const winner = candidates.reduce((best, c) => {
+  //
+  // Any remaining tie goes to the arm that is NOT holdout. Ties are reachable
+  // whenever several legacy stamps parse at `at: 0`, and the candidate array
+  // is built holdout-first, so array order alone would hand every such cart to
+  // the control group. The two errors are not symmetrical: a treated visitor
+  // wrongly booked as control puts a conversion the modal may have caused into
+  // the baseline that every other number is measured against, while the
+  // reverse only costs a row in the numerator.
+  const winner = ranked.reduce((best, c) => {
     if (c.at > best.at) return c;
-    if (c.at === best.at && c.fromRender) return c;
+    if (c.at < best.at) return best;
+    if (c.fromRender) return c;
+    if (best.fromRender) return best;
+    if (best.arm === ARM_HOLDOUT && c.arm !== ARM_HOLDOUT) return c;
     return best;
   });
 

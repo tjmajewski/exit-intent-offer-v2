@@ -407,3 +407,77 @@ describe('readCartStamps', () => {
     assert.equal(s.renderedDecisionId, null);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Additive stamps: two hazards that used to self-heal.
+//
+// Arm stamps no longer clear their siblings, because clearing one is what made
+// six of twelve live orders unattributable — readCartStamps turns the cleared
+// empty string back into null and drops the candidate before recency runs.
+// Clearing did, however, erase two classes of bad stamp on the next page load.
+// Now that nothing is erased, both have to be handled at resolution time.
+// ---------------------------------------------------------------------------
+describe('readCartStamps — additive-stamp hazards', () => {
+  const T = (ms) => String(ms);
+  const stamp = (name, id, at) => ({ name, value: at == null ? id : `${id}|${T(at)}` });
+  const ORDERED = '2026-09-26T12:00:00.000Z';
+  const ORDERED_MS = Date.parse(ORDERED);
+
+  test('a stamp from a fast client clock cannot outrank an honest one', () => {
+    // Stamp times are the shopper's own Date.now(). A device a day fast would
+    // otherwise win recency on that cart forever.
+    const s = readCartStamps([
+      stamp('exit_intent_holdout', 'dec_skewed', ORDERED_MS + 86400000),
+      stamp('exit_intent_shown_decision', 'dec_real', ORDERED_MS - 60000)
+    ], { orderedAt: ORDERED });
+
+    assert.equal(s.arm, 'shown');
+    assert.equal(s.aiDecisionId, 'dec_real');
+  });
+
+  test('ordinary clock drift inside the tolerance is still trusted', () => {
+    // A few minutes fast is normal and must not be discarded.
+    const s = readCartStamps([
+      stamp('exit_intent_shown_decision', 'dec_drifty', ORDERED_MS + 5 * 60000),
+      stamp('exit_intent_decision', 'dec_older', ORDERED_MS - 60000)
+    ], { orderedAt: ORDERED });
+
+    assert.equal(s.arm, 'shown');
+    assert.equal(s.aiDecisionId, 'dec_drifty');
+  });
+
+  test('every stamp skewed still resolves to an arm rather than none', () => {
+    // A wrong arm is recoverable downstream; no arm drops the order out of
+    // both and is invisible.
+    const s = readCartStamps([
+      stamp('exit_intent_shown_decision', 'dec_future', ORDERED_MS + 86400000)
+    ], { orderedAt: ORDERED });
+
+    assert.equal(s.arm, 'shown');
+  });
+
+  test('a tie between legacy untimestamped stamps does not default to holdout', () => {
+    // Legacy stamps parse at `at: 0`, and the candidate array is built
+    // holdout-first, so array order alone handed these carts to the control
+    // group. A conversion wrongly booked as control corrupts the baseline
+    // every other number is measured against; the reverse only costs a row.
+    const s = readCartStamps([
+      { name: 'exit_intent_holdout', value: 'true' },
+      { name: 'exit_intent_decision', value: 'no_intervention' }
+    ], { orderedAt: ORDERED });
+
+    assert.notEqual(s.arm, 'holdout');
+    assert.equal(s.arm, 'skip');
+  });
+
+  test('a real holdout stamp still wins when it is genuinely the newest', () => {
+    // The tie-break must not become a thumb on the scale against holdout.
+    const s = readCartStamps([
+      stamp('exit_intent_shown_decision', 'dec_old', ORDERED_MS - 120000),
+      stamp('exit_intent_holdout', 'dec_new', ORDERED_MS - 60000)
+    ], { orderedAt: ORDERED });
+
+    assert.equal(s.arm, 'holdout');
+    assert.equal(s.aiDecisionId, 'dec_new');
+  });
+});

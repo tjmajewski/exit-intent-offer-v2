@@ -96,22 +96,33 @@ export async function loader({ request }) {
     // Uses @@index([shopId, duringPromo]) for fast queries
     let impactMetrics = null;
     try {
+      // `rendered: true` on every one of these.
+      //
+      // VariantImpression rows are minted at decision PREFETCH, before any
+      // trigger fires, and only confirmInterventionRender flips `rendered`.
+      // On the live store 270 of 308 rows are unrendered, so counting them all
+      // divides real conversions by roughly eight times the modals anyone
+      // actually saw. That is not a promo-impact comparison, it is a reach
+      // measurement wearing one — and because reach differs between the two
+      // periods, the during-vs-outside contrast this page exists to draw was
+      // being distorted on both sides by different amounts.
+      const rendered = { shopId: shopRecord.id, rendered: true };
       const [duringPromoAgg, outsidePromoAgg, duringPromoConverted, outsidePromoConverted] = await Promise.all([
         db.variantImpression.aggregate({
-          where: { shopId: shopRecord.id, duringPromo: true },
+          where: { ...rendered, duringPromo: true },
           _count: true,
           _sum: { revenue: true, profit: true, discountAmount: true },
         }),
         db.variantImpression.aggregate({
-          where: { shopId: shopRecord.id, duringPromo: false },
+          where: { ...rendered, duringPromo: false },
           _count: true,
           _sum: { revenue: true, profit: true },
         }),
         db.variantImpression.count({
-          where: { shopId: shopRecord.id, duringPromo: true, converted: true }
+          where: { ...rendered, duringPromo: true, converted: true }
         }),
         db.variantImpression.count({
-          where: { shopId: shopRecord.id, duringPromo: false, converted: true }
+          where: { ...rendered, duringPromo: false, converted: true }
         })
       ]);
 

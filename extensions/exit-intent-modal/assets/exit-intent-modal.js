@@ -140,6 +140,16 @@
   function stampArmOnCart(arm, decisionId, extraAttributes) {
     const attrName = ARM_ATTRS[arm];
     if (!attrName) return null;
+    // A merchant walking their own storefront must not stamp a real cart.
+    //
+    // The guard lives here rather than at the call sites because the shown arm
+    // was already exempt (stampShownDecisionOnCart) while holdout and skip
+    // were not, and that asymmetry became permanent when stamps stopped
+    // clearing each other: a self-test used to be overwritten by the next real
+    // decision, and now it survives. A merchant who tests once and later takes
+    // a real order on that cart books it into the control arm — inflating
+    // holdout CVR with a conversion that had nothing to do with the holdout.
+    if (isResparqTestMode()) return null;
     // Rendering is terminal for attribution. Once a shopper has actually been
     // shown an offer, every later page load still mints a decision — and the
     // /cart page in particular almost always skips. Letting that newer skip

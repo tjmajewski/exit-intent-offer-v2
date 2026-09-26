@@ -1038,8 +1038,19 @@ export default function Performance() {
                       ? `+${Math.round(m3.relativeLift * 100)}% conversion`
                       : `+${m3.liftPts.toFixed(1)}pt conversion`}
                   </div>
+                  {/* Multiply the lift share by the SAME revenue figure this
+                      page shows above, and format it in the shop's currency.
+
+                      It used to multiply by `totalRecovered`, which comes from
+                      getShopMetrics and is engagement-attributed, while the
+                      ratio is now intent-to-treat — numerator and denominator
+                      drawn from different populations and different tables.
+                      The hardcoded "$" was wrong for the same reason the
+                      headline above uses fmtMoney: a GBP merchant must not be
+                      shown dollars on a number whose whole promise is that it
+                      reconciles against Shopify. */}
                   <div style={{ fontSize: 14, color: "#6b7280" }}>
-                    ≈ ${Math.round(m3.liftFactor * totalRecovered).toLocaleString()} you&rsquo;d have lost — verified vs control
+                    ≈ {fmtMoney(Math.round(m3.liftFactor * (useContractM1 ? metrics.m1.amount : totalRecovered)))} you&rsquo;d have lost — verified vs control
                   </div>
                 </>
               ) : m3?.measured ? (
