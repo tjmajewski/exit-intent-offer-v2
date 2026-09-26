@@ -450,10 +450,6 @@ export async function loader({ request }) {
       }
     }
 
-    // Phase 6b: holdout-measured incrementality for the honest revenue card.
-    // Null until the shop exists in the DB or on any failure — the UI then
-    // shows the "measuring" state.
-    let incrementality = null;
     // §2.5 metrics contract: M1 recovered revenue, M2 discount cost,
     // M3 verified lift, M4 show rate. Read from AttributedOrder, which only
     // starts filling on orders placed after this shipped — `metrics.m1.orderCount`
@@ -465,8 +461,6 @@ export async function loader({ request }) {
         select: { id: true }
       });
       if (shopRow) {
-        const { getIncrementality } = await import('../utils/incrementality.server.js');
-        incrementality = await getIncrementality(db, shopRow.id);
         const { getMetricsContract } = await import('../utils/metrics-contract.server.js');
         // Same window as every other number on this page. Without it the
         // headline read lifetime while impressions/CVR read 30 days, and the
@@ -482,7 +476,7 @@ export async function loader({ request }) {
         });
       }
     } catch (error) {
-      console.error("Error loading incrementality:", error);
+      console.error("Error loading metrics contract:", error);
     }
 
     // Headline totals come from Prisma via getShopMetrics, NOT from summing the
@@ -514,14 +508,13 @@ export async function loader({ request }) {
     }
 
     console.log('Loader returning variants:', liveVariants?.length || 0);
-    return { plan, modalLibrary, dateRange, liveVariants, incrementality, metrics, mode, totals };
+    return { plan, modalLibrary, dateRange, liveVariants, metrics, mode, totals };
   } catch (error) {
     console.error("Error loading analytics:", error);
     return {
       plan: { tier: "starter" },
       modalLibrary: getDefaultModalLibrary(),
       liveVariants: [],
-      incrementality: null,
       mode: 'manual',
       totals: null
     };
@@ -530,7 +523,7 @@ export async function loader({ request }) {
 
 
 export default function Performance() {
-  const { plan, modalLibrary, dateRange: loaderDateRange, liveVariants, incrementality, metrics, mode, totals } = useLoaderData();
+  const { plan, modalLibrary, dateRange: loaderDateRange, liveVariants, metrics, mode, totals } = useLoaderData();
   const fetcher = useFetcher();
   const autopilotFetcher = useFetcher();
   const navigate = useNavigate();
@@ -883,6 +876,10 @@ export default function Performance() {
         // number is none of those things.
         const contractLive = Boolean(metrics?.measuringSince);
         const useContractM1 = contractLive;
+        // M3 — intent-to-treat verified lift. Replaces the old
+        // getIncrementality() card, which compared rendered-only CVR against
+        // the holdout (per-protocol) and ignored the date toggle entirely.
+        const m3 = metrics?.m3 ?? null;
         // Use the shop's own currency. The contract already resolves it from
         // the orders; hardcoding '$' shows a GBP merchant "$1,234.00" on a
         // number whose whole promise is that it reconciles against Shopify.
@@ -1017,21 +1014,38 @@ export default function Performance() {
               }}
             >
               <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>Verified Lift</div>
-              {incrementality?.measured && incrementality.liftFactor > 0 ? (
+              {/* Intent-to-treat, from the metrics contract (M3).
+
+                  This card used to read getIncrementality(), which compared
+                  RENDERED-only CVR against the holdout. That is per-protocol:
+                  it selects the treated group on something that happened after
+                  randomisation — the shopper stayed long enough to trigger a
+                  surface — so it credits Resparq for the engagement that earned
+                  the trigger, not just for the offer. It also had no time
+                  window at all, so it read lifetime while every other number on
+                  this page moved with the date toggle.
+
+                  M3's denominator is every visitor the coin sent to treatment,
+                  including the ones the AI stayed quiet for and the ones whose
+                  trigger never fired. That is a bigger denominator, so this
+                  number is LOWER than what the card showed before. It is the
+                  honest one, and it is the only figure here that answers "what
+                  happens to my store if I install this". */}
+              {m3?.measured && m3.liftFactor > 0 ? (
                 <>
                   <div style={{ fontSize: 20, fontWeight: 700, color: "#10b981" }}>
-                    {incrementality.holdoutCVR > 0
-                      ? `+${Math.round((incrementality.shownCVR / incrementality.holdoutCVR - 1) * 100)}% conversion`
-                      : `+${incrementality.liftPts.toFixed(1)}pt conversion`}
+                    {m3.relativeLift != null
+                      ? `+${Math.round(m3.relativeLift * 100)}% conversion`
+                      : `+${m3.liftPts.toFixed(1)}pt conversion`}
                   </div>
                   <div style={{ fontSize: 14, color: "#6b7280" }}>
-                    ≈ ${Math.round(incrementality.liftFactor * totalRecovered).toLocaleString()} you&rsquo;d have lost — verified vs control
+                    ≈ ${Math.round(m3.liftFactor * totalRecovered).toLocaleString()} you&rsquo;d have lost — verified vs control
                   </div>
                 </>
-              ) : incrementality?.measured ? (
+              ) : m3?.measured ? (
                 <>
                   <div style={{ fontSize: 20, fontWeight: 700, color: "#1f2937" }}>
-                    {incrementality.shown > 0 ? `${(incrementality.shownCVR * 100).toFixed(1)}% CVR` : "—"}
+                    {m3.treatedCVR != null ? `${(m3.treatedCVR * 100).toFixed(1)}% CVR` : "—"}
                   </div>
                   <div style={{ fontSize: 14, color: "#6b7280" }}>
                     lift still stabilizing vs control group
@@ -1040,10 +1054,10 @@ export default function Performance() {
               ) : (
                 <>
                   <div style={{ fontSize: 20, fontWeight: 700, color: "#1f2937" }}>
-                    {incrementality?.shown > 0 ? `${(incrementality.shownCVR * 100).toFixed(1)}% CVR` : "Measuring"}
+                    {m3?.treatedCVR != null ? `${(m3.treatedCVR * 100).toFixed(1)}% CVR` : "Measuring"}
                   </div>
                   <div style={{ fontSize: 14, color: "#6b7280" }}>
-                    verified after {incrementality?.minHoldout ?? 30} control visitors ({incrementality?.holdout ?? 0} so far)
+                    verified after {m3?.minHoldout ?? 30} control visitors ({m3?.holdoutDecisions ?? 0} so far)
                   </div>
                 </>
               )}

@@ -9,7 +9,8 @@ import {
   round2,
   EXCLUSION,
   ATTRIBUTION_WINDOW_DAYS,
-  MIN_HOLDOUT_FOR_LIFT
+  MIN_HOLDOUT_FOR_LIFT,
+  ARMS
 } from '../app/utils/metrics-contract.js';
 
 // Every expected value below is hand-computed and written out in the comment
@@ -375,5 +376,46 @@ describe('M4 show rate', () => {
     const m = computeShowRate({ decisions: 0, rendered: 0 });
     assert.equal(m.showRate, null);
     assert.equal(m.measured, false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The unlinked arm.
+//
+// An order we saw and could not resolve to a visitor is recorded — it has to
+// be, or the coverage gap is invisible — but it is NOT an observation of any
+// arm. Six of the twelve orders placed in the first live store's first twelve
+// days were in exactly this state.
+// ---------------------------------------------------------------------------
+describe('ARM_UNLINKED', () => {
+  test('is a distinct arm value, never an alias for an arm we chose', () => {
+    assert.equal(ARMS.UNLINKED, 'unlinked');
+    assert.notEqual(ARMS.UNLINKED, ARMS.SHOWN);
+    assert.notEqual(ARMS.UNLINKED, ARMS.SKIP);
+    assert.notEqual(ARMS.UNLINKED, ARMS.HOLDOUT);
+  });
+
+  test('has its own exclusion reason, distinct from "not the shown arm"', () => {
+    // WRONG_ARM is a decision we made and can defend. UNLINKED is a failure to
+    // attribute. Reporting them as one number hides the failure inside the
+    // decision.
+    assert.equal(EXCLUSION.UNLINKED, 'unlinked');
+    assert.notEqual(EXCLUSION.UNLINKED, EXCLUSION.WRONG_ARM);
+  });
+
+  test('carries real money and still contributes nothing to M1', () => {
+    // The money is real — this is a genuine order worth $500 — but nobody can
+    // say whether Resparq caused it, so M1 must not claim it.
+    const m = computeRecoveredRevenue([
+      shownOrder({ orderId: 'linked', subtotal: 100 }),
+      shownOrder({ orderId: 'lost', subtotal: 500, arm: ARMS.UNLINKED })
+    ], { now: T0 });
+
+    assert.equal(m.recoveredRevenue, 100);
+    assert.equal(m.orderCount, 1);
+    // Filed under its own reason, not under "not the shown arm": one is a
+    // decision, the other is a failure to measure.
+    assert.equal(m.excluded[EXCLUSION.UNLINKED], 1);
+    assert.equal(m.excluded[EXCLUSION.WRONG_ARM], undefined);
   });
 });

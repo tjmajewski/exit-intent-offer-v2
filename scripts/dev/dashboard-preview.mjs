@@ -26,7 +26,6 @@
 import { PrismaClient } from '@prisma/client';
 import { getShopMetrics } from '../../app/utils/shop-metrics.server.js';
 import { getMetricsContract } from '../../app/utils/metrics-contract.server.js';
-import { getIncrementality } from '../../app/utils/incrementality.server.js';
 
 const db = new PrismaClient();
 const domain = process.argv[2];
@@ -57,10 +56,9 @@ async function main() {
   console.log(`\n=== ${shop.shopifyDomain} — last ${days} days (mode=${shop.mode}, plan=${shop.plan}) ===\n`);
 
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const [totals, metrics, incr, attributedTotal] = await Promise.all([
+  const [totals, metrics, attributedTotal] = await Promise.all([
     getShopMetrics({ shopId: shop.id, days, mode: shop.mode || 'manual' }),
     getMetricsContract(db, shop.id, { since }),
-    getIncrementality(db, shop.id),
     db.attributedOrder.count({ where: { shopId: shop.id } })
   ]);
 
@@ -120,18 +118,27 @@ async function main() {
     }
   }
 
-  console.log('\nVERIFIED LIFT CARD (getIncrementality)');
-  console.log(`  shown (rendered)  : ${incr.shown}`);
-  console.log(`  shown converted   : ${incr.shownConverted}`);
-  console.log(`  holdout           : ${incr.holdout} (needs ${incr.minHoldout} to report)`);
-  console.log(`  holdout converted : ${incr.holdoutConverted}`);
-  console.log(`  DISPLAYS          : ${incr.measured
-    ? (incr.liftFactor > 0
-        ? `+${(incr.holdoutCVR > 0 ? Math.round((incr.shownCVR / incr.holdoutCVR - 1) * 100) : incr.liftPts).toFixed(0)}%`
-        : `${(incr.shownCVR * 100).toFixed(1)}% CVR, lift stabilizing`)
-    : `${incr.shown > 0 ? `${(incr.shownCVR * 100).toFixed(1)}% CVR` : 'Measuring'}`}`);
-  if (incr.shownCVR > 1) {
-    console.log('  !! shownCVR > 100% — numerator/denominator mismatch, investigate');
+  // Intent-to-treat. This card used to print getIncrementality(), which
+  // measured rendered-only CVR against the holdout — a per-protocol number
+  // selected on a post-randomisation event, and unwindowed besides. M3's
+  // denominator is everyone the coin sent to treatment, so the figure here is
+  // LOWER than the old one and is the only one that answers "what happens to
+  // my store if I install this".
+  if (metrics) {
+    const m3 = metrics.m3;
+    console.log('\nVERIFIED LIFT CARD (M3, intent-to-treat)');
+    console.log(`  treated decisions : ${m3.treatedDecisions}`);
+    console.log(`  treated converted : ${m3.treatedConversions}`);
+    console.log(`  holdout           : ${m3.holdoutDecisions} (needs ${m3.minHoldout} to report)`);
+    console.log(`  holdout converted : ${m3.holdoutConversions}`);
+    console.log(`  DISPLAYS          : ${m3.measured
+      ? (m3.liftFactor > 0
+          ? `+${m3.relativeLift != null ? Math.round(m3.relativeLift * 100) : m3.liftPts.toFixed(1)}%`
+          : `${(m3.treatedCVR * 100).toFixed(1)}% CVR, lift stabilizing`)
+      : `${m3.treatedCVR != null ? `${(m3.treatedCVR * 100).toFixed(1)}% CVR` : 'Measuring'}`}`);
+    if (m3.treatedCVR > 1) {
+      console.log('  !! treatedCVR > 100% — numerator/denominator mismatch, investigate');
+    }
   }
 
   if (metrics) {

@@ -97,8 +97,17 @@
   // Every arm stamp carries its own timestamp, because Shopify never clears a
   // cart attribute and decisions are minted per carted page load — so a cart
   // routinely holds stamps from several page loads at once. The server
-  // resolves them by recency (readCartStamps), which is correct whether or
-  // not the clearing below actually lands.
+  // resolves them by recency (readCartStamps).
+  //
+  // Stamps are ADDITIVE. Writing one never erases another, because a stamp we
+  // erase is a stamp the order webhook cannot resolve: readCartStamps turns
+  // an empty string back into null (order-money.js) and drops the candidate
+  // before recency ever runs. Of the twelve orders placed in this store's
+  // first twelve days, six carried no arm attribute at all and not one order
+  // has ever carried a holdout or skip stamp — control CVR reads 0.00%
+  // because no control conversion can physically be counted. Recency already
+  // decides which stamp wins; clearing the losers only destroys the evidence
+  // that the winner was chosen correctly.
   // ---------------------------------------------------------------------
   const ARM_ATTRS = {
     holdout: 'exit_intent_holdout',
@@ -107,14 +116,14 @@
   };
 
   /**
-   * Write this decision's arm stamp and clear the other two, in ONE request.
+   * Write this decision's arm stamp, in ONE request, without touching the
+   * other two.
    *
-   * One request matters: three separate fire-and-forget POSTs to
+   * One request still matters: several fire-and-forget POSTs to
    * /cart/update.js race each other and the last one to land wins
-   * nondeterministically, which is how a cleared stamp comes back.
-   *
-   * Shopify clears a cart attribute by being sent the EMPTY STRING, not null
-   * — sending null leaves the attribute in place with a null value.
+   * nondeterministically. Writing a single attribute per call means two
+   * racing tabs can no longer blank each other's arm — the loser of the race
+   * overwrites nothing.
    */
   const RENDERED_THIS_SESSION_KEY = 'resparqRenderedThisSession';
 
@@ -140,6 +149,17 @@
     //
     // The visitor has already been treated; nothing a later prefetch decides
     // changes what they experienced.
+    //
+    // DO NOT remove this on the theory that readCartStamps' recency plus its
+    // "a displayed modal outranks a later decision" rule make it redundant.
+    // That recovery is scoped to SKIP and additionally requires the render
+    // stamp to carry a decision id — `winner.arm === ARM_SKIP &&
+    // renderStamp?.aiDecisionId` in order-money.js. A later HOLDOUT stamp has
+    // no recovery path at all, and a render stamp written without a decision
+    // id parses at `at: 0`, which loses recency to any timestamped stamp. So
+    // without this guard a treated, rendered, converting shopper can land in
+    // the control arm and inflate holdout CVR with a conversion the modal
+    // caused. That is the one error the measurement cannot absorb.
     if (arm !== 'shown' && hasRenderedThisSession()) {
       return null;
     }
@@ -148,9 +168,6 @@
     // `<decisionId>|<epochMs>`. A stamp with no id still carries its time, so
     // recency resolution works for legacy-sentinel decisions too.
     attributes[attrName] = `${decisionId || ''}|${stampedAt}`;
-    for (const [otherArm, otherAttr] of Object.entries(ARM_ATTRS)) {
-      if (otherArm !== arm) attributes[otherAttr] = '';
-    }
     if (extraAttributes) Object.assign(attributes, extraAttributes);
     fetch('/cart/update.js', {
       method: 'POST',

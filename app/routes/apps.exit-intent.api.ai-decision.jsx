@@ -368,13 +368,36 @@ export async function action({ request }) {
     // Sticky hashing means raising the rate REASSIGNS existing visitors: a
     // visitor whose hash lands in 5..9 moves from treated to control. That is
     // correct going forward and does not retro-edit any past row.
+    //
+    // The arm is a property of the VISITOR, not of this request. Everything
+    // downstream depends on that: the order webhook can only resolve an order
+    // to an arm by resolving it to a person, and a visitor who is treated on
+    // one page load and control on the next is not an observation of either
+    // arm.
+    //
+    // So there is deliberately no unseeded fallback here. This used to read
+    // `: Math.random() < HOLDOUT_RATE` when no visitorId arrived, which gave
+    // those visitors a fresh coin on every page load. A shopper could then be
+    // shown a modal, convert, and have a later page load stamp them holdout —
+    // booking a conversion the modal caused into the control group and making
+    // Resparq look worse than it is. No such row has been observed on the
+    // live store (0 of 263 outcomes lack a visitorId), which is exactly why
+    // this is cheap to close now rather than defend against downstream.
+    //
+    // Without an id we treat, and say so. Treating is the safe default: a
+    // treated visitor we cannot attribute costs us a row in the numerator,
+    // while a control visitor we cannot attribute silently corrupts the
+    // baseline every other number is measured against.
     const HOLDOUT_RATE = 0.10;
     const holdoutVisitorId = (typeof signals.visitorId === 'string' && signals.visitorId.length > 0)
       ? signals.visitorId
       : null;
-    const isHoldout = !isTestMode && (holdoutVisitorId
-      ? (fnv1a(`${holdoutVisitorId}:${shopRecord.id}`) % 100) < HOLDOUT_RATE * 100
-      : Math.random() < HOLDOUT_RATE);
+    if (!holdoutVisitorId) {
+      console.warn('[Holdout] No visitorId on this decision — assigning to treatment, not a coin flip. Arm stickiness cannot be guaranteed for this visitor.');
+    }
+    const isHoldout = !isTestMode
+      && holdoutVisitorId != null
+      && (fnv1a(`${holdoutVisitorId}:${shopRecord.id}`) % 100) < HOLDOUT_RATE * 100;
 
     if (isHoldout) {
       const holdoutDecision = {
@@ -1481,29 +1504,80 @@ export async function action({ request }) {
       const prefix = codePrefix || 'EXIT';
       console.log(`[${modeLabel}] Creating unique discount code with prefix: ${prefix}`);
 
-      if (decision.type === 'percentage') {
-        discountResult = await createPercentageDiscount(admin, decision.amount, prefix, shopRecord.id);
-      } else if (decision.type === 'fixed') {
-        discountResult = await createFixedDiscount(admin, decision.amount, prefix, shopRecord.id);
-      } else if (decision.type === 'threshold') {
-        discountResult = await createThresholdDiscount(admin, decision.threshold, decision.amount, prefix, shopRecord.id);
-        offerAmount = decision.amount; // Store discount amount, not threshold
+      try {
+        if (decision.type === 'percentage') {
+          discountResult = await createPercentageDiscount(admin, decision.amount, prefix, shopRecord.id);
+        } else if (decision.type === 'fixed') {
+          discountResult = await createFixedDiscount(admin, decision.amount, prefix, shopRecord.id);
+        } else if (decision.type === 'threshold') {
+          discountResult = await createThresholdDiscount(admin, decision.threshold, decision.amount, prefix, shopRecord.id);
+          offerAmount = decision.amount; // Store discount amount, not threshold
+        } else {
+          // Not reachable today — the early return above catches no-discount
+          // and amount 0, so only the three types handled here should arrive.
+          // Fail closed rather than falling through with discountResult still
+          // undefined, which is how an unhandled type became a 500.
+          throw new Error(`unhandled decision.type "${decision.type}" on the discount path`);
+        }
+      } catch (err) {
+        console.error(`[${modeLabel}] Discount minting failed (${decision.type}/${decision.amount}):`, err.message);
+        discountResult = null;
       }
     }
-    
-    // Track discount offer in database
-    const discountOffer = await db.discountOffer.create({
-      data: {
-        shopId: shopRecord.id,
-        discountCode: discountResult.code,
-        offerType: decision.type,
-        amount: offerAmount,
-        cartValue: signals.cartValue,
-        expiresAt: discountResult.expiresAt,
-        mode: codeMode === 'generic' ? 'generic' : 'unique',
-        redeemed: false
-      }
-    });
+
+    // A discount we could not mint degrades to no-discount copy. It must NOT
+    // become a 500.
+    //
+    // submitBasicCodeDiscount throws on three separate conditions — Shopify
+    // userErrors, a malformed GraphQL response, and "created but returned no
+    // code" (discount-codes.js) — and every one of them used to reach the bare
+    // catch at the bottom of this handler. By then recordImpression has
+    // already written a VariantImpression, so the request left an impression
+    // row and no AIDecision and no InterventionOutcome: the visitor vanished
+    // from the intent-to-treat denominator entirely. 81 requests in this
+    // store's first 12 days did exactly that, and they are not a random 81 —
+    // they are specifically the visitors the AI decided to give a discount to,
+    // so losing them biases the treated arm as well as shrinking it.
+    //
+    // Recording the decision matters more than delivering the offer. The
+    // shopper still sees a modal; the arm still gets its row.
+    if (!discountResult?.code) {
+      console.warn(`[${modeLabel}] Serving no-discount copy — the offer could not be created.`);
+      const wantedType = decision.type;
+      const wantedAmount = decision.amount;
+      decision.type   = 'no-discount';
+      decision.amount = 0;
+      decision.code   = null;
+      offerAmount     = 0;
+      // Onto `decision`, not the `offerSuppression` variable: the payload
+      // object was built earlier in this request and already captured that
+      // variable's value, so reassigning it here would never be seen. Same
+      // reason as the generic-code mismatch branch above.
+      decision.offerSuppression = {
+        kind: 'failure',
+        code: 'discount_mint_failed',
+        detail: `Wanted ${wantedType}/${wantedAmount} but the code could not be created — no-discount copy served instead`,
+      };
+    }
+
+    // Track discount offer in database. Skipped when there is no code: a
+    // DiscountOffer row with a null code is a code the webhook can never
+    // match, and AIDecision.offerId below is the only link a redeemed code
+    // has back to its decision.
+    const discountOffer = discountResult?.code
+      ? await db.discountOffer.create({
+          data: {
+            shopId: shopRecord.id,
+            discountCode: discountResult.code,
+            offerType: decision.type,
+            amount: offerAmount,
+            cartValue: signals.cartValue,
+            expiresAt: discountResult.expiresAt,
+            mode: codeMode === 'generic' ? 'generic' : 'unique',
+            redeemed: false
+          }
+        })
+      : null;
     
     // Log AI decision
     const discountAiDec = await db.aIDecision.create({
@@ -1511,11 +1585,13 @@ export async function action({ request }) {
         shopId: shopRecord.id,
         signals: JSON.stringify(signals),
         decision: JSON.stringify(decision),
-        offerId: discountOffer.id
+        offerId: discountOffer?.id ?? null
       }
     });
-    
-    console.log(` AI offer created: ${discountResult.code} (${decision.type}, $${offerAmount})`);
+
+    if (discountResult?.code) {
+      console.log(` AI offer created: ${discountResult.code} (${decision.type}, $${offerAmount})`);
+    }
 
     // Generic-mode reconciliation can strip the discount after the surface
     // was chosen — a pill can't present a no-discount offer, so fall back to
@@ -1542,9 +1618,9 @@ export async function action({ request }) {
         amount: decision.amount,
         threshold: decision.threshold || null,
         timing: preScore.timing || decision.timing || null, // engine-emitted timing (both tiers)
-        code: discountResult.code,
+        code: discountResult?.code ?? null,
         confidence: decision.confidence,
-        expiresAt: discountResult.expiresAt,
+        expiresAt: discountResult?.expiresAt ?? null,
         baseline: decision.baseline, // Include baseline for tracking
         archetype: decision.archetype, // Archetype name (e.g. THRESHOLD_DISCOUNT)
         cartSubscription: resolvedCartSubscription // none | mixed | all — drives first-order disclosure line
@@ -1601,7 +1677,7 @@ export async function action({ request }) {
       aiDecisionId: discountAiDec.id,
       offerType: decision.type,
       offerAmount: decision.amount,
-      discountCode: discountResult.code,
+      discountCode: discountResult?.code ?? null,
       triggerReason,
       propensityScore: signals.propensityScore ?? null,
       segmentKey,

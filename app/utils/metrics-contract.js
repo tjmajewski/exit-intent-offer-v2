@@ -48,8 +48,13 @@ export const SHOW_RATE_ALARM_THRESHOLD = 0.02;
 const ARM_SHOWN = 'shown';
 const ARM_SKIP = 'skip';
 const ARM_HOLDOUT = 'holdout';
+// Not an arm — the absence of one. An order we saw and could not resolve to a
+// visitor, and therefore to a group. It carries its real money and is counted
+// in no arm, so the coverage gap stays visible instead of being silently
+// absorbed into whichever arm happened to have a stamp lying around.
+const ARM_UNLINKED = 'unlinked';
 
-export const ARMS = { SHOWN: ARM_SHOWN, SKIP: ARM_SKIP, HOLDOUT: ARM_HOLDOUT };
+export const ARMS = { SHOWN: ARM_SHOWN, SKIP: ARM_SKIP, HOLDOUT: ARM_HOLDOUT, UNLINKED: ARM_UNLINKED };
 
 /** Cents, not float dust. 0.1 + 0.2 must not reach a merchant's screen. */
 export function round2(n) {
@@ -77,6 +82,10 @@ export const EXCLUSION = {
   DUPLICATE: 'duplicate_order_id',
   NOT_RENDERED: 'not_rendered',
   WRONG_ARM: 'not_shown_arm',
+  // Distinct from WRONG_ARM on purpose. "Not the shown arm" is a decision we
+  // made and can defend; "unlinked" is an order we failed to attribute at all,
+  // and the two must never be reported as the same kind of gap.
+  UNLINKED: 'unlinked',
   TEST_ORDER: 'test_order',
   CANCELLED: 'cancelled',
   FULLY_REFUNDED: 'fully_refunded',
@@ -161,6 +170,12 @@ export function computeRecoveredRevenue(rows, { currency = null, windowDays = AT
     if (orderKey) seenOrderIds.add(orderKey);
 
     if (row.testOrder) { drop(EXCLUSION.TEST_ORDER); continue; }
+    // Checked BEFORE the arm test, which would otherwise file it under
+    // "not the shown arm". An order we could not attribute at all is not a
+    // decision we made — it is a measurement we failed to take, and the two
+    // must stay separable or the coverage gap hides inside a number that
+    // looks deliberate.
+    if (row.arm === ARM_UNLINKED) { drop(EXCLUSION.UNLINKED); continue; }
     // M1 counts a modal a shopper SAW. Not decided, not prefetched.
     if (row.arm !== ARM_SHOWN) { drop(EXCLUSION.WRONG_ARM); continue; }
     if (!row.rendered) { drop(EXCLUSION.NOT_RENDERED); continue; }

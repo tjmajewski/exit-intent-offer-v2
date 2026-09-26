@@ -195,8 +195,18 @@ export async function getMetricsContract(db, shopId, { since = null, until = nul
     // Is this shop measuring yet, and since when? Distinguishes "no contract
     // data at all" from "no orders in the selected window", which are
     // different answers and only one of them is $0.
+    // Scoped to orders that actually resolved to an arm. An order we could
+    // not attribute is still recorded — it has to be, or the coverage gap is
+    // invisible — but it is NOT evidence that this shop is measuring.
+    //
+    // Without this filter the first unattributable order would set
+    // `measuringSince`, which flips `contractLive` in app.analytics.jsx and
+    // moves the merchant's headline revenue off the legacy metafield figure
+    // and onto M1. M1 counts only `arm: SHOWN`, so a shop whose orders are
+    // all unlinked would watch its recovered revenue drop to $0 overnight on
+    // the strength of one row that represents no measurement at all.
     db.attributedOrder.findFirst({
-      where: { shopId },
+      where: { shopId, arm: { not: ARMS.UNLINKED } },
       orderBy: { createdAt: 'asc' },
       select: { createdAt: true, shopCurrency: true }
     }),
